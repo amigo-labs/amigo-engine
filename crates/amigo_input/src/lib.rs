@@ -1,3 +1,5 @@
+pub mod gamepad;
+
 use amigo_core::RenderVec2;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};

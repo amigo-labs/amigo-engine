@@ -12,3 +12,5 @@ rustc-hash = { workspace = true }
 thiserror = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }
+asefile = { workspace = true }
+amigo_animation = { workspace = true }

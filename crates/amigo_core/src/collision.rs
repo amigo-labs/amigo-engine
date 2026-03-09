@@ -1,0 +1,253 @@
+use crate::ecs::EntityId;
+use crate::math::RenderVec2;
+use crate::rect::Rect;
+use rustc_hash::{FxHashMap, FxHashSet};
+
+/// Collision shape for an entity.
+#[derive(Clone, Copy, Debug)]
+pub enum CollisionShape {
+    Aabb(Rect),
+    Circle { cx: f32, cy: f32, radius: f32 },
+}
+
+/// Contact information from a collision check.
+#[derive(Clone, Copy, Debug)]
+pub struct ContactInfo {
+    pub penetration: f32,
+    pub normal: RenderVec2,
+}
+
+pub fn aabb_vs_aabb(a: &Rect, b: &Rect) -> Option<ContactInfo> {
+    let overlap_x = (a.w + b.w) * 0.5 - (a.center_x() - b.center_x()).abs();
+    let overlap_y = (a.h + b.h) * 0.5 - (a.center_y() - b.center_y()).abs();
+    if overlap_x <= 0.0 || overlap_y <= 0.0 {
+        return None;
+    }
+    if overlap_x < overlap_y {
+        let sign = if a.center_x() < b.center_x() { -1.0 } else { 1.0 };
+        Some(ContactInfo { penetration: overlap_x, normal: RenderVec2::new(sign, 0.0) })
+    } else {
+        let sign = if a.center_y() < b.center_y() { -1.0 } else { 1.0 };
+        Some(ContactInfo { penetration: overlap_y, normal: RenderVec2::new(0.0, sign) })
+    }
+}
+
+pub fn circle_vs_circle(ax: f32, ay: f32, ar: f32, bx: f32, by: f32, br: f32) -> Option<ContactInfo> {
+    let dx = bx - ax;
+    let dy = by - ay;
+    let dist_sq = dx * dx + dy * dy;
+    let sum_r = ar + br;
+    if dist_sq >= sum_r * sum_r { return None; }
+    let dist = dist_sq.sqrt();
+    if dist < 0.0001 {
+        return Some(ContactInfo { penetration: sum_r, normal: RenderVec2::new(1.0, 0.0) });
+    }
+    Some(ContactInfo { penetration: sum_r - dist, normal: RenderVec2::new(dx / dist, dy / dist) })
+}
+
+pub fn circle_vs_aabb(cx: f32, cy: f32, radius: f32, rect: &Rect) -> Option<ContactInfo> {
+    let closest_x = cx.clamp(rect.x, rect.x + rect.w);
+    let closest_y = cy.clamp(rect.y, rect.y + rect.h);
+    let dx = cx - closest_x;
+    let dy = cy - closest_y;
+    let dist_sq = dx * dx + dy * dy;
+    if dist_sq >= radius * radius { return None; }
+    let dist = dist_sq.sqrt();
+    if dist < 0.0001 {
+        return Some(ContactInfo { penetration: radius, normal: RenderVec2::new(0.0, -1.0) });
+    }
+    Some(ContactInfo { penetration: radius - dist, normal: RenderVec2::new(dx / dist, dy / dist) })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct CellKey(i32, i32);
+
+/// Spatial hash grid for broad-phase collision detection.
+pub struct SpatialHash {
+    cell_size: f32,
+    inv_cell_size: f32,
+    cells: FxHashMap<CellKey, Vec<EntityId>>,
+    entity_cells: FxHashMap<EntityId, Vec<CellKey>>,
+}
+
+impl SpatialHash {
+    pub fn new(cell_size: f32) -> Self {
+        assert!(cell_size > 0.0);
+        Self {
+            cell_size,
+            inv_cell_size: 1.0 / cell_size,
+            cells: FxHashMap::default(),
+            entity_cells: FxHashMap::default(),
+        }
+    }
+
+    fn cell_key(&self, x: f32, y: f32) -> CellKey {
+        CellKey((x * self.inv_cell_size).floor() as i32, (y * self.inv_cell_size).floor() as i32)
+    }
+
+    pub fn insert(&mut self, id: EntityId, aabb: &Rect) {
+        self.remove(id);
+        let min_key = self.cell_key(aabb.x, aabb.y);
+        let max_key = self.cell_key(aabb.x + aabb.w, aabb.y + aabb.h);
+        let mut keys = Vec::new();
+        for cy in min_key.1..=max_key.1 {
+            for cx in min_key.0..=max_key.0 {
+                let key = CellKey(cx, cy);
+                self.cells.entry(key).or_default().push(id);
+                keys.push(key);
+            }
+        }
+        self.entity_cells.insert(id, keys);
+    }
+
+    pub fn remove(&mut self, id: EntityId) {
+        if let Some(keys) = self.entity_cells.remove(&id) {
+            for key in &keys {
+                if let Some(cell) = self.cells.get_mut(key) {
+                    cell.retain(|&e| e != id);
+                    if cell.is_empty() { self.cells.remove(key); }
+                }
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.cells.clear();
+        self.entity_cells.clear();
+    }
+
+    pub fn query_aabb(&self, aabb: &Rect) -> Vec<EntityId> {
+        let min_key = self.cell_key(aabb.x, aabb.y);
+        let max_key = self.cell_key(aabb.x + aabb.w, aabb.y + aabb.h);
+        let mut result = FxHashSet::default();
+        for cy in min_key.1..=max_key.1 {
+            for cx in min_key.0..=max_key.0 {
+                if let Some(cell) = self.cells.get(&CellKey(cx, cy)) {
+                    for &id in cell { result.insert(id); }
+                }
+            }
+        }
+        result.into_iter().collect()
+    }
+
+    pub fn query_point(&self, x: f32, y: f32) -> Vec<EntityId> {
+        let key = self.cell_key(x, y);
+        self.cells.get(&key).cloned().unwrap_or_default()
+    }
+
+    pub fn query_circle(&self, cx: f32, cy: f32, radius: f32) -> Vec<EntityId> {
+        self.query_aabb(&Rect::new(cx - radius, cy - radius, radius * 2.0, radius * 2.0))
+    }
+}
+
+/// Trigger zone that fires events when entities enter/exit.
+#[derive(Clone, Debug)]
+pub struct TriggerZone {
+    pub id: u32,
+    pub rect: Rect,
+    pub active: bool,
+    entities_inside: FxHashSet<EntityId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TriggerEvent {
+    Enter { zone_id: u32, entity: EntityId },
+    Exit { zone_id: u32, entity: EntityId },
+}
+
+impl TriggerZone {
+    pub fn new(id: u32, rect: Rect) -> Self {
+        Self { id, rect, active: true, entities_inside: FxHashSet::default() }
+    }
+
+    pub fn check(&mut self, entity: EntityId, entity_rect: &Rect) -> Option<TriggerEvent> {
+        if !self.active { return None; }
+        let overlaps = self.rect.overlaps(entity_rect);
+        let was_inside = self.entities_inside.contains(&entity);
+        match (was_inside, overlaps) {
+            (false, true) => { self.entities_inside.insert(entity); Some(TriggerEvent::Enter { zone_id: self.id, entity }) }
+            (true, false) => { self.entities_inside.remove(&entity); Some(TriggerEvent::Exit { zone_id: self.id, entity }) }
+            _ => None,
+        }
+    }
+
+    pub fn remove_entity(&mut self, entity: EntityId) {
+        self.entities_inside.remove(&entity);
+    }
+}
+
+/// High-level collision world managing entities and queries.
+pub struct CollisionWorld {
+    pub spatial_hash: SpatialHash,
+    shapes: FxHashMap<EntityId, (RenderVec2, CollisionShape)>,
+    pub triggers: Vec<TriggerZone>,
+}
+
+impl CollisionWorld {
+    pub fn new(cell_size: f32) -> Self {
+        Self { spatial_hash: SpatialHash::new(cell_size), shapes: FxHashMap::default(), triggers: Vec::new() }
+    }
+
+    pub fn update_entity(&mut self, id: EntityId, pos: RenderVec2, shape: CollisionShape) {
+        let aabb = shape_to_aabb(pos, &shape);
+        self.spatial_hash.insert(id, &aabb);
+        self.shapes.insert(id, (pos, shape));
+    }
+
+    pub fn remove_entity(&mut self, id: EntityId) {
+        self.spatial_hash.remove(id);
+        self.shapes.remove(&id);
+        for trigger in &mut self.triggers { trigger.remove_entity(id); }
+    }
+
+    pub fn query_aabb(&self, rect: &Rect) -> Vec<EntityId> { self.spatial_hash.query_aabb(rect) }
+    pub fn query_point(&self, x: f32, y: f32) -> Vec<EntityId> { self.spatial_hash.query_point(x, y) }
+    pub fn query_circle(&self, cx: f32, cy: f32, radius: f32) -> Vec<EntityId> { self.spatial_hash.query_circle(cx, cy, radius) }
+
+    pub fn check_pair(&self, a: EntityId, b: EntityId) -> Option<ContactInfo> {
+        let (pos_a, shape_a) = self.shapes.get(&a)?;
+        let (pos_b, shape_b) = self.shapes.get(&b)?;
+        check_shapes(*pos_a, shape_a, *pos_b, shape_b)
+    }
+
+    pub fn check_triggers(&mut self, entity: EntityId) -> Vec<TriggerEvent> {
+        let Some((pos, shape)) = self.shapes.get(&entity) else { return Vec::new(); };
+        let entity_aabb = shape_to_aabb(*pos, shape);
+        let mut events = Vec::new();
+        for trigger in &mut self.triggers {
+            if let Some(event) = trigger.check(entity, &entity_aabb) { events.push(event); }
+        }
+        events
+    }
+
+    pub fn clear(&mut self) {
+        self.spatial_hash.clear();
+        self.shapes.clear();
+        self.triggers.clear();
+    }
+}
+
+fn shape_to_aabb(pos: RenderVec2, shape: &CollisionShape) -> Rect {
+    match shape {
+        CollisionShape::Aabb(r) => Rect::new(pos.x + r.x, pos.y + r.y, r.w, r.h),
+        CollisionShape::Circle { cx, cy, radius } => Rect::new(pos.x + cx - radius, pos.y + cy - radius, radius * 2.0, radius * 2.0),
+    }
+}
+
+fn check_shapes(pos_a: RenderVec2, shape_a: &CollisionShape, pos_b: RenderVec2, shape_b: &CollisionShape) -> Option<ContactInfo> {
+    match (shape_a, shape_b) {
+        (CollisionShape::Aabb(a), CollisionShape::Aabb(b)) => {
+            aabb_vs_aabb(&Rect::new(pos_a.x + a.x, pos_a.y + a.y, a.w, a.h), &Rect::new(pos_b.x + b.x, pos_b.y + b.y, b.w, b.h))
+        }
+        (CollisionShape::Circle { cx: ax, cy: ay, radius: ar }, CollisionShape::Circle { cx: bx, cy: by, radius: br }) => {
+            circle_vs_circle(pos_a.x + ax, pos_a.y + ay, *ar, pos_b.x + bx, pos_b.y + by, *br)
+        }
+        (CollisionShape::Circle { cx, cy, radius }, CollisionShape::Aabb(b)) => {
+            circle_vs_aabb(pos_a.x + cx, pos_a.y + cy, *radius, &Rect::new(pos_b.x + b.x, pos_b.y + b.y, b.w, b.h))
+        }
+        (CollisionShape::Aabb(a), CollisionShape::Circle { cx, cy, radius }) => {
+            let c = circle_vs_aabb(pos_b.x + cx, pos_b.y + cy, *radius, &Rect::new(pos_a.x + a.x, pos_a.y + a.y, a.w, a.h))?;
+            Some(ContactInfo { penetration: c.penetration, normal: RenderVec2::new(-c.normal.x, -c.normal.y) })
+        }
+    }
+}

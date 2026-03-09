@@ -1,7 +1,9 @@
 pub mod asset_manager;
+pub mod aseprite;
 pub mod hot_reload;
 
 pub use asset_manager::{AssetManager, SpriteData};
+pub use aseprite::{load_aseprite, AsepriteData};
 pub use hot_reload::HotReloader;
 
 use thiserror::Error;

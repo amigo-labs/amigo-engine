@@ -62,6 +62,7 @@ bitflags = "2"
 glam = "0.29"
 pollster = "0.4"
 fontdue = "0.9"
+asefile = "0.3"
 
 [profile.dev]
 opt-level = 1
