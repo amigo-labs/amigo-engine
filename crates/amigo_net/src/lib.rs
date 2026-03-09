@@ -1,3 +1,7 @@
+pub mod protocol;
+pub mod server;
+pub mod client;
+
 use serde::{Deserialize, Serialize};
 
 /// Player identifier for multiplayer.
