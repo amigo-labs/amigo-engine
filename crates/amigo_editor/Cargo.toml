@@ -10,3 +10,5 @@ amigo_ui = { workspace = true }
 amigo_input = { workspace = true }
 amigo_tilemap = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }

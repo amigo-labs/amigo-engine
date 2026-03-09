@@ -133,6 +133,7 @@ dependencies = [
  "glam",
  "rustc-hash 2.1.1",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
@@ -156,6 +157,8 @@ dependencies = [
  "amigo_render",
  "amigo_tilemap",
  "amigo_ui",
+ "ron",
+ "serde",
  "tracing",
 ]
 
@@ -215,6 +218,7 @@ dependencies = [
  "glam",
  "image 0.25.9",
  "rustc-hash 2.1.1",
+ "serde",
  "tracing",
  "wgpu",
  "winit",

@@ -39,8 +39,14 @@ pub mod prelude {
     pub use amigo_core::{Fix, SimVec2, RenderVec2, Color, Rect, EntityId, World, TimeInfo};
     pub use amigo_core::math::{vec2, IVec2};
     pub use amigo_core::ecs::{self, SparseSet};
+    pub use amigo_core::save::{SaveManager, SaveConfig, SlotInfo, SaveError};
+    pub use amigo_core::scheduler::{TickScheduler, CallbackId};
     pub use amigo_scene::SceneAction;
     pub use amigo_input::InputState;
+    pub use amigo_render::{Camera, CameraMode, Easing};
+    pub use amigo_render::particles::{ParticleSystem, EmitterConfig, EmitterShape};
+    pub use amigo_render::lighting::{LightingState, PointLight, AmbientLight};
+    pub use amigo_render::post_process::{PostProcessPipeline, PostEffect};
     pub use amigo_tilemap::*;
     pub use amigo_animation::*;
     pub use amigo_net::{PlayerId, Transport, LocalTransport};

@@ -12,3 +12,4 @@ glam = { workspace = true }
 tracing = { workspace = true }
 image = { workspace = true }
 rustc-hash = { workspace = true }
+serde = { workspace = true }

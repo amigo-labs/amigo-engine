@@ -10,3 +10,4 @@ rustc-hash = { workspace = true }
 bytemuck = { workspace = true }
 glam = { workspace = true }
 thiserror = { workspace = true }
+serde_json = { workspace = true }
