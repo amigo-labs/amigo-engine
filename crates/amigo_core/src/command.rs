@@ -1,81 +1,32 @@
 use serde::{Deserialize, Serialize};
-
-use crate::ecs::EntityId;
-
-/// Simple integer vector for tile positions on the game grid.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct IVec2 {
-    pub x: i32,
-    pub y: i32,
-}
-
-impl IVec2 {
-    pub const fn new(x: i32, y: i32) -> Self {
-        Self { x, y }
-    }
-
-    pub const ZERO: Self = Self { x: 0, y: 0 };
-}
-
-/// Identifier for a tower type in the game's tower registry.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TowerTypeId(pub u32);
-
-/// Which upgrade path to follow when upgrading a tower.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum UpgradePath {
-    PathA,
-    PathB,
-}
-
-/// A serializable command representing a player action.
-///
-/// Commands are the sole interface through which gameplay state is mutated,
-/// making the simulation deterministic and replay-friendly.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GameCommand {
-    PlaceTower {
-        pos: IVec2,
-        tower_type: TowerTypeId,
-    },
-    SellTower {
-        tower_id: EntityId,
-    },
-    UpgradeTower {
-        tower_id: EntityId,
-        path: UpgradePath,
-    },
-    StartWave,
-    Pause,
-    Unpause,
-    SetSpeed {
-        multiplier: u32,
-    },
-    SelectTower {
-        tower_id: Option<EntityId>,
-    },
-}
+use std::fmt::Debug;
 
 /// A per-tick queue that collects commands and drains them for processing.
-#[derive(Debug, Default)]
-pub struct CommandQueue {
-    commands: Vec<GameCommand>,
+#[derive(Debug)]
+pub struct CommandQueue<T> {
+    commands: Vec<T>,
 }
 
-impl CommandQueue {
-    pub fn new() -> Self {
+impl<T> Default for CommandQueue<T> {
+    fn default() -> Self {
         Self {
             commands: Vec::new(),
         }
     }
+}
+
+impl<T> CommandQueue<T> {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Enqueue a command to be processed on the next drain.
-    pub fn push(&mut self, cmd: GameCommand) {
+    pub fn push(&mut self, cmd: T) {
         self.commands.push(cmd);
     }
 
     /// Drain all queued commands, returning them in insertion order.
-    pub fn drain(&mut self) -> Vec<GameCommand> {
+    pub fn drain(&mut self) -> Vec<T> {
         std::mem::take(&mut self.commands)
     }
 
@@ -92,25 +43,31 @@ impl CommandQueue {
 
 /// A log of all commands paired with the tick they were issued on,
 /// enabling deterministic replay of a game session.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CommandLog {
-    entries: Vec<(u64, GameCommand)>,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CommandLog<T> {
+    entries: Vec<(u64, T)>,
 }
 
-impl CommandLog {
-    pub fn new() -> Self {
+impl<T> Default for CommandLog<T> {
+    fn default() -> Self {
         Self {
             entries: Vec::new(),
         }
     }
+}
+
+impl<T> CommandLog<T> {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Record a command that was executed at the given tick.
-    pub fn record(&mut self, tick: u64, cmd: GameCommand) {
+    pub fn record(&mut self, tick: u64, cmd: T) {
         self.entries.push((tick, cmd));
     }
 
     /// Iterate over all recorded (tick, command) pairs in order.
-    pub fn iter(&self) -> impl Iterator<Item = &(u64, GameCommand)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(u64, T)> {
         self.entries.iter()
     }
 
@@ -129,13 +86,19 @@ impl CommandLog {
 mod tests {
     use super::*;
 
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    enum TestCommand {
+        DoSomething,
+        SetValue { value: u32 },
+    }
+
     #[test]
     fn command_queue_push_and_drain() {
         let mut queue = CommandQueue::new();
         assert!(queue.is_empty());
 
-        queue.push(GameCommand::StartWave);
-        queue.push(GameCommand::Pause);
+        queue.push(TestCommand::DoSomething);
+        queue.push(TestCommand::SetValue { value: 42 });
         assert_eq!(queue.len(), 2);
 
         let drained = queue.drain();
@@ -146,23 +109,12 @@ mod tests {
     #[test]
     fn command_log_record_and_iter() {
         let mut log = CommandLog::new();
-        log.record(0, GameCommand::StartWave);
-        log.record(5, GameCommand::SetSpeed { multiplier: 2 });
+        log.record(0, TestCommand::DoSomething);
+        log.record(5, TestCommand::SetValue { value: 2 });
 
         let entries: Vec<_> = log.iter().collect();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].0, 0);
         assert_eq!(entries[1].0, 5);
-    }
-
-    #[test]
-    fn game_command_serde_roundtrip() {
-        let cmd = GameCommand::PlaceTower {
-            pos: IVec2::new(3, 7),
-            tower_type: TowerTypeId(1),
-        };
-        let json = serde_json::to_string(&cmd).unwrap();
-        let deserialized: GameCommand = serde_json::from_str(&json).unwrap();
-        assert_eq!(cmd, deserialized);
     }
 }
