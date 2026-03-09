@@ -8,6 +8,7 @@ pub mod pathfinding;
 pub mod collision;
 pub mod save;
 pub mod command;
+pub mod physics;
 
 pub use math::{Fix, SimVec2, RenderVec2};
 pub use color::Color;
@@ -17,3 +18,4 @@ pub use time::TimeInfo;
 pub use scheduler::{TickScheduler, CallbackId};
 pub use save::{SaveManager, SaveConfig, SlotInfo, SaveError};
 pub use command::{CommandQueue, CommandLog};
+pub use physics::{PhysicsWorld, RigidBody, BodyType, PhysicsContact};

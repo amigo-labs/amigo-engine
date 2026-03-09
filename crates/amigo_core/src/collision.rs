@@ -227,14 +227,14 @@ impl CollisionWorld {
     }
 }
 
-fn shape_to_aabb(pos: RenderVec2, shape: &CollisionShape) -> Rect {
+pub fn shape_to_aabb(pos: RenderVec2, shape: &CollisionShape) -> Rect {
     match shape {
         CollisionShape::Aabb(r) => Rect::new(pos.x + r.x, pos.y + r.y, r.w, r.h),
         CollisionShape::Circle { cx, cy, radius } => Rect::new(pos.x + cx - radius, pos.y + cy - radius, radius * 2.0, radius * 2.0),
     }
 }
 
-fn check_shapes(pos_a: RenderVec2, shape_a: &CollisionShape, pos_b: RenderVec2, shape_b: &CollisionShape) -> Option<ContactInfo> {
+pub fn check_shapes(pos_a: RenderVec2, shape_a: &CollisionShape, pos_b: RenderVec2, shape_b: &CollisionShape) -> Option<ContactInfo> {
     match (shape_a, shape_b) {
         (CollisionShape::Aabb(a), CollisionShape::Aabb(b)) => {
             aabb_vs_aabb(&Rect::new(pos_a.x + a.x, pos_a.y + a.y, a.w, a.h), &Rect::new(pos_b.x + b.x, pos_b.y + b.y, b.w, b.h))

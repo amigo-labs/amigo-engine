@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Unique identifier for an entity, with generational index for safe reuse.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct EntityId {
     pub(crate) index: u32,
     pub(crate) generation: u32,
@@ -14,6 +14,10 @@ impl EntityId {
 
     pub fn generation(self) -> u32 {
         self.generation
+    }
+
+    pub fn from_raw(index: u32, generation: u32) -> Self {
+        Self { index, generation }
     }
 }
 
