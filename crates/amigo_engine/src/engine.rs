@@ -1,0 +1,334 @@
+use crate::config::EngineConfig;
+use crate::context::{DrawContext, GameContext};
+use crate::Game;
+use amigo_assets::{AssetManager, HotReloader};
+use amigo_debug::DebugOverlay;
+use amigo_render::renderer::Renderer;
+use amigo_render::sprite_batcher::SpriteInstance;
+use std::sync::Arc;
+use std::time::Instant;
+use tracing::{error, info};
+use winit::application::ApplicationHandler;
+use winit::event::{ElementState, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::KeyCode;
+use winit::window::{Window, WindowId};
+
+/// Builder for configuring and launching the engine.
+pub struct EngineBuilder {
+    config: EngineConfig,
+    assets_path: String,
+}
+
+impl EngineBuilder {
+    pub fn new() -> Self {
+        Self {
+            config: EngineConfig::load(),
+            assets_path: "assets".to_string(),
+        }
+    }
+
+    pub fn title(mut self, title: &str) -> Self {
+        self.config.window.title = title.to_string();
+        self
+    }
+
+    pub fn virtual_resolution(mut self, width: u32, height: u32) -> Self {
+        self.config.render.virtual_width = width;
+        self.config.render.virtual_height = height;
+        self
+    }
+
+    pub fn window_size(mut self, width: u32, height: u32) -> Self {
+        self.config.window.width = width;
+        self.config.window.height = height;
+        self
+    }
+
+    pub fn assets_path(mut self, path: &str) -> Self {
+        self.assets_path = path.to_string();
+        self
+    }
+
+    pub fn config(mut self, config: EngineConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn build(self) -> Engine {
+        Engine {
+            config: self.config,
+            assets_path: self.assets_path,
+        }
+    }
+}
+
+impl Default for EngineBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The main engine struct. Call `run()` with your Game implementation to start.
+pub struct Engine {
+    config: EngineConfig,
+    assets_path: String,
+}
+
+impl Engine {
+    pub fn build() -> EngineBuilder {
+        EngineBuilder::new()
+    }
+
+    pub fn run<G: Game>(self, game: G) {
+        amigo_debug::init_logging();
+        info!("Amigo Engine starting: {}", self.config.window.title);
+
+        let event_loop = EventLoop::new().expect("Failed to create event loop");
+        event_loop.set_control_flow(ControlFlow::Poll);
+
+        let mut app = EngineApp {
+            config: self.config,
+            assets_path: self.assets_path,
+            game,
+            state: None,
+        };
+
+        event_loop.run_app(&mut app).expect("Event loop failed");
+    }
+}
+
+struct EngineState {
+    window: Arc<Window>,
+    renderer: Renderer,
+    game_ctx: GameContext,
+    debug: DebugOverlay,
+    assets: AssetManager,
+    hot_reloader: Option<HotReloader>,
+    sprite_draw_list: Vec<SpriteInstance>,
+    last_frame: Instant,
+    accumulator: f64,
+}
+
+struct EngineApp<G: Game> {
+    config: EngineConfig,
+    assets_path: String,
+    game: G,
+    state: Option<EngineState>,
+}
+
+impl<G: Game> ApplicationHandler for EngineApp<G> {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.state.is_some() {
+            return;
+        }
+
+        let window_attrs = Window::default_attributes()
+            .with_title(&self.config.window.title)
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                self.config.window.width,
+                self.config.window.height,
+            ));
+
+        let window = Arc::new(event_loop.create_window(window_attrs).expect("Failed to create window"));
+
+        let renderer = pollster::block_on(Renderer::new(
+            window.clone(),
+            self.config.render.virtual_width,
+            self.config.render.virtual_height,
+        ));
+
+        let mut assets = AssetManager::new(&self.assets_path);
+        if let Err(e) = assets.load_sprites() {
+            error!("Failed to load sprites: {}", e);
+        }
+
+        let hot_reloader = if self.config.dev.hot_reload {
+            HotReloader::new(std::path::PathBuf::from(&self.assets_path))
+        } else {
+            None
+        };
+
+        let mut game_ctx = GameContext::new();
+
+        // Upload loaded sprites to GPU
+        // (In a real implementation this would happen via the asset manager)
+
+        self.game.init(&mut game_ctx);
+
+        info!("Engine initialized successfully");
+
+        self.state = Some(EngineState {
+            window,
+            renderer,
+            game_ctx,
+            debug: DebugOverlay::new(),
+            assets,
+            hot_reloader,
+            sprite_draw_list: Vec::new(),
+            last_frame: Instant::now(),
+            accumulator: 0.0,
+        });
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let Some(state) = &mut self.state else { return };
+
+        match event {
+            WindowEvent::CloseRequested => {
+                info!("Window close requested");
+                event_loop.exit();
+            }
+
+            WindowEvent::Resized(size) => {
+                state.renderer.resize(size.width, size.height);
+            }
+
+            WindowEvent::KeyboardInput { event, .. } => {
+                state.game_ctx.input.handle_key_event(event.physical_key, event.state);
+
+                // Debug overlay toggle
+                if event.state == ElementState::Pressed {
+                    if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
+                        match code {
+                            KeyCode::F1 => state.debug.toggle(),
+                            KeyCode::F2 => state.debug.show_grid = !state.debug.show_grid,
+                            KeyCode::F3 => state.debug.show_collision = !state.debug.show_collision,
+                            KeyCode::F4 => state.debug.show_paths = !state.debug.show_paths,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            WindowEvent::CursorMoved { position, .. } => {
+                state.game_ctx.input.handle_mouse_move(position.x as f32, position.y as f32);
+
+                // Update world-space mouse position
+                let (ww, wh) = state.renderer.window_size();
+                let world_pos = state.renderer.camera.screen_to_world(
+                    position.x as f32,
+                    position.y as f32,
+                    ww as f32,
+                    wh as f32,
+                );
+                state.game_ctx.input.set_mouse_world_pos(world_pos);
+            }
+
+            WindowEvent::MouseInput { state: btn_state, button, .. } => {
+                state.game_ctx.input.handle_mouse_button(button, btn_state);
+            }
+
+            WindowEvent::MouseWheel { delta, .. } => {
+                let scroll = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                    winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
+                };
+                state.game_ctx.input.handle_scroll(scroll);
+            }
+
+            WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let dt = now.duration_since(state.last_frame).as_secs_f64();
+                state.last_frame = now;
+
+                // Cap dt to prevent spiral of death
+                let dt = dt.min(0.25);
+                state.accumulator += dt;
+
+                state.game_ctx.time.dt = dt as f32;
+                state.game_ctx.time.elapsed += dt;
+
+                // Check hot reload
+                if let Some(reloader) = &state.hot_reloader {
+                    let changes = reloader.poll_changes();
+                    if !changes.is_empty() {
+                        info!("Hot reload: {} files changed", changes.len());
+                    }
+                }
+
+                // Fixed timestep simulation
+                let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
+                while state.accumulator >= tick_duration {
+                    state.game_ctx.input.begin_frame();
+
+                    let action = self.game.update(&mut state.game_ctx);
+                    state.game_ctx.time.tick += 1;
+
+                    match action {
+                        amigo_scene::SceneAction::Quit => {
+                            event_loop.exit();
+                            return;
+                        }
+                        _ => {}
+                    }
+
+                    state.game_ctx.world.flush();
+                    state.accumulator -= tick_duration;
+                }
+
+                state.game_ctx.time.alpha = (state.accumulator / tick_duration) as f32;
+
+                // Update camera
+                state.renderer.camera.update(dt as f32);
+
+                // Render
+                state.sprite_draw_list.clear();
+                {
+                    let camera_pos = state.renderer.camera.effective_position();
+                    let vw = state.renderer.camera.virtual_width;
+                    let vh = state.renderer.camera.virtual_height;
+                    let alpha = state.game_ctx.time.alpha;
+                    let white_tex = state.renderer.white_texture_id;
+
+                    let mut draw_ctx = DrawContext::new(
+                        &mut state.sprite_draw_list,
+                        &state.game_ctx,
+                        camera_pos,
+                        vw,
+                        vh,
+                        alpha,
+                        white_tex,
+                    );
+                    self.game.draw(&mut draw_ctx);
+                }
+
+                // Push sprites to batcher
+                for sprite in &state.sprite_draw_list {
+                    state.renderer.batcher.push(sprite.clone());
+                }
+
+                // Update debug overlay
+                state.debug.update(
+                    dt,
+                    state.game_ctx.world.entity_count(),
+                    state.renderer.draw_call_count(),
+                );
+
+                // Render frame
+                match state.renderer.render() {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost) => {
+                        let (w, h) = state.renderer.window_size();
+                        state.renderer.resize(w, h);
+                    }
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        error!("GPU out of memory");
+                        event_loop.exit();
+                    }
+                    Err(e) => {
+                        error!("Render error: {:?}", e);
+                    }
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(state) = &self.state {
+            state.window.request_redraw();
+        }
+    }
+}

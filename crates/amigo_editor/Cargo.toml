@@ -1,0 +1,12 @@
+[package]
+name = "amigo_editor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+amigo_core = { workspace = true }
+amigo_render = { workspace = true }
+amigo_ui = { workspace = true }
+amigo_input = { workspace = true }
+amigo_tilemap = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,9 @@
+[package]
+name = "amigo_net"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+amigo_core = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }

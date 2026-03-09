@@ -1,0 +1,14 @@
+[package]
+name = "amigo_assets"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+amigo_core = { workspace = true }
+image = { workspace = true }
+notify = { workspace = true }
+tracing = { workspace = true }
+rustc-hash = { workspace = true }
+thiserror = { workspace = true }
+ron = { workspace = true }
+serde = { workspace = true }

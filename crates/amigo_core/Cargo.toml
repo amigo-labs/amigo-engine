@@ -1,0 +1,12 @@
+[package]
+name = "amigo_core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fixed = { workspace = true }
+serde = { workspace = true }
+rustc-hash = { workspace = true }
+bytemuck = { workspace = true }
+glam = { workspace = true }
+thiserror = { workspace = true }
