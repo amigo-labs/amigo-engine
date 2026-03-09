@@ -6,6 +6,7 @@ pub mod vertex;
 pub mod particles;
 pub mod lighting;
 pub mod post_process;
+pub mod atmosphere;
 
 pub use renderer::Renderer;
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance};
@@ -15,3 +16,4 @@ pub use vertex::Vertex;
 pub use particles::{ParticleSystem, ParticleEmitter, EmitterConfig, EmitterShape, BlendMode};
 pub use lighting::{LightingState, PointLight, AmbientLight};
 pub use post_process::{PostProcessPipeline, PostEffect, PostProcessUniforms};
+pub use atmosphere::{AtmosphereManager, AtmospherePreset};

@@ -1,3 +1,7 @@
+pub mod auto_tile;
+
+pub use auto_tile::{AutoTileResolver, AutoTileRule, AutoTileSet};
+
 use amigo_core::math::IVec2;
 use serde::{Deserialize, Serialize};
 
