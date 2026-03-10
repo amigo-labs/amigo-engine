@@ -4,6 +4,7 @@
 //! anti-aliasing, clamping palettes, adding outlines, and downscaling.
 
 use crate::PostProcessStep;
+use crate::style::{OutlineMode, StyleDef};
 
 /// RGBA pixel buffer for processing.
 #[derive(Clone, Debug)]
@@ -197,6 +198,144 @@ fn force_dimensions(buf: &mut PixelBuffer, target_w: u32, target_h: u32) {
     buf.width = target_w;
     buf.height = target_h;
     buf.data = new_data;
+}
+
+/// Clamp each opaque pixel to the nearest color in the given palette
+/// using Euclidean distance in RGB space.
+pub fn palette_clamp_to_colors(buf: &mut PixelBuffer, palette: &[[u8; 3]]) {
+    if palette.is_empty() {
+        return;
+    }
+    for pixel in &mut buf.data {
+        if pixel[3] == 0 {
+            continue;
+        }
+        let mut best = palette[0];
+        let mut best_dist = u32::MAX;
+        for &color in palette {
+            let dr = pixel[0] as i32 - color[0] as i32;
+            let dg = pixel[1] as i32 - color[1] as i32;
+            let db = pixel[2] as i32 - color[2] as i32;
+            let dist = (dr * dr + dg * dg + db * db) as u32;
+            if dist < best_dist {
+                best_dist = dist;
+                best = color;
+            }
+        }
+        pixel[0] = best[0];
+        pixel[1] = best[1];
+        pixel[2] = best[2];
+    }
+}
+
+/// Clean up transparency: alpha < 128 becomes fully transparent,
+/// alpha >= 128 becomes fully opaque.
+pub fn cleanup_transparency(buf: &mut PixelBuffer) {
+    for pixel in &mut buf.data {
+        if pixel[3] < 128 {
+            *pixel = [0, 0, 0, 0];
+        } else {
+            pixel[3] = 255;
+        }
+    }
+}
+
+/// Add a 1px inner outline: opaque pixels adjacent to a transparent pixel
+/// are replaced with the outline color.
+pub fn add_outline_inner(buf: &mut PixelBuffer, color: [u8; 4]) {
+    let w = buf.width;
+    let h = buf.height;
+    let original = buf.data.clone();
+
+    let offsets: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+    for y in 0..h {
+        for x in 0..w {
+            let idx = (y * w + x) as usize;
+            // Only consider opaque pixels
+            if original[idx][3] == 0 {
+                continue;
+            }
+            // Check if any neighbor is transparent (or out of bounds)
+            let has_transparent_neighbor = offsets.iter().any(|(dx, dy)| {
+                let nx = x as i32 + dx;
+                let ny = y as i32 + dy;
+                if nx < 0 || nx >= w as i32 || ny < 0 || ny >= h as i32 {
+                    return true; // edges count as transparent
+                }
+                let ni = (ny as u32 * w + nx as u32) as usize;
+                original[ni][3] == 0
+            });
+            if has_transparent_neighbor {
+                buf.data[idx] = color;
+            }
+        }
+    }
+}
+
+/// Check if left/right and top/bottom edges are compatible for tiling.
+/// Returns (horizontal_mismatches, vertical_mismatches) — the number of
+/// pixels that differ between opposing edges.
+pub fn tile_edge_check(buf: &PixelBuffer) -> (u32, u32) {
+    let w = buf.width;
+    let h = buf.height;
+
+    let mut h_mismatches = 0u32;
+    for y in 0..h {
+        let left = buf.get(0, y);
+        let right = buf.get(w - 1, y);
+        if left != right {
+            h_mismatches += 1;
+        }
+    }
+
+    let mut v_mismatches = 0u32;
+    for x in 0..w {
+        let top = buf.get(x, 0);
+        let bottom = buf.get(x, h - 1);
+        if top != bottom {
+            v_mismatches += 1;
+        }
+    }
+
+    (h_mismatches, v_mismatches)
+}
+
+impl PixelBuffer {
+    /// Apply post-processing based on a StyleDef's configuration.
+    pub fn apply_style_pipeline(&mut self, style: &StyleDef) {
+        let config = &style.post_processing;
+
+        if config.cleanup_transparency {
+            cleanup_transparency(self);
+        }
+
+        if config.remove_anti_aliasing {
+            remove_aa(self);
+        }
+
+        if config.palette_clamp {
+            let palette = style.palette_rgb();
+            if !palette.is_empty() {
+                palette_clamp_to_colors(self, &palette);
+            }
+        }
+
+        if config.add_outline {
+            let color = style.outline_rgba();
+            match config.outline_mode {
+                OutlineMode::Outer => add_outline(self, color),
+                OutlineMode::Inner => add_outline_inner(self, color),
+                OutlineMode::Both => {
+                    add_outline_inner(self, color);
+                    add_outline(self, color);
+                }
+            }
+        }
+
+        // tile_edge_check is informational only — we don't mutate,
+        // but callers can invoke tile_edge_check() separately.
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,11 @@
 
 pub mod comfyui;
 pub mod postprocess;
+pub mod style;
+pub mod tools;
 pub mod workflows;
+
+pub use style::{OutlineMode, PostProcessConfig, StyleDef, StyleError};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

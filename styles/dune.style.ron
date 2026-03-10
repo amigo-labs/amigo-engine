@@ -1,0 +1,24 @@
+(
+    name: "dune",
+    checkpoint: "pixel_art_xl_v1.safetensors",
+    lora: Some(("pixel_art_16bit.safetensors", 0.6)),
+    palette: [
+        "#2a1a0a", "#c2956a", "#e8c170", "#f0d890", "#4a3520",
+        "#6b4226", "#d4a06a", "#1a1a2e", "#8b7355", "#f5deb3",
+    ],
+    prompt_prefix: "pixel art, 16-bit style, desert sci-fi, sandworm, spice,",
+    negative_prompt: "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo",
+    default_size: (32, 32),
+    steps: 20,
+    cfg_scale: 7.0,
+    post_processing: (
+        palette_clamp: true,
+        remove_anti_aliasing: true,
+        add_outline: true,
+        outline_color: "#2a1a0a",
+        outline_mode: Outer,
+        cleanup_transparency: true,
+        tile_edge_check: false,
+    ),
+    reference_images: [],
+)

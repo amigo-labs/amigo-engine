@@ -1,0 +1,39 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "{{checkpoint}}" }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "{{positive_prompt}}", "clip": ["1", 1] }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "{{negative_prompt}}", "clip": ["1", 1] }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "{{input_image}}" }
+  },
+  "5": {
+    "class_type": "VAEEncode",
+    "inputs": { "pixels": ["4", 0], "vae": ["1", 2] }
+  },
+  "6": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0],
+      "latent_image": ["5", 0], "seed": "{{seed}}", "steps": "{{steps}}",
+      "cfg": "{{cfg}}", "sampler_name": "euler_ancestral", "scheduler": "normal",
+      "denoise": "{{denoise}}"
+    }
+  },
+  "7": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["6", 0], "vae": ["1", 2] }
+  },
+  "8": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["7", 0], "filename_prefix": "{{filename_prefix}}" }
+  }
+}

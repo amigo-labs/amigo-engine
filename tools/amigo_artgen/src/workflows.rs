@@ -216,6 +216,205 @@ impl ArtRequest {
     }
 }
 
+/// Build an img2img variation workflow
+pub fn build_img2img_workflow(
+    input_path: &str,
+    prompt: &str,
+    negative_prompt: &str,
+    strength: f32,
+    style: &WorldStyle,
+) -> ComfyPrompt {
+    // Similar to sprite but with LoadImage + denoise < 1.0
+    let mut nodes = HashMap::new();
+
+    let model = "pixel_art_v1.safetensors";
+
+    nodes.insert("1".into(), json!({
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": { "ckpt_name": model }
+    }));
+
+    nodes.insert("2".into(), json!({
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": format!("{}{}", style.style_prompt_prefix, prompt),
+            "clip": ["1", 1]
+        }
+    }));
+
+    nodes.insert("3".into(), json!({
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": format!("{}, smooth, gradient, photorealistic", negative_prompt),
+            "clip": ["1", 1]
+        }
+    }));
+
+    // Load input image
+    nodes.insert("4".into(), json!({
+        "class_type": "LoadImage",
+        "inputs": { "image": input_path }
+    }));
+
+    // VAE Encode the input
+    nodes.insert("5".into(), json!({
+        "class_type": "VAEEncode",
+        "inputs": {
+            "pixels": ["4", 0],
+            "vae": ["1", 2]
+        }
+    }));
+
+    // KSampler with denoise < 1.0
+    nodes.insert("6".into(), json!({
+        "class_type": "KSampler",
+        "inputs": {
+            "model": ["1", 0],
+            "positive": ["2", 0],
+            "negative": ["3", 0],
+            "latent_image": ["5", 0],
+            "seed": rand_seed(),
+            "steps": 20,
+            "cfg": 7.0,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": strength.clamp(0.0, 1.0),
+        }
+    }));
+
+    nodes.insert("7".into(), json!({
+        "class_type": "VAEDecode",
+        "inputs": { "samples": ["6", 0], "vae": ["1", 2] }
+    }));
+
+    nodes.insert("8".into(), json!({
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": ["7", 0],
+            "filename_prefix": format!("amigo_{}_variation", style.name),
+        }
+    }));
+
+    ComfyPrompt { prompt: nodes, client_id: Some("amigo_artgen".into()) }
+}
+
+/// Build an inpainting workflow
+pub fn build_inpaint_workflow(
+    input_path: &str,
+    mask_path: &str,
+    prompt: &str,
+    negative_prompt: &str,
+    style: &WorldStyle,
+) -> ComfyPrompt {
+    let mut nodes = HashMap::new();
+    let model = "pixel_art_v1.safetensors";
+
+    nodes.insert("1".into(), json!({
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": { "ckpt_name": model }
+    }));
+
+    nodes.insert("2".into(), json!({
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": format!("{}{}", style.style_prompt_prefix, prompt),
+            "clip": ["1", 1]
+        }
+    }));
+
+    nodes.insert("3".into(), json!({
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": format!("{}, smooth, gradient, photorealistic", negative_prompt),
+            "clip": ["1", 1]
+        }
+    }));
+
+    nodes.insert("4".into(), json!({
+        "class_type": "LoadImage",
+        "inputs": { "image": input_path }
+    }));
+
+    nodes.insert("5".into(), json!({
+        "class_type": "LoadImage",
+        "inputs": { "image": mask_path }
+    }));
+
+    // Set latent noise mask
+    nodes.insert("6".into(), json!({
+        "class_type": "VAEEncode",
+        "inputs": { "pixels": ["4", 0], "vae": ["1", 2] }
+    }));
+
+    nodes.insert("7".into(), json!({
+        "class_type": "SetLatentNoiseMask",
+        "inputs": {
+            "samples": ["6", 0],
+            "mask": ["5", 1]
+        }
+    }));
+
+    nodes.insert("8".into(), json!({
+        "class_type": "KSampler",
+        "inputs": {
+            "model": ["1", 0],
+            "positive": ["2", 0],
+            "negative": ["3", 0],
+            "latent_image": ["7", 0],
+            "seed": rand_seed(),
+            "steps": 25,
+            "cfg": 7.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 0.85,
+        }
+    }));
+
+    nodes.insert("9".into(), json!({
+        "class_type": "VAEDecode",
+        "inputs": { "samples": ["8", 0], "vae": ["1", 2] }
+    }));
+
+    nodes.insert("10".into(), json!({
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": ["9", 0],
+            "filename_prefix": format!("amigo_{}_inpaint", style.name),
+        }
+    }));
+
+    ComfyPrompt { prompt: nodes, client_id: Some("amigo_artgen".into()) }
+}
+
+/// Build an upscale workflow (uses nearest-neighbor for pixel art)
+pub fn build_upscale_workflow(input_path: &str, factor: u32) -> ComfyPrompt {
+    let mut nodes = HashMap::new();
+
+    nodes.insert("1".into(), json!({
+        "class_type": "LoadImage",
+        "inputs": { "image": input_path }
+    }));
+
+    nodes.insert("2".into(), json!({
+        "class_type": "ImageScaleBy",
+        "inputs": {
+            "image": ["1", 0],
+            "upscale_method": "nearest-exact",
+            "scale_by": factor,
+        }
+    }));
+
+    nodes.insert("3".into(), json!({
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": ["2", 0],
+            "filename_prefix": format!("amigo_upscale_{}x", factor),
+        }
+    }));
+
+    ComfyPrompt { prompt: nodes, client_id: Some("amigo_artgen".into()) }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

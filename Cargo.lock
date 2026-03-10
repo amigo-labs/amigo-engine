@@ -99,6 +99,7 @@ dependencies = [
 name = "amigo_artgen"
 version = "0.1.0"
 dependencies = [
+ "ron",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
