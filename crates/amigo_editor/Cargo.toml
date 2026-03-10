@@ -12,3 +12,4 @@ amigo_tilemap = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
+winit = { workspace = true }

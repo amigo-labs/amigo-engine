@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 // XorShift64 PRNG - simple, fast, no dependencies
 // ---------------------------------------------------------------------------
 
-struct Rng {
+pub(crate) struct Rng {
     state: u64,
 }
 
@@ -272,12 +272,12 @@ pub struct ParticleEmitter {
     pub shape: EmitterShape,
     pub x: f32,
     pub y: f32,
-    particles: Vec<Particle>,
+    pub(crate) particles: Vec<Particle>,
     /// Tracks fractional particle emission across frames.
     emit_accumulator: f32,
     /// Number of currently alive particles (cached for fast count).
     alive_count: usize,
-    rng: Rng,
+    pub(crate) rng: Rng,
     /// For burst emitters: whether the burst has already fired.
     burst_done: bool,
 }
@@ -449,17 +449,95 @@ impl ParticleEmitter {
 }
 
 // ---------------------------------------------------------------------------
+// Force fields
+// ---------------------------------------------------------------------------
+
+/// A force field that affects particles within range.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ForceField {
+    /// Constant directional wind.
+    Wind { force_x: f32, force_y: f32 },
+    /// Attracts particles toward a point.
+    Attractor { x: f32, y: f32, strength: f32, radius: f32 },
+    /// Repels particles away from a point.
+    Repulsor { x: f32, y: f32, strength: f32, radius: f32 },
+    /// Swirling vortex.
+    Vortex { x: f32, y: f32, strength: f32, radius: f32 },
+    /// Drag / air resistance (slows particles over time).
+    Drag { coefficient: f32 },
+    /// Turbulence (random per-particle noise force).
+    Turbulence { strength: f32 },
+}
+
+impl ForceField {
+    /// Apply force to a particle, modifying its velocity.
+    pub fn apply(&self, px: f32, py: f32, vx: &mut f32, vy: &mut f32, dt: f32, rng: &mut impl FnMut() -> f32) {
+        match self {
+            ForceField::Wind { force_x, force_y } => {
+                *vx += force_x * dt;
+                *vy += force_y * dt;
+            }
+            ForceField::Attractor { x, y, strength, radius } => {
+                let dx = x - px;
+                let dy = y - py;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq < radius * radius && dist_sq > 0.01 {
+                    let dist = dist_sq.sqrt();
+                    let factor = strength * (1.0 - dist / radius) * dt;
+                    *vx += (dx / dist) * factor;
+                    *vy += (dy / dist) * factor;
+                }
+            }
+            ForceField::Repulsor { x, y, strength, radius } => {
+                let dx = px - x;
+                let dy = py - y;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq < radius * radius && dist_sq > 0.01 {
+                    let dist = dist_sq.sqrt();
+                    let factor = strength * (1.0 - dist / radius) * dt;
+                    *vx += (dx / dist) * factor;
+                    *vy += (dy / dist) * factor;
+                }
+            }
+            ForceField::Vortex { x, y, strength, radius } => {
+                let dx = px - x;
+                let dy = py - y;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq < radius * radius && dist_sq > 0.01 {
+                    let dist = dist_sq.sqrt();
+                    let factor = strength * (1.0 - dist / radius) * dt;
+                    // Perpendicular force for rotation
+                    *vx += (-dy / dist) * factor;
+                    *vy += (dx / dist) * factor;
+                }
+            }
+            ForceField::Drag { coefficient } => {
+                let factor = (1.0 - coefficient * dt).max(0.0);
+                *vx *= factor;
+                *vy *= factor;
+            }
+            ForceField::Turbulence { strength } => {
+                *vx += (rng() * 2.0 - 1.0) * strength * dt;
+                *vy += (rng() * 2.0 - 1.0) * strength * dt;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ParticleSystem
 // ---------------------------------------------------------------------------
 
 pub struct ParticleSystem {
     emitters: Vec<(String, ParticleEmitter)>,
+    force_fields: Vec<ForceField>,
 }
 
 impl ParticleSystem {
     pub fn new() -> Self {
         Self {
             emitters: Vec::new(),
+            force_fields: Vec::new(),
         }
     }
 
@@ -476,8 +554,36 @@ impl ParticleSystem {
             .push((name.to_owned(), ParticleEmitter::new(config, shape, x, y)));
     }
 
+    /// Add a force field that affects all particles.
+    pub fn add_force_field(&mut self, field: ForceField) {
+        self.force_fields.push(field);
+    }
+
+    /// Remove all force fields.
+    pub fn clear_force_fields(&mut self) {
+        self.force_fields.clear();
+    }
+
     /// Advance every emitter. Finished burst emitters are automatically removed.
     pub fn update(&mut self, dt: f32) {
+        // Apply force fields to all live particles in all emitters.
+        if !self.force_fields.is_empty() {
+            for (_, emitter) in self.emitters.iter_mut() {
+                for p in emitter.particles.iter_mut() {
+                    if !p.alive {
+                        continue;
+                    }
+                    for field in &self.force_fields {
+                        field.apply(
+                            p.position_x, p.position_y,
+                            &mut p.velocity_x, &mut p.velocity_y,
+                            dt,
+                            &mut || emitter.rng.next_f32(),
+                        );
+                    }
+                }
+            }
+        }
         for (_, emitter) in self.emitters.iter_mut() {
             emitter.update(dt);
         }

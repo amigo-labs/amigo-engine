@@ -1,3 +1,4 @@
+pub mod action_map;
 pub mod gamepad;
 
 use amigo_core::RenderVec2;

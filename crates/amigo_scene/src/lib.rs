@@ -1,3 +1,5 @@
+pub mod transition;
+
 /// Action returned by a scene's update method to control scene transitions.
 pub enum SceneAction {
     /// Continue running the current scene.
