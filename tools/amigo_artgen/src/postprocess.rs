@@ -424,4 +424,153 @@ mod tests {
 
         assert_eq!(buf.data, original); // Only 2 colors, budget is 32
     }
+
+    #[test]
+    fn palette_clamp_to_colors_nearest() {
+        let mut buf = PixelBuffer::new(2, 1);
+        buf.data[0] = [250, 10, 10, 255]; // close to red
+        buf.data[1] = [10, 10, 240, 255]; // close to blue
+
+        let palette = vec![[255, 0, 0], [0, 0, 255]];
+        palette_clamp_to_colors(&mut buf, &palette);
+
+        assert_eq!(buf.data[0], [255, 0, 0, 255]);
+        assert_eq!(buf.data[1], [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn palette_clamp_to_colors_skips_transparent() {
+        let mut buf = PixelBuffer::new(2, 1);
+        buf.data[0] = [250, 10, 10, 0]; // transparent — should be untouched
+        buf.data[1] = [10, 10, 240, 255];
+
+        let palette = vec![[255, 0, 0], [0, 0, 255]];
+        palette_clamp_to_colors(&mut buf, &palette);
+
+        assert_eq!(buf.data[0], [250, 10, 10, 0]); // unchanged
+        assert_eq!(buf.data[1], [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn palette_clamp_to_colors_empty_palette_noop() {
+        let mut buf = PixelBuffer::new(1, 1);
+        buf.data[0] = [128, 128, 128, 255];
+        let original = buf.data.clone();
+
+        palette_clamp_to_colors(&mut buf, &[]);
+
+        assert_eq!(buf.data, original);
+    }
+
+    #[test]
+    fn cleanup_transparency_snaps() {
+        let mut buf = PixelBuffer::new(3, 1);
+        buf.data[0] = [255, 0, 0, 50];  // below threshold → transparent
+        buf.data[1] = [0, 255, 0, 200]; // above threshold → opaque
+        buf.data[2] = [0, 0, 255, 128]; // exactly 128 → opaque
+
+        cleanup_transparency(&mut buf);
+
+        assert_eq!(buf.data[0], [0, 0, 0, 0]);
+        assert_eq!(buf.data[1][3], 255);
+        assert_eq!(buf.data[2][3], 255);
+    }
+
+    #[test]
+    fn add_outline_inner_marks_edge_pixels() {
+        let mut buf = PixelBuffer::new(3, 3);
+        // Fill entire 3x3 with opaque red
+        for y in 0..3 {
+            for x in 0..3 {
+                buf.set(x, y, [255, 0, 0, 255]);
+            }
+        }
+
+        let outline = [0, 0, 0, 255];
+        add_outline_inner(&mut buf, outline);
+
+        // Center pixel (1,1) has all opaque neighbors → should stay red
+        assert_eq!(buf.get(1, 1), [255, 0, 0, 255]);
+        // Edge pixels are adjacent to out-of-bounds (treated as transparent)
+        assert_eq!(buf.get(0, 0), outline); // corner
+        assert_eq!(buf.get(1, 0), outline); // top edge
+        assert_eq!(buf.get(0, 1), outline); // left edge
+    }
+
+    #[test]
+    fn add_outline_inner_transparent_center() {
+        let mut buf = PixelBuffer::new(3, 3);
+        // Ring of opaque around a transparent center
+        for y in 0..3 {
+            for x in 0..3 {
+                buf.set(x, y, [255, 0, 0, 255]);
+            }
+        }
+        buf.set(1, 1, [0, 0, 0, 0]); // center transparent
+
+        let outline = [0, 255, 0, 255];
+        add_outline_inner(&mut buf, outline);
+
+        // Pixels adjacent to the transparent center should become outline
+        assert_eq!(buf.get(1, 0), outline); // above center
+        assert_eq!(buf.get(0, 1), outline); // left of center
+        assert_eq!(buf.get(2, 1), outline); // right of center
+        assert_eq!(buf.get(1, 2), outline); // below center
+    }
+
+    #[test]
+    fn tile_edge_check_uniform() {
+        // All same color → 0 mismatches
+        let mut buf = PixelBuffer::new(4, 4);
+        for pixel in &mut buf.data {
+            *pixel = [128, 128, 128, 255];
+        }
+
+        let (h, v) = tile_edge_check(&buf);
+        assert_eq!(h, 0);
+        assert_eq!(v, 0);
+    }
+
+    #[test]
+    fn tile_edge_check_different_edges() {
+        let mut buf = PixelBuffer::new(4, 4);
+        // Left column = red, right column = blue
+        for y in 0..4 {
+            buf.set(0, y, [255, 0, 0, 255]);
+            buf.set(3, y, [0, 0, 255, 255]);
+        }
+        // Top row = green, bottom row = yellow
+        for x in 0..4 {
+            buf.set(x, 0, [0, 255, 0, 255]);
+            buf.set(x, 3, [255, 255, 0, 255]);
+        }
+
+        let (h, v) = tile_edge_check(&buf);
+        assert!(h > 0, "expected horizontal mismatches");
+        assert!(v > 0, "expected vertical mismatches");
+    }
+
+    #[test]
+    fn apply_style_pipeline_runs() {
+        use crate::style::StyleDef;
+
+        let style = StyleDef::find("caribbean").unwrap();
+        let mut buf = PixelBuffer::new(4, 4);
+        // Fill with semi-transparent pixels of varied colors
+        for (i, pixel) in buf.data.iter_mut().enumerate() {
+            let v = (i * 17) as u8;
+            *pixel = [v, 255 - v, v / 2, 200];
+        }
+
+        buf.apply_style_pipeline(&style);
+
+        // After pipeline: all alpha should be 255 (cleanup + remove_aa)
+        for pixel in &buf.data {
+            assert!(
+                pixel[3] == 0 || pixel[3] == 255,
+                "expected fully transparent or opaque, got alpha={}",
+                pixel[3]
+            );
+        }
+    }
 }

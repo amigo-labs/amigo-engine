@@ -480,4 +480,96 @@ mod tests {
         assert_eq!(latent["inputs"]["width"], 480);
         assert_eq!(latent["inputs"]["height"], 270);
     }
+
+    #[test]
+    fn img2img_workflow_has_load_image_and_denoise() {
+        let style = WorldStyle::find("caribbean").unwrap();
+        let prompt = build_img2img_workflow(
+            "input.png",
+            "a pirate ship",
+            "blurry",
+            0.6,
+            &style,
+        );
+
+        // Should have LoadImage node
+        assert!(prompt.prompt.contains_key("4"));
+        assert_eq!(prompt.prompt["4"]["class_type"], "LoadImage");
+
+        // Should have VAEEncode for input
+        assert!(prompt.prompt.contains_key("5"));
+        assert_eq!(prompt.prompt["5"]["class_type"], "VAEEncode");
+
+        // KSampler denoise should be clamped strength
+        let sampler = &prompt.prompt["6"];
+        assert_eq!(sampler["class_type"], "KSampler");
+        let denoise = sampler["inputs"]["denoise"].as_f64().unwrap();
+        assert!((denoise - 0.6).abs() < 0.001);
+
+        // Should have SaveImage
+        assert!(prompt.prompt.contains_key("8"));
+        assert_eq!(prompt.prompt["8"]["class_type"], "SaveImage");
+    }
+
+    #[test]
+    fn img2img_clamps_strength() {
+        let style = WorldStyle::find("dune").unwrap();
+        let prompt = build_img2img_workflow("input.png", "test", "", 1.5, &style);
+        let denoise = prompt.prompt["6"]["inputs"]["denoise"].as_f64().unwrap();
+        assert!((denoise - 1.0).abs() < 0.001);
+
+        let prompt = build_img2img_workflow("input.png", "test", "", -0.5, &style);
+        let denoise = prompt.prompt["6"]["inputs"]["denoise"].as_f64().unwrap();
+        assert!((denoise - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn inpaint_workflow_has_mask_and_noise_mask() {
+        let style = WorldStyle::find("lotr").unwrap();
+        let prompt = build_inpaint_workflow(
+            "input.png",
+            "mask.png",
+            "a stone wall",
+            "blurry",
+            &style,
+        );
+
+        // Should load both input and mask images
+        assert_eq!(prompt.prompt["4"]["class_type"], "LoadImage");
+        assert_eq!(prompt.prompt["4"]["inputs"]["image"], "input.png");
+        assert_eq!(prompt.prompt["5"]["class_type"], "LoadImage");
+        assert_eq!(prompt.prompt["5"]["inputs"]["image"], "mask.png");
+
+        // Should have SetLatentNoiseMask
+        assert!(prompt.prompt.contains_key("7"));
+        assert_eq!(prompt.prompt["7"]["class_type"], "SetLatentNoiseMask");
+
+        // KSampler should use the noise-masked latent
+        let sampler = &prompt.prompt["8"];
+        assert_eq!(sampler["class_type"], "KSampler");
+        assert_eq!(sampler["inputs"]["latent_image"], json!(["7", 0]));
+
+        // Should have SaveImage
+        assert!(prompt.prompt.contains_key("10"));
+        assert_eq!(prompt.prompt["10"]["class_type"], "SaveImage");
+    }
+
+    #[test]
+    fn upscale_workflow_uses_nearest_neighbor() {
+        let prompt = build_upscale_workflow("sprite.png", 4);
+
+        // Should load image
+        assert_eq!(prompt.prompt["1"]["class_type"], "LoadImage");
+        assert_eq!(prompt.prompt["1"]["inputs"]["image"], "sprite.png");
+
+        // Should scale with nearest-exact
+        assert_eq!(prompt.prompt["2"]["class_type"], "ImageScaleBy");
+        assert_eq!(prompt.prompt["2"]["inputs"]["upscale_method"], "nearest-exact");
+        assert_eq!(prompt.prompt["2"]["inputs"]["scale_by"], 4);
+
+        // Should save
+        assert_eq!(prompt.prompt["3"]["class_type"], "SaveImage");
+        let prefix = prompt.prompt["3"]["inputs"]["filename_prefix"].as_str().unwrap();
+        assert!(prefix.contains("4x"));
+    }
 }
