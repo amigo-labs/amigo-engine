@@ -1,0 +1,284 @@
+//! ComfyUI workflow templates for pixel art generation.
+//!
+//! Each workflow is a factory that builds a ComfyUI prompt graph
+//! from an ArtRequest + WorldStyle configuration.
+
+use crate::comfyui::ComfyPrompt;
+use crate::{ArtRequest, AssetType, WorldStyle};
+use serde_json::{json, Value};
+use std::collections::HashMap;
+
+/// Build a ComfyUI workflow prompt from an art request.
+pub fn build_workflow(request: &ArtRequest, style: &WorldStyle) -> ComfyPrompt {
+    match request.asset_type {
+        AssetType::Sprite => build_sprite_workflow(request, style),
+        AssetType::Tileset => build_tileset_workflow(request, style),
+        AssetType::Portrait => build_portrait_workflow(request, style),
+        AssetType::Background => build_background_workflow(request, style),
+        AssetType::UiElement => build_sprite_workflow(request, style),
+        AssetType::Particle => build_particle_workflow(request, style),
+    }
+}
+
+fn build_sprite_workflow(req: &ArtRequest, style: &WorldStyle) -> ComfyPrompt {
+    let full_prompt = format!(
+        "{}{}",
+        style.style_prompt_prefix, req.prompt
+    );
+    let full_negative = format!(
+        "{}, smooth, gradient, photorealistic",
+        req.negative_prompt
+    );
+
+    let model = req
+        .extra
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("pixel_art_v1.safetensors");
+
+    let steps = req
+        .extra
+        .get("steps")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(25);
+
+    let cfg = req
+        .extra
+        .get("cfg")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(7.0);
+
+    let mut nodes = HashMap::new();
+
+    // Checkpoint loader
+    nodes.insert("1".into(), json!({
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+            "ckpt_name": model,
+        }
+    }));
+
+    // CLIP text encode (positive)
+    nodes.insert("2".into(), json!({
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": full_prompt,
+            "clip": ["1", 1],
+        }
+    }));
+
+    // CLIP text encode (negative)
+    nodes.insert("3".into(), json!({
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "text": full_negative,
+            "clip": ["1", 1],
+        }
+    }));
+
+    // Empty latent image
+    nodes.insert("4".into(), json!({
+        "class_type": "EmptyLatentImage",
+        "inputs": {
+            "width": req.width,
+            "height": req.height,
+            "batch_size": req.variants,
+        }
+    }));
+
+    // KSampler
+    nodes.insert("5".into(), json!({
+        "class_type": "KSampler",
+        "inputs": {
+            "model": ["1", 0],
+            "positive": ["2", 0],
+            "negative": ["3", 0],
+            "latent_image": ["4", 0],
+            "seed": rand_seed(),
+            "steps": steps,
+            "cfg": cfg,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0,
+        }
+    }));
+
+    // VAE Decode
+    nodes.insert("6".into(), json!({
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": ["5", 0],
+            "vae": ["1", 2],
+        }
+    }));
+
+    // Save Image
+    nodes.insert("7".into(), json!({
+        "class_type": "SaveImage",
+        "inputs": {
+            "images": ["6", 0],
+            "filename_prefix": format!("amigo_{}_{}", style.name, req.asset_type_str()),
+        }
+    }));
+
+    // LoRA if configured
+    if let Some(lora) = &style.lora {
+        nodes.insert("8".into(), json!({
+            "class_type": "LoraLoader",
+            "inputs": {
+                "model": ["1", 0],
+                "clip": ["1", 1],
+                "lora_name": lora,
+                "strength_model": 0.8,
+                "strength_clip": 0.8,
+            }
+        }));
+        // Rewire sampler to use LoRA model
+        if let Some(sampler) = nodes.get_mut("5") {
+            sampler["inputs"]["model"] = json!(["8", 0]);
+        }
+        // Rewire CLIP encoders to use LoRA CLIP
+        if let Some(pos) = nodes.get_mut("2") {
+            pos["inputs"]["clip"] = json!(["8", 1]);
+        }
+        if let Some(neg) = nodes.get_mut("3") {
+            neg["inputs"]["clip"] = json!(["8", 1]);
+        }
+    }
+
+    ComfyPrompt {
+        prompt: nodes,
+        client_id: Some("amigo_artgen".into()),
+    }
+}
+
+fn build_tileset_workflow(req: &ArtRequest, style: &WorldStyle) -> ComfyPrompt {
+    // Tilesets use larger resolution and a grid-specific prompt suffix
+    let mut modified = req.clone();
+    modified.prompt = format!("{}, seamless tile grid, top-down view, consistent spacing", req.prompt);
+    if modified.width < 128 {
+        modified.width = 256;
+        modified.height = 256;
+    }
+    build_sprite_workflow(&modified, style)
+}
+
+fn build_portrait_workflow(req: &ArtRequest, style: &WorldStyle) -> ComfyPrompt {
+    let mut modified = req.clone();
+    modified.prompt = format!("{}, character portrait, face closeup, expressive", req.prompt);
+    if modified.width < 64 {
+        modified.width = 96;
+        modified.height = 96;
+    }
+    build_sprite_workflow(&modified, style)
+}
+
+fn build_background_workflow(req: &ArtRequest, style: &WorldStyle) -> ComfyPrompt {
+    let mut modified = req.clone();
+    modified.prompt = format!("{}, wide scene, parallax background layer, scenic", req.prompt);
+    if modified.width < 320 {
+        modified.width = 480;
+        modified.height = 270;
+    }
+    build_sprite_workflow(&modified, style)
+}
+
+fn build_particle_workflow(req: &ArtRequest, style: &WorldStyle) -> ComfyPrompt {
+    let mut modified = req.clone();
+    modified.prompt = format!("{}, small particle effect, transparent background, glow", req.prompt);
+    if modified.width > 32 {
+        modified.width = 16;
+        modified.height = 16;
+    }
+    build_sprite_workflow(&modified, style)
+}
+
+/// Generate a pseudo-random seed for reproducibility logging.
+fn rand_seed() -> u64 {
+    // Use system time as seed — deterministic workflows can override via extra params
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64 % 1_000_000_000)
+        .unwrap_or(42)
+}
+
+// Helper for ArtRequest
+impl ArtRequest {
+    pub fn asset_type_str(&self) -> &str {
+        match self.asset_type {
+            AssetType::Sprite => "sprite",
+            AssetType::Tileset => "tileset",
+            AssetType::Portrait => "portrait",
+            AssetType::Background => "background",
+            AssetType::UiElement => "ui",
+            AssetType::Particle => "particle",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sprite_workflow_has_all_nodes() {
+        let req = ArtRequest {
+            prompt: "a pirate captain".into(),
+            ..Default::default()
+        };
+        let style = WorldStyle::find("caribbean").unwrap();
+        let prompt = build_workflow(&req, &style);
+
+        assert!(prompt.prompt.contains_key("1")); // checkpoint
+        assert!(prompt.prompt.contains_key("2")); // positive
+        assert!(prompt.prompt.contains_key("3")); // negative
+        assert!(prompt.prompt.contains_key("5")); // sampler
+        assert!(prompt.prompt.contains_key("7")); // save
+    }
+
+    #[test]
+    fn tileset_workflow_increases_resolution() {
+        let req = ArtRequest {
+            asset_type: AssetType::Tileset,
+            prompt: "stone floor tiles".into(),
+            width: 64,
+            height: 64,
+            ..Default::default()
+        };
+        let style = WorldStyle::find("lotr").unwrap();
+        let prompt = build_workflow(&req, &style);
+        let latent = &prompt.prompt["4"];
+        assert_eq!(latent["inputs"]["width"], 256);
+    }
+
+    #[test]
+    fn lora_rewires_nodes() {
+        let req = ArtRequest::default();
+        let mut style = WorldStyle::find("dune").unwrap();
+        style.lora = Some("pixel_lora_v1.safetensors".into());
+
+        let prompt = build_workflow(&req, &style);
+
+        assert!(prompt.prompt.contains_key("8")); // LoRA loader
+        // Sampler should reference LoRA output
+        let sampler = &prompt.prompt["5"];
+        assert_eq!(sampler["inputs"]["model"], json!(["8", 0]));
+    }
+
+    #[test]
+    fn background_workflow_wide() {
+        let req = ArtRequest {
+            asset_type: AssetType::Background,
+            ..Default::default()
+        };
+        let style = WorldStyle::find("matrix").unwrap();
+        let prompt = build_workflow(&req, &style);
+        let latent = &prompt.prompt["4"];
+        assert_eq!(latent["inputs"]["width"], 480);
+        assert_eq!(latent["inputs"]["height"], 270);
+    }
+}

@@ -15,6 +15,9 @@ members = [
     "crates/amigo_api",
     "crates/amigo_debug",
     "crates/amigo_engine",
+    "tools/amigo_mcp",
+    "tools/amigo_artgen",
+    "tools/amigo_audiogen",
 ]
 
 [workspace.package]

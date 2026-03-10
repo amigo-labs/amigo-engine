@@ -96,6 +96,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_artgen"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "amigo_assets"
 version = "0.1.0"
 dependencies = [
@@ -120,6 +130,16 @@ dependencies = [
  "ron",
  "rustc-hash 2.1.1",
  "serde",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "amigo_audiogen"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -200,6 +220,16 @@ dependencies = [
  "rustc-hash 2.1.1",
  "serde",
  "winit",
+]
+
+[[package]]
+name = "amigo_mcp"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
