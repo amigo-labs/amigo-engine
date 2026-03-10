@@ -21,6 +21,8 @@ pub mod turn_combat;
 pub mod dialog;
 pub mod crafting;
 pub mod procgen;
+pub mod roguelike;
+pub mod fighting;
 
 pub use math::{Fix, SimVec2, RenderVec2};
 pub use color::Color;
