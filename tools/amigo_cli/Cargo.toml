@@ -1,14 +1,16 @@
 [package]
-name = "amigo_tilemap"
+name = "amigo_cli"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "amigo"
+path = "src/main.rs"
+
 [dependencies]
 amigo_core = { workspace = true }
+amigo_editor = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 ron = { workspace = true }
-tracing = { workspace = true }
-rustc-hash = { workspace = true }
-
-[dev-dependencies]
-serde_json = "1"
+toml = { workspace = true }

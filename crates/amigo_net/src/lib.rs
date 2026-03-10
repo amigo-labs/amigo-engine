@@ -1,6 +1,7 @@
 pub mod protocol;
 pub mod server;
 pub mod client;
+pub mod replay;
 
 use serde::{Deserialize, Serialize};
 

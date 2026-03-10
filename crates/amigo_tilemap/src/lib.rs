@@ -1,4 +1,5 @@
 pub mod auto_tile;
+pub mod chunk;
 
 pub use auto_tile::{AutoTileResolver, AutoTileRule, AutoTileSet};
 

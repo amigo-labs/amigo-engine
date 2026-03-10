@@ -145,6 +145,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_cli"
+version = "0.1.0"
+dependencies = [
+ "amigo_core",
+ "amigo_editor",
+ "ron",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "amigo_core"
 version = "0.1.0"
 dependencies = [
@@ -180,6 +192,7 @@ dependencies = [
  "amigo_ui",
  "ron",
  "serde",
+ "serde_json",
  "tracing",
  "winit",
 ]
@@ -267,12 +280,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_td"
+version = "0.1.0"
+dependencies = [
+ "amigo_animation",
+ "amigo_audio",
+ "amigo_core",
+ "amigo_engine",
+ "amigo_input",
+ "amigo_render",
+ "amigo_scene",
+ "amigo_tilemap",
+ "amigo_ui",
+ "tracing",
+]
+
+[[package]]
 name = "amigo_tilemap"
 version = "0.1.0"
 dependencies = [
  "amigo_core",
  "ron",
+ "rustc-hash 2.1.1",
  "serde",
+ "serde_json",
  "tracing",
 ]
 

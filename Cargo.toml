@@ -18,6 +18,8 @@ members = [
     "tools/amigo_mcp",
     "tools/amigo_artgen",
     "tools/amigo_audiogen",
+    "tools/amigo_cli",
+    "games/amigo_td",
 ]
 
 [workspace.package]

@@ -1,3 +1,4 @@
+pub mod atlas;
 pub mod renderer;
 pub mod sprite_batcher;
 pub mod camera;

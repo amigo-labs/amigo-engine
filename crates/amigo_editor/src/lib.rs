@@ -1,6 +1,8 @@
 pub mod ui;
 pub mod wizard;
 pub mod wizard_ui;
+pub mod visual_script;
+pub mod collision_editor;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
