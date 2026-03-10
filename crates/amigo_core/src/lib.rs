@@ -23,6 +23,10 @@ pub mod crafting;
 pub mod procgen;
 pub mod roguelike;
 pub mod fighting;
+pub mod platformer;
+pub mod farming;
+pub mod bullet_pattern;
+pub mod puzzle;
 
 pub use math::{Fix, SimVec2, RenderVec2};
 pub use color::Color;
