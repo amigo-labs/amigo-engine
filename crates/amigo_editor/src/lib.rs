@@ -1,5 +1,6 @@
 pub mod ui;
 pub mod wizard;
+pub mod wizard_ui;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -115,6 +116,10 @@ pub struct EditorState {
     pub show_collision: bool,
     pub show_paths: bool,
     pub cursor_tile: Option<(i32, i32)>,
+    /// The new-project wizard (Some while active).
+    pub project_wizard: Option<wizard::NewProjectWizard>,
+    /// The resulting project after the wizard completes.
+    pub created_project: Option<amigo_core::game_preset::GameProject>,
 }
 
 impl EditorState {
@@ -131,6 +136,8 @@ impl EditorState {
             show_collision: false,
             show_paths: true,
             cursor_tile: None,
+            project_wizard: None,
+            created_project: None,
         }
     }
 
@@ -176,6 +183,21 @@ impl EditorState {
 
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
+    }
+
+    /// Open the new-project wizard.
+    pub fn open_new_project_wizard(&mut self) {
+        self.project_wizard = Some(wizard::NewProjectWizard::new());
+    }
+
+    /// Returns true while the wizard is open.
+    pub fn is_wizard_open(&self) -> bool {
+        self.project_wizard.is_some()
+    }
+
+    /// Take the created project (consumes it). Call after wizard completes.
+    pub fn take_created_project(&mut self) -> Option<amigo_core::game_preset::GameProject> {
+        self.created_project.take()
     }
 }
 

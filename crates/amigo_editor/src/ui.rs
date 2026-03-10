@@ -1,4 +1,5 @@
 use crate::{AmigoLevel, EditorState, EditorTool, EditorCommand};
+use crate::wizard_ui::draw_wizard_ui;
 use amigo_core::{Color, Rect};
 use amigo_ui::UiContext;
 use amigo_input::InputState;
@@ -18,6 +19,21 @@ pub fn draw_editor_ui(
     screen_w: f32,
     screen_h: f32,
 ) -> Option<EditorCommand> {
+    // If the project wizard is open, draw it as an overlay and block the editor
+    if let Some(wizard) = &mut state.project_wizard {
+        let done = draw_wizard_ui(ui, wizard, input, screen_w, screen_h);
+        if done {
+            // Extract result before removing the wizard
+            let result = state.project_wizard.as_ref()
+                .and_then(|w| w.result.clone());
+            if let Some(project) = result {
+                state.created_project = Some(project);
+            }
+            state.project_wizard = None;
+        }
+        return None;
+    }
+
     let mut result_cmd = None;
 
     // Left toolbar (tools)
