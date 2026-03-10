@@ -17,6 +17,10 @@ pub mod loot;
 pub mod inventory;
 pub mod waves;
 pub mod tower;
+pub mod turn_combat;
+pub mod dialog;
+pub mod crafting;
+pub mod procgen;
 
 pub use math::{Fix, SimVec2, RenderVec2};
 pub use color::Color;
