@@ -43,6 +43,25 @@ pub enum CameraMode {
         elapsed: f32,
         easing: Easing,
     },
+    /// ARPG-style: follows target but also pans when mouse is near screen edges.
+    /// Good for Diablo-like or RTS games.
+    EdgePan {
+        /// How fast the camera follows the target.
+        follow_speed: f32,
+        /// Width of the edge zone in normalized screen coords (0.0–0.5, typically 0.05–0.15).
+        edge_zone: f32,
+        /// Edge pan speed in pixels per second.
+        edge_speed: f32,
+        /// Maximum distance the camera can drift from the target.
+        max_drift: f32,
+    },
+    /// RTS / top-down free camera controlled entirely by edge-pan and keyboard.
+    FreePan {
+        /// Width of the edge zone in normalized screen coords.
+        edge_zone: f32,
+        /// Pan speed in pixels per second.
+        pan_speed: f32,
+    },
 }
 
 /// Easing functions for camera transitions.
@@ -99,6 +118,11 @@ pub struct Camera {
     // Room transition state
     room_target: RenderVec2,
     transitioning: bool,
+
+    // Edge-pan: normalized mouse position (0..1)
+    mouse_norm_x: f32,
+    mouse_norm_y: f32,
+    edge_drift: RenderVec2,
 }
 
 impl Camera {
@@ -121,7 +145,16 @@ impl Camera {
             lookahead_offset: RenderVec2::ZERO,
             room_target: RenderVec2::ZERO,
             transitioning: false,
+            mouse_norm_x: 0.5,
+            mouse_norm_y: 0.5,
+            edge_drift: RenderVec2::ZERO,
         }
+    }
+
+    /// Update the normalized mouse position (0..1 range). Called from the engine.
+    pub fn set_mouse_normalized(&mut self, nx: f32, ny: f32) {
+        self.mouse_norm_x = nx.clamp(0.0, 1.0);
+        self.mouse_norm_y = ny.clamp(0.0, 1.0);
     }
 
     pub fn set_target(&mut self, target: RenderVec2) {
@@ -273,6 +306,71 @@ impl Camera {
                 let zoom_y = self.virtual_height / ah;
                 self.target_zoom = zoom_x.min(zoom_y);
                 self.position = self.position.lerp(center, 3.0 * dt);
+            }
+
+            CameraMode::EdgePan { follow_speed, edge_zone, edge_speed, max_drift } => {
+                let follow_speed = *follow_speed;
+                let edge_zone = *edge_zone;
+                let edge_speed = *edge_speed;
+                let max_drift = *max_drift;
+
+                // Follow target smoothly
+                self.position = self.position.lerp(self.target, follow_speed * dt);
+
+                // Edge panning
+                let mut pan = RenderVec2::ZERO;
+                if self.mouse_norm_x < edge_zone {
+                    pan.x = -edge_speed * (1.0 - self.mouse_norm_x / edge_zone);
+                } else if self.mouse_norm_x > 1.0 - edge_zone {
+                    pan.x = edge_speed * (self.mouse_norm_x - (1.0 - edge_zone)) / edge_zone;
+                }
+                if self.mouse_norm_y < edge_zone {
+                    pan.y = -edge_speed * (1.0 - self.mouse_norm_y / edge_zone);
+                } else if self.mouse_norm_y > 1.0 - edge_zone {
+                    pan.y = edge_speed * (self.mouse_norm_y - (1.0 - edge_zone)) / edge_zone;
+                }
+
+                self.edge_drift.x += pan.x * dt;
+                self.edge_drift.y += pan.y * dt;
+
+                // Clamp drift distance
+                let drift_dist = (self.edge_drift.x * self.edge_drift.x + self.edge_drift.y * self.edge_drift.y).sqrt();
+                if drift_dist > max_drift {
+                    let scale = max_drift / drift_dist;
+                    self.edge_drift.x *= scale;
+                    self.edge_drift.y *= scale;
+                }
+
+                // Decay drift back toward center when mouse is centered
+                if pan.x.abs() < 0.01 {
+                    self.edge_drift.x *= 1.0 - 2.0 * dt;
+                }
+                if pan.y.abs() < 0.01 {
+                    self.edge_drift.y *= 1.0 - 2.0 * dt;
+                }
+
+                self.position.x += self.edge_drift.x;
+                self.position.y += self.edge_drift.y;
+            }
+
+            CameraMode::FreePan { edge_zone, pan_speed } => {
+                let edge_zone = *edge_zone;
+                let pan_speed = *pan_speed;
+
+                let mut pan = RenderVec2::ZERO;
+                if self.mouse_norm_x < edge_zone {
+                    pan.x = -pan_speed * (1.0 - self.mouse_norm_x / edge_zone);
+                } else if self.mouse_norm_x > 1.0 - edge_zone {
+                    pan.x = pan_speed * (self.mouse_norm_x - (1.0 - edge_zone)) / edge_zone;
+                }
+                if self.mouse_norm_y < edge_zone {
+                    pan.y = -pan_speed * (1.0 - self.mouse_norm_y / edge_zone);
+                } else if self.mouse_norm_y > 1.0 - edge_zone {
+                    pan.y = pan_speed * (self.mouse_norm_y - (1.0 - edge_zone)) / edge_zone;
+                }
+
+                self.position.x += pan.x * dt;
+                self.position.y += pan.y * dt;
             }
 
             CameraMode::CinematicPan { from, to, duration, elapsed, easing } => {

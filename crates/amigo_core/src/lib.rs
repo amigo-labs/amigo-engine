@@ -10,6 +10,13 @@ pub mod save;
 pub mod command;
 pub mod physics;
 pub mod collision_events;
+pub mod navigation;
+pub mod ai;
+pub mod combat;
+pub mod loot;
+pub mod inventory;
+pub mod waves;
+pub mod tower;
 
 pub use math::{Fix, SimVec2, RenderVec2};
 pub use color::Color;
