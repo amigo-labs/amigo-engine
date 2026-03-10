@@ -21,6 +21,8 @@ COMMANDS:
     new <name> [--template <TEMPLATE>]   Create a new game project
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Check that the project compiles
+    run                                  Run the game (cargo run)
+    editor                               Launch the Amigo editor
     list-templates                       Show available project templates
     list-presets                         Show available scene presets
     export-level <path> [--format json]  Convert a .amigo level to JSON
@@ -49,6 +51,8 @@ fn main() {
         "new" => cmd_new(&args[2..]),
         "scene" => cmd_scene(&args[2..]),
         "build" => cmd_build(&args[2..]),
+        "run" => cmd_run(&args[2..]),
+        "editor" => cmd_editor(&args[2..]),
         "list-templates" => cmd_list_templates(),
         "list-presets" => cmd_list_presets(),
         "export-level" => cmd_export_level(&args[2..]),
@@ -194,6 +198,69 @@ fn cmd_new(args: &[String]) {
     let level_path = base.join("assets").join("levels").join("level_01.amigo");
     save_level(&level_path, &level).expect("Failed to write starter level");
 
+    // Write Cargo.toml
+    let cargo_toml = format!(
+        r#"[package]
+name = "{name}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+amigo_engine = {{ git = "https://github.com/amigo-labs/amigo-engine", features = ["audio"] }}
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = true
+strip = true
+panic = "abort"
+"#
+    );
+    let cargo_toml_path = base.join("Cargo.toml");
+    std::fs::write(&cargo_toml_path, cargo_toml).expect("Failed to write Cargo.toml");
+
+    // Write src/main.rs
+    let main_rs = format!(
+        r#"use amigo_engine::prelude::*;
+
+struct MyGame;
+
+impl Game for MyGame {{
+    fn init(&mut self, ctx: &mut GameContext) {{
+        // Initialize your game here
+    }}
+
+    fn update(&mut self, ctx: &mut GameContext) -> SceneAction {{
+        // Update game logic here
+        SceneAction::Continue
+    }}
+
+    fn draw(&self, ctx: &mut DrawContext) {{
+        // Draw your game here
+        ctx.draw_rect(
+            Rect::new(100.0, 100.0, 32.0, 32.0),
+            Color::new(0.2, 0.6, 1.0, 1.0),
+        );
+    }}
+}}
+
+fn main() {{
+    Engine::build()
+        .title("{name}")
+        .virtual_resolution(480, 270)
+        .window_size(1280, 720)
+        .build()
+        .run(MyGame);
+}}
+"#
+    );
+    let main_rs_path = base.join("src").join("main.rs");
+    std::fs::write(&main_rs_path, main_rs).expect("Failed to write src/main.rs");
+
     println!("Created project '{name}' with template '{}'", template.name);
     println!("  Directory: {}", base.display());
     println!("  Template:  {}", template.name);
@@ -202,7 +269,7 @@ fn cmd_new(args: &[String]) {
     println!();
     println!("Next steps:");
     println!("  cd {name}");
-    println!("  amigo info");
+    println!("  cargo run");
 }
 
 fn create_dirs(base: &Path) {
@@ -430,6 +497,41 @@ fn cmd_info() {
     for s in &manifest.scenes {
         println!("  {} — {} ({})", s.id, s.name, s.preset);
     }
+}
+
+// ---------------------------------------------------------------------------
+// `amigo run`
+// ---------------------------------------------------------------------------
+
+fn cmd_run(_args: &[String]) {
+    if !manifest_path().exists() {
+        eprintln!("No amigo.toml found in the current directory.");
+        eprintln!("Run `amigo new <name>` to create a project, then cd into it.");
+        process::exit(1);
+    }
+
+    let status = std::process::Command::new("cargo")
+        .arg("run")
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to run `cargo run`: {e}");
+            process::exit(1);
+        });
+
+    if !status.success() {
+        process::exit(status.code().unwrap_or(1));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `amigo editor`
+// ---------------------------------------------------------------------------
+
+fn cmd_editor(_args: &[String]) {
+    println!("The Amigo Editor is a visual level and scene editor for Amigo Engine projects.");
+    println!();
+    println!("The editor feature is coming soon. Stay tuned!");
+    println!("Follow progress at: https://github.com/amigo-labs/amigo-engine");
 }
 
 // ---------------------------------------------------------------------------

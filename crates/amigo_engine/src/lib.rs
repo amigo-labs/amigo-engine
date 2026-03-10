@@ -1,3 +1,50 @@
+//! # amigo_engine
+//!
+//! A 2D game engine built on fixed-point math, ECS, and wgpu rendering.
+//! amigo_engine is the top-level crate that ties together all sub-crates
+//! into a single, batteries-included framework for building 2D games.
+//!
+//! ## Quick start
+//!
+//! ```rust,no_run
+//! use amigo_engine::prelude::*;
+//!
+//! struct MyGame;
+//!
+//! impl Game for MyGame {
+//!     fn update(&mut self, _ctx: &mut GameContext) -> SceneAction {
+//!         SceneAction::Continue
+//!     }
+//!
+//!     fn draw(&self, _ctx: &mut DrawContext) {}
+//! }
+//!
+//! fn main() {
+//!     EngineBuilder::new()
+//!         .build()
+//!         .run(MyGame);
+//! }
+//! ```
+//!
+//! ## Sub-crates / modules
+//!
+//! | Crate               | Purpose                                         |
+//! |---------------------|-------------------------------------------------|
+//! | [`amigo_core`]      | Fixed-point math, ECS, save system, scheduling  |
+//! | [`amigo_render`]    | wgpu renderer, camera, particles, lighting      |
+//! | [`amigo_input`]     | Keyboard, mouse, and gamepad input              |
+//! | [`amigo_assets`]    | Asset loading, Aseprite import, hot-reloading   |
+//! | [`amigo_tilemap`]   | Tilemap data structures and utilities           |
+//! | [`amigo_animation`] | Sprite animation state machine                  |
+//! | [`amigo_scene`]     | Scene stack and transitions                     |
+//! | [`amigo_ui`]        | Immediate-mode pixel UI (HUD, menus)            |
+//! | [`amigo_net`]       | Networking and multiplayer transport             |
+//! | [`amigo_debug`]     | Debug overlay, FPS counter, system profiling     |
+//! | [`amigo_audio`]     | Audio playback (behind `audio` feature flag)     |
+//!
+//! The [`engine`], [`config`], and [`context`] modules live in this crate
+//! and provide the main loop, configuration, and per-frame contexts.
+
 pub mod engine;
 pub mod config;
 pub mod context;
@@ -50,6 +97,9 @@ pub mod prelude {
     pub use amigo_tilemap::*;
     pub use amigo_animation::*;
     pub use amigo_net::{PlayerId, Transport, LocalTransport};
+    pub use amigo_ui::{UiContext, UiDrawCommand};
+    pub use amigo_debug::DebugOverlay;
+    pub use amigo_assets::AssetError;
     pub use winit::keyboard::KeyCode;
     pub use winit::event::MouseButton;
 }
