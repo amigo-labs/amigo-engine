@@ -27,6 +27,8 @@ pub mod platformer;
 pub mod farming;
 pub mod bullet_pattern;
 pub mod puzzle;
+pub mod game_preset;
+pub mod level_loader;
 
 pub use math::{Fix, SimVec2, RenderVec2};
 pub use color::Color;

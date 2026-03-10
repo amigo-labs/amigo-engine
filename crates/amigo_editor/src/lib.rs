@@ -1,4 +1,5 @@
 pub mod ui;
+pub mod wizard;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
