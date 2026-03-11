@@ -1,0 +1,15 @@
+[package]
+name = "amigo_render"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+amigo_core = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+bytemuck = { workspace = true }
+glam = { workspace = true }
+tracing = { workspace = true }
+image = { workspace = true }
+rustc-hash = { workspace = true }
+serde = { workspace = true }

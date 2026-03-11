@@ -1,0 +1,8 @@
+[package]
+name = "amigo_scene"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+amigo_core = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,20 @@
+[package]
+name = "amigo_td"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "amigo_td"
+path = "src/main.rs"
+
+[dependencies]
+amigo_core = { workspace = true }
+amigo_render = { workspace = true }
+amigo_ui = { workspace = true }
+amigo_audio = { workspace = true }
+amigo_input = { workspace = true }
+amigo_tilemap = { workspace = true }
+amigo_animation = { workspace = true }
+amigo_scene = { workspace = true }
+amigo_engine = { workspace = true }
+tracing = { workspace = true }

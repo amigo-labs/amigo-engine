@@ -1,0 +1,33 @@
+[package]
+name = "amigo_engine"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = ["audio", "input"]
+audio = ["dep:amigo_audio"]
+editor = ["dep:amigo_editor"]
+api = ["dep:amigo_api"]
+input = []
+
+[dependencies]
+amigo_core = { workspace = true }
+amigo_render = { workspace = true }
+amigo_input = { workspace = true }
+amigo_assets = { workspace = true }
+amigo_tilemap = { workspace = true }
+amigo_animation = { workspace = true }
+amigo_scene = { workspace = true }
+amigo_ui = { workspace = true }
+amigo_net = { workspace = true }
+amigo_debug = { workspace = true }
+amigo_audio = { workspace = true, optional = true }
+amigo_editor = { workspace = true, optional = true }
+amigo_api = { workspace = true, optional = true }
+winit = { workspace = true }
+wgpu = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+pollster = { workspace = true }
+toml = { workspace = true }
+serde = { workspace = true }

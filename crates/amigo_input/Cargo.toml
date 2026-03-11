@@ -1,0 +1,12 @@
+[package]
+name = "amigo_input"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+amigo_core = { workspace = true }
+winit = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }
+rustc-hash = { workspace = true }
+gilrs = { workspace = true }

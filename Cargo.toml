@@ -1,0 +1,83 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/amigo_core",
+    "crates/amigo_render",
+    "crates/amigo_ui",
+    "crates/amigo_audio",
+    "crates/amigo_input",
+    "crates/amigo_tilemap",
+    "crates/amigo_animation",
+    "crates/amigo_assets",
+    "crates/amigo_net",
+    "crates/amigo_scene",
+    "crates/amigo_editor",
+    "crates/amigo_api",
+    "crates/amigo_debug",
+    "crates/amigo_engine",
+    "tools/amigo_mcp",
+    "tools/amigo_artgen",
+    "tools/amigo_audiogen",
+    "tools/amigo_cli",
+    "games/amigo_td",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/amigo-labs/amigo-engine"
+
+[workspace.dependencies]
+# Internal crates
+amigo_core = { path = "crates/amigo_core" }
+amigo_render = { path = "crates/amigo_render" }
+amigo_ui = { path = "crates/amigo_ui" }
+amigo_audio = { path = "crates/amigo_audio" }
+amigo_input = { path = "crates/amigo_input" }
+amigo_tilemap = { path = "crates/amigo_tilemap" }
+amigo_animation = { path = "crates/amigo_animation" }
+amigo_assets = { path = "crates/amigo_assets" }
+amigo_net = { path = "crates/amigo_net" }
+amigo_scene = { path = "crates/amigo_scene" }
+amigo_editor = { path = "crates/amigo_editor" }
+amigo_api = { path = "crates/amigo_api" }
+amigo_debug = { path = "crates/amigo_debug" }
+amigo_engine = { path = "crates/amigo_engine" }
+
+# External dependencies
+wgpu = "24"
+winit = "0.30"
+gilrs = "0.11"
+kira = "0.9"
+fixed = { version = "1.28", features = ["serde"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ron = "0.8"
+toml = "0.8"
+notify = "7"
+bumpalo = { version = "3", features = ["collections"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+rustc-hash = "2"
+bytemuck = { version = "1", features = ["derive"] }
+bitflags = "2"
+glam = "0.29"
+pollster = "0.4"
+fontdue = "0.9"
+asefile = "0.3"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+opt-level = 2
