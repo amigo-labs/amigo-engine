@@ -819,7 +819,7 @@ Master Volume
 
 All configurable in settings. Saved to user preferences.
 
-> For complete adaptive music configuration (RON definitions, stingers, world audio profiles, stem strategy), see 03-asset-pipeline-spec.md §12.
+> For complete adaptive music configuration (RON definitions, stingers, world audio profiles, stem strategy), see 02-asset-pipeline-spec.md §12.
 
 ---
 
@@ -926,7 +926,7 @@ Claude Code auto-discovers the MCP servers via config:
 }
 ```
 
-Three MCP servers side by side: `amigo` for engine control, `amigo-artgen` for art (see 03-asset-pipeline-spec.md), `amigo-audiogen` for audio (see 03-asset-pipeline-spec.md).
+Three MCP servers side by side: `amigo` for engine control, `amigo-artgen` for art (see 02-asset-pipeline-spec.md), `amigo-audiogen` for audio (see 02-asset-pipeline-spec.md).
 
 ### MCP Tools (exposed to Claude Code)
 
@@ -1566,10 +1566,9 @@ The engine provides generic, reusable mechanics that work across many game types
 
 ## 25. Game-Specific Design
 
-Game design and asset pipeline decisions are maintained in separate spec files:
+Asset pipeline decisions are maintained in a separate spec file:
 
-- **Amigo TD**: See `02-td-spec.md` (worlds, targeting, pathfinding, atmosphere, HUD, radial menus, screens, gamepad, world-themed frames)
-- **Asset Pipelines**: See `03-asset-pipeline-spec.md` (ComfyUI integration, post-processing, style definitions, ACE-Step music gen, AudioGen SFX, adaptive music system, stem-based vertical layering)
+- **Asset Pipelines**: See `02-asset-pipeline-spec.md` (ComfyUI integration, post-processing, style definitions, ACE-Step music gen, AudioGen SFX, adaptive music system, stem-based vertical layering)
 
 ---
 
@@ -1678,4 +1677,4 @@ Engine provides: slot management (configurable count), autosave (rotating N slot
 
 *This specification is a living document. It will evolve as implementation progresses and new requirements emerge.*
 
-*For game design and UI/UX, see 02-td-spec.md. For asset generation (art + audio), see 03-asset-pipeline-spec.md.*
+*For asset generation (art + audio), see 02-asset-pipeline-spec.md.*

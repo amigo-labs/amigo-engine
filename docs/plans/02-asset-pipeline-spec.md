@@ -1302,4 +1302,4 @@ Total time: ~30 minutes. Quality: release-grade, zero stem bleed.
 
 ---
 
-*For the engine specification, see 01-engine-spec.md. For game design and UI/UX, see 02-td-spec.md.*
+*For the engine specification, see 01-engine-spec.md.*
