@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls D:/github/amigo-engine/docs/plans/02-td-spec.md 2>/dev/null; echo \"exit: $?\")",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git rm:*)"
+    ]
+  }
+}
