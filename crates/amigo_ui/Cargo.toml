@@ -7,6 +7,5 @@ edition.workspace = true
 amigo_core = { workspace = true }
 amigo_render = { workspace = true }
 amigo_input = { workspace = true }
-fontdue = { workspace = true }
 tracing = { workspace = true }
 winit = { workspace = true }

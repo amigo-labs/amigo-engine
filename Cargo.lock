@@ -263,6 +263,7 @@ version = "0.1.0"
 dependencies = [
  "amigo_core",
  "bytemuck",
+ "fontdue",
  "glam",
  "image 0.25.9",
  "rustc-hash 2.1.1",
@@ -315,7 +316,6 @@ dependencies = [
  "amigo_core",
  "amigo_input",
  "amigo_render",
- "fontdue",
  "tracing",
  "winit",
 ]

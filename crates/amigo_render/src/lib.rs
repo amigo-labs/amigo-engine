@@ -8,7 +8,7 @@ pub mod particles;
 pub mod lighting;
 pub mod post_process;
 pub mod atmosphere;
-pub mod bitmap_font;
+pub mod font;
 
 pub use renderer::Renderer;
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance};
@@ -19,3 +19,4 @@ pub use particles::{ParticleSystem, ParticleEmitter, EmitterConfig, EmitterShape
 pub use lighting::{LightingState, PointLight, AmbientLight};
 pub use post_process::{PostProcessPipeline, PostEffect, PostProcessUniforms};
 pub use atmosphere::{AtmosphereManager, AtmospherePreset};
+pub use font::{FontManager, FontAtlas, FontId, GlyphInfo};

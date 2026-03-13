@@ -19,17 +19,10 @@ impl MenuState {
         // Background
         ctx.draw_rect(Rect::new(0.0, 0.0, vw, vh), Color::rgb(0.08, 0.06, 0.12));
 
-        // Title text (scaled up 3x for pixel art feel)
+        // Title text
         let title = "AMIGO STARTER";
         let (tw, _) = ctx.measure_text(title);
-        let scale = 3.0;
-        ctx.draw_text_scaled(
-            title,
-            (vw - tw * scale) * 0.5,
-            vh * 0.35,
-            scale,
-            Color::rgb(0.94, 0.86, 0.70),
-        );
+        ctx.draw_text(title, (vw - tw) * 0.5, vh * 0.35, Color::rgb(0.94, 0.86, 0.70));
 
         // "Press SPACE" prompt — blinking text
         let blink = ((ctx.alpha * 60.0) as u32 / 30) % 2 == 0;

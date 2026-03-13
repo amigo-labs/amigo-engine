@@ -3,7 +3,7 @@ use amigo_core::save::{SaveManager, SaveConfig};
 use amigo_core::scheduler::TickScheduler;
 use amigo_input::InputState;
 use amigo_render::camera::Camera;
-use amigo_render::bitmap_font;
+use amigo_render::font::{FontManager, FontId};
 use amigo_render::particles::ParticleSystem;
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
@@ -21,6 +21,7 @@ pub struct GameContext {
     pub save: SaveManager,
     pub scheduler: TickScheduler,
     pub particles: ParticleSystem,
+    pub fonts: FontManager,
     #[cfg(feature = "audio")]
     pub audio: AudioManager,
     // Texture mapping for sprites (name -> TextureId + dimensions)
@@ -43,10 +44,16 @@ impl GameContext {
             }),
             scheduler: TickScheduler::new(),
             particles: ParticleSystem::new(),
+            fonts: FontManager::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
             sprite_textures: Vec::new(),
         }
+    }
+
+    /// Load a TTF/OTF font at the given pixel size. Returns a FontId handle.
+    pub fn load_font(&mut self, data: &[u8], px: f32) -> Result<FontId, String> {
+        self.fonts.load_font(data, px)
     }
 
     pub fn register_sprite_texture(&mut self, name: String, texture_id: TextureId, width: u32, height: u32) {
@@ -159,79 +166,104 @@ impl<'a> DrawContext<'a> {
         });
     }
 
-    /// Draw text using the built-in 5×7 pixel font.
+    // -----------------------------------------------------------------------
+    // Text rendering (TTF via fontdue)
+    // -----------------------------------------------------------------------
+
+    /// Draw text using the default loaded font.
+    ///
+    /// The font must have been loaded via `GameContext::load_font()` before
+    /// calling this. If no font is loaded, this is a no-op.
     pub fn draw_text(&mut self, text: &str, x: f32, y: f32, color: Color) {
-        let gw = bitmap_font::GLYPH_W as f32;
-        let gh = bitmap_font::GLYPH_H as f32;
-        let spacing = bitmap_font::GLYPH_SPACING as f32;
+        let Some(font) = self.game_ctx.fonts.default_font() else { return };
+        let Some(tex_id) = font.texture_id else { return };
+        let px = font.px;
 
         let mut cx = x;
-        for byte in text.bytes() {
-            if let Some(rows) = bitmap_font::glyph(byte) {
-                for (row_idx, &row) in rows.iter().enumerate() {
-                    for col in 0..5u32 {
-                        if row & (0x80 >> col) != 0 {
-                            self.sprites.push(SpriteInstance {
-                                texture_id: self.white_texture,
-                                x: cx + col as f32,
-                                y: y + row_idx as f32,
-                                width: 1.0,
-                                height: 1.0,
-                                uv_x: 0.0,
-                                uv_y: 0.0,
-                                uv_w: 1.0,
-                                uv_h: 1.0,
-                                tint: color,
-                                flip_x: false,
-                                flip_y: false,
-                                z_order: 100,
-                            });
-                        }
-                    }
+        for ch in text.chars() {
+            if let Some(glyph) = font.glyph_cached(ch) {
+                if glyph.width > 0.0 && glyph.height > 0.0 {
+                    self.sprites.push(SpriteInstance {
+                        texture_id: tex_id,
+                        x: cx + glyph.offset_x,
+                        y: y + px - glyph.height - glyph.offset_y,
+                        width: glyph.width,
+                        height: glyph.height,
+                        uv_x: glyph.uv_x,
+                        uv_y: glyph.uv_y,
+                        uv_w: glyph.uv_w,
+                        uv_h: glyph.uv_h,
+                        tint: color,
+                        flip_x: false,
+                        flip_y: false,
+                        z_order: 100,
+                    });
                 }
+                cx += glyph.advance;
             }
-            cx += gw + spacing;
         }
     }
 
-    /// Draw text at a given scale (integer multiples work best for pixel art).
-    pub fn draw_text_scaled(&mut self, text: &str, x: f32, y: f32, scale: f32, color: Color) {
-        let gw = bitmap_font::GLYPH_W as f32 * scale;
-        let spacing = bitmap_font::GLYPH_SPACING as f32 * scale;
+    /// Draw text using a specific font by FontId.
+    pub fn draw_text_font(
+        &mut self,
+        font_id: FontId,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: Color,
+    ) {
+        let Some(font) = self.game_ctx.fonts.get(font_id) else { return };
+        let Some(tex_id) = font.texture_id else { return };
+        let px = font.px;
 
         let mut cx = x;
-        for byte in text.bytes() {
-            if let Some(rows) = bitmap_font::glyph(byte) {
-                for (row_idx, &row) in rows.iter().enumerate() {
-                    for col in 0..5u32 {
-                        if row & (0x80 >> col) != 0 {
-                            self.sprites.push(SpriteInstance {
-                                texture_id: self.white_texture,
-                                x: cx + col as f32 * scale,
-                                y: y + row_idx as f32 * scale,
-                                width: scale,
-                                height: scale,
-                                uv_x: 0.0,
-                                uv_y: 0.0,
-                                uv_w: 1.0,
-                                uv_h: 1.0,
-                                tint: color,
-                                flip_x: false,
-                                flip_y: false,
-                                z_order: 100,
-                            });
-                        }
-                    }
+        for ch in text.chars() {
+            if let Some(glyph) = font.glyph_cached(ch) {
+                if glyph.width > 0.0 && glyph.height > 0.0 {
+                    self.sprites.push(SpriteInstance {
+                        texture_id: tex_id,
+                        x: cx + glyph.offset_x,
+                        y: y + px - glyph.height - glyph.offset_y,
+                        width: glyph.width,
+                        height: glyph.height,
+                        uv_x: glyph.uv_x,
+                        uv_y: glyph.uv_y,
+                        uv_w: glyph.uv_w,
+                        uv_h: glyph.uv_h,
+                        tint: color,
+                        flip_x: false,
+                        flip_y: false,
+                        z_order: 100,
+                    });
                 }
+                cx += glyph.advance;
             }
-            cx += gw + spacing;
         }
     }
 
-    /// Measure text width and height using the built-in font.
+    /// Measure text dimensions using the default font.
+    /// Returns (width, height) in pixels.
     pub fn measure_text(&self, text: &str) -> (f32, f32) {
-        bitmap_font::measure_text(text)
+        if let Some(font) = self.game_ctx.fonts.default_font() {
+            font.measure(text)
+        } else {
+            (0.0, 0.0)
+        }
     }
+
+    /// Measure text dimensions using a specific font.
+    pub fn measure_text_font(&self, font_id: FontId, text: &str) -> (f32, f32) {
+        if let Some(font) = self.game_ctx.fonts.get(font_id) {
+            font.measure(text)
+        } else {
+            (0.0, 0.0)
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tilemap rendering
+    // -----------------------------------------------------------------------
 
     /// Draw a tilemap layer using colored rectangles.
     ///

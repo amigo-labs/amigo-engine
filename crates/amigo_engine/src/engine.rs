@@ -98,6 +98,18 @@ impl Engine {
     }
 }
 
+/// Upload any dirty font atlas textures to the GPU.
+fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
+    for font_atlas in game_ctx.fonts.iter_mut() {
+        if font_atlas.dirty || font_atlas.texture_id.is_none() {
+            let image = font_atlas.to_rgba_image();
+            let tex_id = renderer.load_texture(&image, &format!("font_{}", font_atlas.id.0));
+            font_atlas.texture_id = Some(tex_id);
+            font_atlas.dirty = false;
+        }
+    }
+}
+
 struct EngineState {
     window: Arc<Window>,
     renderer: Renderer,
@@ -132,7 +144,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
         let window = Arc::new(event_loop.create_window(window_attrs).expect("Failed to create window"));
 
-        let renderer = pollster::block_on(Renderer::new(
+        let mut renderer = pollster::block_on(Renderer::new(
             window.clone(),
             self.config.render.virtual_width,
             self.config.render.virtual_height,
@@ -153,10 +165,18 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
 
+        // Load built-in pixel font at 7px (native size)
+        if let Err(e) = game_ctx.fonts.load_builtin(7.0) {
+            error!("Failed to load built-in font: {}", e);
+        }
+
         // Upload loaded sprites to GPU
         // (In a real implementation this would happen via the asset manager)
 
         self.game.init(&mut game_ctx);
+
+        // Upload font atlas textures to GPU
+        upload_font_atlases(&mut game_ctx, &mut renderer);
 
         info!("Engine initialized successfully");
 
@@ -271,6 +291,9 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 }
 
                 state.game_ctx.time.alpha = (state.accumulator / tick_duration) as f32;
+
+                // Re-upload dirty font atlases
+                upload_font_atlases(&mut state.game_ctx, &mut state.renderer);
 
                 // Camera: game code sets target/shake/zoom on GameContext.camera.
                 // Swap it into the renderer for update + render, then swap back.
