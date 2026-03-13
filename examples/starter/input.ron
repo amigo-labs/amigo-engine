@@ -1,0 +1,10 @@
+(
+    actions: {
+        "move_up":    [Key(W), Key(Up)],
+        "move_down":  [Key(S), Key(Down)],
+        "move_left":  [Key(A), Key(Left)],
+        "move_right": [Key(D), Key(Right)],
+        "confirm":    [Key(Space), Key(Enter)],
+        "pause":      [Key(Escape)],
+    },
+)

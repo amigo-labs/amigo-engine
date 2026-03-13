@@ -19,7 +19,7 @@ members = [
     "tools/amigo_artgen",
     "tools/amigo_audiogen",
     "tools/amigo_cli",
-    "games/amigo_td",
+    "examples/starter",
 ]
 
 [workspace.package]

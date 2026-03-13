@@ -281,19 +281,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "amigo_td"
+name = "amigo_starter"
 version = "0.1.0"
 dependencies = [
- "amigo_animation",
- "amigo_audio",
  "amigo_core",
+ "amigo_debug",
  "amigo_engine",
  "amigo_input",
  "amigo_render",
  "amigo_scene",
  "amigo_tilemap",
  "amigo_ui",
- "tracing",
+ "ron",
+ "serde",
 ]
 
 [[package]]
