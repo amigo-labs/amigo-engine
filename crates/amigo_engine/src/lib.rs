@@ -102,4 +102,7 @@ pub mod prelude {
     pub use amigo_assets::AssetError;
     pub use winit::keyboard::KeyCode;
     pub use winit::event::MouseButton;
+
+    #[cfg(feature = "audio")]
+    pub use amigo_audio::AudioManager;
 }

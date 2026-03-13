@@ -8,6 +8,7 @@ pub mod particles;
 pub mod lighting;
 pub mod post_process;
 pub mod atmosphere;
+pub mod bitmap_font;
 
 pub use renderer::Renderer;
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance};

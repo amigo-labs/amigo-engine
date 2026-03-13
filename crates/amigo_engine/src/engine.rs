@@ -149,7 +149,9 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             None
         };
 
-        let mut game_ctx = GameContext::new();
+        let vw = self.config.render.virtual_width as f32;
+        let vh = self.config.render.virtual_height as f32;
+        let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
 
         // Upload loaded sprites to GPU
         // (In a real implementation this would happen via the asset manager)
@@ -206,7 +208,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                 // Update world-space mouse position
                 let (ww, wh) = state.renderer.window_size();
-                let world_pos = state.renderer.camera.screen_to_world(
+                let world_pos = state.game_ctx.camera.screen_to_world(
                     position.x as f32,
                     position.y as f32,
                     ww as f32,
@@ -264,12 +266,15 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     }
 
                     state.game_ctx.world.flush();
+                    state.game_ctx.particles.update(tick_duration as f32);
                     state.accumulator -= tick_duration;
                 }
 
                 state.game_ctx.time.alpha = (state.accumulator / tick_duration) as f32;
 
-                // Update camera
+                // Camera: game code sets target/shake/zoom on GameContext.camera.
+                // Swap it into the renderer for update + render, then swap back.
+                std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 state.renderer.camera.update(dt as f32);
 
                 // Render
@@ -292,6 +297,10 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     );
                     self.game.draw(&mut draw_ctx);
                 }
+
+                // Collect particle sprites
+                let white_tex = state.renderer.white_texture_id;
+                state.game_ctx.particles.collect_sprites(&mut state.sprite_draw_list, white_tex);
 
                 // Push sprites to batcher
                 for sprite in &state.sprite_draw_list {
@@ -320,6 +329,9 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                         error!("Render error: {:?}", e);
                     }
                 }
+
+                // Swap camera back to GameContext so game code can read updated state
+                std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
             }
 
             _ => {}

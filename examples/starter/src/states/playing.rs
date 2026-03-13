@@ -65,6 +65,11 @@ impl PlayingState {
     /// Returns true when player presses Escape (back to menu).
     pub fn update(&mut self, ctx: &mut GameContext) -> bool {
         self.player.update(ctx, &self.tiles, self.map_w);
+
+        // Camera follows the player
+        let target = RenderVec2 { x: self.player.pos_x, y: self.player.pos_y };
+        ctx.camera.set_target(target);
+
         ctx.input.pressed(KeyCode::Escape)
     }
 
@@ -97,22 +102,14 @@ impl PlayingState {
         // Draw player
         self.player.draw(ctx);
 
-        // HUD: position indicator
+        // HUD: position text
         let px = self.player.pos_x;
-        let hud_color = Color::rgb(0.9, 0.9, 0.8).with_alpha(0.7);
-
-        // FPS-like indicator (top-left dot)
-        ctx.draw_rect(Rect::new(4.0, 4.0, 4.0, 4.0), Color::GREEN);
-
-        // Player position indicator (small bar, length proportional to x)
-        let bar_w = (px / (self.map_w as f32 * 16.0)) * 60.0;
-        ctx.draw_rect(Rect::new(12.0, 4.0, bar_w.max(1.0), 4.0), hud_color);
+        let py = self.player.pos_y;
+        let pos_text = format!("X:{:.0} Y:{:.0}", px, py);
+        ctx.draw_text(&pos_text, 4.0, 4.0, Color::rgb(0.9, 0.9, 0.8).with_alpha(0.7));
 
         // Hint bar at bottom
-        ctx.draw_rect(Rect::new(0.0, vh - 10.0, vw, 10.0), Color::BLACK.with_alpha(0.5));
-        // Small colored squares as control hints
-        ctx.draw_rect(Rect::new(8.0, vh - 8.0, 6.0, 6.0), Color::YELLOW);   // WASD hint
-        ctx.draw_rect(Rect::new(20.0, vh - 8.0, 6.0, 6.0), Color::BLUE);     // Space hint
-        ctx.draw_rect(Rect::new(32.0, vh - 8.0, 6.0, 6.0), Color::RED);      // ESC hint
+        ctx.draw_rect(Rect::new(0.0, vh - 12.0, vw, 12.0), Color::BLACK.with_alpha(0.5));
+        ctx.draw_text("WASD:Move  ESC:Menu", 4.0, vh - 10.0, Color::rgb(0.7, 0.7, 0.6));
     }
 }
