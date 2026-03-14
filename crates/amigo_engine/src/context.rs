@@ -1,4 +1,6 @@
 use amigo_core::{Color, Rect, RenderVec2, TimeInfo, World};
+use amigo_core::events::EventHub;
+use amigo_core::resources::Resources;
 use amigo_core::save::{SaveManager, SaveConfig};
 use amigo_core::scheduler::TickScheduler;
 use amigo_input::InputState;
@@ -22,6 +24,10 @@ pub struct GameContext {
     pub scheduler: TickScheduler,
     pub particles: ParticleSystem,
     pub fonts: FontManager,
+    /// Double-buffered typed event system.
+    pub events: EventHub,
+    /// Typed resource storage for game-specific singletons.
+    pub resources: Resources,
     #[cfg(feature = "audio")]
     pub audio: AudioManager,
     // Texture mapping for sprites (name -> TextureId + dimensions)
@@ -45,6 +51,8 @@ impl GameContext {
             scheduler: TickScheduler::new(),
             particles: ParticleSystem::new(),
             fonts: FontManager::new(),
+            events: EventHub::new(),
+            resources: Resources::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
             sprite_textures: Vec::new(),

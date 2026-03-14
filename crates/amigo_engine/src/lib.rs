@@ -64,7 +64,7 @@ pub use amigo_debug;
 #[cfg(feature = "audio")]
 pub use amigo_audio;
 
-pub use engine::{Engine, EngineBuilder};
+pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
 pub use context::{GameContext, DrawContext};
 pub use config::EngineConfig;
 
@@ -82,7 +82,9 @@ pub trait Game: 'static {
 
 /// Prelude with commonly used types.
 pub mod prelude {
-    pub use crate::{Game, Engine, EngineBuilder, GameContext, DrawContext, EngineConfig};
+    pub use crate::{Game, Engine, EngineBuilder, Plugin, PluginContext, GameContext, DrawContext, EngineConfig};
+    pub use amigo_core::events::EventHub;
+    pub use amigo_core::resources::Resources;
     pub use amigo_core::{Fix, SimVec2, RenderVec2, Color, Rect, EntityId, World, TimeInfo};
     pub use amigo_core::math::{vec2, IVec2};
     pub use amigo_core::ecs::{self, SparseSet, Component, join, join3, join4, join_mut};
