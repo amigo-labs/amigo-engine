@@ -29,7 +29,10 @@ pub mod bullet_pattern;
 pub mod puzzle;
 pub mod economy;
 pub mod projectile;
+pub mod status_effect;
+pub mod enemy;
 pub mod game_state;
+pub mod td_systems;
 pub mod game_preset;
 pub mod level_loader;
 
@@ -45,4 +48,7 @@ pub use physics::{PhysicsWorld, RigidBody, BodyType, PhysicsContact};
 pub use collision_events::{ContactTracker, CollisionEvent, CollisionPhase};
 pub use economy::Economy;
 pub use projectile::ProjectileManager;
+pub use status_effect::{StatusEffects, StatusEffect, EffectType};
+pub use enemy::{EnemyDef, EnemyInstance, EnemyManager};
 pub use game_state::{TdGameState, GameCommand, GamePhase, CommandResult};
+pub use td_systems::td_tick;
