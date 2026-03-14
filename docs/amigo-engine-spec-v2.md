@@ -36,7 +36,7 @@
 | 23 | Configuration | amigo.toml, input.ron, data/*.ron |
 | 24 | Starter Template | `amigo new`, examples/starter |
 | 25 | Game-Specific Design | References to game specs |
-| 26 | Implementation Phases | Phase 0-8 timeline |
+| 26 | Implementation Phases | Phase 0-2, 4-8 timeline (content in game repo) |
 | 27 | Key Decisions Summary | All decisions in one table |
 | A | Appendix | Detailed design rationale |
 

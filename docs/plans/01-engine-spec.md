@@ -839,7 +839,7 @@ In-engine tool, uses own Pixel UI system, enabled via `--features editor`. Zero 
 - Changes take effect immediately
 - Tower ranges, enemy paths, spawn points visualized
 
-### Phase 3: AI-Assisted Features
+### Phase 3: AI-Assisted Features (now Phase 7)
 - Auto-pathing (algorithmic path generation from start/end)
 - Wave balancing (difficulty curve analysis)
 - Auto-decoration (themed tile filling per world)
@@ -1580,8 +1580,8 @@ Window, sprite rendering, sprite batcher, virtual resolution, input, tilemap, ba
 ### Phase 2: Game Systems (4-6 weeks)
 Command system, serializable GameState, Aseprite loading, animations, AABB + spatial hash collision, waypoint pathfinding, tower/enemy/projectile systems, tower targeting (switchable priority), wave system, gold/lives, atmosphere manager (transitions, interpolation), adaptive music engine (vertical layering, bar clock, layer rules, horizontal transitions, stingers), SFX manager with variants, gamepad.
 
-### Phase 3: Polish & Content (4-6 weeks)
-6 worlds (tilesets, themes, atmosphere presets, music), multiple tower/enemy types per world, upgrades, particles, lighting, post-processing, camera polish, music crossfading, dynamic atmosphere logic, menus, save/load (slot system).
+### ~~Phase 3: Polish & Content~~ — MOVED TO GAME REPO
+*Phase 3 (6 worlds, tower/enemy types, upgrades, particles, lighting, menus, save/load) is game-specific content and lives in the game repository, not the engine. The engine provides the systems; the game repo provides the content.*
 
 ### Phase 4: Editor (3-5 weeks)
 Editor plugin (feature flag), extended Pixel UI with editor widgets, tile painter, entity placement, path editor, undo/redo, .amigo format, edit-while-playing, wave editor UI.
