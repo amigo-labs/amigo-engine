@@ -22,6 +22,8 @@ COMMANDS:
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Check that the project compiles
     run                                  Run the game (cargo run)
+    pack                                 Pack assets into atlas (release build)
+    release [--target <TARGET>]          Build optimized release binary
     editor                               Launch the Amigo editor
     list-templates                       Show available project templates
     list-presets                         Show available scene presets
@@ -52,6 +54,8 @@ fn main() {
         "scene" => cmd_scene(&args[2..]),
         "build" => cmd_build(&args[2..]),
         "run" => cmd_run(&args[2..]),
+        "pack" => cmd_pack(&args[2..]),
+        "release" => cmd_release(&args[2..]),
         "editor" => cmd_editor(&args[2..]),
         "list-templates" => cmd_list_templates(),
         "list-presets" => cmd_list_presets(),
@@ -390,6 +394,173 @@ fn cmd_build(_args: &[String]) {
         eprintln!("  Found {errors} issue(s).");
         process::exit(1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// `amigo pack`
+// ---------------------------------------------------------------------------
+
+fn cmd_pack(_args: &[String]) {
+    let manifest = load_manifest().unwrap_or_else(|| {
+        eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
+        process::exit(1);
+    });
+
+    println!("Packing assets for '{}'...", manifest.name);
+
+    let sprites_dir = Path::new("assets/sprites");
+    if !sprites_dir.exists() {
+        println!("  No sprites directory found, skipping atlas packing.");
+        return;
+    }
+
+    // Collect all PNG files
+    let mut sprite_files: Vec<(String, PathBuf)> = Vec::new();
+    collect_pngs(sprites_dir, "", &mut sprite_files);
+
+    if sprite_files.is_empty() {
+        println!("  No sprites found.");
+        return;
+    }
+
+    println!("  Found {} sprites", sprite_files.len());
+
+    // Load images and compute atlas layout
+    let mut atlas_builder = amigo_render::atlas::AtlasBuilder::new(4096, 2);
+    let mut images: Vec<(String, image::RgbaImage)> = Vec::new();
+
+    for (name, path) in &sprite_files {
+        match image::open(path) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                atlas_builder.add(name.clone(), rgba.width(), rgba.height());
+                images.push((name.clone(), rgba));
+            }
+            Err(e) => {
+                eprintln!("  WARNING: Failed to load {}: {e}", path.display());
+            }
+        }
+    }
+
+    match atlas_builder.pack() {
+        Ok(pack) => {
+            // Blit sprites into atlas image
+            let mut atlas_image = image::RgbaImage::new(pack.width, pack.height);
+            for (name, img) in &images {
+                if let Some(entry) = pack.get(name) {
+                    for y in 0..img.height() {
+                        for x in 0..img.width() {
+                            let pixel = img.get_pixel(x, y);
+                            atlas_image.put_pixel(entry.rect.x + x, entry.rect.y + y, *pixel);
+                        }
+                    }
+                }
+            }
+
+            // Write atlas image
+            let out_dir = Path::new("assets/packed");
+            std::fs::create_dir_all(out_dir).unwrap();
+
+            let atlas_path = out_dir.join("atlas.png");
+            atlas_image.save(&atlas_path).unwrap();
+            println!("  Atlas: {}x{} → {}", pack.width, pack.height, atlas_path.display());
+
+            // Write atlas manifest (RON)
+            let entries: Vec<(String, [f32; 4])> = pack
+                .entries
+                .iter()
+                .map(|(name, entry)| {
+                    (name.clone(), [entry.uv.x, entry.uv.y, entry.uv.w, entry.uv.h])
+                })
+                .collect();
+
+            let manifest_ron = ron::ser::to_string_pretty(&entries, ron::ser::PrettyConfig::default())
+                .expect("Failed to serialize atlas manifest");
+            let manifest_path = out_dir.join("atlas.ron");
+            std::fs::write(&manifest_path, manifest_ron).unwrap();
+            println!("  Manifest: {}", manifest_path.display());
+            println!("  Done! {} sprites packed.", images.len());
+        }
+        Err(e) => {
+            eprintln!("  ERROR: Atlas packing failed: {e}");
+            eprintln!("  Try splitting sprites across multiple atlases or increasing max size.");
+            process::exit(1);
+        }
+    }
+}
+
+fn collect_pngs(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let dir_name = path.file_name().unwrap().to_string_lossy();
+            let new_prefix = if prefix.is_empty() {
+                dir_name.to_string()
+            } else {
+                format!("{prefix}/{dir_name}")
+            };
+            collect_pngs(&path, &new_prefix, out);
+        } else if path.extension().is_some_and(|ext| ext == "png") {
+            let stem = path.file_stem().unwrap().to_string_lossy();
+            let name = if prefix.is_empty() {
+                stem.to_string()
+            } else {
+                format!("{prefix}/{stem}")
+            };
+            out.push((name, path));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `amigo release`
+// ---------------------------------------------------------------------------
+
+fn cmd_release(args: &[String]) {
+    let manifest = load_manifest().unwrap_or_else(|| {
+        eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
+        process::exit(1);
+    });
+
+    let target = find_flag(args, "--target");
+
+    println!("Building release for '{}'...", manifest.name);
+
+    // Step 1: Pack assets first
+    println!("\n[1/3] Packing assets...");
+    cmd_pack(&[]);
+
+    // Step 2: Cargo build --release
+    println!("\n[2/3] Compiling release binary...");
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("build").arg("--release");
+
+    if let Some(ref target_triple) = target {
+        cmd.arg("--target").arg(target_triple);
+    }
+
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!("Failed to run `cargo build --release`: {e}");
+        process::exit(1);
+    });
+
+    if !status.success() {
+        eprintln!("Release build failed.");
+        process::exit(status.code().unwrap_or(1));
+    }
+
+    // Step 3: Summary
+    println!("\n[3/3] Release summary:");
+    println!("  Project:    {}", manifest.name);
+    println!("  Version:    {}", manifest.version);
+    println!("  Resolution: {}x{}", manifest.virtual_width, manifest.virtual_height);
+    if let Some(ref t) = target {
+        println!("  Target:     {t}");
+    }
+    println!("  Binary:     target/release/{}", manifest.name);
+    println!();
+    println!("Release build complete!");
 }
 
 // ---------------------------------------------------------------------------

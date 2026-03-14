@@ -1,10 +1,12 @@
 pub mod asset_manager;
 pub mod aseprite;
 pub mod hot_reload;
+pub mod handle;
 
 pub use asset_manager::{AssetManager, SpriteData};
 pub use aseprite::{load_aseprite, AsepriteData};
 pub use hot_reload::HotReloader;
+pub use handle::{AssetHandle, AssetState, HandleAllocator};
 
 use thiserror::Error;
 
