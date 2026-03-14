@@ -101,6 +101,9 @@ pub struct Camera {
     pub virtual_width: f32,
     pub virtual_height: f32,
     pub mode: CameraMode,
+    /// When true, camera position is snapped to integer pixels in the projection.
+    /// Enabled by default for pixel-art games; disable for raster-art or hybrid.
+    pub pixel_snap: bool,
 
     // Bounds clamping
     pub bounds: Option<Rect>,
@@ -136,6 +139,7 @@ impl Camera {
             virtual_width,
             virtual_height,
             mode: CameraMode::Fixed,
+            pixel_snap: true,
             bounds: None,
             shake_intensity: 0.0,
             shake_decay: 8.0,
@@ -471,9 +475,15 @@ impl Camera {
 
     /// Build the orthographic projection matrix.
     pub fn projection_matrix(&self) -> [[f32; 4]; 4] {
-        let eff = self.effective_position();
+        let mut eff = self.effective_position();
         let half_w = (self.virtual_width / self.zoom) * 0.5;
         let half_h = (self.virtual_height / self.zoom) * 0.5;
+
+        // Snap camera to integer pixels to avoid sub-pixel jitter in pixel-art mode.
+        if self.pixel_snap {
+            eff.x = eff.x.round();
+            eff.y = eff.y.round();
+        }
 
         let left = eff.x - half_w;
         let right = eff.x + half_w;

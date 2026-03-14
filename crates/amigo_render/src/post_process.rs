@@ -458,7 +458,7 @@ impl PostProcessPipeline {
             label: Some("post_process_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest, // pixel-art friendly
+            mag_filter: wgpu::FilterMode::Nearest, // default pixel-art friendly
             min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -511,6 +511,19 @@ impl PostProcessPipeline {
     /// Remove all effects.
     pub fn clear_effects(&mut self) {
         self.effects.clear();
+    }
+
+    /// Recreate the sampler with a different filter mode (e.g. for raster-art).
+    pub fn set_sampler_mode(&mut self, device: &wgpu::Device, mode: crate::SamplerMode) {
+        let filter = mode.to_wgpu();
+        self.sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("post_process_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: filter,
+            min_filter: filter,
+            ..Default::default()
+        });
     }
 
     /// Returns `true` when at least one effect is active.

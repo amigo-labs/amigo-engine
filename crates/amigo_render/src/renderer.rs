@@ -2,6 +2,7 @@ use crate::camera::Camera;
 use crate::sprite_batcher::{SpriteBatch, SpriteBatcher};
 use crate::texture::{Texture, TextureId};
 use crate::vertex::Vertex;
+use crate::{ArtStyle, SamplerMode};
 use amigo_core::Color;
 use rustc_hash::FxHashMap;
 use tracing::{info, warn};
@@ -60,6 +61,7 @@ pub struct Renderer {
     pub batcher: SpriteBatcher,
     pub camera: Camera,
     pub clear_color: Color,
+    pub art_style: ArtStyle,
     next_texture_id: u32,
     draw_call_count: u32,
 }
@@ -243,6 +245,7 @@ impl Renderer {
             batcher: SpriteBatcher::new(),
             camera,
             clear_color: Color::CORNFLOWER_BLUE,
+            art_style: ArtStyle::PixelArt,
             next_texture_id: 1,
             draw_call_count: 0,
         }
@@ -257,18 +260,35 @@ impl Renderer {
     }
 
     pub fn load_texture(&mut self, image: &image::RgbaImage, label: &str) -> TextureId {
+        self.load_texture_with_mode(image, label, self.art_style.default_sampler_mode())
+    }
+
+    /// Load a texture with a specific sampler mode (overrides the global art style).
+    pub fn load_texture_with_mode(
+        &mut self,
+        image: &image::RgbaImage,
+        label: &str,
+        mode: SamplerMode,
+    ) -> TextureId {
         let id = TextureId(self.next_texture_id);
         self.next_texture_id += 1;
-        let texture = Texture::from_image(
+        let texture = Texture::from_image_with_mode(
             &self.device,
             &self.queue,
             &self.texture_bind_group_layout,
             image,
             id,
             label,
+            mode,
         );
         self.textures.insert(id, texture);
         id
+    }
+
+    /// Set the global art style. Affects default sampler mode for newly loaded textures.
+    pub fn set_art_style(&mut self, style: ArtStyle) {
+        self.art_style = style;
+        self.camera.pixel_snap = style.pixel_snap();
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

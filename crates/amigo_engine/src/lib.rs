@@ -92,7 +92,7 @@ pub mod prelude {
     pub use amigo_core::scheduler::{TickScheduler, CallbackId};
     pub use amigo_scene::SceneAction;
     pub use amigo_input::InputState;
-    pub use amigo_render::{Camera, CameraMode, Easing, FontId, FontManager};
+    pub use amigo_render::{Camera, CameraMode, Easing, FontId, FontManager, ArtStyle, SamplerMode};
     pub use amigo_render::particles::{ParticleSystem, EmitterConfig, EmitterShape};
     pub use amigo_render::lighting::{LightingState, PointLight, AmbientLight};
     pub use amigo_render::post_process::{PostProcessPipeline, PostEffect};
