@@ -27,6 +27,9 @@ pub mod platformer;
 pub mod farming;
 pub mod bullet_pattern;
 pub mod puzzle;
+pub mod economy;
+pub mod projectile;
+pub mod game_state;
 pub mod game_preset;
 pub mod level_loader;
 
@@ -40,3 +43,6 @@ pub use save::{SaveManager, SaveConfig, SlotInfo, SaveError};
 pub use command::{CommandQueue, CommandLog};
 pub use physics::{PhysicsWorld, RigidBody, BodyType, PhysicsContact};
 pub use collision_events::{ContactTracker, CollisionEvent, CollisionPhase};
+pub use economy::Economy;
+pub use projectile::ProjectileManager;
+pub use game_state::{TdGameState, GameCommand, GamePhase, CommandResult};
