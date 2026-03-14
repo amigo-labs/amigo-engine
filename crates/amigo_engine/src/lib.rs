@@ -85,7 +85,7 @@ pub mod prelude {
     pub use crate::{Game, Engine, EngineBuilder, GameContext, DrawContext, EngineConfig};
     pub use amigo_core::{Fix, SimVec2, RenderVec2, Color, Rect, EntityId, World, TimeInfo};
     pub use amigo_core::math::{vec2, IVec2};
-    pub use amigo_core::ecs::{self, SparseSet};
+    pub use amigo_core::ecs::{self, SparseSet, Component, join, join3, join4, join_mut};
     pub use amigo_core::save::{SaveManager, SaveConfig, SlotInfo, SaveError};
     pub use amigo_core::scheduler::{TickScheduler, CallbackId};
     pub use amigo_scene::SceneAction;

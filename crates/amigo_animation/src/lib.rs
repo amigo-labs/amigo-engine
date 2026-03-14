@@ -731,6 +731,478 @@ impl EventTrack {
 }
 
 // ---------------------------------------------------------------------------
+// Animation State Machine
+// ---------------------------------------------------------------------------
+
+/// Identifier for a state in the animation state machine.
+pub type AnimStateId = u32;
+
+/// A condition that can trigger a state transition.
+#[derive(Clone, Debug)]
+pub enum TransitionCondition {
+    /// Transition when a named parameter exceeds a threshold.
+    GreaterThan(String, f32),
+    /// Transition when a named parameter is below a threshold.
+    LessThan(String, f32),
+    /// Transition when a named boolean trigger is set (auto-cleared after use).
+    Trigger(String),
+    /// Transition when a named boolean parameter is true.
+    BoolTrue(String),
+    /// Transition when a named boolean parameter is false.
+    BoolFalse(String),
+    /// Transition when the current animation has finished playing.
+    AnimFinished,
+    /// Always transition (useful for "any state" rules).
+    Always,
+}
+
+/// A rule that governs automatic transitions between animation states.
+#[derive(Clone, Debug)]
+pub struct AnimTransitionRule {
+    /// Source state (or `None` for "any state").
+    pub from: Option<AnimStateId>,
+    /// Destination state.
+    pub to: AnimStateId,
+    /// Condition that must be met.
+    pub condition: TransitionCondition,
+    /// Duration of the crossfade blend (seconds).
+    pub blend_duration: f32,
+    /// Priority (higher wins when multiple conditions are met).
+    pub priority: i32,
+}
+
+/// What an animation state plays.
+#[derive(Clone, Debug)]
+pub enum AnimStateOutput {
+    /// Play a single skeletal animation clip by name.
+    Clip(String),
+    /// Evaluate a blend tree.
+    Tree(BlendTree),
+}
+
+/// A single state in the animation state machine.
+#[derive(Clone, Debug)]
+pub struct AnimState {
+    pub id: AnimStateId,
+    pub name: String,
+    pub output: AnimStateOutput,
+    /// Whether the animation loops in this state.
+    pub looping: bool,
+    /// Playback speed multiplier.
+    pub speed: f32,
+}
+
+/// Parameter values driving the state machine.
+#[derive(Clone, Debug, Default)]
+pub struct AnimParameters {
+    floats: FxHashMap<String, f32>,
+    bools: FxHashMap<String, bool>,
+    triggers: FxHashMap<String, bool>,
+}
+
+impl AnimParameters {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_float(&mut self, name: impl Into<String>, value: f32) {
+        self.floats.insert(name.into(), value);
+    }
+
+    pub fn get_float(&self, name: &str) -> f32 {
+        self.floats.get(name).copied().unwrap_or(0.0)
+    }
+
+    pub fn set_bool(&mut self, name: impl Into<String>, value: bool) {
+        self.bools.insert(name.into(), value);
+    }
+
+    pub fn get_bool(&self, name: &str) -> bool {
+        self.bools.get(name).copied().unwrap_or(false)
+    }
+
+    /// Set a trigger (consumed on next transition check).
+    pub fn set_trigger(&mut self, name: impl Into<String>) {
+        self.triggers.insert(name.into(), true);
+    }
+
+    fn consume_trigger(&mut self, name: &str) -> bool {
+        self.triggers.remove(name).unwrap_or(false)
+    }
+
+    fn peek_trigger(&self, name: &str) -> bool {
+        self.triggers.get(name).copied().unwrap_or(false)
+    }
+}
+
+/// The animation state machine: manages states, transitions, and blending.
+///
+/// # Usage
+///
+/// ```ignore
+/// let mut asm = AnimStateMachine::new();
+/// let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+/// let walk = asm.add_state("walk", AnimStateOutput::Clip("walk".into()), true);
+/// let attack = asm.add_state("attack", AnimStateOutput::Clip("attack".into()), false);
+///
+/// asm.add_transition(AnimTransitionRule {
+///     from: Some(idle),
+///     to: walk,
+///     condition: TransitionCondition::GreaterThan("speed".into(), 0.1),
+///     blend_duration: 0.2,
+///     priority: 0,
+/// });
+///
+/// asm.set_start_state(idle);
+///
+/// // Each tick:
+/// asm.params.set_float("speed", player_speed);
+/// asm.update(dt, &skeleton, &library);
+/// let pose = asm.sample(&skeleton, &library);
+/// ```
+#[derive(Clone, Debug)]
+pub struct AnimStateMachine {
+    states: FxHashMap<AnimStateId, AnimState>,
+    rules: Vec<AnimTransitionRule>,
+    next_id: AnimStateId,
+
+    /// The currently active state.
+    pub current_state: AnimStateId,
+    /// Playback time within the current state's animation.
+    pub current_time: f32,
+    /// Whether the current state's animation has finished.
+    pub current_finished: bool,
+
+    /// Active crossfade transition (if any).
+    transition: Option<ActiveTransition>,
+
+    /// Parameters that drive transition conditions.
+    pub params: AnimParameters,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveTransition {
+    from_state: AnimStateId,
+    to_state: AnimStateId,
+    from_time: f32,
+    to_time: f32,
+    duration: f32,
+    elapsed: f32,
+}
+
+impl ActiveTransition {
+    fn factor(&self) -> f32 {
+        if self.duration <= 0.0 {
+            1.0
+        } else {
+            (self.elapsed / self.duration).clamp(0.0, 1.0)
+        }
+    }
+
+    fn is_done(&self) -> bool {
+        self.elapsed >= self.duration
+    }
+}
+
+impl AnimStateMachine {
+    pub fn new() -> Self {
+        Self {
+            states: FxHashMap::default(),
+            rules: Vec::new(),
+            next_id: 0,
+            current_state: 0,
+            current_time: 0.0,
+            current_finished: false,
+            transition: None,
+            params: AnimParameters::new(),
+        }
+    }
+
+    /// Add a state and return its ID.
+    pub fn add_state(
+        &mut self,
+        name: impl Into<String>,
+        output: AnimStateOutput,
+        looping: bool,
+    ) -> AnimStateId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.states.insert(
+            id,
+            AnimState {
+                id,
+                name: name.into(),
+                output,
+                looping,
+                speed: 1.0,
+            },
+        );
+        id
+    }
+
+    /// Add a state with a custom playback speed.
+    pub fn add_state_with_speed(
+        &mut self,
+        name: impl Into<String>,
+        output: AnimStateOutput,
+        looping: bool,
+        speed: f32,
+    ) -> AnimStateId {
+        let id = self.add_state(name, output, looping);
+        if let Some(state) = self.states.get_mut(&id) {
+            state.speed = speed;
+        }
+        id
+    }
+
+    /// Add a transition rule.
+    pub fn add_transition(&mut self, rule: AnimTransitionRule) {
+        self.rules.push(rule);
+    }
+
+    /// Set the initial state.
+    pub fn set_start_state(&mut self, state: AnimStateId) {
+        self.current_state = state;
+        self.current_time = 0.0;
+        self.current_finished = false;
+        self.transition = None;
+    }
+
+    /// Force an immediate transition to a state with the given blend duration.
+    pub fn force_transition(&mut self, to: AnimStateId, blend_duration: f32) {
+        if self.current_state == to && self.transition.is_none() {
+            return;
+        }
+        self.transition = Some(ActiveTransition {
+            from_state: self.current_state,
+            from_time: self.current_time,
+            to_state: to,
+            to_time: 0.0,
+            duration: blend_duration,
+            elapsed: 0.0,
+        });
+    }
+
+    /// Get the name of the current state.
+    pub fn current_state_name(&self) -> &str {
+        self.states
+            .get(&self.current_state)
+            .map(|s| s.name.as_str())
+            .unwrap_or("unknown")
+    }
+
+    /// Get the name of a state by ID.
+    pub fn state_name(&self, id: AnimStateId) -> Option<&str> {
+        self.states.get(&id).map(|s| s.name.as_str())
+    }
+
+    /// Whether a crossfade transition is currently active.
+    pub fn is_transitioning(&self) -> bool {
+        self.transition.is_some()
+    }
+
+    /// Update the state machine: advance time, check transitions, handle blending.
+    pub fn update(
+        &mut self,
+        dt: f32,
+        skeleton: &Skeleton,
+        library: &SkeletalAnimationLibrary,
+    ) {
+        // Advance current state time
+        if let Some(state) = self.states.get(&self.current_state) {
+            let speed = state.speed;
+            let clip_name = match &state.output {
+                AnimStateOutput::Clip(name) => Some(name.clone()),
+                AnimStateOutput::Tree(_) => None,
+            };
+            let looping = state.looping;
+
+            self.current_time += dt * speed;
+
+            // Check if animation finished
+            if let Some(ref name) = clip_name {
+                if let Some(anim) = library.get(name) {
+                    if self.current_time >= anim.duration {
+                        if looping {
+                            self.current_time %= anim.duration;
+                        } else {
+                            self.current_time = anim.duration;
+                            self.current_finished = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Advance active transition
+        if let Some(ref mut trans) = self.transition {
+            trans.elapsed += dt;
+            // Advance the "to" state time as well
+            if let Some(to_state) = self.states.get(&trans.to_state) {
+                trans.to_time += dt * to_state.speed;
+
+                let clip_name = match &to_state.output {
+                    AnimStateOutput::Clip(name) => Some(name.clone()),
+                    AnimStateOutput::Tree(_) => None,
+                };
+                let looping = to_state.looping;
+
+                if let Some(ref name) = clip_name {
+                    if let Some(anim) = library.get(name) {
+                        if trans.to_time >= anim.duration && looping {
+                            trans.to_time %= anim.duration;
+                        }
+                    }
+                }
+            }
+
+            if trans.is_done() {
+                // Transition complete: switch to the target state
+                let to_state = trans.to_state;
+                let to_time = trans.to_time;
+                self.current_state = to_state;
+                self.current_time = to_time;
+                self.current_finished = false;
+                self.transition = None;
+            }
+        }
+
+        // Check transition rules (only if not already transitioning)
+        if self.transition.is_none() {
+            self.check_transitions(skeleton, library);
+        }
+    }
+
+    fn check_transitions(
+        &mut self,
+        _skeleton: &Skeleton,
+        _library: &SkeletalAnimationLibrary,
+    ) {
+        let mut best: Option<(i32, usize)> = None; // (priority, rule_index)
+
+        for (i, rule) in self.rules.iter().enumerate() {
+            // Check if rule applies to current state
+            if let Some(from) = rule.from {
+                if from != self.current_state {
+                    continue;
+                }
+            }
+            // Don't transition to self unless it's meaningful
+            if rule.to == self.current_state {
+                continue;
+            }
+
+            let condition_met = match &rule.condition {
+                TransitionCondition::GreaterThan(name, threshold) => {
+                    self.params.get_float(name) > *threshold
+                }
+                TransitionCondition::LessThan(name, threshold) => {
+                    self.params.get_float(name) < *threshold
+                }
+                TransitionCondition::Trigger(name) => {
+                    self.params.peek_trigger(name)
+                }
+                TransitionCondition::BoolTrue(name) => {
+                    self.params.get_bool(name)
+                }
+                TransitionCondition::BoolFalse(name) => {
+                    !self.params.get_bool(name)
+                }
+                TransitionCondition::AnimFinished => {
+                    self.current_finished
+                }
+                TransitionCondition::Always => true,
+            };
+
+            if condition_met {
+                if best.is_none() || rule.priority > best.unwrap().0 {
+                    best = Some((rule.priority, i));
+                }
+            }
+        }
+
+        if let Some((_, rule_idx)) = best {
+            let rule = &self.rules[rule_idx];
+            let to = rule.to;
+            let blend_duration = rule.blend_duration;
+
+            // Consume trigger if that was the condition
+            if let TransitionCondition::Trigger(name) = &rule.condition {
+                self.params.consume_trigger(name);
+            }
+
+            let trans = ActiveTransition {
+                from_state: self.current_state,
+                from_time: self.current_time,
+                to_state: to,
+                to_time: 0.0,
+                duration: blend_duration,
+                elapsed: 0.0,
+            };
+
+            // If zero-duration, complete immediately
+            if trans.is_done() {
+                self.current_state = to;
+                self.current_time = 0.0;
+                self.current_finished = false;
+            } else {
+                self.transition = Some(trans);
+            }
+        }
+    }
+
+    /// Sample the current pose from the state machine.
+    pub fn sample(
+        &self,
+        skeleton: &Skeleton,
+        library: &SkeletalAnimationLibrary,
+    ) -> Vec<BoneTransform> {
+        let current_pose = self.sample_state(self.current_state, self.current_time, skeleton, library);
+
+        if let Some(ref trans) = self.transition {
+            let from_pose = self.sample_state(trans.from_state, trans.from_time, skeleton, library);
+            let to_pose = self.sample_state(trans.to_state, trans.to_time, skeleton, library);
+            blend_poses(&from_pose, &to_pose, trans.factor())
+        } else {
+            current_pose
+        }
+    }
+
+    fn sample_state(
+        &self,
+        state_id: AnimStateId,
+        time: f32,
+        skeleton: &Skeleton,
+        library: &SkeletalAnimationLibrary,
+    ) -> Vec<BoneTransform> {
+        let default_pose = || vec![BoneTransform::default(); skeleton.bones.len()];
+
+        let state = match self.states.get(&state_id) {
+            Some(s) => s,
+            None => return default_pose(),
+        };
+
+        match &state.output {
+            AnimStateOutput::Clip(name) => {
+                library
+                    .get(name)
+                    .map(|anim| anim.sample(skeleton, time))
+                    .unwrap_or_else(default_pose)
+            }
+            AnimStateOutput::Tree(tree) => {
+                tree.evaluate(skeleton, library, time)
+            }
+        }
+    }
+}
+
+impl Default for AnimStateMachine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1236,5 +1708,228 @@ mod tests {
         // lerp(0, 20, 0.25) = 5
         assert!((pose[0].position.0 - 5.0).abs() < 1e-5);
         assert!((pose[0].rotation - 0.5).abs() < 1e-5);
+    }
+
+    // -- Animation State Machine --
+
+    fn make_asm_fixtures() -> (Skeleton, SkeletalAnimationLibrary) {
+        let mut skel = Skeleton::new("s");
+        skel.add_bone("b0", None, BoneTransform::default());
+
+        let mut lib = SkeletalAnimationLibrary::new();
+        lib.add(SkeletalAnimation {
+            name: "idle".into(),
+            duration: 1.0,
+            bone_anims: vec![BoneAnimation {
+                bone_id: BoneId(0),
+                keyframes: vec![BoneKeyframe {
+                    time: 0.0,
+                    position: (0.0, 0.0),
+                    rotation: 0.0,
+                    scale: (1.0, 1.0),
+                }],
+            }],
+            looping: true,
+        });
+        lib.add(SkeletalAnimation {
+            name: "walk".into(),
+            duration: 1.0,
+            bone_anims: vec![BoneAnimation {
+                bone_id: BoneId(0),
+                keyframes: vec![BoneKeyframe {
+                    time: 0.0,
+                    position: (10.0, 0.0),
+                    rotation: 0.0,
+                    scale: (1.0, 1.0),
+                }],
+            }],
+            looping: true,
+        });
+        lib.add(SkeletalAnimation {
+            name: "attack".into(),
+            duration: 0.5,
+            bone_anims: vec![BoneAnimation {
+                bone_id: BoneId(0),
+                keyframes: vec![BoneKeyframe {
+                    time: 0.0,
+                    position: (20.0, 0.0),
+                    rotation: 1.0,
+                    scale: (1.0, 1.0),
+                }],
+            }],
+            looping: false,
+        });
+        (skel, lib)
+    }
+
+    #[test]
+    fn asm_basic_state() {
+        let (skel, lib) = make_asm_fixtures();
+        let mut asm = AnimStateMachine::new();
+        let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+        asm.set_start_state(idle);
+
+        let pose = asm.sample(&skel, &lib);
+        assert!((pose[0].position.0).abs() < 1e-5);
+        assert_eq!(asm.current_state_name(), "idle");
+    }
+
+    #[test]
+    fn asm_float_transition() {
+        let (skel, lib) = make_asm_fixtures();
+        let mut asm = AnimStateMachine::new();
+        let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+        let walk = asm.add_state("walk", AnimStateOutput::Clip("walk".into()), true);
+        asm.set_start_state(idle);
+
+        asm.add_transition(AnimTransitionRule {
+            from: Some(idle),
+            to: walk,
+            condition: TransitionCondition::GreaterThan("speed".into(), 0.1),
+            blend_duration: 0.0,
+            priority: 0,
+        });
+
+        // No speed set -> stays in idle
+        asm.update(0.1, &skel, &lib);
+        assert!(!asm.is_transitioning());
+        assert_eq!(asm.current_state_name(), "idle");
+
+        // Set speed above threshold -> transitions
+        asm.params.set_float("speed", 1.0);
+        asm.update(0.1, &skel, &lib);
+        // With blend_duration=0, transition completes instantly
+        assert_eq!(asm.current_state_name(), "walk");
+    }
+
+    #[test]
+    fn asm_crossfade_blend() {
+        let (skel, lib) = make_asm_fixtures();
+        let mut asm = AnimStateMachine::new();
+        let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+        let walk = asm.add_state("walk", AnimStateOutput::Clip("walk".into()), true);
+        asm.set_start_state(idle);
+
+        asm.add_transition(AnimTransitionRule {
+            from: Some(idle),
+            to: walk,
+            condition: TransitionCondition::GreaterThan("speed".into(), 0.1),
+            blend_duration: 1.0,
+            priority: 0,
+        });
+
+        asm.params.set_float("speed", 1.0);
+        asm.update(0.0, &skel, &lib); // Triggers transition
+        assert!(asm.is_transitioning());
+
+        // Halfway through blend
+        asm.update(0.5, &skel, &lib);
+        assert!(asm.is_transitioning());
+        let pose = asm.sample(&skel, &lib);
+        // blend(idle=0, walk=10, factor=0.5) = 5
+        assert!((pose[0].position.0 - 5.0).abs() < 1e-4);
+
+        // Complete the blend
+        asm.update(0.5, &skel, &lib);
+        assert!(!asm.is_transitioning());
+        assert_eq!(asm.current_state_name(), "walk");
+    }
+
+    #[test]
+    fn asm_trigger_transition() {
+        let (skel, lib) = make_asm_fixtures();
+        let mut asm = AnimStateMachine::new();
+        let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+        let attack = asm.add_state("attack", AnimStateOutput::Clip("attack".into()), false);
+        asm.set_start_state(idle);
+
+        asm.add_transition(AnimTransitionRule {
+            from: Some(idle),
+            to: attack,
+            condition: TransitionCondition::Trigger("attack".into()),
+            blend_duration: 0.1,
+            priority: 0,
+        });
+
+        // Set trigger
+        asm.params.set_trigger("attack");
+        asm.update(0.0, &skel, &lib);
+        assert!(asm.is_transitioning());
+
+        // Trigger should be consumed
+        assert!(!asm.params.peek_trigger("attack"));
+    }
+
+    #[test]
+    fn asm_anim_finished_transition() {
+        let (skel, lib) = make_asm_fixtures();
+        let mut asm = AnimStateMachine::new();
+        let attack = asm.add_state("attack", AnimStateOutput::Clip("attack".into()), false);
+        let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+        asm.set_start_state(attack);
+
+        asm.add_transition(AnimTransitionRule {
+            from: Some(attack),
+            to: idle,
+            condition: TransitionCondition::AnimFinished,
+            blend_duration: 0.2,
+            priority: 0,
+        });
+
+        // Attack duration is 0.5s. After 0.6s it should be finished.
+        asm.update(0.6, &skel, &lib);
+        assert!(asm.current_finished);
+        // Should have started transitioning to idle
+        assert!(asm.is_transitioning());
+    }
+
+    #[test]
+    fn asm_priority() {
+        let (skel, lib) = make_asm_fixtures();
+        let mut asm = AnimStateMachine::new();
+        let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+        let walk = asm.add_state("walk", AnimStateOutput::Clip("walk".into()), true);
+        let attack = asm.add_state("attack", AnimStateOutput::Clip("attack".into()), false);
+        asm.set_start_state(idle);
+
+        // Low priority: idle -> walk
+        asm.add_transition(AnimTransitionRule {
+            from: Some(idle),
+            to: walk,
+            condition: TransitionCondition::GreaterThan("speed".into(), 0.1),
+            blend_duration: 0.0,
+            priority: 0,
+        });
+        // High priority: idle -> attack (wins when both conditions met)
+        asm.add_transition(AnimTransitionRule {
+            from: Some(idle),
+            to: attack,
+            condition: TransitionCondition::Trigger("attack".into()),
+            blend_duration: 0.0,
+            priority: 10,
+        });
+
+        asm.params.set_float("speed", 1.0);
+        asm.params.set_trigger("attack");
+        asm.update(0.0, &skel, &lib);
+
+        // Higher priority attack should win
+        assert_eq!(asm.current_state_name(), "attack");
+    }
+
+    #[test]
+    fn asm_force_transition() {
+        let (skel, lib) = make_asm_fixtures();
+        let mut asm = AnimStateMachine::new();
+        let idle = asm.add_state("idle", AnimStateOutput::Clip("idle".into()), true);
+        let walk = asm.add_state("walk", AnimStateOutput::Clip("walk".into()), true);
+        asm.set_start_state(idle);
+
+        asm.force_transition(walk, 0.5);
+        assert!(asm.is_transitioning());
+
+        asm.update(0.5, &skel, &lib);
+        assert!(!asm.is_transitioning());
+        assert_eq!(asm.current_state_name(), "walk");
     }
 }
