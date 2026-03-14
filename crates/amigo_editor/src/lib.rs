@@ -3,6 +3,11 @@ pub mod wizard;
 pub mod wizard_ui;
 pub mod visual_script;
 pub mod collision_editor;
+pub mod play_state;
+pub mod plugin;
+
+#[cfg(feature = "td")]
+pub mod wave_editor;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
