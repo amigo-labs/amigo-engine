@@ -99,6 +99,9 @@ pub mod prelude {
     pub use amigo_tilemap::*;
     pub use amigo_animation::*;
     pub use amigo_net::{PlayerId, Transport, LocalTransport};
+    pub use amigo_net::checksum::StateHasher;
+    pub use amigo_net::lobby::{LobbyManager, Room, RoomId, RoomConfig, RoomPhase};
+    pub use amigo_net::stats::{NetStats, ConnectionQuality};
     pub use amigo_ui::{UiContext, UiDrawCommand};
     pub use amigo_debug::DebugOverlay;
     pub use amigo_assets::AssetError;
