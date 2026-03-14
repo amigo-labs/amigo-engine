@@ -151,6 +151,8 @@ version = "0.1.0"
 dependencies = [
  "amigo_core",
  "amigo_editor",
+ "amigo_render",
+ "image 0.25.9",
  "ron",
  "serde",
  "serde_json",
