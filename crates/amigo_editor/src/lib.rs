@@ -5,6 +5,9 @@ pub mod visual_script;
 pub mod collision_editor;
 pub mod play_state;
 pub mod plugin;
+pub mod auto_path;
+pub mod heatmap;
+pub mod playtest;
 
 #[cfg(feature = "td")]
 pub mod wave_editor;
