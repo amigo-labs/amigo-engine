@@ -1,5 +1,6 @@
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
+use crate::splash::{self, SplashState};
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_debug::DebugOverlay;
@@ -95,6 +96,13 @@ impl EngineBuilder {
         self
     }
 
+    /// Enable or disable the default "Powered by Amigo Engine" splash screen.
+    /// Enabled by default.
+    pub fn splash(mut self, enabled: bool) -> Self {
+        self.config.splash.enabled = enabled;
+        self
+    }
+
     pub fn config(mut self, config: EngineConfig) -> Self {
         self.config = config;
         self
@@ -178,6 +186,7 @@ struct EngineState {
     sprite_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
     accumulator: f64,
+    splash: Option<SplashState>,
 }
 
 struct EngineApp<G: Game> {
@@ -248,10 +257,16 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             plugin.init(&mut game_ctx);
         }
 
-        self.game.init(&mut game_ctx);
-
         // Upload font atlas textures to GPU
         upload_font_atlases(&mut game_ctx, &mut renderer);
+
+        let splash = if self.config.splash.enabled {
+            Some(SplashState::new())
+        } else {
+            // No splash — init game immediately
+            self.game.init(&mut game_ctx);
+            None
+        };
 
         info!("Engine initialized successfully");
 
@@ -265,6 +280,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             sprite_draw_list: Vec::new(),
             last_frame: Instant::now(),
             accumulator: 0.0,
+            splash,
         });
     }
 
@@ -331,6 +347,47 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                 // Cap dt to prevent spiral of death
                 let dt = dt.min(0.25);
+
+                // ── Splash screen phase ──────────────────────────────
+                if let Some(ref mut splash_state) = state.splash {
+                    let finished = splash_state.tick(dt);
+                    let splash_alpha = splash_state.alpha();
+
+                    state.sprite_draw_list.clear();
+                    let vw = state.renderer.camera.virtual_width;
+                    let vh = state.renderer.camera.virtual_height;
+                    let white_tex = state.renderer.white_texture_id;
+                    splash::render_splash(
+                        &mut state.sprite_draw_list,
+                        white_tex,
+                        vw,
+                        vh,
+                        splash_alpha,
+                    );
+
+                    for sprite in &state.sprite_draw_list {
+                        state.renderer.batcher.push(sprite.clone());
+                    }
+
+                    match state.renderer.render() {
+                        Ok(_) => {}
+                        Err(wgpu::SurfaceError::Lost) => {
+                            let (w, h) = state.renderer.window_size();
+                            state.renderer.resize(w, h);
+                        }
+                        Err(e) => {
+                            error!("Render error during splash: {:?}", e);
+                        }
+                    }
+
+                    if finished {
+                        state.splash = None;
+                        self.game.init(&mut state.game_ctx);
+                    }
+                    return;
+                }
+
+                // ── Normal game loop ─────────────────────────────────
                 state.accumulator += dt;
 
                 state.game_ctx.time.dt = dt as f32;

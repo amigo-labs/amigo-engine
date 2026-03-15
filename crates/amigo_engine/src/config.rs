@@ -7,6 +7,8 @@ pub struct EngineConfig {
     pub render: RenderConfig,
     pub audio: AudioConfig,
     pub dev: DevConfig,
+    #[serde(default)]
+    pub splash: SplashConfig,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -47,6 +49,17 @@ pub struct DevConfig {
     pub api_port: u16,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SplashConfig {
+    pub enabled: bool,
+}
+
+impl Default for SplashConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
@@ -74,6 +87,7 @@ impl Default for EngineConfig {
                 api_server: false,
                 api_port: 9999,
             },
+            splash: SplashConfig::default(),
         }
     }
 }

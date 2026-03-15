@@ -48,6 +48,7 @@
 pub mod engine;
 pub mod config;
 pub mod context;
+pub mod splash;
 
 // Re-export all sub-crates for convenient access
 pub use amigo_core;
