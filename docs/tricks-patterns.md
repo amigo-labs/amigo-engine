@@ -571,52 +571,502 @@ pub struct GameState {
 
 **Problem:** `HashMap::iter()` gibt Elemente in undefinierter Reihenfolge zurück. Auf verschiedenen Maschinen kann die Reihenfolge anders sein → Determinismus gebrochen.
 
-**Lösung:** Simulation nutzt `BTreeMap` (sortiert) oder `IndexMap` (Insertion-Order). Iteration ist deterministisch, unabhängig von Plattform oder Laufzeit.
+**Lösung:** Simulation nutzt `BTreeMap` (sortiert) oder `IndexMap` (Insertion-Order). Iteration ist immer in derselben Reihenfolge. `FxHashMap` (rustc-hash) wird für O(1)-Lookups genutzt wo Iteration nicht nötig ist.
 
 ```rust
-// VERBOTEN in Simulation:
-let map: HashMap<EntityId, Damage> = ...;
-for (id, dmg) in map.iter() { ... }  // Reihenfolge undefiniert!
+// Gut (deterministisch):
+let towers: BTreeMap<EntityId, TowerData> = ...;
+for (id, tower) in &towers { ... }  // immer sortiert nach ID
 
-// KORREKT:
-let map: BTreeMap<EntityId, Damage> = ...;
-for (id, dmg) in map.iter() { ... }  // immer sortiert nach EntityId
-
-// ODER: Iteration über SparseSet (Dense Array = feste Reihenfolge)
-for (id, pos) in world.positions.iter() { ... }  // Insertion-Order
+// Schlecht (nicht-deterministisch):
+let towers: HashMap<EntityId, TowerData> = ...;
+for (id, tower) in &towers { ... }  // Reihenfolge variiert!
 ```
 
-**Regel:** `HashMap` ist OK für Lookups (read-only), aber NIE für Iteration die Simulation-Ergebnisse beeinflusst. `FxHashMap` (rustc_hash) wird für Performance-kritische Read-Only Maps verwendet.
-
-**Wo:** Überall in der Simulation. Damage-Berechnung, Spawn-Reihenfolge, Turn-Order, Loot-Drops.
+**Wo:** Jede Simulation-Loop die über Entities iteriert.
 
 ---
 
-## Zusammenfassung
+### 25. Command-Based Architecture
 
-| # | Technik | Kategorie | Komplexität |
-|---|---------|-----------|-------------|
-| 1 | SparseSet | ECS | Mittel |
-| 2 | Change Tracking | ECS | Niedrig |
-| 3 | State-Scoped Cleanup | ECS | Niedrig |
-| 4 | Hybrid Component Storage | ECS | Mittel |
-| 5 | Tick Scheduler | ECS | Niedrig |
-| 6 | Spatial Hash | Kollision | Mittel |
-| 7 | AABB Collision | Kollision | Niedrig |
-| 8 | A* Pathfinding | Pathfinding | Mittel |
-| 9 | Waypoint Pathfinding | Pathfinding | Niedrig |
-| 10 | Flow Field | Pathfinding | Mittel |
-| 11 | Sprite Batcher | Rendering | Mittel |
-| 12 | Per-Sprite Shaders | Rendering | Hoch |
-| 13 | Tilemap Chunk Caching | Rendering | Mittel |
-| 14 | Animated Tiles | Rendering | Niedrig |
-| 15 | Auto-Tiling (Bitmask) | Rendering | Mittel |
-| 16 | Post-Processing Stack | Rendering | Hoch |
-| 17 | Dual-Layer Rendering | Rendering | Hoch |
-| 18 | Adaptive Music | Audio | Hoch |
-| 19 | Bar-Synced Transitions | Audio | Hoch |
-| 20 | Stinger Quantization | Audio | Mittel |
-| 21 | SFX Variant System | Audio | Niedrig |
-| 22 | Fixed-Point Arithmetik | Determinismus | Mittel |
-| 23 | Seeded RNG | Determinismus | Niedrig |
-| 24 | No HashMap Iteration | Determinismus | Niedrig |
+**Problem:** Im Multiplayer sendet Client A "Tower platzieren bei (5,3)." Client B muss exakt dasselbe tun. Direkte ECS-Manipulation ist nicht serialisierbar.
+
+**Lösung:** Alle Spieler-Aktionen als serialisierbare `GameCommand` Enums. Commands werden über das Netzwerk gesendet. Die Simulation führt Commands aus – nicht Raw-Input.
+
+```rust
+pub enum GameCommand {
+    PlaceTower { x: Fix, y: Fix, tower_type: TowerId },
+    SellTower { tower_id: EntityId },
+    SetTargetPriority { tower_id: EntityId, priority: TargetPriority },
+    StartWave,
+    ActivateAbility { ability: AbilityId },
+    // ... alle Spieler-Aktionen
+}
+
+// Replay = Vec<(Tick, GameCommand)>
+// Multiplayer = Commands über UDP senden
+// Undo = Command rückwärts ausführen
+```
+
+**Wo:** Jede Spieler-Interaktion. Replay-System, Multiplayer, Undo/Redo im Editor.
+
+---
+
+### 26. Lockstep Multiplayer
+
+**Problem:** Zwei Spieler spielen zusammen. Die Simulation muss auf beiden identisch sein.
+
+**Lösung:** Lockstep-Protokoll. Beide Clients laufen exakt synchron:
+
+```
+Tick 100:
+  Client A sendet: [PlaceTower(5,3)]     → an Client B
+  Client B sendet: [StartWave]            → an Client A
+
+  Beide warten bis sie die Commands des anderen haben.
+
+  Dann: beide simulieren Tick 100 mit [PlaceTower(5,3), StartWave]
+  → identisches Ergebnis (dank Fixed-Point + Seeded RNG + geordnete Iteration)
+```
+
+Desync-Detection via CRC: beide Clients berechnen einen Checksum über den GameState. Unterschied → Desync-Warnung.
+
+**Wo:** Co-op Multiplayer. Funktioniert weil die gesamte Simulation deterministisch ist.
+
+---
+
+## SPEICHER & PERFORMANCE
+
+---
+
+### 27. Object Pool (Partikel)
+
+**Problem:** Explosion spawnt 200 Partikel, nächster Frame alle weg, 150 neue. Hunderte Allokationen pro Frame → Allocator leidet, Speicher fragmentiert.
+
+**Lösung:** Vorallozierter Pool. Slots werden aktiviert/deaktiviert, nie alloziert/freigegeben.
+
+```rust
+pub struct ParticlePool {
+    particles: Vec<Particle>,      // fest alloziert beim Start (z.B. 1000)
+    active: BitSet,                 // welche Slots aktiv sind
+    first_free: usize,              // nächster freier Slot (Linked-List durch freie Slots)
+}
+
+fn spawn(&mut self) -> Option<&mut Particle> {
+    if self.first_free < self.particles.len() {
+        let idx = self.first_free;
+        self.active.set(idx, true);
+        self.first_free = self.particles[idx].next_free;
+        Some(&mut self.particles[idx])
+    } else { None }  // Pool voll
+}
+
+fn despawn(&mut self, idx: usize) {
+    self.active.set(idx, false);
+    self.particles[idx].next_free = self.first_free;
+    self.first_free = idx;
+}
+```
+
+**Wo:** Partikel, Projektile, Floating-Text (Damage Numbers), temporäre Effekte.
+
+---
+
+### 28. Capacity Hints (Pre-Allocation)
+
+**Problem:** Ein SparseSet wächst dynamisch. Jedes `Vec::push()` kann eine Reallocation auslösen (teuer, kopiert alles).
+
+**Lösung:** Bei SparseSet-Erstellung die erwartete Entity-Anzahl angeben. Pre-Allocation einmalig beim Start.
+
+```rust
+let mut positions = SparseSet::<Position>::with_capacity(1000);
+let mut velocities = SparseSet::<Velocity>::with_capacity(1000);
+let mut sprites = SparseSet::<SpriteComp>::with_capacity(1000);
+// → 0 Reallocations während des gesamten Spiels
+```
+
+**Wo:** Alle SparseSet-Instanzen, alle Vec-basierten Systeme, Partikel-Pools.
+
+---
+
+### 29. Arena Allocator (Bumpalo)
+
+**Problem:** Pro Frame werden viele kleine, temporäre Daten erzeugt (Render-Commands, Event-Listen, Debug-Strings). `malloc`/`free` für jedes einzelne → langsam.
+
+**Lösung:** Bumpalo Arena: ein großer Speicherblock, Allokationen "bumpen" nur einen Pointer vorwärts. Am Frame-Ende: gesamte Arena wird in einem Schritt zurückgesetzt.
+
+```rust
+let arena = Bump::new();
+
+// Frame-Start:
+let render_cmds = arena.alloc_slice_fill_default::<RenderCmd>(500);
+let events = bumpalo::vec![in &arena; Event::default(); 100];
+// ... benutze render_cmds und events ...
+
+// Frame-Ende:
+arena.reset();  // EIN Pointer-Reset, fertig. Keine einzelnen Frees.
+```
+
+**Wo:** Temporäre Daten pro Frame: Render-Listen, Event-Queues, Debug-Ausgaben, Spatial Hash Rebuild.
+
+---
+
+### 30. Memory Debug Overlay
+
+**Problem:** Wo geht der Speicher hin? Gibt es Leaks? Wächst der VRAM?
+
+**Lösung:** Debug Overlay (F6) zeigt live: RAM-Nutzung, VRAM-Nutzung, Entity-Count pro Typ, Partikel-Pool-Auslastung, Texture Atlas Größe.
+
+```
+┌─ Memory ──────────────────┐
+│ RAM:   142 MB / 512 MB    │
+│ VRAM:   48 MB / 2048 MB   │
+│ Entities: 347             │
+│   Position: 347           │
+│   Velocity: 298           │
+│   Sprite:   312           │
+│ Particles: 84/1000 (8%)   │
+│ Atlases: 3 (12 MB)        │
+│ Audio: 8 MB               │
+└───────────────────────────┘
+```
+
+**Wo:** Debug-Modus. Wird in jedem Frame aktualisiert. Leak-Detection: wenn Entity-Count stetig wächst ohne State-Wechsel → Warnung in der Konsole.
+
+---
+
+## INPUT
+
+---
+
+### 31. Action-Based Input (Abstraction Layer)
+
+**Problem:** Der Spieler drückt "W" auf der Tastatur, "Up" auf dem D-Pad, oder schiebt den linken Stick. Alles soll "nach oben bewegen" heißen. Und der Spieler will vielleicht umbelegen.
+
+**Lösung:** Abstraktions-Layer. Das Spiel fragt nie nach konkreten Tasten, sondern nach Actions.
+
+```rust
+// Das Spiel fragt:
+if engine.input().held(Action::MoveUp) { ... }
+if engine.input().just_pressed(Action::Confirm) { ... }
+
+// Die Zuordnung kommt aus input.ron:
+(
+    actions: {
+        "move_up": [Key(W), Key(Up), GamepadAxis(LeftStickY, Negative)],
+        "confirm": [Key(Space), Key(Enter), GamepadButton(South)],
+    },
+)
+```
+
+Hot-reloadable. Spieler kann im Settings-Menü umbelegen. Gamepad-Support gratis.
+
+---
+
+### 32. Gamepad Hot-Plug
+
+**Problem:** Spieler steckt Controller ein/aus während das Spiel läuft.
+
+**Lösung:** Engine feuert Events: `GamepadConnected(id)` / `GamepadDisconnected(id)`. Das Spiel entscheidet was passiert (Pause? Controller-Auswahl-Screen? Ignorieren?).
+
+```rust
+for event in engine.events::<GamepadEvent>() {
+    match event {
+        GamepadConnected(id) => show_toast("Controller verbunden!"),
+        GamepadDisconnected(id) => pause_game(),
+    }
+}
+```
+
+**Wo:** Jede Plattform. Besonders wichtig für Couch-Gaming.
+
+---
+
+## ASSET MANAGEMENT
+
+---
+
+### 33. Dual Asset Loader
+
+**Problem:** Während der Entwicklung willst du Sprites direkt aus Aseprite-Dateien laden (Hot Reload!). Für den Release willst du alles in ein gepacktes Archiv (schneller, kleiner, tamper-proof).
+
+**Lösung:** Zwei Loader hinter derselben API:
+
+```
+Dev-Modus:                        Release-Modus:
+  assets/sprites/hero.aseprite      game.pak (Archiv)
+  assets/sprites/tiles.png          ├── textures.atlas (gepackt)
+  assets/data/player.ron            ├── data.bin (serialisiert)
+  → Direkt von Disk laden           └── audio.bin (komprimiert)
+  → Hot Reload bei Änderung         → Einmal beim Start laden
+```
+
+```rust
+// Game-Code: identisch in beiden Modi
+let sprite = engine.assets().load_sprite("sprites/hero");
+let data: PlayerStats = engine.assets().load_ron("data/player.ron");
+// → Der Loader entscheidet ob von Disk oder aus .pak
+```
+
+**Wo:** Überall. `amigo pack` CLI-Command packt alles für Release.
+
+---
+
+### 34. Hot Reload (File Watcher)
+
+**Problem:** Sprite geändert → Alt-Tab → Spiel neustarten → 30 Sekunden warten → Ergebnis sehen. Kreativitätskiller.
+
+**Lösung:** `notify` Crate beobachtet das Assets-Verzeichnis. Bei Dateiänderung: Asset neu laden, im Spiel ersetzen. Ohne Neustart.
+
+```
+1. Artist ändert hero.aseprite in Aseprite, speichert
+2. notify feuert FileChanged("assets/sprites/hero.aseprite")
+3. Engine parst die Datei neu
+4. Sprite-Handle zeigt auf neue Daten
+5. Nächster Frame: neues Sprite sichtbar
+
+Gesamtzeit: < 100ms
+```
+
+Funktioniert für: Sprites, Tilemaps, RON-Dateien (Stats, Configs), Audio, Shader. Nicht im Release-Modus (kein File Watcher nötig wenn alles in .pak ist).
+
+**Wo:** Entwicklung. Besonders mächtig mit Art Studio: Sprite generiert → in Assets-Ordner → sofort im Spiel sichtbar.
+
+---
+
+### 35. Synchronous Loading (Cartridge Style)
+
+**Problem:** Asynchrones Asset-Loading ist komplex (Futures, Loading-States, Placeholder-Textures). Für ein Pixel Art Spiel mit kleinen Assets: Overkill.
+
+**Lösung:** Assets werden synchron beim Start geladen. Wie eine Spielkonsolen-Cartridge: alles da, sofort verfügbar. Async nur an Level-Transitions (wo eh ein Ladescreen angezeigt wird).
+
+```rust
+// Startup: synchron, blockierend
+let assets = engine.assets().load_all("assets/");  // alles laden, fertig
+
+// Level-Transition: async mit Ladescreen
+engine.load_async("levels/world_3/", |progress| {
+    render_loading_screen(progress);  // 0% ... 50% ... 100%
+});
+```
+
+**Wo:** Startup, Level-Transitions. Im Game Loop: keine Ladeoperationen, alles sofort da.
+
+---
+
+## SAVE & REPLAY
+
+---
+
+### 36. Save-Slot System
+
+**Problem:** Spieler will mehrere Speicherstände. Autosave soll nicht den manuellen Save überschreiben. Corrupted Saves sollen erkannt werden.
+
+**Lösung:** Slot-basiertes System mit Metadata, Kompression und Integritätsprüfung.
+
+```rust
+pub struct SaveSlot {
+    pub slot_id: u8,
+    pub metadata: SlotInfo,     // Timestamp, Spielzeit, Label – OHNE den Save zu laden
+    pub data: Vec<u8>,          // LZ4-komprimierter GameState
+    pub crc: u32,               // Corruption-Check
+}
+```
+
+- **Autosave:** Rotierende N Slots (Autosave_1, Autosave_2, ...) bei konfigurierbarem Intervall
+- **Quicksave/Quickload:** F5/F9
+- **Plattform-aware:** Windows `AppData`, Linux `~/.local/share`
+- **SlotInfo:** Lesbar ohne den ganzen Save zu laden → schnelle Slot-Übersicht im Menü
+
+---
+
+### 37. Replay System
+
+**Problem:** "Wie hat der Spieler das Level geschafft?" für Debugging, Sharing, Leaderboards.
+
+**Lösung:** Replays = Liste von `(Tick, GameCommand)`. Abspielen = frischer GameState + Commands einspeisen.
+
+```rust
+pub struct Replay {
+    pub seed: u64,                          // RNG-Seed
+    pub commands: Vec<(u64, GameCommand)>,   // (Tick, Command)
+}
+
+// Aufnehmen:
+replay.commands.push((current_tick, command.clone()));
+
+// Abspielen:
+let mut state = GameState::new(replay.seed);
+for (tick, cmd) in &replay.commands {
+    while state.tick < *tick { state.simulate_tick(); }
+    state.execute_command(cmd);
+}
+```
+
+Funktioniert dank Determinismus (Fixed-Point + Seeded RNG + geordnete Iteration). Replay-Dateien sind winzig: nur Commands, kein Full-State.
+
+---
+
+## DEBUG
+
+---
+
+### 38. Visual Debug Layers (F-Keys)
+
+**Problem:** Wo sind die Kollisionsboxen? Wo laufen die Pfade? Warum schießt der Tower nicht?
+
+**Lösung:** F-Key Toggles für visuelle Debug-Overlays:
+
+| Key | Overlay | Zeigt |
+|-----|---------|-------|
+| F1 | HUD | FPS, Entity Count, Draw Calls, Memory |
+| F2 | Grid | Tile-Grid Linien |
+| F3 | Collision | AABB-Boxen aller Collider |
+| F4 | Pathfinding | A*-Pfade, Flow Fields, Waypoints |
+| F5 | Spawn/Build Zones | Wo Entities spawnen / platziert werden können |
+| F6 | Memory | RAM/VRAM, Pool-Auslastung, Entity-Typen |
+| F7 | Entity List | Alle Entities mit Komponenten |
+| F8 | Network | Lockstep-Stats, Latenz, Desync-Warnings |
+
+Alle hinter `#[cfg(debug_assertions)]` – existieren nicht im Release Build.
+
+---
+
+### 39. Tracy Integration
+
+**Problem:** "Das Spiel ruckelt bei Wave 5 mit 200 Enemies." Wo genau ist der Bottleneck?
+
+**Lösung:** Tracy Profiler Integration über `tracing` + `tracy-client`. Jedes System, jeder Render-Pass, jede Heavy-Operation ist instrumentiert.
+
+```rust
+#[tracing::instrument]
+fn physics_system(world: &mut World) {
+    // ... Tracy sieht: physics_system dauert 2.3ms
+}
+
+#[tracing::instrument]
+fn render_entities(renderer: &mut Renderer) {
+    // ... Tracy sieht: render_entities dauert 1.1ms
+}
+```
+
+Tracy zeigt: Timeline aller Systeme, CPU-Flamegraph, Memory-Allokationen, GPU-Timings. Goldstandard für Game-Performance-Analyse.
+
+---
+
+### 40. State Snapshot to File
+
+**Problem:** "Es gibt einen Bug bei Wave 7 wenn der Spieler 3 Cannon-Towers hat." Wie reproduzieren?
+
+**Lösung:** Jederzeit den kompletten GameState als RON-Datei dumpen. Laden → exakt an diesem Punkt weiterspielen.
+
+```bash
+# In-Game: F10 drückt
+# → saves debug_snapshot_2026-03-15_14-23-01.ron
+
+# Claude Code oder Entwickler:
+amigo run --load-snapshot debug_snapshot_2026-03-15_14-23-01.ron
+# → Spiel startet exakt in diesem Zustand
+```
+
+**Wo:** Bug-Reports, AI-Playtesting (Claude Code macht Snapshot → analysiert → ändert Code → lädt Snapshot).
+
+---
+
+## SPEZIAL-FEATURES
+
+---
+
+### 41. Event System (Double Buffer)
+
+**Problem:** System A feuert Event → System B soll reagieren. Aber System B lief schon VOR System A → sieht das Event nicht.
+
+**Lösung:** Zwei Vektoren pro Event-Typ. Write-Buffer (aktueller Tick) und Read-Buffer (vorheriger Tick). Am Tick-Ende: swap.
+
+```
+Tick 5:
+  Write: [EnemyDied(42)]       ← Systeme schreiben hier
+  Read:  [WaveStarted]          ← Systeme lesen hier (Events von Tick 4)
+
+Ende Tick 5:  Swap!
+
+Tick 6:
+  Write: (leer)
+  Read:  [EnemyDied(42)]        ← jetzt sichtbar für alle
+```
+
+Events leben genau 1 Tick zum Lesen. 1 Tick Verzögerung (~16ms) – nicht wahrnehmbar. Keine Race Conditions.
+
+---
+
+### 42. Atmosphere System (Smooth Interpolation)
+
+**Problem:** Die Lichtstimmung soll sich ändern wenn ein Boss spawnt. Abrupter Wechsel fällt auf.
+
+**Lösung:** `atmosphere.transition_to("boss", duration)` startet eine Interpolation. Alle Atmosphären-Parameter (Licht, Farbe, Wetter-Intensität, Post-Effects, Music) werden über `duration` Sekunden smooth übergeblendet.
+
+```rust
+pub struct Atmosphere {
+    current: AtmosphereState,
+    target: Option<(AtmosphereState, f32, f32)>,  // (target, duration, progress)
+}
+
+fn update_atmosphere(atm: &mut Atmosphere, dt: f32) {
+    if let Some((target, duration, progress)) = &mut atm.target {
+        *progress += dt / *duration;
+        atm.current = AtmosphereState::lerp(&atm.current, target, *progress);
+        if *progress >= 1.0 { atm.target = None; }
+    }
+}
+```
+
+**Wo:** Welt-Stimmung (calm → storm), Boss-Encounters, Tag/Nacht-Zyklen, Dimension-Wechsel.
+
+---
+
+### 43. Scene Stack
+
+**Problem:** Gameplay läuft → Pause-Menü öffnet → das Gameplay soll "eingefroren" im Hintergrund bleiben, nicht despawnt werden.
+
+**Lösung:** Scenes als Stack. Die oberste Scene ist aktiv. Darunter liegende Scenes sind pausiert aber noch da.
+
+```
+Stack:
+  ┌────────────┐
+  │ Pause Menu │  ← aktiv, rendert über dem Gameplay
+  ├────────────┤
+  │ Gameplay   │  ← pausiert, nicht despawnt, wird noch gerendert (gedimmt)
+  ├────────────┤
+  │ (base)     │
+  └────────────┘
+
+// Push → Pause öffnet sich über dem Gameplay
+// Pop → zurück zum Gameplay, genau wo es war
+```
+
+**Wo:** Pause, Inventar-Overlay, Dialogue über Gameplay, Cutscene-Overlay.
+
+---
+
+### 44. Screen Transitions (Shader-based)
+
+**Problem:** Welt-Wechsel: der Bildschirm soll nicht einfach hart schneiden.
+
+**Lösung:** Transition-Effekte als Post-Processing Shader. Die aktuelle Szene rendert in Texture A, die neue in Texture B, der Transition-Shader mischt.
+
+```rust
+pub enum Transition {
+    Fade { duration: f32, color: Color },           // Fade to black
+    Dissolve { duration: f32, noise: TextureId },    // Pixel lösen sich auf
+    Wipe { duration: f32, direction: Direction },    // Schieben
+    Circle { duration: f32, center: Vec2 },          // Kreis öffnet/schließt
+    VHSStatic { duration: f32 },                     // Für Threadwalker Dimension-Flip
+    Custom { shader: ShaderId, duration: f32 },      // Custom WGSL
+}
+```
+
+**Wo:** Welt-Wechsel (Loom → World), Cutscene-Übergänge, Tod/Respawn, Dimension-Flip (Stranger Things → VHS Static).
+
+---
+
+*Dieses Dokument ist ein Nachschlagewerk. Alle Techniken sind in der Engine-Spec (amigo-engine-complete.md) verankert, hier werden sie erklärt und illustriert.*
