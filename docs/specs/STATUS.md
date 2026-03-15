@@ -92,29 +92,39 @@ Last updated: 2026-03-15 (full audit against source code)
 | # | Section | Status | Notes |
 |---|---------|--------|-------|
 | 1 | Overview | ✅ Implemented | amigo_artgen (2,608 LOC) + amigo_audiogen (1,856 LOC) |
-| 2 | Art Architecture | ✅ Implemented | ComfyUI workflow builder + HTTP client + post-processing |
-| 3 | Connection | ✅ Implemented | Local/Remote/Cloud modes |
-| 4 | Style Definitions | ✅ Implemented | Per-world style RON files |
-| 5 | Art MCP Tools | ✅ Implemented | generate_sprite, generate_tileset, generate_spritesheet, variation, inpaint, palette_swap, upscale, post_process, list_styles, list_checkpoints, list_loras, server_status |
-| 6 | Post-Processing Pipeline | ✅ Implemented | Downscale, palette clamp, AA removal, transparency cleanup, outline, tile edge check |
-| 7 | Workflow Builder | ✅ Implemented | Template JSON workflows + parameter injection |
-| 8 | Audio Architecture | ✅ Implemented | ACE-Step (Gradio) + AudioGen (Python) dual backend |
-| 9 | AI Models | ✅ Implemented | ACE-Step 1.5 + Meta AudioGen |
-| 10 | Stem Strategy | ✅ Implemented | Quick Mode (generate & split) + Clean Mode (per-stem conditioned) |
-| 11 | Audio MCP Tools | ✅ Implemented | generate_core_melody, generate_stem, generate_track, generate_variation, extend_track, remix, generate_sfx, generate_ambient, stem_split, loop_trim, normalize, convert, preview, server_status, list_styles |
+| 2 | Art Architecture | 🔧 Partial | Workflow builder builds ComfyUI node graphs programmatically. HTTP client methods are **stubs** (no actual ComfyUI calls). Post-processing fully implemented |
+| 3 | Connection | 🔧 Partial | Local mode scaffolded (127.0.0.1:8188). Remote/Cloud modes not functional (no HTTP client) |
+| 4 | Style Definitions | 🔧 Partial | `StyleDef` struct with all spec'd fields. 6 builtin world styles hardcoded. RON file loading scaffolded but **no `.style.ron` files exist on disk** |
+| 5 | Art MCP Tools | 🔧 Partial | All 12 tools registered (generate_sprite, generate_tileset, generate_spritesheet, variation, inpaint, palette_swap, upscale, post_process, list_styles, list_checkpoints, list_loras, server_status). All **return placeholder data** — no actual generation |
+| 6 | Post-Processing Pipeline | ✅ Implemented | palette_clamp, remove_aa, add_outline (inner/outer/both), cleanup_transparency, downscale, tile_edge_check, force_dimensions — all in Rust (postprocess.rs) |
+| 7 | Workflow Builder | 🔧 Partial | Programmatic workflow building for txt2img, img2img, inpaint, upscale. JSON template files exist on disk but are **not loaded by code**. No `custom/` directory |
+| 8 | Audio Architecture | 🔧 Partial | ACE-Step + AudioGen client structs exist. HTTP calls are **stubs** (no actual AI generation). Prompt building fully implemented |
+| 9 | AI Models | 🔧 Partial | Client code scaffolded for ACE-Step 1.5 + AudioGen. No actual model communication |
+| 10 | Stem Strategy | 🔧 Partial | Quick Mode scaffolded (generate + Demucs split). **Clean Mode missing** (no per-stem conditioned generation, no generate_core_melody, no generate_stem) |
+| 11 | Audio MCP Tools | 🔧 Partial | 6 of 19 spec'd tools: generate_music, generate_sfx, split_stems, process, list_styles, server_status. **Missing 13 tools:** generate_core_melody, generate_stem, generate_variation, extend_track, remix, generate_ambient, loop_trim, normalize, convert, preview (+ name mismatches: spec `generate_track` → code `generate_music`) |
 | 12 | Adaptive Music System (engine-side) | ✅ Implemented | Full system in amigo_audio: AdaptiveMusicEngine, BarClock, LayerRule (Lerp/Threshold/Toggle), MusicTransition (CrossfadeOnBar/FadeOutThenPlay/CutOnBar/StingerThen/LayerSwap), Stinger with beat/bar quantization |
-| 13 | Sound Effects Pipeline | ✅ Implemented | SFX categories, variation system (amigo_audio) |
-| 14 | World Audio Styles | ✅ Implemented | Per-world style RON files with instrument mapping, mood prompts, SFX styles |
-| 15 | Audio Post-Processing | ✅ Implemented | Loop detection/trim, loudness normalization, format conversion, loop validation (amigo_audiogen/post_processing.rs) |
-| 16 | GPU Scheduling | ✅ Implemented | Sequential scheduling with lock file |
-| 17 | Workspace Structure | ✅ Implemented | Matches spec layout |
+| 13 | Sound Effects Pipeline | ✅ Implemented | SFX categories (8 types), variation system, pitch variance (amigo_audio) |
+| 14 | World Audio Styles | 🔧 Partial | 6 builtin world audio styles hardcoded. No `.audio_style.ron` files on disk |
+| 15 | Audio Post-Processing | 🔧 Partial | `apply_loop_crossfade()`, normalization logic exist. Full pipeline (BPM detection, bar snap, spectral validation) not implemented |
+| 16 | GPU Scheduling | 🔧 Partial | Lock file concept referenced in spec but no actual implementation |
+| 17 | Workspace Structure | 🔧 Partial | Matches spec layout for code. Missing: `styles/` directory with RON files, `scripts/audiogen_server.py` |
 
 ### Gaps (Asset Pipeline)
 
 | Gap | Status | Notes |
 |-----|--------|-------|
 | ~~Adaptive Music runtime~~ | ✅ Implemented | Full system exists in amigo_audio: BarClock, vertical layering, horizontal transitions, stingers |
-| RON-based music config loading | 🗓 Roadmap | Spec §12 shows `.music.ron` and `.sequence.ron` config files — engine has the runtime structs but no RON loader for adaptive music definitions |
+| RON-based music config loading | 🗓 Roadmap | Spec §12 shows `.music.ron` and `.sequence.ron` config files — engine has the runtime structs but no RON loader |
+| ComfyUI HTTP integration | 🗓 Roadmap | Client methods exist as stubs. No actual HTTP calls to ComfyUI (no reqwest/ureq dependency) |
+| ACE-Step / AudioGen HTTP integration | 🗓 Roadmap | Client structs scaffolded, all generate() calls return empty placeholders |
+| 13 missing audiogen MCP tools | 🗓 Roadmap | generate_core_melody, generate_stem, generate_variation, extend_track, remix, generate_ambient, loop_trim, normalize, convert, preview, and more |
+| Style RON files on disk | 🗓 Roadmap | Code loads from RON but no `.style.ron` or `.audio_style.ron` files exist — only hardcoded builtins |
+| Clean Mode stem workflow | 🗓 Roadmap | Per-stem conditioned generation (core melody → stems) not scaffolded |
+| Post-processing pipeline order | ⚠️ Inconsistency | Spec order: Downscale → Palette Clamp → AA Removal → Transparency → Outline → Tile Edge. Code order: Transparency → AA Removal → Palette Clamp → Outline |
+
+### Key insight: artgen + audiogen are architectural scaffolds
+
+Both MCP servers have correct architecture (tools registered, workflow building, post-processing, style system) but **no actual AI backend communication**. All ComfyUI and ACE-Step/AudioGen calls are stubs. The post-processing pipeline in amigo_artgen is the only fully functional component. This means the tools will work correctly once HTTP clients are connected, but currently produce no real output.
 
 ---
 
