@@ -442,6 +442,8 @@ fn cmd_build(_args: &[String]) {
 // ---------------------------------------------------------------------------
 
 fn cmd_pack(_args: &[String]) {
+    use amigo_assets::pak::{AssetKind, PakWriter};
+
     let manifest = load_manifest().unwrap_or_else(|| {
         eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
         process::exit(1);
@@ -449,82 +451,176 @@ fn cmd_pack(_args: &[String]) {
 
     println!("Packing assets for '{}'...", manifest.name);
 
+    let mut pak = PakWriter::new();
+
+    // ── 1. Sprites → texture atlas ──────────────────────────────────
     let sprites_dir = Path::new("assets/sprites");
-    if !sprites_dir.exists() {
-        println!("  No sprites directory found, skipping atlas packing.");
-        return;
-    }
+    if sprites_dir.exists() {
+        let mut sprite_files: Vec<(String, PathBuf)> = Vec::new();
+        collect_pngs(sprites_dir, "", &mut sprite_files);
 
-    // Collect all PNG files
-    let mut sprite_files: Vec<(String, PathBuf)> = Vec::new();
-    collect_pngs(sprites_dir, "", &mut sprite_files);
+        if !sprite_files.is_empty() {
+            println!("  Sprites: {} files", sprite_files.len());
 
-    if sprite_files.is_empty() {
-        println!("  No sprites found.");
-        return;
-    }
+            let mut atlas_builder = amigo_render::atlas::AtlasBuilder::new(4096, 2);
+            let mut images: Vec<(String, image::RgbaImage)> = Vec::new();
 
-    println!("  Found {} sprites", sprite_files.len());
-
-    // Load images and compute atlas layout
-    let mut atlas_builder = amigo_render::atlas::AtlasBuilder::new(4096, 2);
-    let mut images: Vec<(String, image::RgbaImage)> = Vec::new();
-
-    for (name, path) in &sprite_files {
-        match image::open(path) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                atlas_builder.add(name.clone(), rgba.width(), rgba.height());
-                images.push((name.clone(), rgba));
-            }
-            Err(e) => {
-                eprintln!("  WARNING: Failed to load {}: {e}", path.display());
-            }
-        }
-    }
-
-    match atlas_builder.pack() {
-        Ok(pack) => {
-            // Blit sprites into atlas image
-            let mut atlas_image = image::RgbaImage::new(pack.width, pack.height);
-            for (name, img) in &images {
-                if let Some(entry) = pack.get(name) {
-                    for y in 0..img.height() {
-                        for x in 0..img.width() {
-                            let pixel = img.get_pixel(x, y);
-                            atlas_image.put_pixel(entry.rect.x + x, entry.rect.y + y, *pixel);
-                        }
+            for (name, path) in &sprite_files {
+                match image::open(path) {
+                    Ok(img) => {
+                        let rgba = img.to_rgba8();
+                        atlas_builder.add(name.clone(), rgba.width(), rgba.height());
+                        images.push((name.clone(), rgba));
+                    }
+                    Err(e) => {
+                        eprintln!("  WARNING: Failed to load {}: {e}", path.display());
                     }
                 }
             }
 
-            // Write atlas image
-            let out_dir = Path::new("assets/packed");
-            std::fs::create_dir_all(out_dir).unwrap();
+            match atlas_builder.pack() {
+                Ok(pack) => {
+                    // Blit sprites into atlas image
+                    let mut atlas_image = image::RgbaImage::new(pack.width, pack.height);
+                    for (name, img) in &images {
+                        if let Some(entry) = pack.get(name) {
+                            for y in 0..img.height() {
+                                for x in 0..img.width() {
+                                    let pixel = img.get_pixel(x, y);
+                                    atlas_image.put_pixel(
+                                        entry.rect.x + x,
+                                        entry.rect.y + y,
+                                        *pixel,
+                                    );
+                                }
+                            }
+                        }
+                    }
 
-            let atlas_path = out_dir.join("atlas.png");
-            atlas_image.save(&atlas_path).unwrap();
-            println!("  Atlas: {}x{} → {}", pack.width, pack.height, atlas_path.display());
+                    // Encode atlas PNG to memory and add to pak
+                    let mut atlas_png = Vec::new();
+                    atlas_image
+                        .write_to(
+                            &mut std::io::Cursor::new(&mut atlas_png),
+                            image::ImageFormat::Png,
+                        )
+                        .expect("Failed to encode atlas PNG");
+                    pak.add("atlas.png", AssetKind::AtlasImage, atlas_png);
 
-            // Write atlas manifest (RON)
-            let entries: Vec<(String, [f32; 4])> = pack
-                .entries
-                .iter()
-                .map(|(name, entry)| {
-                    (name.clone(), [entry.uv.x, entry.uv.y, entry.uv.w, entry.uv.h])
-                })
-                .collect();
+                    // Atlas manifest (RON with UV coords)
+                    let entries: Vec<(String, [f32; 4])> = pack
+                        .entries
+                        .iter()
+                        .map(|(name, entry)| {
+                            (name.clone(), [entry.uv.x, entry.uv.y, entry.uv.w, entry.uv.h])
+                        })
+                        .collect();
+                    let manifest_ron =
+                        ron::ser::to_string_pretty(&entries, ron::ser::PrettyConfig::default())
+                            .expect("Failed to serialize atlas manifest");
+                    pak.add("atlas.ron", AssetKind::AtlasManifest, manifest_ron.into_bytes());
 
-            let manifest_ron = ron::ser::to_string_pretty(&entries, ron::ser::PrettyConfig::default())
-                .expect("Failed to serialize atlas manifest");
-            let manifest_path = out_dir.join("atlas.ron");
-            std::fs::write(&manifest_path, manifest_ron).unwrap();
-            println!("  Manifest: {}", manifest_path.display());
-            println!("  Done! {} sprites packed.", images.len());
+                    println!("  Atlas: {}x{} ({} sprites)", pack.width, pack.height, images.len());
+                }
+                Err(e) => {
+                    eprintln!("  ERROR: Atlas packing failed: {e}");
+                    process::exit(1);
+                }
+            }
+        }
+    }
+
+    // ── 2. Audio files ──────────────────────────────────────────────
+    let audio_dir = Path::new("assets/audio");
+    if audio_dir.exists() {
+        let mut count = 0u32;
+        collect_files_recursive(audio_dir, "", &["wav", "ogg", "mp3"], &mut |name, path| {
+            if let Err(e) = pak.add_file(&name, AssetKind::Audio, path) {
+                eprintln!("  WARNING: Failed to read {}: {e}", path.display());
+            } else {
+                count += 1;
+            }
+        });
+        if count > 0 {
+            println!("  Audio: {} files", count);
+        }
+    }
+
+    // ── 3. Data files (RON, TOML, JSON) ─────────────────────────────
+    let data_dir = Path::new("assets/data");
+    if data_dir.exists() {
+        let mut count = 0u32;
+        collect_files_recursive(data_dir, "", &["ron", "toml", "json"], &mut |name, path| {
+            if let Err(e) = pak.add_file(&name, AssetKind::Data, path) {
+                eprintln!("  WARNING: Failed to read {}: {e}", path.display());
+            } else {
+                count += 1;
+            }
+        });
+        if count > 0 {
+            println!("  Data: {} files", count);
+        }
+    }
+
+    // ── 4. Level files (.amigo) ─────────────────────────────────────
+    let levels_dir = Path::new("assets/levels");
+    if levels_dir.exists() {
+        let mut count = 0u32;
+        collect_files_recursive(levels_dir, "", &["amigo"], &mut |name, path| {
+            if let Err(e) = pak.add_file(&name, AssetKind::Level, path) {
+                eprintln!("  WARNING: Failed to read {}: {e}", path.display());
+            } else {
+                count += 1;
+            }
+        });
+        if count > 0 {
+            println!("  Levels: {} files", count);
+        }
+    }
+
+    // ── 5. Font files (.ttf, .otf) ─────────────────────────────────
+    let fonts_dir = Path::new("assets/fonts");
+    if fonts_dir.exists() {
+        let mut count = 0u32;
+        collect_files_recursive(fonts_dir, "", &["ttf", "otf"], &mut |name, path| {
+            if let Err(e) = pak.add_file(&name, AssetKind::Font, path) {
+                eprintln!("  WARNING: Failed to read {}: {e}", path.display());
+            } else {
+                count += 1;
+            }
+        });
+        if count > 0 {
+            println!("  Fonts: {} files", count);
+        }
+    }
+
+    // ── Write game.pak ──────────────────────────────────────────────
+    if pak.len() == 0 {
+        println!("  No assets found. Nothing to pack.");
+        return;
+    }
+
+    let out_dir = Path::new("assets/packed");
+    std::fs::create_dir_all(out_dir).unwrap();
+    let pak_path = out_dir.join("game.pak");
+
+    match pak.write_to(&pak_path) {
+        Ok(size) => {
+            let size_kb = size as f64 / 1024.0;
+            let size_display = if size_kb > 1024.0 {
+                format!("{:.1} MB", size_kb / 1024.0)
+            } else {
+                format!("{:.0} KB", size_kb)
+            };
+            println!(
+                "  Packed {} assets → {} ({})",
+                pak.len(),
+                pak_path.display(),
+                size_display,
+            );
         }
         Err(e) => {
-            eprintln!("  ERROR: Atlas packing failed: {e}");
-            eprintln!("  Try splitting sprites across multiple atlases or increasing max size.");
+            eprintln!("  ERROR: Failed to write game.pak: {e}");
             process::exit(1);
         }
     }
@@ -550,6 +646,39 @@ fn collect_pngs(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
                 format!("{prefix}/{stem}")
             };
             out.push((name, path));
+        }
+    }
+}
+
+/// Recursively collect files with specific extensions and invoke a callback.
+fn collect_files_recursive(
+    dir: &Path,
+    prefix: &str,
+    extensions: &[&str],
+    callback: &mut dyn FnMut(String, &Path),
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let dir_name = path.file_name().unwrap().to_string_lossy();
+            let new_prefix = if prefix.is_empty() {
+                dir_name.to_string()
+            } else {
+                format!("{prefix}/{dir_name}")
+            };
+            collect_files_recursive(&path, &new_prefix, extensions, callback);
+        } else if let Some(ext) = path.extension() {
+            let ext_str = ext.to_string_lossy().to_lowercase();
+            if extensions.iter().any(|&e| e == ext_str) {
+                let file_name = path.file_name().unwrap().to_string_lossy();
+                let name = if prefix.is_empty() {
+                    file_name.to_string()
+                } else {
+                    format!("{prefix}/{file_name}")
+                };
+                callback(name, &path);
+            }
         }
     }
 }
