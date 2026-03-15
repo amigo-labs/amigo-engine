@@ -16,15 +16,15 @@ Last updated: 2026-03-15 (full audit against source code)
 | 2 | Tech Stack | ✅ Implemented | All core deps in Cargo.toml |
 | 3 | Architecture Overview | ✅ Implemented | 14 crates + 4 tools; spec lists `games/amigo_td/` but dir doesn't exist (game lives in separate repo) |
 | 4 | Core Types, Math & ECS | ✅ Implemented | SparseSet, Fixed-Point, Change Tracking, BitSet (amigo_core, 18,360 LOC) |
-| 5 | Rendering Pipeline | ✅ Implemented | Sprite batcher, atlas, camera, particles, lighting, post-processing, atmosphere (amigo_render, 4,223 LOC) |
-| 6 | Memory & Performance | ✅ Implemented | Pooling, arena (bumpalo), scheduler, spatial hash |
+| 5 | Rendering Pipeline | 🔧 Partial | Sprite batcher, atlas, camera, particles, lighting, post-processing (bloom, CRT, vignette, color grading, chromatic aberration), atmosphere (amigo_render, 4,223 LOC). **Missing:** 7-stage render pipeline (single pass instead), per-sprite shaders (flash, outline, dissolve, palette_swap, silhouette, wave) |
+| 6 | Memory & Performance | 🔧 Partial | Pooling, scheduler, spatial hash. **Missing:** bumpalo arena allocator (no dependency) |
 | 7 | API Design | ✅ Implemented | Game trait, EngineBuilder, GameContext, DrawContext, splash screen (amigo_engine, 1,720 LOC) |
-| 8 | Command System & Networking | ✅ Implemented | Lockstep, replay, command serialization, transport trait (amigo_net, 2,208 LOC) |
+| 8 | Command System & Networking | 🔧 Partial | Transport trait, LocalTransport, replay system with seek, CRC-32 checksum + DesyncDetector (amigo_net, 2,208 LOC). **Missing:** No laminar UDP transport — only LocalTransport. Network multiplayer is stub-level |
 | 9 | Asset Pipeline | ✅ Implemented | Hot reload, handle system, `.pak` packing via `amigo pack` (amigo_assets, 1,030 LOC) |
 | 10 | Tilemap System | ✅ Implemented | Auto-tiling, chunk caching, properties (amigo_tilemap, 774 LOC) |
 | 11 | Pathfinding | ✅ Implemented | A*, flow fields (Dijkstra), waypoints (amigo_core/pathfinding.rs) |
 | 12 | Animation System | ✅ Implemented | Aseprite integration, state machine (amigo_animation, 1,903 LOC) |
-| 13 | Camera System | ✅ Implemented | Follow, shake, clamp, deadzone (amigo_render/camera.rs) |
+| 13 | Camera System | ✅ Implemented | Fixed, Follow (deadzone+lookahead+smoothing), FollowSmooth, ScreenLock, RoomTransition, BossArena, CinematicPan, EdgePan, FreePan + shake, zoom, bounds clamping, pixel_snap (amigo_render/camera.rs, 555 LOC) |
 | 14 | Input System | ✅ Implemented | Keyboard, mouse, gamepad, action maps (amigo_input, 944 LOC) |
 | 15 | Audio System | ✅ Implemented | kira wrapper, SFX with variants, AdaptiveMusicEngine (BarClock, LayerRule, MusicTransition, Stingers), volume channels (amigo_audio, 1,126 LOC) |
 | 16 | Level Editor | ✅ Implemented | Tile painter, wave editor, collision editor, playtest, heatmap, visual scripting, auto-path, egui UI, wizard (amigo_editor, 5,103 LOC) |
@@ -56,12 +56,19 @@ Last updated: 2026-03-15 (full audit against source code)
 |-----|--------|-------|
 | Tier 2 Pixel UI widgets | 🗓 Roadmap | Spec describes text_input, slider, dropdown, color_picker, scrollable_list, tree_view in Pixel UI style. Reality: editor uses egui for these. No Pixel UI tier 2 exists |
 | ~~Adaptive Music Engine (runtime)~~ | ✅ Implemented | `AdaptiveMusicEngine`, `BarClock`, `MusicSection`, `LayerRule`, `MusicTransition`, `Stinger` with quantization — all in amigo_audio/lib.rs |
-| Isometric tilemap mode | 🗓 Roadmap | Spec §10 describes `GridMode::Isometric`. Not implemented — only orthogonal exists |
+| Per-sprite shaders | 🗓 Roadmap | Spec §5 describes flash, outline, dissolve, palette_swap, silhouette, wave shaders. Not implemented — single render pass only |
+| 7-stage render pipeline | 🗓 Roadmap | Spec §5/A.6 describes Background → Tilemap → Entities → Particles → Lighting → PostProcess → UI stages. Code has single pass + post-processing |
+| Bumpalo arena allocator | 🗓 Roadmap | Spec §6 lists bumpalo for per-frame temp data. No bumpalo dependency in codebase |
+| UDP/laminar transport | 🗓 Roadmap | Spec §8 describes laminar UDP for multiplayer. Only LocalTransport exists. No laminar dependency |
+| Isometric tilemap mode | 🔧 Partial | `GridMode::Isometric` enum variant exists in amigo_tilemap but rendering/conversion not tested |
 | Chunk streaming tilemap | 🗓 Roadmap | Spec §10 describes `ChunkedTilemap` with load/unload by camera position. Not implemented |
 | Skeleton animation (Phase 2) | 🗓 Roadmap | Spec §12 mentions skeletal animation for large bosses — not implemented |
-| Camera patterns | 🔧 Partial | Spec §13 lists ScreenLock, RoomTransition, BossArena, CinematicPan. Only Follow + Shake + FixedFollow implemented |
 | Spatial SFX | 🗓 Roadmap | Spec §15.1 mentions position-based volume falloff — not in amigo_audio |
-| Event streaming (WebSocket) | 🗓 Roadmap | `subscribe`/`poll_events` methods exist in API but events are polled, not streamed via persistent connection |
+| MusicTransition: StingerThen, LayerSwap | 🗓 Roadmap | 3 of 5 transition types implemented (CrossfadeOnBar, FadeOutThenPlay, CutOnBar). StingerThen and LayerSwap missing |
+| Plugin::update() | 🗓 Roadmap | Spec shows Plugin with update() method. Code only has build() and init() |
+| Debug F5-F8 keys | 🗓 Roadmap | F1-F4 implemented. F5 (entity_ids), F6 (tile_ids), F7 (audio_debug), F8 (network_debug) missing |
+| Event streaming (WebSocket) | 🗓 Roadmap | `subscribe`/`poll_events` methods exist in API but events are polled, not streamed |
+| ECS query API mismatch | ⚠️ Note | Spec shows `world.query::<T>()`. Code uses `join()`, `join2()`, `join3()`, `join4()` free functions with `.with()` filter |
 | `games/amigo_td/` directory | ⛔ Not applicable | Spec §3 references this path but game lives in a separate repository |
 
 ### Features in code but NOT in spec
@@ -81,6 +88,9 @@ Last updated: 2026-03-15 (full audit against source code)
 | Collision events | amigo_core/collision_events.rs | Typed collision events — not in spec |
 | Wizard UI | amigo_editor/wizard.rs | Project creation wizard — not in spec |
 | Atmosphere system | amigo_render/atmosphere.rs | Mood/atmosphere interpolation — mentioned in tricks-patterns.md but not in engine spec |
+| Camera EdgePan + FreePan | amigo_render/camera.rs | Two extra camera modes not in spec |
+| Particle ForceFields | amigo_render/particles.rs | Wind, Attractor, Repulsor, Vortex, Drag, Turbulence — not in spec |
+| Chromatic Aberration post-effect | amigo_render/post_process.rs | Exists but not in spec (spec lists bloom, color grade, vignette, CRT, rain) |
 | Font rendering | amigo_render/font.rs | Font system via fontdue — not detailed in spec |
 | egui integration | amigo_render/egui_integration.rs | Full egui-wgpu rendering layer — not in spec (spec says "no egui") |
 | Distribution config | amigo_cli | Steam app ID, depot, branch + itch.io game/channel config — not in spec |

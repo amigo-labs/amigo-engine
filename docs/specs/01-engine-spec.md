@@ -1690,9 +1690,9 @@ Editor plugin (feature flag), egui-based editor widgets (dual-layer rendering), 
 
 IPC server (amigo_api, 40+ JSON-RPC methods), screenshot API, headless simulation mode, event polling. MCP server wrapper (amigo_mcp). Art generation pipeline (amigo_artgen): ComfyUI client, workflow builder, post-processing. Audio generation pipeline (amigo_audiogen): ACE-Step client, AudioGen client, stem generation, loop trimming.
 
-### Phase 6: Multiplayer ✅ Complete
+### Phase 6: Multiplayer 🔧 Partial
 
-Transport trait, deterministic verification (CRC), lockstep protocol, UDP networking (laminar), replay system (amigo_net, 2,208 LOC).
+Transport trait, LocalTransport, replay system with seek, CRC-32 checksum + DesyncDetector (amigo_net, 2,208 LOC). **Missing:** laminar UDP transport (no dependency), actual networked multiplayer, lobby system.
 
 ### Phase 7: AI Editor Features ✅ Complete
 
@@ -1704,11 +1704,14 @@ amigo CLI (pack, build, release, publish steam/itch), 10 project templates, 13 s
 
 ### Remaining work (not yet implemented)
 
-- **RON-based adaptive music config** — Engine has AdaptiveMusicEngine runtime, but no `.music.ron` / `.sequence.ron` loader
-- **Isometric tilemap mode** (§10) — only orthogonal implemented
-- **Chunk streaming tilemap** (§10) — opt-in for large worlds
+- **Per-sprite shaders** (§5) — flash, outline, dissolve, palette_swap, silhouette, wave not implemented
+- **7-stage render pipeline** (§5/A.6) — single render pass instead of 7 distinct stages
+- **Bumpalo arena allocator** (§6) — no dependency, not implemented
+- **UDP/laminar transport** (§8) — only LocalTransport; no actual network multiplayer
+- **MusicTransition** variants StingerThen and LayerSwap (§15.2) — 3 of 5 transitions done
+- **RON-based adaptive music config** — engine runtime exists, no `.music.ron` / `.sequence.ron` loader
+- **Chunk streaming tilemap** (§10) — opt-in for large worlds, not built
 - **Skeletal animation** (§12) — Phase 2 planned for large bosses
-- **Camera patterns** (§13) — only Follow/Shake/Clamp; ScreenLock, RoomTransition, BossArena, CinematicPan not built
 - **Spatial SFX** (§15.1) — position-based volume falloff
 - **Asset Format pipeline** (03-asset-format-spec.md) — complete design, no tooling
 
