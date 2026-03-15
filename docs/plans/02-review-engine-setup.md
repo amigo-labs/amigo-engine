@@ -283,7 +283,7 @@ members = [
 
 ### Korrektur: Bereits implementiert
 
-Die folgenden Features sind im Code **vorhanden**, obwohl `review-engine-docs.md` sie als "Not found" / "Not connected" listet:
+Die folgenden Features sind im Code **vorhanden**, obwohl `01-review-engine-docs.md` sie als "Not found" / "Not connected" listet:
 
 | Feature | Tatsächlicher Status | Fundort |
 |---------|---------------------|---------|
@@ -291,7 +291,7 @@ Die folgenden Features sind im Code **vorhanden**, obwohl `review-engine-docs.md
 | **Flow Fields** | Implementiert, getestet | `crates/amigo_core/src/pathfinding.rs:153` — `FlowField::compute()` mit Dijkstra. 5 Unit-Tests (goal cost, direction, unreachable, out-of-bounds). |
 | **Tracy Integration** | Implementiert (feature-gated) | `crates/amigo_debug/src/lib.rs:229` — `frame_mark()`, `tracy_enabled()`, `init_logging()` mit Tracy-Layer. Feature `tracy` in Cargo.toml. `tracing-tracy` + `tracy-client` als Dependencies. Frame-mark-Aufruf in Engine-Loop (`engine.rs:836`). |
 
-**Aktion:** `docs/review-engine-docs.md` Tabelle "Spec vs. Implementation — Gaps" aktualisieren. Diese drei Einträge von "Not found" / "Not connected" auf "Implemented" ändern.
+**Aktion:** `01-review-engine-docs.md` Tabelle "Spec vs. Implementation — Gaps" aktualisieren. Diese drei Einträge von "Not found" / "Not connected" auf "Implemented" ändern.
 
 ### Echte verbleibende Lücken
 

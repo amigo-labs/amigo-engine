@@ -1,4 +1,4 @@
-# Amigo Engine — Asset Format & Import/Export Specification
+# Amigo Engine - Asset Format & Import/Export Specification
 
 **Version:** 0.2.0-draft
 **Status:** Design Phase
@@ -24,48 +24,48 @@ The Amigo Asset Format (AAF) is the native asset pipeline for the Amigo Engine �
 
 ### Art Pipeline Summary
 
-| | Pixel Art | Raster Art |
-|---|---|---|
-| **Ideal for** | Celeste, Shovel Knight, retro | Cuphead, Hollow Knight, Ori |
-| **Source formats** | PNG (indexed) | PNG, JPG |
-| **Runtime format** | Amigo Indexed Tile (.ait) | WebP (lossy) |
-| **Compression** | LZ4 on indexed data | WebP built-in |
-| **Color depth** | 2/4/8 bpp (4–256 colors) | 24/32-bit RGBA |
-| **Transparency** | 1-bit (index 0 = transparent) | 8-bit alpha channel |
-| **Palette swaps** | Native (instant, zero cost) | Shader-based |
-| **Typical frame size** | 8×8 – 64×64 px | 256×256 – 1024×1024 px |
+|                        | Pixel Art                     | Raster Art                  |
+| ---------------------- | ----------------------------- | --------------------------- |
+| **Ideal for**          | Celeste, Shovel Knight, retro | Cuphead, Hollow Knight, Ori |
+| **Source formats**     | PNG (indexed)                 | PNG, JPG                    |
+| **Runtime format**     | Amigo Indexed Tile (.ait)     | WebP (lossy)                |
+| **Compression**        | LZ4 on indexed data           | WebP built-in               |
+| **Color depth**        | 2/4/8 bpp (4–256 colors)      | 24/32-bit RGBA              |
+| **Transparency**       | 1-bit (index 0 = transparent) | 8-bit alpha channel         |
+| **Palette swaps**      | Native (instant, zero cost)   | Shader-based                |
+| **Typical frame size** | 8×8 – 64×64 px                | 256×256 – 1024×1024 px      |
 
 ### Audio Pipeline Summary
 
-| Context | Source | Runtime | Rationale |
-|---------|--------|---------|-----------|
-| Synth music (chiptune) | `.music.toml` patterns | Pattern bytecode | No audio file needed — generated at runtime |
-| Recorded music / long samples | WAV, FLAC | **OGG Vorbis** | Royalty-free, industry standard, pure Rust decoder (`lewton`) |
-| Short SFX (synth) | `.sfx.toml` patterns | Pattern bytecode | Generated at runtime |
-| Short SFX (sampled) | WAV | **OGG Vorbis** | Same codec for consistency |
-| Lossless archival (optional) | WAV | **FLAC** | Pure Rust decoder (`claxon`), ~50% smaller than WAV |
+| Context                       | Source                 | Runtime          | Rationale                                                     |
+| ----------------------------- | ---------------------- | ---------------- | ------------------------------------------------------------- |
+| Synth music (chiptune)        | `.music.toml` patterns | Pattern bytecode | No audio file needed — generated at runtime                   |
+| Recorded music / long samples | WAV, FLAC              | **OGG Vorbis**   | Royalty-free, industry standard, pure Rust decoder (`lewton`) |
+| Short SFX (synth)             | `.sfx.toml` patterns   | Pattern bytecode | Generated at runtime                                          |
+| Short SFX (sampled)           | WAV                    | **OGG Vorbis**   | Same codec for consistency                                    |
+| Lossless archival (optional)  | WAV                    | **FLAC**         | Pure Rust decoder (`claxon`), ~50% smaller than WAV           |
 
 ### Supported Import Formats
 
-| Format | Tool | Asset Types |
-|--------|------|-------------|
-| `.aseprite` / `.ase` | Aseprite | Sprites, animations, palettes, hitboxes |
-| `.tmx` / `.tmj` / `.tsx` | Tiled Map Editor | Tilemaps, tilesets, entity spawns, collision |
-| `.ldtk` | LDTK (Level Designer Toolkit) | Tilemaps, entity defs, world layout, auto-tiles |
-| `.mml` | Music Macro Language | Music sequences (converted to Amigo patterns) |
-| `.vgm` / `.vgz` | VGM (Video Game Music) | Chiptune playback data |
-| `.gb` / `.gbc` | Game Boy ROM | Tiles, sprites, palettes (via RomKit) |
-| `.nes` | NES ROM (iNES) | CHR tiles, sprites, palettes (via RomKit) |
-| `.sms` / `.gg` | SMS/Game Gear ROM | Tiles, sprites, palettes (via RomKit) |
+| Format                   | Tool                          | Asset Types                                     |
+| ------------------------ | ----------------------------- | ----------------------------------------------- |
+| `.aseprite` / `.ase`     | Aseprite                      | Sprites, animations, palettes, hitboxes         |
+| `.tmx` / `.tmj` / `.tsx` | Tiled Map Editor              | Tilemaps, tilesets, entity spawns, collision    |
+| `.ldtk`                  | LDTK (Level Designer Toolkit) | Tilemaps, entity defs, world layout, auto-tiles |
+| `.mml`                   | Music Macro Language          | Music sequences (converted to Amigo patterns)   |
+| `.vgm` / `.vgz`          | VGM (Video Game Music)        | Chiptune playback data                          |
+| `.gb` / `.gbc`           | Game Boy ROM                  | Tiles, sprites, palettes (via RomKit)           |
+| `.nes`                   | NES ROM (iNES)                | CHR tiles, sprites, palettes (via RomKit)       |
+| `.sms` / `.gg`           | SMS/Game Gear ROM             | Tiles, sprites, palettes (via RomKit)           |
 
 ### Supported Export Formats
 
-| Format | Direction | Notes |
-|--------|-----------|-------|
-| `.tmx` | Map → Tiled | Full round-trip including custom properties |
-| `.ldtk` | Maps + Entities → LDTK | World layout, entity definitions |
-| `.aseprite` | Sprite → Aseprite | Layers, tags, slices preserved |
-| `.mml` | Music → MML | Lossy — pattern transforms not representable |
+| Format      | Direction              | Notes                                        |
+| ----------- | ---------------------- | -------------------------------------------- |
+| `.tmx`      | Map → Tiled            | Full round-trip including custom properties  |
+| `.ldtk`     | Maps + Entities → LDTK | World layout, entity definitions             |
+| `.aseprite` | Sprite → Aseprite      | Layers, tags, slices preserved               |
+| `.mml`      | Music → MML            | Lossy — pattern transforms not representable |
 
 ---
 
@@ -206,18 +206,19 @@ The `.ait` format stores pixel art assets as palette-indexed data, enabling inst
 **Header: 24 bytes fixed.** Pixel data follows immediately.
 
 The palette itself is NOT embedded — it's referenced by hash. This means:
+
 - Palette swaps are free: change the palette reference, pixels stay identical
 - Multiple sprites can share a palette without duplication
 - Palette data lives in the `.palette.toml` → compiled palette block in the `.amigo-pak`
 
 #### Size Comparison (typical 256×256 sprite sheet, 16 colors)
 
-| Format | Size |
-|--------|------|
-| PNG (indexed) | ~12 KB |
-| QOI (RGBA) | ~28 KB |
-| AIT (4bpp + LZ4) | ~8 KB |
-| Raw RGBA | 256 KB |
+| Format           | Size   |
+| ---------------- | ------ |
+| PNG (indexed)    | ~12 KB |
+| QOI (RGBA)       | ~28 KB |
+| AIT (4bpp + LZ4) | ~8 KB  |
+| Raw RGBA         | 256 KB |
 
 ### 3.2 WebP — Raster Art Runtime Format
 
@@ -269,6 +270,7 @@ pack_group = "bosses"              # Group related sprites in same atlas
 All lossy audio in the Amigo Engine uses OGG Vorbis.
 
 **Why OGG Vorbis?**
+
 - **Royalty-free** — No patents, no licensing fees, no legal risk
 - **Industry standard** — Used by Unity, Godot, Unreal, and virtually every indie engine
 - **Pure Rust decoder** — `lewton` crate, zero C dependencies, no unsafe code
@@ -371,16 +373,16 @@ palette = "player2-palette"        # Pixel art: instant palette swap
 
 ### 4.1 Aseprite Import Mapping
 
-| Aseprite Concept | Amigo Equivalent |
-|------------------|------------------|
-| Tags | `[animations.*]` sections |
-| Tag direction | `loop_mode` field |
-| Frame duration | `timing` array |
-| Slices | `[hitboxes.*]` sections |
-| Slice pivot | `origin` |
-| Layers | Flattened into composite frames |
-| Palette | Exported to `.palette.toml` |
-| Tilemap mode | Exported to `.tileset.toml` |
+| Aseprite Concept | Amigo Equivalent                |
+| ---------------- | ------------------------------- |
+| Tags             | `[animations.*]` sections       |
+| Tag direction    | `loop_mode` field               |
+| Frame duration   | `timing` array                  |
+| Slices           | `[hitboxes.*]` sections         |
+| Slice pivot      | `origin`                        |
+| Layers           | Flattened into composite frames |
+| Palette          | Exported to `.palette.toml`     |
+| Tilemap mode     | Exported to `.tileset.toml`     |
 
 ---
 
@@ -571,20 +573,20 @@ The Amigo audio system uses a cycle-based pattern language inspired by TidalCycl
 
 ### 9.2 Mini-Notation
 
-| Symbol | Meaning | Example |
-|--------|---------|---------|
-| ` ` | Sequence — divide cycle evenly | `"c d e f"` |
-| `~` | Rest / silence | `"c ~ e ~"` |
-| `*n` | Speed up — repeat n times | `"c*4"` |
-| `/n` | Slow down — once every n cycles | `"c/2"` |
-| `[...]` | Subdivide a step | `"c [d e] f"` |
-| `<...>` | Alternate per cycle | `"c <d e> f"` |
-| `,` | Stack / chord | `"[c,e,g]"` |
-| `(n,m)` | Euclidean rhythm | `"c(3,8)"` |
-| `?` | Random (50%) | `"c d? e"` |
-| `_` | Elongate previous | `"c _ e f"` |
-| `!n` | Replicate | `"c!3"` |
-| `{...}` | Polymetric | `"{c d e, f g}"` |
+| Symbol  | Meaning                         | Example          |
+| ------- | ------------------------------- | ---------------- |
+| ` `     | Sequence — divide cycle evenly  | `"c d e f"`      |
+| `~`     | Rest / silence                  | `"c ~ e ~"`      |
+| `*n`    | Speed up — repeat n times       | `"c*4"`          |
+| `/n`    | Slow down — once every n cycles | `"c/2"`          |
+| `[...]` | Subdivide a step                | `"c [d e] f"`    |
+| `<...>` | Alternate per cycle             | `"c <d e> f"`    |
+| `,`     | Stack / chord                   | `"[c,e,g]"`      |
+| `(n,m)` | Euclidean rhythm                | `"c(3,8)"`       |
+| `?`     | Random (50%)                    | `"c d? e"`       |
+| `_`     | Elongate previous               | `"c _ e f"`      |
+| `!n`    | Replicate                       | `"c!3"`          |
+| `{...}` | Polymetric                      | `"{c d e, f g}"` |
 
 ### 9.3 Instrument Bank (`.bank.toml`)
 
@@ -722,6 +724,7 @@ number      = [0-9]+ ("." [0-9]+)?
 ```
 
 Patterns are compiled at build time to bytecode:
+
 ```
 PatternOp::Note { pitch, velocity, start, duration }
 PatternOp::Rest { start, duration }
@@ -853,14 +856,14 @@ amigo export mml audio/tracks/overworld.music.toml # → .mml (lossy)
 
 ### 12.3 Round-Trip Fidelity
 
-| Format | Fidelity |
-|--------|----------|
-| Aseprite ↔ Amigo | High — frames, tags, slices |
-| Tiled ↔ Amigo | High — layers, objects, properties |
-| LDTK ↔ Amigo | Medium — some auto-tile rules simplify |
-| MML → Amigo | Medium — basic patterns map well |
-| Amigo → MML | Low — sections/transforms not representable |
-| VGM → Amigo | Low — lossy conversion from register writes |
+| Format           | Fidelity                                    |
+| ---------------- | ------------------------------------------- |
+| Aseprite ↔ Amigo | High — frames, tags, slices                 |
+| Tiled ↔ Amigo    | High — layers, objects, properties          |
+| LDTK ↔ Amigo     | Medium — some auto-tile rules simplify      |
+| MML → Amigo      | Medium — basic patterns map well            |
+| Amigo → MML      | Low — sections/transforms not representable |
+| VGM → Amigo      | Low — lossy conversion from register writes |
 
 ### 12.4 Import Metadata
 
@@ -878,13 +881,13 @@ checksum = "sha256:abc123..."
 
 ## 13. Rust Crate Dependencies (Runtime)
 
-| Crate | Purpose | Pure Rust | no_std |
-|-------|---------|-----------|--------|
-| `lz4_flex` | LZ4 compression/decompression | Yes | Yes |
-| `lewton` | OGG Vorbis decoding | Yes | No |
-| `claxon` | FLAC decoding | Yes | No |
-| `image` (webp feature) | WebP decoding | Partial | No |
-| `toml` | TOML parsing (build-time only) | Yes | No |
+| Crate                  | Purpose                        | Pure Rust | no_std |
+| ---------------------- | ------------------------------ | --------- | ------ |
+| `lz4_flex`             | LZ4 compression/decompression  | Yes       | Yes    |
+| `lewton`               | OGG Vorbis decoding            | Yes       | No     |
+| `claxon`               | FLAC decoding                  | Yes       | No     |
+| `image` (webp feature) | WebP decoding                  | Partial   | No     |
+| `toml`                 | TOML parsing (build-time only) | Yes       | No     |
 
 All runtime decoders are royalty-free and available as pure Rust implementations. No C dependencies required for the core runtime.
 

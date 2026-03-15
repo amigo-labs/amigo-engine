@@ -119,6 +119,4 @@ graph BT
     ENGINE --> DEBUG
 ```
 
-## Workspace Structure
-
-The full workspace comprises **14 engine crates** (`amigo_core`, `amigo_render`, `amigo_input`, `amigo_audio`, `amigo_assets`, `amigo_tilemap`, `amigo_animation`, `amigo_scene`, `amigo_ui`, `amigo_net`, `amigo_debug`, `amigo_editor`, `amigo_api`, and `amigo_engine`), **4 standalone tools** (`amigo_mcp`, `amigo_artgen`, `amigo_audiogen`, and `amigo_paktool`), and **1 example game** that serves as both a integration test and a reference implementation.
+For detailed architecture documentation, see the [Engine Spec](../specs/01-engine-spec.md) (Section 3).
