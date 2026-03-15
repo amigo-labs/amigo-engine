@@ -389,6 +389,194 @@ impl Renderer {
         Ok(())
     }
 
+    /// Capture the current frame to a PNG file at `path`.
+    ///
+    /// This renders the current batcher contents to an offscreen texture,
+    /// reads the pixels back to CPU, and saves as PNG. The batcher is
+    /// NOT cleared — call this before `render()` so sprites are still queued.
+    pub fn capture_screenshot(&mut self, path: &str) -> Result<(), String> {
+        let width = self.camera.virtual_width as u32;
+        let height = self.camera.virtual_height as u32;
+
+        if width == 0 || height == 0 {
+            return Err("Invalid virtual resolution for screenshot".into());
+        }
+
+        // Create offscreen render target
+        let offscreen_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("screenshot_render_target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let offscreen_view = offscreen_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Update projection
+        let proj = self.camera.projection_matrix();
+        let proj_flat: [f32; 16] = unsafe { std::mem::transmute(proj) };
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&proj_flat));
+
+        // Build batches (non-destructive peek — batcher keeps data)
+        let batches = self.batcher.build();
+
+        // Create vertex/index buffers
+        let vertex_buffer = if !self.batcher.vertices().is_empty() {
+            Some(
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("screenshot_vertex_buffer"),
+                        contents: bytemuck::cast_slice(self.batcher.vertices()),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+            )
+        } else {
+            None
+        };
+
+        let index_buffer = if !self.batcher.indices().is_empty() {
+            Some(
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("screenshot_index_buffer"),
+                        contents: bytemuck::cast_slice(self.batcher.indices()),
+                        usage: wgpu::BufferUsages::INDEX,
+                    }),
+            )
+        } else {
+            None
+        };
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("screenshot_encoder"),
+            });
+
+        // Render pass to offscreen texture
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("screenshot_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &offscreen_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: self.clear_color.r as f64,
+                            g: self.clear_color.g as f64,
+                            b: self.clear_color.b as f64,
+                            a: self.clear_color.a as f64,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            if let (Some(vb), Some(ib)) = (&vertex_buffer, &index_buffer) {
+                render_pass.set_pipeline(&self.pipeline);
+                render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, vb.slice(..));
+                render_pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+
+                for batch in &batches {
+                    if let Some(texture) = self.textures.get(&batch.texture_id) {
+                        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+                        render_pass.draw_indexed(
+                            batch.index_offset..batch.index_offset + batch.index_count,
+                            0,
+                            0..1,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Copy texture to readback buffer
+        let bytes_per_row = (4 * width + 255) & !255; // align to 256
+        let buffer_size = (bytes_per_row * height) as u64;
+        let readback_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("screenshot_readback"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &offscreen_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and read back the buffer (blocking)
+        let buffer_slice = readback_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        self.device.poll(wgpu::Maintain::Wait);
+
+        rx.recv()
+            .map_err(|e| format!("Screenshot readback channel error: {e}"))?
+            .map_err(|e| format!("Screenshot buffer map failed: {e:?}"))?;
+
+        let data = buffer_slice.get_mapped_range();
+
+        // Copy to image (removing row padding)
+        let mut img = image::RgbaImage::new(width, height);
+        for y in 0..height {
+            let src_offset = (y * bytes_per_row) as usize;
+            let row = &data[src_offset..src_offset + (4 * width) as usize];
+            for x in 0..width {
+                let i = (x * 4) as usize;
+                img.put_pixel(x, y, image::Rgba([row[i], row[i + 1], row[i + 2], row[i + 3]]));
+            }
+        }
+
+        drop(data);
+        readback_buffer.unmap();
+
+        // Ensure parent directory exists
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+
+        img.save(path).map_err(|e| format!("Failed to save screenshot: {e}"))?;
+        info!("Screenshot saved: {} ({}x{})", path, width, height);
+
+        Ok(())
+    }
+
     pub fn draw_call_count(&self) -> u32 {
         self.draw_call_count
     }

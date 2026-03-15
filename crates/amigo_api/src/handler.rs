@@ -172,6 +172,7 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         "engine.status" | "get_state" => handle_status(req, state),
         "perf" => handle_perf(req, state),
         "screenshot" => handle_screenshot(req, state),
+        "screenshot.results" => handle_screenshot_results(req, state),
         "list_entities" => handle_list_entities(req, state),
         "inspect_entity" => handle_inspect_entity(req, state),
 
@@ -294,6 +295,12 @@ fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         heatmap_type,
     });
     RpcResponse::success(req.id, json!({"queued": true, "path": path}))
+}
+
+fn handle_screenshot_results(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let mut s = state.lock().unwrap();
+    let results = std::mem::take(&mut s.screenshot_results);
+    RpcResponse::success(req.id, json!({"results": results}))
 }
 
 fn handle_list_entities(req: &RpcRequest, state: &SharedState) -> RpcResponse {

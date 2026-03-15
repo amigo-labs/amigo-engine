@@ -318,6 +318,19 @@ impl Engine {
                 }
             }
 
+            // Handle screenshot requests (no GPU in headless — return error)
+            {
+                let mut state = shared_state.lock().unwrap();
+                let requests = state.drain_screenshot_requests();
+                for req in &requests {
+                    state.screenshot_results.push(serde_json::json!({
+                        "ok": false,
+                        "error": "Screenshots not available in headless mode (no GPU renderer)",
+                        "path": req.path,
+                    }));
+                }
+            }
+
             // Update shared state snapshot for API queries
             {
                 let mut state = shared_state.lock().unwrap();
@@ -359,6 +372,14 @@ struct EngineState {
     last_frame: Instant,
     accumulator: f64,
     splash: Option<SplashState>,
+    #[cfg(feature = "api")]
+    api_state: Option<ApiEngineState>,
+}
+
+#[cfg(feature = "api")]
+struct ApiEngineState {
+    shared_state: amigo_api::handler::SharedState,
+    _server: amigo_api::server::ApiServer,
 }
 
 struct EngineApp<G: Game> {
@@ -440,6 +461,27 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             None
         };
 
+        // Start API server if configured
+        #[cfg(feature = "api")]
+        let api_state = if self.config.dev.api_server {
+            let shared = amigo_api::handler::new_shared_state();
+            match amigo_api::server::ApiServer::start(self.config.dev.api_port, shared.clone()) {
+                Ok(server) => {
+                    info!("API server started on port {}", self.config.dev.api_port);
+                    Some(ApiEngineState {
+                        shared_state: shared,
+                        _server: server,
+                    })
+                }
+                Err(e) => {
+                    error!("Failed to start API server: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         info!("Engine initialized successfully");
 
         self.state = Some(EngineState {
@@ -453,6 +495,8 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             last_frame: Instant::now(),
             accumulator: 0.0,
             splash,
+            #[cfg(feature = "api")]
+            api_state,
         });
     }
 
@@ -635,6 +679,33 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     state.renderer.batcher.push(sprite.clone());
                 }
 
+                // Process screenshot requests from API (before render clears batcher)
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    let requests = {
+                        let mut s = api.shared_state.lock().unwrap();
+                        s.drain_screenshot_requests()
+                    };
+                    for req in &requests {
+                        let result = state.renderer.capture_screenshot(&req.path);
+                        let mut s = api.shared_state.lock().unwrap();
+                        match result {
+                            Ok(()) => {
+                                s.screenshot_results.push(serde_json::json!({
+                                    "ok": true,
+                                    "path": req.path,
+                                }));
+                            }
+                            Err(e) => {
+                                s.screenshot_results.push(serde_json::json!({
+                                    "ok": false,
+                                    "error": e,
+                                }));
+                            }
+                        }
+                    }
+                }
+
                 // Update debug overlay
                 state.debug.update(
                     dt,
@@ -656,6 +727,16 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     Err(e) => {
                         error!("Render error: {:?}", e);
                     }
+                }
+
+                // Update API snapshot after frame
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    let mut s = api.shared_state.lock().unwrap();
+                    s.snapshot.tick = state.game_ctx.time.tick;
+                    s.snapshot.fps = state.debug.fps() as f32;
+                    s.snapshot.entity_count = state.game_ctx.world.entity_count();
+                    s.snapshot.draw_calls = state.renderer.draw_call_count();
                 }
 
                 // Swap camera back to GameContext so game code can read updated state
