@@ -103,6 +103,16 @@ impl EngineBuilder {
         self
     }
 
+    /// Enable headless mode (no window/renderer). The engine runs simulation
+    /// only, controlled via the JSON-RPC API. Implies `api_server: true`.
+    pub fn headless(mut self, enabled: bool) -> Self {
+        self.config.dev.headless = enabled;
+        if enabled {
+            self.config.dev.api_server = true;
+        }
+        self
+    }
+
     pub fn config(mut self, config: EngineConfig) -> Self {
         self.config = config;
         self
@@ -148,6 +158,18 @@ impl Engine {
         amigo_debug::init_logging();
         info!("Amigo Engine starting: {}", self.config.window.title);
 
+        #[cfg(feature = "api")]
+        if self.config.dev.headless {
+            self.run_headless(game);
+            return;
+        }
+
+        #[cfg(not(feature = "api"))]
+        if self.config.dev.headless {
+            error!("Headless mode requires the 'api' feature. Enable it with: cargo run --features api");
+            return;
+        }
+
         let event_loop = EventLoop::new().expect("Failed to create event loop");
         event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -161,6 +183,156 @@ impl Engine {
         };
 
         event_loop.run_app(&mut app).expect("Event loop failed");
+    }
+
+    /// Run the engine in headless mode: simulation only, no window or renderer.
+    /// Controlled entirely via the JSON-RPC API server.
+    #[cfg(feature = "api")]
+    fn run_headless<G: Game>(self, mut game: G) {
+        use amigo_api::handler::{new_shared_state, ApiCommand};
+        use amigo_api::server::ApiServer;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        info!("Starting in HEADLESS mode (no window/renderer)");
+        info!("API server on port {}", self.config.dev.api_port);
+
+        let vw = self.config.render.virtual_width as f32;
+        let vh = self.config.render.virtual_height as f32;
+        let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+
+        // Apply plugin registrations
+        let plugin_ctx = self.plugin_ctx;
+        for reg in plugin_ctx.event_registrations {
+            reg(&mut game_ctx.events);
+        }
+        for ins in plugin_ctx.resource_insertions {
+            ins(&mut game_ctx.resources);
+        }
+
+        // Initialize plugins
+        for plugin in &self.plugins {
+            plugin.init(&mut game_ctx);
+        }
+
+        // Initialize the game
+        game.init(&mut game_ctx);
+
+        // Start the API server
+        let shared_state = new_shared_state();
+        let _api_server = match ApiServer::start(self.config.dev.api_port, shared_state.clone()) {
+            Ok(server) => server,
+            Err(e) => {
+                error!("Failed to start API server: {}", e);
+                return;
+            }
+        };
+
+        info!("Headless engine ready. Waiting for commands via JSON-RPC...");
+
+        // Signal handling for graceful shutdown
+        let running = Arc::new(AtomicBool::new(true));
+        {
+            let running = running.clone();
+            let _ = ctrlc::set_handler(move || {
+                running.store(false, Ordering::Relaxed);
+            });
+        }
+
+        let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
+        let mut paused = false;
+
+        // Main headless loop: process API commands, run ticks on demand
+        while running.load(Ordering::Relaxed) {
+            // Drain commands from the API
+            let commands = {
+                let mut state = shared_state.lock().unwrap();
+                state.drain_commands()
+            };
+
+            let mut ticks_requested: u64 = 0;
+            let mut quit = false;
+
+            for cmd in &commands {
+                match cmd.action.as_str() {
+                    "pause" => {
+                        paused = true;
+                        info!("Headless: paused");
+                    }
+                    "unpause" => {
+                        paused = false;
+                        info!("Headless: unpaused");
+                    }
+                    "tick" => {
+                        let count = cmd.params.get("count")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(1);
+                        ticks_requested += count;
+                    }
+                    "quit" => {
+                        quit = true;
+                    }
+                    _ => {
+                        // Other commands can be handled by game code via resources
+                    }
+                }
+            }
+
+            if quit {
+                info!("Headless: quit command received");
+                break;
+            }
+
+            // Execute requested ticks at max CPU speed
+            if ticks_requested > 0 {
+                let start = Instant::now();
+                for _ in 0..ticks_requested {
+                    game_ctx.time.dt = tick_duration as f32;
+                    game_ctx.time.elapsed += tick_duration;
+                    game_ctx.input.begin_frame();
+
+                    let action = game.update(&mut game_ctx);
+                    game_ctx.time.tick += 1;
+
+                    match action {
+                        amigo_scene::SceneAction::Quit => {
+                            quit = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+
+                    game_ctx.world.flush();
+                    game_ctx.events.flush();
+                    game_ctx.particles.update(tick_duration as f32);
+                }
+                let elapsed = start.elapsed();
+                info!(
+                    "Headless: executed {} ticks in {:.1}ms ({:.0} ticks/sec)",
+                    ticks_requested,
+                    elapsed.as_secs_f64() * 1000.0,
+                    ticks_requested as f64 / elapsed.as_secs_f64().max(0.000001),
+                );
+
+                if quit {
+                    break;
+                }
+            }
+
+            // Update shared state snapshot for API queries
+            {
+                let mut state = shared_state.lock().unwrap();
+                state.snapshot.tick = game_ctx.time.tick;
+                state.snapshot.entity_count = game_ctx.world.entity_count();
+                state.snapshot.paused = paused;
+            }
+
+            // If no ticks were requested, sleep briefly to avoid busy-waiting
+            if ticks_requested == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+
+        info!("Headless engine shutting down");
     }
 }
 

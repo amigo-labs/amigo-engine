@@ -70,6 +70,7 @@ fontdue = "0.9"
 asefile = "0.3"
 egui = "0.31"
 egui-wgpu = "0.31"
+ctrlc = "3"
 
 [profile.dev]
 opt-level = 1

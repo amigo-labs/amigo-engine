@@ -47,6 +47,9 @@ pub struct DevConfig {
     pub debug_overlay: bool,
     pub api_server: bool,
     pub api_port: u16,
+    /// Run in headless mode (no window/renderer). Simulation only, controlled via API.
+    #[serde(default)]
+    pub headless: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -86,6 +89,7 @@ impl Default for EngineConfig {
                 debug_overlay: true,
                 api_server: false,
                 api_port: 9999,
+                headless: false,
             },
             splash: SplashConfig::default(),
         }
@@ -94,15 +98,32 @@ impl Default for EngineConfig {
 
 impl EngineConfig {
     /// Try to load from amigo.toml, falling back to defaults.
+    /// Respects `AMIGO_HEADLESS=1` and `AMIGO_API=1` environment variables.
     pub fn load() -> Self {
         let path = std::path::Path::new("amigo.toml");
-        if path.exists() {
+        let mut config = if path.exists() {
             if let Ok(contents) = std::fs::read_to_string(path) {
                 if let Ok(config) = toml::from_str(&contents) {
-                    return config;
+                    config
+                } else {
+                    Self::default()
                 }
+            } else {
+                Self::default()
             }
+        } else {
+            Self::default()
+        };
+
+        // Environment variable overrides
+        if std::env::var("AMIGO_HEADLESS").as_deref() == Ok("1") {
+            config.dev.headless = true;
+            config.dev.api_server = true;
         }
-        Self::default()
+        if std::env::var("AMIGO_API").as_deref() == Ok("1") {
+            config.dev.api_server = true;
+        }
+
+        config
     }
 }

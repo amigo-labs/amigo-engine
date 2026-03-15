@@ -7,7 +7,7 @@ edition.workspace = true
 default = ["audio", "input"]
 audio = ["dep:amigo_audio"]
 editor = ["dep:amigo_editor"]
-api = ["dep:amigo_api"]
+api = ["dep:amigo_api", "dep:ctrlc"]
 input = []
 
 [dependencies]
@@ -24,6 +24,7 @@ amigo_debug = { workspace = true }
 amigo_audio = { workspace = true, optional = true }
 amigo_editor = { workspace = true, optional = true }
 amigo_api = { workspace = true, optional = true }
+ctrlc = { workspace = true, optional = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 tracing = { workspace = true }

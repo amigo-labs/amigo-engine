@@ -21,7 +21,7 @@ COMMANDS:
     new <name> [--template <TEMPLATE>]   Create a new game project
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Check that the project compiles
-    run                                  Run the game (cargo run)
+    run [--headless] [--api]             Run the game (cargo run)
     pack                                 Pack assets into atlas (release build)
     release [--target <TARGET>]          Build optimized release binary
     publish steam                        Prepare and upload to Steam (via steamcmd)
@@ -715,20 +715,38 @@ fn cmd_info() {
 // `amigo run`
 // ---------------------------------------------------------------------------
 
-fn cmd_run(_args: &[String]) {
+fn cmd_run(args: &[String]) {
     if !manifest_path().exists() {
         eprintln!("No amigo.toml found in the current directory.");
         eprintln!("Run `amigo new <name>` to create a project, then cd into it.");
         process::exit(1);
     }
 
-    let status = std::process::Command::new("cargo")
-        .arg("run")
-        .status()
-        .unwrap_or_else(|e| {
-            eprintln!("Failed to run `cargo run`: {e}");
-            process::exit(1);
-        });
+    let headless = args.iter().any(|a| a == "--headless");
+    let api = args.iter().any(|a| a == "--api") || headless;
+
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("run");
+
+    // Enable the api feature when --api or --headless is requested
+    if api {
+        cmd.arg("--features").arg("amigo_engine/api");
+    }
+
+    cmd.arg("--");
+
+    // Pass flags as environment variables for the game binary to read
+    if headless {
+        cmd.env("AMIGO_HEADLESS", "1");
+    }
+    if api {
+        cmd.env("AMIGO_API", "1");
+    }
+
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!("Failed to run `cargo run`: {e}");
+        process::exit(1);
+    });
 
     if !status.success() {
         process::exit(status.code().unwrap_or(1));
