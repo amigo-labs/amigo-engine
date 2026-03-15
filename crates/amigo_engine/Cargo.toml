@@ -6,7 +6,7 @@ edition.workspace = true
 [features]
 default = ["audio", "input"]
 audio = ["dep:amigo_audio"]
-editor = ["dep:amigo_editor"]
+editor = ["dep:amigo_editor", "amigo_render/editor"]
 api = ["dep:amigo_api", "dep:ctrlc", "dep:serde_json"]
 tracy = ["amigo_debug/tracy"]
 input = []

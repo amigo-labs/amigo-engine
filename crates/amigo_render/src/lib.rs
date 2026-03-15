@@ -10,6 +10,9 @@ pub mod post_process;
 pub mod atmosphere;
 pub mod font;
 
+#[cfg(feature = "editor")]
+pub mod egui_integration;
+
 pub use renderer::Renderer;
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance};
 pub use camera::{Camera, CameraMode, Easing};

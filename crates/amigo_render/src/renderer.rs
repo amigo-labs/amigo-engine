@@ -66,6 +66,14 @@ pub struct Renderer {
     draw_call_count: u32,
 }
 
+/// A frame in progress. Holds the command encoder and surface output so
+/// additional render passes (e.g. egui overlay) can be appended before submit.
+pub struct FrameInProgress {
+    pub encoder: wgpu::CommandEncoder,
+    pub view: wgpu::TextureView,
+    pub output: wgpu::SurfaceTexture,
+}
+
 impl Renderer {
     pub async fn new(
         window: std::sync::Arc<winit::window::Window>,
@@ -292,6 +300,16 @@ impl Renderer {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        let frame = self.begin_frame()?;
+        self.queue.submit(std::iter::once(frame.encoder.finish()));
+        frame.output.present();
+        self.batcher.clear();
+        Ok(())
+    }
+
+    /// Begin a frame: render sprites and return the in-progress frame so
+    /// additional render passes (e.g. egui) can be appended before submit.
+    pub fn begin_frame(&mut self) -> Result<FrameInProgress, wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -382,11 +400,18 @@ impl Renderer {
             }
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+        Ok(FrameInProgress {
+            encoder,
+            view,
+            output,
+        })
+    }
 
+    /// Finish a frame that was started with `begin_frame()`.
+    pub fn end_frame(&mut self, frame: FrameInProgress) {
+        self.queue.submit(std::iter::once(frame.encoder.finish()));
+        frame.output.present();
         self.batcher.clear();
-        Ok(())
     }
 
     /// Capture the current frame to a PNG file at `path`.

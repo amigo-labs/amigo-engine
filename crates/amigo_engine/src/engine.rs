@@ -6,6 +6,8 @@ use amigo_assets::{AssetManager, HotReloader};
 use amigo_debug::DebugOverlay;
 use amigo_render::renderer::Renderer;
 use amigo_render::sprite_batcher::SpriteInstance;
+#[cfg(feature = "editor")]
+use amigo_render::egui_integration::egui;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info, info_span};
@@ -374,6 +376,8 @@ struct EngineState {
     splash: Option<SplashState>,
     #[cfg(feature = "api")]
     api_state: Option<ApiEngineState>,
+    #[cfg(feature = "editor")]
+    egui: amigo_render::egui_integration::EguiRenderer,
 }
 
 #[cfg(feature = "api")]
@@ -482,6 +486,13 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             None
         };
 
+        #[cfg(feature = "editor")]
+        let egui = amigo_render::egui_integration::EguiRenderer::new(
+            &renderer.device,
+            renderer.surface_config.format,
+            &window,
+        );
+
         info!("Engine initialized successfully");
 
         self.state = Some(EngineState {
@@ -497,11 +508,19 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             splash,
             #[cfg(feature = "api")]
             api_state,
+            #[cfg(feature = "editor")]
+            egui,
         });
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(state) = &mut self.state else { return };
+
+        // Forward events to egui first; if consumed, skip game input
+        #[cfg(feature = "editor")]
+        let egui_consumed = state.egui.handle_window_event(&state.window, &event);
+        #[cfg(not(feature = "editor"))]
+        let egui_consumed = false;
 
         match event {
             WindowEvent::CloseRequested => {
@@ -514,9 +533,11 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
-                state.game_ctx.input.handle_key_event(event.physical_key, event.state);
+                if !egui_consumed {
+                    state.game_ctx.input.handle_key_event(event.physical_key, event.state);
+                }
 
-                // Debug overlay toggle
+                // Debug overlay toggle (always active, even when egui has focus)
                 if event.state == ElementState::Pressed {
                     if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
                         match code {
@@ -531,29 +552,35 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                state.game_ctx.input.handle_mouse_move(position.x as f32, position.y as f32);
+                if !egui_consumed {
+                    state.game_ctx.input.handle_mouse_move(position.x as f32, position.y as f32);
 
-                // Update world-space mouse position
-                let (ww, wh) = state.renderer.window_size();
-                let world_pos = state.game_ctx.camera.screen_to_world(
-                    position.x as f32,
-                    position.y as f32,
-                    ww as f32,
-                    wh as f32,
-                );
-                state.game_ctx.input.set_mouse_world_pos(world_pos);
+                    // Update world-space mouse position
+                    let (ww, wh) = state.renderer.window_size();
+                    let world_pos = state.game_ctx.camera.screen_to_world(
+                        position.x as f32,
+                        position.y as f32,
+                        ww as f32,
+                        wh as f32,
+                    );
+                    state.game_ctx.input.set_mouse_world_pos(world_pos);
+                }
             }
 
             WindowEvent::MouseInput { state: btn_state, button, .. } => {
-                state.game_ctx.input.handle_mouse_button(button, btn_state);
+                if !egui_consumed {
+                    state.game_ctx.input.handle_mouse_button(button, btn_state);
+                }
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let scroll = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                    winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
-                };
-                state.game_ctx.input.handle_scroll(scroll);
+                if !egui_consumed {
+                    let scroll = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                        winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
+                    };
+                    state.game_ctx.input.handle_scroll(scroll);
+                }
             }
 
             WindowEvent::RedrawRequested => {
@@ -726,6 +753,58 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                 // Render frame
                 let _render_span = info_span!("gpu_render").entered();
+
+                #[cfg(feature = "editor")]
+                {
+                    // Render sprites first, then overlay egui on top
+                    match state.renderer.begin_frame() {
+                        Ok(frame) => {
+                            // Submit sprite pass
+                            state.renderer.queue.submit(std::iter::once(frame.encoder.finish()));
+
+                            // Render egui overlay on top
+                            let (sw, sh) = state.renderer.window_size();
+                            let screen_desc = amigo_render::egui_integration::egui_wgpu::ScreenDescriptor {
+                                size_in_pixels: [sw, sh],
+                                pixels_per_point: state.window.scale_factor() as f32,
+                            };
+                            let entity_count = state.game_ctx.world.entity_count();
+                            let fps = state.debug.fps();
+                            state.egui.render(
+                                &state.renderer.device,
+                                &state.renderer.queue,
+                                &state.window,
+                                &frame.view,
+                                screen_desc,
+                                |ctx| {
+                                    egui::Window::new("Editor")
+                                        .default_open(false)
+                                        .show(ctx, |ui| {
+                                            ui.label("Amigo Editor (egui)");
+                                            ui.label(format!("Entities: {}", entity_count));
+                                            ui.label(format!("FPS: {:.0}", fps));
+                                        });
+                                },
+                            );
+
+                            frame.output.present();
+                            state.renderer.batcher.clear();
+                        }
+                        Err(wgpu::SurfaceError::Lost) => {
+                            let (w, h) = state.renderer.window_size();
+                            state.renderer.resize(w, h);
+                        }
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            error!("GPU out of memory");
+                            event_loop.exit();
+                        }
+                        Err(e) => {
+                            error!("Render error: {:?}", e);
+                        }
+                    }
+                }
+
+                #[cfg(not(feature = "editor"))]
                 match state.renderer.render() {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => {
