@@ -381,6 +381,10 @@ struct EngineState {
     api_state: Option<ApiEngineState>,
     #[cfg(feature = "editor")]
     egui: amigo_render::egui_integration::EguiRenderer,
+    #[cfg(feature = "editor")]
+    editor_state: amigo_editor::EditorState,
+    #[cfg(feature = "editor")]
+    editor_level: amigo_editor::AmigoLevel,
 }
 
 #[cfg(feature = "api")]
@@ -517,6 +521,23 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             api_state,
             #[cfg(feature = "editor")]
             egui,
+            #[cfg(feature = "editor")]
+            editor_state: amigo_editor::EditorState::new(),
+            #[cfg(feature = "editor")]
+            editor_level: amigo_editor::AmigoLevel {
+                name: "Untitled".to_string(),
+                width: 30,
+                height: 20,
+                tile_size: 16,
+                layers: vec![amigo_editor::LayerData {
+                    name: "ground".to_string(),
+                    tiles: vec![0; 600],
+                    visible: true,
+                }],
+                entities: Vec::new(),
+                paths: Vec::new(),
+                metadata: std::collections::HashMap::new(),
+            },
         });
     }
 
@@ -792,8 +813,8 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                                     size_in_pixels: [sw, sh],
                                     pixels_per_point: state.window.scale_factor() as f32,
                                 };
-                            let entity_count = state.game_ctx.world.entity_count();
-                            let fps = state.debug.fps();
+                            let editor_state = &mut state.editor_state;
+                            let editor_level = &state.editor_level;
                             state.egui.render(
                                 &state.renderer.device,
                                 &state.renderer.queue,
@@ -801,13 +822,10 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                                 &frame.view,
                                 screen_desc,
                                 |ctx| {
-                                    egui::Window::new("Editor").default_open(false).show(
+                                    amigo_editor::egui_ui::draw_editor_panels(
                                         ctx,
-                                        |ui| {
-                                            ui.label("Amigo Editor (egui)");
-                                            ui.label(format!("Entities: {}", entity_count));
-                                            ui.label(format!("FPS: {:.0}", fps));
-                                        },
+                                        editor_state,
+                                        editor_level,
                                     );
                                 },
                             );

@@ -85,6 +85,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_animation_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_animation",
+ "amigo_engine",
+]
+
+[[package]]
 name = "amigo_api"
 version = "0.1.0"
 dependencies = [
@@ -133,6 +141,13 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "amigo_audio_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_engine",
 ]
 
 [[package]]
@@ -188,6 +203,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_ecs_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_core",
+ "amigo_engine",
+]
+
+[[package]]
 name = "amigo_editor"
 version = "0.1.0"
 dependencies = [
@@ -196,6 +219,7 @@ dependencies = [
  "amigo_render",
  "amigo_tilemap",
  "amigo_ui",
+ "egui",
  "ron",
  "serde",
  "serde_json",
@@ -244,6 +268,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_input_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_engine",
+]
+
+[[package]]
 name = "amigo_mcp"
 version = "0.1.0"
 dependencies = [
@@ -262,6 +293,21 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "amigo_particles"
+version = "0.1.0"
+dependencies = [
+ "amigo_engine",
+]
+
+[[package]]
+name = "amigo_pathfinding_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_core",
+ "amigo_engine",
 ]
 
 [[package]]
@@ -317,6 +363,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "amigo_tilemap_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_engine",
+ "amigo_tilemap",
 ]
 
 [[package]]

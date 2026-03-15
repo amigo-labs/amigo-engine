@@ -1,0 +1,11 @@
+[package]
+name = "amigo_particles"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "amigo_particles"
+path = "src/main.rs"
+
+[dependencies]
+amigo_engine = { workspace = true }

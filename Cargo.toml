@@ -20,6 +20,13 @@ members = [
     "tools/amigo_audiogen",
     "tools/amigo_cli",
     "examples/starter",
+    "examples/particles",
+    "examples/tilemap_demo",
+    "examples/audio_demo",
+    "examples/ecs_demo",
+    "examples/input_demo",
+    "examples/animation_demo",
+    "examples/pathfinding_demo",
 ]
 
 [workspace.package]
