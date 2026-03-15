@@ -12,6 +12,7 @@ pub mod acestep;
 pub mod audiogen;
 pub mod processing;
 pub mod stems;
+pub mod tools;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

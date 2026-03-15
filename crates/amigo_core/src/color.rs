@@ -31,6 +31,26 @@ impl Color {
         Self { r, g, b, a: 1.0 }
     }
 
+    /// Create a color from u8 RGB components (0-255).
+    pub fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
+            a: 1.0,
+        }
+    }
+
+    /// Create a color from u8 RGBA components (0-255).
+    pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self {
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
+            a: a as f32 / 255.0,
+        }
+    }
+
     pub fn from_hex(hex: u32) -> Self {
         let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
         let g = ((hex >> 8) & 0xFF) as f32 / 255.0;

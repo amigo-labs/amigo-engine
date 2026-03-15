@@ -3,6 +3,10 @@ name = "amigo_editor"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+td = ["amigo_core/td"]
+
 [dependencies]
 amigo_core = { workspace = true }
 amigo_render = { workspace = true }

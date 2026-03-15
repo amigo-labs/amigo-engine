@@ -64,7 +64,7 @@ pub use amigo_debug;
 #[cfg(feature = "audio")]
 pub use amigo_audio;
 
-pub use engine::{Engine, EngineBuilder};
+pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
 pub use context::{GameContext, DrawContext};
 pub use config::EngineConfig;
 
@@ -82,24 +82,32 @@ pub trait Game: 'static {
 
 /// Prelude with commonly used types.
 pub mod prelude {
-    pub use crate::{Game, Engine, EngineBuilder, GameContext, DrawContext, EngineConfig};
+    pub use crate::{Game, Engine, EngineBuilder, Plugin, PluginContext, GameContext, DrawContext, EngineConfig};
+    pub use amigo_core::events::EventHub;
+    pub use amigo_core::resources::Resources;
     pub use amigo_core::{Fix, SimVec2, RenderVec2, Color, Rect, EntityId, World, TimeInfo};
     pub use amigo_core::math::{vec2, IVec2};
-    pub use amigo_core::ecs::{self, SparseSet};
+    pub use amigo_core::ecs::{self, SparseSet, Component, join, join3, join4, join_mut};
     pub use amigo_core::save::{SaveManager, SaveConfig, SlotInfo, SaveError};
     pub use amigo_core::scheduler::{TickScheduler, CallbackId};
     pub use amigo_scene::SceneAction;
     pub use amigo_input::InputState;
-    pub use amigo_render::{Camera, CameraMode, Easing};
+    pub use amigo_render::{Camera, CameraMode, Easing, FontId, FontManager, ArtStyle, SamplerMode};
     pub use amigo_render::particles::{ParticleSystem, EmitterConfig, EmitterShape};
     pub use amigo_render::lighting::{LightingState, PointLight, AmbientLight};
     pub use amigo_render::post_process::{PostProcessPipeline, PostEffect};
     pub use amigo_tilemap::*;
     pub use amigo_animation::*;
     pub use amigo_net::{PlayerId, Transport, LocalTransport};
+    pub use amigo_net::checksum::StateHasher;
+    pub use amigo_net::lobby::{LobbyManager, Room, RoomId, RoomConfig, RoomPhase};
+    pub use amigo_net::stats::{NetStats, ConnectionQuality};
     pub use amigo_ui::{UiContext, UiDrawCommand};
     pub use amigo_debug::DebugOverlay;
-    pub use amigo_assets::AssetError;
+    pub use amigo_assets::{AssetError, AssetHandle, AssetState, HandleAllocator};
     pub use winit::keyboard::KeyCode;
     pub use winit::event::MouseButton;
+
+    #[cfg(feature = "audio")]
+    pub use amigo_audio::AudioManager;
 }

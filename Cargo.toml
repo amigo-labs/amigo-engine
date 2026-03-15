@@ -19,7 +19,7 @@ members = [
     "tools/amigo_artgen",
     "tools/amigo_audiogen",
     "tools/amigo_cli",
-    "games/amigo_td",
+    "examples/starter",
 ]
 
 [workspace.package]
@@ -68,6 +68,8 @@ glam = "0.29"
 pollster = "0.4"
 fontdue = "0.9"
 asefile = "0.3"
+egui = "0.31"
+egui-wgpu = "0.31"
 
 [profile.dev]
 opt-level = 1

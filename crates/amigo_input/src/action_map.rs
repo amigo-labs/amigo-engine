@@ -121,6 +121,18 @@ impl ActionBindings {
             .push(InputBinding::MouseButton(button));
     }
 
+    /// Bind a gamepad button to an action using a string name (e.g. "South", "A", "DPadUp").
+    pub fn bind_gamepad(&mut self, action: &str, button_name: &str) {
+        if let Some(idx) = super::gamepad::str_to_button(button_name)
+            .map(|b| button_to_index(b))
+        {
+            self.bindings
+                .entry(action.to_string())
+                .or_default()
+                .push(InputBinding::GamepadButton(idx));
+        }
+    }
+
     /// Remove all bindings for an action.
     pub fn unbind(&mut self, action: &str) {
         self.bindings.remove(action);
@@ -165,6 +177,46 @@ impl ActionBindings {
     }
 }
 
+/// Map a gilrs Button to a u8 index for storage in `InputBinding::GamepadButton`.
+fn button_to_index(button: gilrs::Button) -> u8 {
+    use gilrs::Button::*;
+    match button {
+        South => 0,
+        East => 1,
+        North => 2,
+        West => 3,
+        DPadUp => 4,
+        DPadDown => 5,
+        DPadLeft => 6,
+        DPadRight => 7,
+        LeftTrigger => 8,
+        RightTrigger => 9,
+        Start => 10,
+        Select => 11,
+        _ => 255,
+    }
+}
+
+/// Map a u8 index back to a gilrs Button.
+fn index_to_button(idx: u8) -> Option<gilrs::Button> {
+    use gilrs::Button::*;
+    match idx {
+        0 => Some(South),
+        1 => Some(East),
+        2 => Some(North),
+        3 => Some(West),
+        4 => Some(DPadUp),
+        5 => Some(DPadDown),
+        6 => Some(DPadLeft),
+        7 => Some(DPadRight),
+        8 => Some(LeftTrigger),
+        9 => Some(RightTrigger),
+        10 => Some(Start),
+        11 => Some(Select),
+        _ => None,
+    }
+}
+
 /// Runtime action state, updated each frame from InputState + ActionBindings.
 pub struct ActionState {
     pressed: FxHashSet<String>,
@@ -182,7 +234,15 @@ impl ActionState {
     }
 
     /// Update action states from current input. Call once per frame.
-    pub fn update(&mut self, input: &super::InputState, bindings: &ActionBindings) {
+    ///
+    /// Pass `Some(gamepad)` to also process gamepad button bindings.
+    /// If `None`, gamepad bindings are skipped.
+    pub fn update(
+        &mut self,
+        input: &super::InputState,
+        bindings: &ActionBindings,
+        gamepad: Option<&super::gamepad::GamepadState>,
+    ) {
         self.pressed.clear();
         self.released.clear();
         self.held.clear();
@@ -219,8 +279,21 @@ impl ActionState {
                             self.released.insert(action.clone());
                         }
                     }
-                    InputBinding::GamepadButton(_) => {
-                        // Gamepad handled through gilrs in gamepad.rs
+                    InputBinding::GamepadButton(idx) => {
+                        let Some(gp) = gamepad else { continue };
+                        let Some(button) = index_to_button(*idx) else { continue };
+                        // Check all connected gamepads — any matching triggers the action
+                        for pad_id in gp.connected_ids() {
+                            if gp.pressed(pad_id, button) {
+                                self.pressed.insert(action.clone());
+                            }
+                            if gp.held(pad_id, button) {
+                                self.held.insert(action.clone());
+                            }
+                            if gp.released(pad_id, button) {
+                                self.released.insert(action.clone());
+                            }
+                        }
                     }
                 }
             }

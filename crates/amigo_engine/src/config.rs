@@ -23,6 +23,13 @@ pub struct RenderConfig {
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub scale_mode: String,
+    /// Art style: "pixel_art" (default), "raster_art", or "hybrid".
+    #[serde(default = "default_art_style")]
+    pub art_style: String,
+}
+
+fn default_art_style() -> String {
+    "pixel_art".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +61,7 @@ impl Default for EngineConfig {
                 virtual_width: 480,
                 virtual_height: 270,
                 scale_mode: "pixel_perfect".to_string(),
+                art_style: "pixel_art".to_string(),
             },
             audio: AudioConfig {
                 master_volume: 0.8,

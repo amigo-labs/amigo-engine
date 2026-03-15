@@ -3,6 +3,10 @@ name = "amigo_core"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+td = []
+
 [dependencies]
 fixed = { workspace = true }
 serde = { workspace = true }

@@ -22,6 +22,10 @@ COMMANDS:
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Check that the project compiles
     run                                  Run the game (cargo run)
+    pack                                 Pack assets into atlas (release build)
+    release [--target <TARGET>]          Build optimized release binary
+    publish steam                        Prepare and upload to Steam (via steamcmd)
+    publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
     editor                               Launch the Amigo editor
     list-templates                       Show available project templates
     list-presets                         Show available scene presets
@@ -52,6 +56,9 @@ fn main() {
         "scene" => cmd_scene(&args[2..]),
         "build" => cmd_build(&args[2..]),
         "run" => cmd_run(&args[2..]),
+        "pack" => cmd_pack(&args[2..]),
+        "release" => cmd_release(&args[2..]),
+        "publish" => cmd_publish(&args[2..]),
         "editor" => cmd_editor(&args[2..]),
         "list-templates" => cmd_list_templates(),
         "list-presets" => cmd_list_presets(),
@@ -82,6 +89,43 @@ struct ProjectManifest {
     virtual_height: u32,
     start_scene: String,
     scenes: Vec<SceneEntry>,
+    #[serde(default)]
+    distribution: Option<DistributionConfig>,
+}
+
+/// Distribution platform configuration stored in `amigo.toml` under `[distribution]`.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct DistributionConfig {
+    #[serde(default)]
+    steam: Option<SteamConfig>,
+    #[serde(default)]
+    itch: Option<ItchConfig>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct SteamConfig {
+    /// Steam application ID (e.g. 480 for Spacewar test app).
+    app_id: u32,
+    /// Steam depot ID for the build.
+    depot_id: u32,
+    /// Path to steamcmd binary (default: searches PATH).
+    #[serde(default)]
+    steamcmd_path: Option<String>,
+    /// Steam build description template.
+    #[serde(default)]
+    build_description: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct ItchConfig {
+    /// itch.io project path (e.g. "studio-name/game-name").
+    project: String,
+    /// Default upload channel (e.g. "linux", "windows", "mac").
+    #[serde(default)]
+    channel: Option<String>,
+    /// Path to butler binary (default: searches PATH).
+    #[serde(default)]
+    butler_path: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -135,6 +179,7 @@ fn manifest_from_project(project: &GameProject) -> ProjectManifest {
         virtual_height: project.virtual_height,
         start_scene: project.start_scene.clone(),
         scenes,
+        distribution: None,
     }
 }
 
@@ -393,6 +438,173 @@ fn cmd_build(_args: &[String]) {
 }
 
 // ---------------------------------------------------------------------------
+// `amigo pack`
+// ---------------------------------------------------------------------------
+
+fn cmd_pack(_args: &[String]) {
+    let manifest = load_manifest().unwrap_or_else(|| {
+        eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
+        process::exit(1);
+    });
+
+    println!("Packing assets for '{}'...", manifest.name);
+
+    let sprites_dir = Path::new("assets/sprites");
+    if !sprites_dir.exists() {
+        println!("  No sprites directory found, skipping atlas packing.");
+        return;
+    }
+
+    // Collect all PNG files
+    let mut sprite_files: Vec<(String, PathBuf)> = Vec::new();
+    collect_pngs(sprites_dir, "", &mut sprite_files);
+
+    if sprite_files.is_empty() {
+        println!("  No sprites found.");
+        return;
+    }
+
+    println!("  Found {} sprites", sprite_files.len());
+
+    // Load images and compute atlas layout
+    let mut atlas_builder = amigo_render::atlas::AtlasBuilder::new(4096, 2);
+    let mut images: Vec<(String, image::RgbaImage)> = Vec::new();
+
+    for (name, path) in &sprite_files {
+        match image::open(path) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                atlas_builder.add(name.clone(), rgba.width(), rgba.height());
+                images.push((name.clone(), rgba));
+            }
+            Err(e) => {
+                eprintln!("  WARNING: Failed to load {}: {e}", path.display());
+            }
+        }
+    }
+
+    match atlas_builder.pack() {
+        Ok(pack) => {
+            // Blit sprites into atlas image
+            let mut atlas_image = image::RgbaImage::new(pack.width, pack.height);
+            for (name, img) in &images {
+                if let Some(entry) = pack.get(name) {
+                    for y in 0..img.height() {
+                        for x in 0..img.width() {
+                            let pixel = img.get_pixel(x, y);
+                            atlas_image.put_pixel(entry.rect.x + x, entry.rect.y + y, *pixel);
+                        }
+                    }
+                }
+            }
+
+            // Write atlas image
+            let out_dir = Path::new("assets/packed");
+            std::fs::create_dir_all(out_dir).unwrap();
+
+            let atlas_path = out_dir.join("atlas.png");
+            atlas_image.save(&atlas_path).unwrap();
+            println!("  Atlas: {}x{} → {}", pack.width, pack.height, atlas_path.display());
+
+            // Write atlas manifest (RON)
+            let entries: Vec<(String, [f32; 4])> = pack
+                .entries
+                .iter()
+                .map(|(name, entry)| {
+                    (name.clone(), [entry.uv.x, entry.uv.y, entry.uv.w, entry.uv.h])
+                })
+                .collect();
+
+            let manifest_ron = ron::ser::to_string_pretty(&entries, ron::ser::PrettyConfig::default())
+                .expect("Failed to serialize atlas manifest");
+            let manifest_path = out_dir.join("atlas.ron");
+            std::fs::write(&manifest_path, manifest_ron).unwrap();
+            println!("  Manifest: {}", manifest_path.display());
+            println!("  Done! {} sprites packed.", images.len());
+        }
+        Err(e) => {
+            eprintln!("  ERROR: Atlas packing failed: {e}");
+            eprintln!("  Try splitting sprites across multiple atlases or increasing max size.");
+            process::exit(1);
+        }
+    }
+}
+
+fn collect_pngs(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let dir_name = path.file_name().unwrap().to_string_lossy();
+            let new_prefix = if prefix.is_empty() {
+                dir_name.to_string()
+            } else {
+                format!("{prefix}/{dir_name}")
+            };
+            collect_pngs(&path, &new_prefix, out);
+        } else if path.extension().is_some_and(|ext| ext == "png") {
+            let stem = path.file_stem().unwrap().to_string_lossy();
+            let name = if prefix.is_empty() {
+                stem.to_string()
+            } else {
+                format!("{prefix}/{stem}")
+            };
+            out.push((name, path));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `amigo release`
+// ---------------------------------------------------------------------------
+
+fn cmd_release(args: &[String]) {
+    let manifest = load_manifest().unwrap_or_else(|| {
+        eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
+        process::exit(1);
+    });
+
+    let target = find_flag(args, "--target");
+
+    println!("Building release for '{}'...", manifest.name);
+
+    // Step 1: Pack assets first
+    println!("\n[1/3] Packing assets...");
+    cmd_pack(&[]);
+
+    // Step 2: Cargo build --release
+    println!("\n[2/3] Compiling release binary...");
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("build").arg("--release");
+
+    if let Some(ref target_triple) = target {
+        cmd.arg("--target").arg(target_triple);
+    }
+
+    let status = cmd.status().unwrap_or_else(|e| {
+        eprintln!("Failed to run `cargo build --release`: {e}");
+        process::exit(1);
+    });
+
+    if !status.success() {
+        eprintln!("Release build failed.");
+        process::exit(status.code().unwrap_or(1));
+    }
+
+    // Step 3: Summary
+    println!("\n[3/3] Release summary:");
+    println!("  Project:    {}", manifest.name);
+    println!("  Version:    {}", manifest.version);
+    println!("  Resolution: {}x{}", manifest.virtual_width, manifest.virtual_height);
+    if let Some(ref t) = target {
+        println!("  Target:     {t}");
+    }
+    println!("  Binary:     target/release/{}", manifest.name);
+    println!();
+    println!("Release build complete!");
+}
+
+// ---------------------------------------------------------------------------
 // `amigo list-templates`
 // ---------------------------------------------------------------------------
 
@@ -532,6 +744,179 @@ fn cmd_editor(_args: &[String]) {
     println!();
     println!("The editor feature is coming soon. Stay tuned!");
     println!("Follow progress at: https://github.com/amigo-labs/amigo-engine");
+}
+
+// ---------------------------------------------------------------------------
+// `amigo publish`
+// ---------------------------------------------------------------------------
+
+fn cmd_publish(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: amigo publish <steam|itch> [OPTIONS]");
+        process::exit(1);
+    }
+
+    match args[0].as_str() {
+        "steam" => cmd_publish_steam(&args[1..]),
+        "itch" => cmd_publish_itch(&args[1..]),
+        other => {
+            eprintln!("Unknown platform: {other}. Use 'steam' or 'itch'.");
+            process::exit(1);
+        }
+    }
+}
+
+fn cmd_publish_steam(_args: &[String]) {
+    let manifest = load_manifest().unwrap_or_else(|| {
+        eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
+        process::exit(1);
+    });
+
+    let dist = manifest.distribution.as_ref().and_then(|d| d.steam.as_ref()).unwrap_or_else(|| {
+        eprintln!("No [distribution.steam] section in amigo.toml.");
+        eprintln!();
+        eprintln!("Add the following to your amigo.toml:");
+        eprintln!();
+        eprintln!("  [distribution.steam]");
+        eprintln!("  app_id = 480");
+        eprintln!("  depot_id = 481");
+        eprintln!();
+        process::exit(1);
+    });
+
+    let steamcmd = dist.steamcmd_path.as_deref().unwrap_or("steamcmd");
+
+    // Check steamcmd is available
+    let check = std::process::Command::new(steamcmd)
+        .arg("+quit")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    if check.is_err() {
+        eprintln!("steamcmd not found. Install it or set `steamcmd_path` in amigo.toml.");
+        eprintln!("  https://developer.valvesoftware.com/wiki/SteamCMD");
+        process::exit(1);
+    }
+
+    // Step 1: Build release
+    println!("[1/3] Building release...");
+    cmd_release(&[]);
+
+    // Step 2: Generate VDF build script
+    println!("\n[2/3] Generating Steam build script...");
+    let build_dir = Path::new("target/steam_build");
+    std::fs::create_dir_all(build_dir).unwrap();
+
+    let default_desc = format!("{} v{}", manifest.name, manifest.version);
+    let description = dist.build_description.as_deref().unwrap_or(&default_desc);
+
+    let app_vdf = format!(
+        r#""AppBuild"
+{{
+    "AppID" "{app_id}"
+    "Desc" "{desc}"
+    "ContentRoot" "../release/"
+    "BuildOutput" "./output/"
+    "Depots"
+    {{
+        "{depot_id}"
+        {{
+            "FileMapping"
+            {{
+                "LocalPath" "*"
+                "DepotPath" "."
+                "recursive" "1"
+            }}
+        }}
+    }}
+}}"#,
+        app_id = dist.app_id,
+        depot_id = dist.depot_id,
+        desc = description,
+    );
+
+    let vdf_path = build_dir.join("app_build.vdf");
+    std::fs::write(&vdf_path, &app_vdf).unwrap();
+    println!("  Generated: {}", vdf_path.display());
+
+    // Step 3: Show upload command
+    println!("\n[3/3] To upload, run:");
+    println!("  {steamcmd} +login <username> +run_app_build {} +quit", vdf_path.display());
+    println!();
+    println!("Steam build prepared for app {} (depot {}).", dist.app_id, dist.depot_id);
+}
+
+fn cmd_publish_itch(args: &[String]) {
+    let manifest = load_manifest().unwrap_or_else(|| {
+        eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
+        process::exit(1);
+    });
+
+    let dist = manifest.distribution.as_ref().and_then(|d| d.itch.as_ref()).unwrap_or_else(|| {
+        eprintln!("No [distribution.itch] section in amigo.toml.");
+        eprintln!();
+        eprintln!("Add the following to your amigo.toml:");
+        eprintln!();
+        eprintln!("  [distribution.itch]");
+        eprintln!("  project = \"your-studio/your-game\"");
+        eprintln!();
+        process::exit(1);
+    });
+
+    let butler = dist.butler_path.as_deref().unwrap_or("butler");
+    let channel = find_flag(args, "--channel")
+        .or_else(|| dist.channel.clone())
+        .unwrap_or_else(|| detect_platform_channel());
+
+    // Check butler is available
+    let check = std::process::Command::new(butler)
+        .arg("version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    if check.is_err() {
+        eprintln!("butler not found. Install it or set `butler_path` in amigo.toml.");
+        eprintln!("  https://itch.io/docs/butler/");
+        process::exit(1);
+    }
+
+    // Step 1: Build release
+    println!("[1/2] Building release...");
+    cmd_release(&[]);
+
+    // Step 2: Push via butler
+    println!("\n[2/2] Uploading to itch.io...");
+    let target_dir = format!("target/release/");
+    let push_target = format!("{}:{}", dist.project, channel);
+
+    println!("  {} push {} {}", butler, target_dir, push_target);
+    let status = std::process::Command::new(butler)
+        .args(["push", &target_dir, &push_target, "--userversion", &manifest.version])
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to run butler: {e}");
+            process::exit(1);
+        });
+
+    if !status.success() {
+        eprintln!("butler push failed.");
+        process::exit(status.code().unwrap_or(1));
+    }
+
+    println!();
+    println!("Published {} v{} to itch.io ({})!", manifest.name, manifest.version, push_target);
+}
+
+fn detect_platform_channel() -> String {
+    if cfg!(target_os = "windows") {
+        "windows".to_string()
+    } else if cfg!(target_os = "macos") {
+        "mac".to_string()
+    } else {
+        "linux".to_string()
+    }
 }
 
 // ---------------------------------------------------------------------------
