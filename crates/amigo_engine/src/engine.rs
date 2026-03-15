@@ -8,7 +8,7 @@ use amigo_render::renderer::Renderer;
 use amigo_render::sprite_batcher::SpriteInstance;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, info_span};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -604,6 +604,8 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 }
 
                 // ── Normal game loop ─────────────────────────────────
+                let _frame_span = info_span!("frame").entered();
+
                 state.accumulator += dt;
 
                 state.game_ctx.time.dt = dt as f32;
@@ -620,9 +622,14 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // Fixed timestep simulation
                 let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
                 while state.accumulator >= tick_duration {
+                    let _tick_span = info_span!("tick").entered();
+
                     state.game_ctx.input.begin_frame();
 
-                    let action = self.game.update(&mut state.game_ctx);
+                    let action = {
+                        let _update_span = info_span!("game_update").entered();
+                        self.game.update(&mut state.game_ctx)
+                    };
                     state.game_ctx.time.tick += 1;
 
                     match action {
@@ -633,8 +640,11 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                         _ => {}
                     }
 
-                    state.game_ctx.world.flush();
-                    state.game_ctx.events.flush();
+                    {
+                        let _flush_span = info_span!("ecs_flush").entered();
+                        state.game_ctx.world.flush();
+                        state.game_ctx.events.flush();
+                    }
                     state.game_ctx.particles.update(tick_duration as f32);
                     state.accumulator -= tick_duration;
                 }
@@ -652,6 +662,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // Render
                 state.sprite_draw_list.clear();
                 {
+                    let _draw_span = info_span!("game_draw").entered();
                     let camera_pos = state.renderer.camera.effective_position();
                     let vw = state.renderer.camera.virtual_width;
                     let vh = state.renderer.camera.virtual_height;
@@ -714,6 +725,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 );
 
                 // Render frame
+                let _render_span = info_span!("gpu_render").entered();
                 match state.renderer.render() {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => {
@@ -741,6 +753,9 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                 // Swap camera back to GameContext so game code can read updated state
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
+
+                // Mark frame end for Tracy profiler
+                amigo_debug::frame_mark();
             }
 
             _ => {}

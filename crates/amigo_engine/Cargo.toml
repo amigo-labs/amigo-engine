@@ -8,6 +8,7 @@ default = ["audio", "input"]
 audio = ["dep:amigo_audio"]
 editor = ["dep:amigo_editor"]
 api = ["dep:amigo_api", "dep:ctrlc", "dep:serde_json"]
+tracy = ["amigo_debug/tracy"]
 input = []
 
 [dependencies]

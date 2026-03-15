@@ -71,6 +71,8 @@ asefile = "0.3"
 egui = "0.31"
 egui-wgpu = "0.31"
 ctrlc = "3"
+tracing-tracy = { version = "0.11", default-features = false }
+tracy-client = { version = "0.18", default-features = false }
 
 [profile.dev]
 opt-level = 1

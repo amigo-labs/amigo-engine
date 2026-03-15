@@ -226,17 +226,53 @@ impl Default for DebugOverlay {
     }
 }
 
+/// Mark the end of a frame for Tracy profiling.
+///
+/// When the `tracy` feature is enabled, this calls Tracy's frame mark
+/// which gives the profiler frame-by-frame timing data. When disabled,
+/// this is a no-op.
+#[inline]
+pub fn frame_mark() {
+    #[cfg(feature = "tracy")]
+    tracy_client::Client::running()
+        .expect("Tracy client not running")
+        .frame_mark();
+}
+
+/// Check whether Tracy profiling is enabled at compile time.
+pub fn tracy_enabled() -> bool {
+    cfg!(feature = "tracy")
+}
+
 /// Initialize the tracing subscriber with env filter.
+///
+/// When the `tracy` feature is enabled, a Tracy profiler layer is added
+/// alongside the console output. Connect with the Tracy profiler GUI to
+/// see real-time spans, zones, and frame markers.
 pub fn init_logging() {
-    use tracing_subscriber::{fmt, EnvFilter};
+    use tracing_subscriber::{EnvFilter, Layer};
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
 
     let filter = EnvFilter::try_from_env("AMIGO_LOG")
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
-    fmt()
-        .with_env_filter(filter)
+    let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)
-        .init();
+        .with_filter(filter);
+
+    let registry = tracing_subscriber::registry().with(fmt_layer);
+
+    #[cfg(feature = "tracy")]
+    {
+        let tracy_layer = tracing_tracy::TracyLayer::default();
+        registry.with(tracy_layer).init();
+    }
+
+    #[cfg(not(feature = "tracy"))]
+    {
+        registry.init();
+    }
 }
 
 #[cfg(test)]
