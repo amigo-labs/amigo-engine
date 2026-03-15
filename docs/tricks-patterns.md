@@ -1,52 +1,52 @@
-# Amigo Engine – Tricks, Techniken & Patterns
+# Amigo Engine – Tricks, Techniques & Patterns
 
-## Internes Referenzdokument für Entwickler
-
----
-
-## Übersicht
-
-Dieses Dokument beschreibt alle cleveren Techniken, Optimierungen und Architektur-Patterns die die Amigo Engine nutzt. Jede Technik erklärt: **Was ist das Problem?**, **Wie löst die Engine es?**, **Wo wird es benutzt?**, und **Code-Skizze**.
+## Internal Reference Document for Developers
 
 ---
 
-## DATENSTRUKTUREN & ECS
+## Overview
+
+This document describes all the clever techniques, optimizations, and architecture patterns that the Amigo Engine uses. Each technique explains: **What is the problem?**, **How does the engine solve it?**, **Where is it used?**, and **Code sketch**.
+
+---
+
+## DATA STRUCTURES & ECS
 
 ---
 
 ### 1. SparseSet
 
-**Problem:** Random Access auf Entity-Komponenten (O(1)) UND Cache-freundliche Iteration über alle Komponenten gleichzeitig. Arrays können das eine, HashMaps das andere – nicht beides.
+**Problem:** Random access on entity components (O(1)) AND cache-friendly iteration over all components at the same time. Arrays can do one, HashMaps can do the other – not both.
 
-**Lösung:** Zwei Arrays: ein großes "sparse" Array (Index = Entity-ID, Wert = Position im Dense Array) und ein kleines "dense" Array (kompakt, ohne Löcher, Cache-freundlich).
+**Solution:** Two arrays: a large "sparse" array (index = entity ID, value = position in the dense array) and a small "dense" array (compact, no holes, cache-friendly).
 
 ```
-Sparse: [_, _, 0, _, 2, _, _, 1, _, _, 3]   ← Index = Entity-ID
-Dense:  [Pos_A, Pos_B, Pos_C, Pos_D]        ← kompakt, iterierbar
-IDs:    [  2,     7,     4,    10  ]          ← welche Entity pro Slot
+Sparse: [_, _, 0, _, 2, _, _, 1, _, _, 3]   ← Index = Entity ID
+Dense:  [Pos_A, Pos_B, Pos_C, Pos_D]        ← compact, iterable
+IDs:    [  2,     7,     4,    10  ]          ← which entity per slot
 ```
 
-- **Random Access:** `sparse[entity_id]` → Dense-Index → O(1)
-- **Iteration:** Linear über Dense Array → perfekte Cache-Locality
-- **Insert:** Append an Dense, setze Sparse-Eintrag → O(1)
-- **Remove:** Swap-Remove im Dense (letztes Element an die Lücke), update Sparse → O(1)
+- **Random Access:** `sparse[entity_id]` → Dense index → O(1)
+- **Iteration:** Linear over dense array → perfect cache locality
+- **Insert:** Append to dense, set sparse entry → O(1)
+- **Remove:** Swap-remove in dense (last element fills the gap), update sparse → O(1)
 
-**Wo:** Jeder Komponenten-Typ hat sein eigenes SparseSet. Position, Velocity, Health, SpriteComp – alle in separaten Dense Arrays, alle parallel iterierbar.
+**Where:** Each component type has its own SparseSet. Position, Velocity, Health, SpriteComp – all in separate dense arrays, all iterable in parallel.
 
-**Serialisierung:** Nur Dense-Array + IDs werden gespeichert. Sparse wird beim Laden neu aufgebaut.
+**Serialization:** Only the dense array + IDs are saved. Sparse is rebuilt on load.
 
 ---
 
 ### 2. Change Tracking (BitSet)
 
-**Problem:** 500 Entities haben eine Position. 30 ändern sich pro Frame. Das Rendering will nur die geänderten Sprites neu sortieren.
+**Problem:** 500 entities have a position. 30 change per frame. The renderer only wants to re-sort the changed sprites.
 
-**Lösung:** Ein BitSet neben dem Dense Array. Jedes Bit = "wurde seit letztem Query geändert?" `get_mut()` setzt das Bit automatisch.
+**Solution:** A BitSet alongside the dense array. Each bit = "has changed since the last query?" `get_mut()` sets the bit automatically.
 
 ```rust
 pub fn get_mut(&mut self, entity: EntityId) -> &mut T {
     let dense_idx = self.sparse[entity.id()];
-    self.changed.set(dense_idx, true);  // automatisch markiert!
+    self.changed.set(dense_idx, true);  // automatically marked!
     &mut self.dense[dense_idx]
 }
 
@@ -59,15 +59,15 @@ pub fn clear_changed(&mut self) {
 }
 ```
 
-**Wo:** Rendering (nur geänderte Sprites neu sortieren), Netzwerk (nur geänderte Komponenten senden), Save (nur dirty-markierte Entities speichern).
+**Where:** Rendering (only re-sort changed sprites), network (only send changed components), save (only store dirty-marked entities).
 
 ---
 
 ### 3. State-Scoped Entity Cleanup
 
-**Problem:** State-Wechsel (Playing → Menu). Hunderte Gameplay-Entities müssen weg. Eins vergessen → Memory Leak oder Ghost-Entities.
+**Problem:** State change (Playing → Menu). Hundreds of gameplay entities need to go. Forget one → memory leak or ghost entities.
 
-**Lösung:** `StateScoped`-Komponente. Beim State-Wechsel: automatisch alle Entities mit dem alten State despawnen.
+**Solution:** `StateScoped` component. On state change: automatically despawn all entities with the old state.
 
 ```rust
 // Spawn:
@@ -75,63 +75,63 @@ world.spawn()
     .with(Enemy { ... })
     .with(StateScoped(GameState::Playing));
 
-// State-Wechsel zu Menu → Engine despawnt automatisch ALLES mit Playing
-// Kein manuelles Aufräumen. Kein Vergessen möglich.
+// State change to Menu → Engine automatically despawns EVERYTHING with Playing
+// No manual cleanup. No forgetting possible.
 ```
 
-**Wo:** Jeder State-Übergang. Besonders wichtig für Threadwalker: Welt-Wechsel despawnt alle Entities der vorherigen Welt automatisch.
+**Where:** Every state transition. Especially important for Threadwalker: world change despawns all entities of the previous world automatically.
 
 ---
 
 ### 4. Hybrid Component Storage
 
-**Problem:** Die Engine hat "heiße" Komponenten (Position, Velocity – fast jede Entity hat sie, in jedem Frame gelesen) und "kalte" Komponenten (TowerData, QuestProgress – nur bestimmte Entities, selten gelesen). Ein einheitliches System verschwendet Cache für kalte Daten oder ist langsam für heiße.
+**Problem:** The engine has "hot" components (Position, Velocity – almost every entity has them, read every frame) and "cold" components (TowerData, QuestProgress – only certain entities, rarely read). A uniform system wastes cache on cold data or is slow for hot data.
 
-**Lösung:** Heiße Komponenten als statisch typisierte SparseSet-Felder. Kalte, game-spezifische Komponenten in einer `HashMap<TypeId, Box<dyn AnyStorage>>`.
+**Solution:** Hot components as statically typed SparseSet fields. Cold, game-specific components in a `HashMap<TypeId, Box<dyn AnyStorage>>`.
 
 ```rust
 pub struct World {
-    // Hot path – statische Felder, kein HashMap-Lookup
+    // Hot path – static fields, no HashMap lookup
     pub positions: SparseSet<Position>,
     pub velocities: SparseSet<Velocity>,
     pub sprites: SparseSet<SpriteComp>,
     pub healths: SparseSet<Health>,
 
-    // Cold path – dynamisch, für game-spezifische Komponenten
+    // Cold path – dynamic, for game-specific components
     pub extensions: HashMap<TypeId, Box<dyn AnyStorage>>,
 }
 ```
 
-**Wo:** Engine-interne Komponenten (Position, Velocity, Collider) = statisch. Game-Komponenten (TowerData, QuestLog, ArmState) = dynamisch.
+**Where:** Engine-internal components (Position, Velocity, Collider) = static. Game components (TowerData, QuestLog, ArmState) = dynamic.
 
 ---
 
 ### 5. Tick Scheduler
 
-**Problem:** Manche Systeme müssen nicht jeden Frame laufen. Pathfinding alle 10 Frames reicht. AI-Entscheidungen alle 30 Frames. Aber der Game Loop läuft mit 60 FPS.
+**Problem:** Some systems don't need to run every frame. Pathfinding every 10 frames is enough. AI decisions every 30 frames. But the game loop runs at 60 FPS.
 
-**Lösung:** `scheduler.every(n, system)` – System wird nur alle N Ticks ausgeführt.
+**Solution:** `scheduler.every(n, system)` – system is only executed every N ticks.
 
 ```rust
-scheduler.every(1, physics_system);        // jeden Frame
-scheduler.every(10, pathfinding_system);    // alle 10 Frames
-scheduler.every(30, ai_decision_system);    // alle 30 Frames
-scheduler.every(60, save_autosave);         // jede Sekunde
+scheduler.every(1, physics_system);        // every frame
+scheduler.every(10, pathfinding_system);    // every 10 frames
+scheduler.every(30, ai_decision_system);    // every 30 frames
+scheduler.every(60, save_autosave);         // every second
 ```
 
-**Wo:** Pathfinding, AI, Autosave, Flow Field Neuberechnung, Atmospheric Transitions (langsam, braucht nicht 60 FPS).
+**Where:** Pathfinding, AI, autosave, flow field recalculation, atmospheric transitions (slow, doesn't need 60 FPS).
 
 ---
 
-## KOLLISION & SPATIAL
+## COLLISION & SPATIAL
 
 ---
 
 ### 6. Spatial Hash
 
-**Problem:** "Welche Entities sind in der Nähe?" Naiv: O(n²). Bei 500 Entities = 250.000 Checks pro Frame.
+**Problem:** "Which entities are nearby?" Naive: O(n²). With 500 entities = 250,000 checks per frame.
 
-**Lösung:** Unsichtbares Raster über die Welt. Entities werden in Zellen einsortiert. Queries prüfen nur 9 Nachbarzellen statt alle Entities.
+**Solution:** An invisible grid over the world. Entities are sorted into cells. Queries check only 9 neighboring cells instead of all entities.
 
 ```rust
 pub struct SpatialHash {
@@ -139,26 +139,26 @@ pub struct SpatialHash {
     cells: HashMap<(i32, i32), Vec<EntityId>>,
 }
 
-// Query: nur 9 Zellen statt N Entities
+// Query: only 9 cells instead of N entities
 fn query_nearby(&self, pos: Vec2, radius: f32) -> Vec<EntityId> {
     let r = (radius / self.cell_size).ceil() as i32;
     let cx = (pos.x / self.cell_size) as i32;
     let cy = (pos.y / self.cell_size) as i32;
-    // iteriere (cx-r..=cx+r) × (cy-r..=cy+r)
+    // iterate (cx-r..=cx+r) × (cy-r..=cy+r)
 }
 ```
 
-Wird jeden Frame komplett neu aufgebaut (schneller als inkrementelle Updates bei sich bewegenden Entities).
+Rebuilt completely every frame (faster than incremental updates with moving entities).
 
-**Wo:** Kollisionserkennung, Range-Checks (Tower-Reichweite), Proximity-Queries (NPCs in der Nähe), AoE-Schaden.
+**Where:** Collision detection, range checks (tower range), proximity queries (nearby NPCs), AoE damage.
 
 ---
 
 ### 7. AABB Collision (Axis-Aligned Bounding Box)
 
-**Problem:** Zwei Sprites überlappen sich – kollidieren sie? Pixel-perfekte Kollision ist zu teuer für 60 FPS.
+**Problem:** Two sprites overlap – are they colliding? Pixel-perfect collision is too expensive for 60 FPS.
 
-**Lösung:** Jede Entity hat ein unsichtbares Rechteck (AABB). Überlappung von zwei Rechtecken = eine einzige Bedingung:
+**Solution:** Each entity has an invisible rectangle (AABB). Overlap of two rectangles = a single condition:
 
 ```rust
 fn aabb_overlap(a: &Rect, b: &Rect) -> bool {
@@ -169,9 +169,9 @@ fn aabb_overlap(a: &Rect, b: &Rect) -> bool {
 }
 ```
 
-Vier Vergleiche. Schneller geht's nicht. Kombiniert mit Spatial Hash: erst grobe Nachbarschafts-Suche, dann feine AABB-Prüfung. Zweistufig.
+Four comparisons. Can't get faster than that. Combined with spatial hash: first a coarse neighborhood search, then fine AABB check. Two-stage.
 
-**Wo:** Jede physische Interaktion. Projektil trifft Enemy, Spieler berührt Item, Entity tritt in Trigger-Zone.
+**Where:** Every physical interaction. Projectile hits enemy, player touches item, entity enters trigger zone.
 
 ---
 
@@ -179,17 +179,17 @@ Vier Vergleiche. Schneller geht's nicht. Kombiniert mit Spatial Hash: erst grobe
 
 ---
 
-### 8. A* auf Tile-Grid
+### 8. A* on Tile Grid
 
-**Problem:** Ein NPC soll den kürzesten Weg durch eine Tilemap finden, um Hindernisse herum.
+**Problem:** An NPC should find the shortest path through a tilemap, around obstacles.
 
-**Lösung:** A* auf dem Tile-Grid. Jede Tile ist ein Knoten, begehbare Nachbarn sind Kanten. Heuristik: Manhattan-Distanz (oder Chebyshev für diagonale Bewegung).
+**Solution:** A* on the tile grid. Each tile is a node, walkable neighbors are edges. Heuristic: Manhattan distance (or Chebyshev for diagonal movement).
 
 ```rust
 fn a_star(start: TilePos, goal: TilePos, tilemap: &Tilemap) -> Option<Vec<TilePos>> {
     let mut open = BinaryHeap::new();  // Priority Queue
     let mut came_from = HashMap::new();
-    let mut g_score = HashMap::new();  // Kosten vom Start
+    let mut g_score = HashMap::new();  // cost from start
 
     open.push(Node { pos: start, f: heuristic(start, goal) });
     g_score.insert(start, 0);
@@ -206,19 +206,19 @@ fn a_star(start: TilePos, goal: TilePos, tilemap: &Tilemap) -> Option<Vec<TilePo
             }
         }
     }
-    None  // kein Pfad gefunden
+    None  // no path found
 }
 ```
 
-**Wo:** RPG-Welten (Meridian – NPCs navigieren), Dungeon Crawler (Kabinett – Feinde jagen den Spieler), Survival (Knochenhain – Feinde finden das Camp).
+**Where:** RPG worlds (Meridian – NPCs navigate), dungeon crawler (Kabinett – enemies chase the player), survival (Knochenhain – enemies find the camp).
 
 ---
 
 ### 9. Waypoint Pathfinding
 
-**Problem:** Tower Defense – Enemies folgen einem festen Pfad. A* wäre Overkill.
+**Problem:** Tower Defense – enemies follow a fixed path. A* would be overkill.
 
-**Lösung:** Editor-definierte Punkte. Enemy folgt der Liste, interpoliert zwischen Punkten.
+**Solution:** Editor-defined points. Enemy follows the list, interpolates between points.
 
 ```rust
 pub struct WaypointPath {
@@ -226,9 +226,9 @@ pub struct WaypointPath {
 }
 
 pub struct PathFollower {
-    pub path_index: usize,     // welcher Pfad
-    pub segment: usize,        // zwischen Punkt N und N+1
-    pub progress: Fix,         // 0.0 = bei Punkt N, 1.0 = bei Punkt N+1
+    pub path_index: usize,     // which path
+    pub segment: usize,        // between point N and N+1
+    pub progress: Fix,         // 0.0 = at point N, 1.0 = at point N+1
 }
 
 fn follow_path(follower: &mut PathFollower, path: &WaypointPath, speed: Fix, dt: Fix) {
@@ -237,37 +237,37 @@ fn follow_path(follower: &mut PathFollower, path: &WaypointPath, speed: Fix, dt:
         follower.progress -= Fix::ONE;
         follower.segment += 1;
         if follower.segment >= path.points.len() - 1 {
-            // Ziel erreicht!
+            // Goal reached!
         }
     }
 }
 ```
 
-**Wo:** TD (Rostgarten), jede Situation mit festen Routen (Patrouillen in Stealth, NPC-Wanderrouten).
+**Where:** TD (Rostgarten), any situation with fixed routes (patrols in stealth, NPC wandering routes).
 
 ---
 
 ### 10. Flow Field
 
-**Problem:** 200 Enemies sollen alle zum selben Ziel. 200× A* pro Frame = zu teuer.
+**Problem:** 200 enemies should all head to the same goal. 200x A* per frame = too expensive.
 
-**Lösung:** Einmal ein Richtungsfeld berechnen (BFS vom Ziel). Jede Zelle bekommt einen Pfeil "geh in diese Richtung." Jeder Enemy liest nur seine Zelle – O(1).
+**Solution:** Compute a direction field once (BFS from the goal). Each cell gets an arrow "go in this direction." Each enemy only reads its cell – O(1).
 
 ```
 ┌────┬────┬────┬────┐
 │ ↘  │ →  │ →  │ ↓  │
-├────┼────┼────┼────┤    Berechnung: BFS vom Ziel (★)
-│ ↓  │ ██ │ →  │ ↓  │    Jede Zelle zeigt zum Nachbarn
-├────┼────┼────┼────┤    mit den niedrigsten Kosten
+├────┼────┼────┼────┤    Computation: BFS from goal (★)
+│ ↓  │ ██ │ →  │ ↓  │    Each cell points to the neighbor
+├────┼────┼────┼────┤    with the lowest cost
 │ →  │ →  │ →  │ ★  │
 └────┴────┴────┴────┘
 
-Enemy bei (0,0): liest ↘ → bewegt sich diagonal
+Enemy at (0,0): reads ↘ → moves diagonally
 ```
 
-Neuberechnung nur wenn sich die Tilemap ändert oder das Ziel wechselt. Für statische Karten: einmal berechnen, ewig nutzen.
+Recomputation only when the tilemap changes or the goal changes. For static maps: compute once, use forever.
 
-**Wo:** Horden-Szenarien (Knochenhain – Nachts greifen Baumwurzeln das Camp an), RTS-artige Situationen, jede Szene mit vielen Entities die zum selben Ziel wollen.
+**Where:** Horde scenarios (Knochenhain – at night tree roots attack the camp), RTS-like situations, any scene with many entities heading to the same goal.
 
 ---
 
@@ -277,76 +277,76 @@ Neuberechnung nur wenn sich die Tilemap ändert oder das Ziel wechselt. Für sta
 
 ### 11. Sprite Batcher (Texture Atlas Grouping)
 
-**Problem:** 500 Sprites rendern = 500 Draw Calls. GPU-Overhead pro Draw Call ist hoch. Ergebnis: Ruckeln.
+**Problem:** Rendering 500 sprites = 500 draw calls. GPU overhead per draw call is high. Result: stuttering.
 
-**Lösung:** Alle Sprites sammeln, nach Texture Atlas sortieren, pro Atlas EIN Draw Call.
+**Solution:** Collect all sprites, sort by texture atlas, ONE draw call per atlas.
 
 ```
-Frame-Pipeline:
-1. Alle Sprites einsammeln: [(atlas_id, position, src_rect, z_index), ...]
-2. Nach atlas_id sortieren (sekundär: z_index)
-3. Pro Atlas-Gruppe: ein einziger Vertex Buffer Upload + Draw Call
+Frame pipeline:
+1. Collect all sprites: [(atlas_id, position, src_rect, z_index), ...]
+2. Sort by atlas_id (secondary: z_index)
+3. Per atlas group: a single vertex buffer upload + draw call
 
-500 Sprites, 3 Atlases → 3 Draw Calls statt 500
+500 sprites, 3 atlases → 3 draw calls instead of 500
 ```
 
-**Wo:** ALLES was gerendert wird. Entities, Tiles, Partikel, UI – alles geht durch den Sprite Batcher.
+**Where:** EVERYTHING that is rendered. Entities, tiles, particles, UI – everything goes through the sprite batcher.
 
 ---
 
 ### 12. Per-Sprite Shaders
 
-**Problem:** Ein getroffener Enemy soll weiß aufblitzen. Ein vergifteter soll grünlich pulsieren. Ein unsichtbarer soll transparent flimmern. Aber der Sprite Batcher rendert alles in einem Batch.
+**Problem:** A hit enemy should flash white. A poisoned one should pulse greenish. An invisible one should flicker transparently. But the sprite batcher renders everything in one batch.
 
-**Lösung:** Shader-ID als Attribut im Vertex Buffer. Der Batcher gruppiert Sprites auch nach Shader. Built-in Shader-Set:
+**Solution:** Shader ID as an attribute in the vertex buffer. The batcher also groups sprites by shader. Built-in shader set:
 
-| Shader | Effekt | Anwendung |
-|--------|--------|-----------|
-| `default` | Normales Rendering | Standard |
-| `flash` | Kurz komplett weiß | Treffer-Feedback |
-| `outline` | 1px farbige Outline | Selektion, Hover |
-| `dissolve` | Pixel lösen sich auf | Tod-Animation |
-| `palette_swap` | Farben tauschen | Team-Farben, Varianten |
-| `silhouette` | Einfarbige Silhouette | Hinter Wänden sichtbar |
-| `wave` | Wellenförmige Verzerrung | Unterwasser, Hitze |
+| Shader | Effect | Usage |
+|--------|--------|-------|
+| `default` | Normal rendering | Standard |
+| `flash` | Briefly fully white | Hit feedback |
+| `outline` | 1px colored outline | Selection, hover |
+| `dissolve` | Pixels dissolve | Death animation |
+| `palette_swap` | Swap colors | Team colors, variants |
+| `silhouette` | Solid-color silhouette | Visible behind walls |
+| `wave` | Wave-like distortion | Underwater, heat |
 
 ```rust
 world.set(entity, SpriteEffect::Flash { duration: 0.1, color: Color::WHITE });
-// → Sprite Batcher erkennt den Effekt, batcht mit Flash-Shader
+// → Sprite batcher detects the effect, batches with flash shader
 ```
 
-**Wo:** Kampf-Feedback, Status-Effekte, visuelle Hervorhebung, Stealth (Silhouette wenn hinter Deckung).
+**Where:** Combat feedback, status effects, visual highlighting, stealth (silhouette when behind cover).
 
 ---
 
 ### 13. Tilemap Chunk Caching
 
-**Problem:** Die Tilemap hat 500×500 Tiles. Jeden Frame alle rendern? Verschwendung.
+**Problem:** The tilemap has 500x500 tiles. Render all of them every frame? Wasteful.
 
-**Lösung:** Die Tilemap wird in Chunks aufgeteilt (16×16 Tiles). Nur sichtbare Chunks werden gerendert. Sichtbare Chunks werden in eine Texture gecacht – solange sich der Chunk nicht ändert, wird nur die gecachte Texture geblittet (EIN Quad statt 256 Tile-Draws).
+**Solution:** The tilemap is divided into chunks (16x16 tiles). Only visible chunks are rendered. Visible chunks are cached into a texture – as long as the chunk doesn't change, only the cached texture is blitted (ONE quad instead of 256 tile draws).
 
 ```
-Chunk-Cache:
+Chunk cache:
 ┌────────┬────────┬────────┐
-│Chunk(0,0)│Chunk(1,0)│Chunk(2,0)│  Sichtbar: grün
-│ CACHED │ CACHED │  DIRTY │  Dirty: rot (Tile geändert → neu rendern)
+│Chunk(0,0)│Chunk(1,0)│Chunk(2,0)│  Visible: green
+│ CACHED │ CACHED │  DIRTY │  Dirty: red (tile changed → re-render)
 ├────────┼────────┼────────┤
-│Chunk(0,1)│Chunk(1,1)│Chunk(2,1)│  Nicht sichtbar: gar nicht laden
+│Chunk(0,1)│Chunk(1,1)│Chunk(2,1)│  Not visible: don't load at all
 │ CACHED │ CACHED │ CACHED │
 ├────────┼────────┼────────┤
 │  OUT   │  OUT   │  OUT   │  OUT = outside viewport
 └────────┴────────┴────────┘
 ```
 
-**Wo:** Jede Tilemap. Besonders wichtig für große Welten (Kabinett-Dungeon, Sporenwolke-Overworld).
+**Where:** Every tilemap. Especially important for large worlds (Kabinett dungeon, Sporenwolke overworld).
 
 ---
 
 ### 14. Animated Tiles
 
-**Problem:** Wasser soll fließen, Lava soll pulsieren, Gras soll wehen. Aber Tiles sind statische Grafiken.
+**Problem:** Water should flow, lava should pulse, grass should sway. But tiles are static graphics.
 
-**Lösung:** Bestimmte Tile-IDs haben ein `animation`-Tag. Die Engine tauscht die Tile-Grafik in regelmäßigen Abständen. Der Chunk-Cache wird dabei invalidiert.
+**Solution:** Certain tile IDs have an `animation` tag. The engine swaps the tile graphic at regular intervals. The chunk cache is invalidated accordingly.
 
 ```ron
 // tileset definition
@@ -354,42 +354,42 @@ Chunk-Cache:
     tiles: {
         42: (name: "water", walkable: false, animation: (
             frames: [42, 43, 44, 45],
-            frame_duration: 0.25,  // Sekunden pro Frame
+            frame_duration: 0.25,  // seconds per frame
         )),
     },
 )
 ```
 
-**Wo:** Wasser, Lava, Fackeln, leuchtende Kristalle, Sporenregen, alles was "lebt" auf der Tilemap.
+**Where:** Water, lava, torches, glowing crystals, spore rain, anything that "lives" on the tilemap.
 
 ---
 
 ### 15. Auto-Tiling (Bitmask)
 
-**Problem:** Wasser neben Land braucht Übergangs-Tiles (Ufer, Ecken). 47 mögliche Varianten manuell platzieren?
+**Problem:** Water next to land needs transition tiles (shores, corners). 47 possible variants to place manually?
 
-**Lösung:** Jede Tile prüft ihre 8 Nachbarn, berechnet eine Bitmask, und schlägt das passende Sprite in einer Lookup-Tabelle nach.
+**Solution:** Each tile checks its 8 neighbors, computes a bitmask, and looks up the matching sprite in a lookup table.
 
 ```
-Nachbar-Bitmask:              Beispiel:
+Neighbor bitmask:                 Example:
 ┌───┬───┬───┐                 Land│Land│Land
 │ 1 │ 2 │ 4 │                 ────┼────┼────
-├───┼───┼───┤                 Wasser│ X │Land  → Bitmask = 2+4+16 = 22
+├───┼───┼───┤                 Water│ X │Land  → Bitmask = 2+4+16 = 22
 │ 8 │ X │16 │                 ────┼────┼────
-├───┼───┼───┤                 Wasser│Wasser│Wasser
+├───┼───┼───┤                 Water│Water│Water
 │32 │64 │128│
-└───┴───┴───┘                 Tile 22 → Ufer oben-rechts
+└───┴───┴───┘                 Tile 22 → shore top-right
 ```
 
-**Wo:** Level Editor (auto-tiling beim Malen), Tilemap-Laden. Funktioniert für Wasser, Wege, Mauern, Klippen, Höhenstufen.
+**Where:** Level editor (auto-tiling while painting), tilemap loading. Works for water, paths, walls, cliffs, elevation levels.
 
 ---
 
 ### 16. Post-Processing Stack
 
-**Problem:** Verschiedene Welten brauchen verschiedene visuelle Effekte. Caribbean = Bloom + Warm Color Grade. Matrix = Chromatic Aberration + CRT Scanlines. Zur Laufzeit wechseln.
+**Problem:** Different worlds need different visual effects. Caribbean = Bloom + Warm Color Grade. Matrix = Chromatic Aberration + CRT Scanlines. Switch at runtime.
 
-**Lösung:** Post-Processing als `Vec<PostEffect>` pro Welt/Scene. Konfigurierbar in RON. Engine rendert die Szene in eine Texture, dann jeden Effekt als Fullscreen-Pass darüber.
+**Solution:** Post-processing as `Vec<PostEffect>` per world/scene. Configurable in RON. The engine renders the scene into a texture, then applies each effect as a fullscreen pass on top.
 
 ```ron
 // data/atmospheres/my_world.ron
@@ -412,29 +412,29 @@ Nachbar-Bitmask:              Beispiel:
 )
 ```
 
-Atmosphere-Transitions interpolieren zwischen Post-Processing Stacks (Bloom fährt hoch, Vignette fährt runter, über 2 Sekunden).
+Atmosphere transitions interpolate between post-processing stacks (bloom ramps up, vignette ramps down, over 2 seconds).
 
-**Wo:** Stimmungs-Wechsel (calm → battle), Welt-spezifischer Look, Boss-Encounters, Cutscenes.
+**Where:** Mood changes (calm → battle), world-specific look, boss encounters, cutscenes.
 
 ---
 
 ### 17. Dual-Layer Rendering (Game + Editor)
 
-**Problem:** Das Spiel rendert bei 640×360 (Pixel Art). Der Editor braucht scharfen Text und UI bei nativer Auflösung (z.B. 2560×1440).
+**Problem:** The game renders at 640x360 (pixel art). The editor needs sharp text and UI at native resolution (e.g. 2560x1440).
 
-**Lösung:** Zwei getrennte Render-Targets:
+**Solution:** Two separate render targets:
 
 ```
-1. Off-Screen Texture (640×360) → Game-Welt + Pixel UI
-   └── Integer-skaliert in einen Viewport im Editor-Fenster
+1. Off-screen texture (640×360) → Game world + pixel UI
+   └── Integer-scaled into a viewport in the editor window
 
-2. Backbuffer (native Auflösung) → egui Editor-Panels
-   └── Text, Thumbnails, Dropdowns, Properties – alles scharf
+2. Backbuffer (native resolution) → egui editor panels
+   └── Text, thumbnails, dropdowns, properties – all sharp
 ```
 
-Im Play-Mode: nur Target 1, fullscreen. Im Editor-Mode: Target 1 als Panel, Target 2 drumherum.
+In play mode: only target 1, fullscreen. In editor mode: target 1 as a panel, target 2 around it.
 
-**Wo:** Immer. Das ist die fundamentale Render-Architektur.
+**Where:** Always. This is the fundamental render architecture.
 
 ---
 
@@ -444,154 +444,154 @@ Im Play-Mode: nur Target 1, fullscreen. Im Editor-Mode: Target 1 als Panel, Targ
 
 ### 18. Adaptive Music – Vertical Layering
 
-**Problem:** Musik soll sich mit dem Gameplay ändern. Aber ein einfacher Track-Wechsel (Crossfade) klingt nach zwei verschiedenen Songs.
+**Problem:** Music should change with the gameplay. But a simple track switch (crossfade) sounds like two different songs.
 
-**Lösung:** Mehrere Stems (Drums, Bass, Melodie, Streicher, Brass) laufen gleichzeitig, synchron. Jeder Stem hat ein Volume das von Game-Parametern gesteuert wird.
+**Solution:** Multiple stems (drums, bass, melody, strings, brass) play simultaneously, in sync. Each stem has a volume controlled by game parameters.
 
 ```
-Tension = 0.2 (ruhig):     Tension = 0.8 (Kampf):
-  Drums:    ░░░░░░ (leise)    Drums:    ██████ (laut)
-  Bass:     ░░░░░░ (leise)    Bass:     █████░ (laut)
-  Melodie:  ░░░░░░ (aus)      Melodie:  ████░░ (mittel)
-  Streicher:████░░ (mittel)   Streicher:██████ (laut)
-  Brass:    ░░░░░░ (aus)      Brass:    ████░░ (mittel)
+Tension = 0.2 (calm):         Tension = 0.8 (combat):
+  Drums:    ░░░░░░ (quiet)      Drums:    ██████ (loud)
+  Bass:     ░░░░░░ (quiet)      Bass:     █████░ (loud)
+  Melody:   ░░░░░░ (off)        Melody:   ████░░ (medium)
+  Strings:  ████░░ (medium)     Strings:  ██████ (loud)
+  Brass:    ░░░░░░ (off)        Brass:    ████░░ (medium)
 ```
 
-Fades sind smooth (Lerp pro Frame). Das Stück klingt immer wie ein Song – nur die Dichte ändert sich.
+Fades are smooth (lerp per frame). The piece always sounds like one song – only the density changes.
 
-**Wo:** Jede Welt mit adaptiver Musik. Parameter: Tension, Danger, Boss, Victory.
+**Where:** Every world with adaptive music. Parameters: Tension, Danger, Boss, Victory.
 
 ---
 
 ### 19. Bar-Synced Music Transitions
 
-**Problem:** Musik soll von "calm" zu "battle" wechseln. Aber ein Crossfade mitten im Takt klingt furchtbar.
+**Problem:** Music should switch from "calm" to "battle." But a crossfade in the middle of a bar sounds terrible.
 
-**Lösung:** BarClock trackt die aktuelle Position im Takt. Transitions werden als "Pending" markiert und erst am nächsten Bar-Boundary ausgeführt.
+**Solution:** BarClock tracks the current position in the bar. Transitions are marked as "pending" and only executed at the next bar boundary.
 
 ```
 Beat: 1 . . . 2 . . . 3 . . . 4 . . . | 1 . . . 2 . . .
                             ↑                ↑
-                     Boss spawnt!        Hier passiert der
-                     → Pending            Wechsel (auf der 1)
+                     Boss spawns!         This is where the
+                     → Pending            switch happens (on the 1)
 ```
 
-**Transition-Typen:**
-- `CrossfadeOnBar(2)` – 2 Takte lang überblenden
-- `CutOnBar` – harter Schnitt auf der 1
-- `StingerThen(sound, next)` – kurzer Akzent, dann Transition
-- `FadeOutThenPlay(1)` – 1 Takt ausfaden, Stille, neues Stück
-- `LayerSwap(2)` – ein Layer alle 2 Takte tauschen
+**Transition types:**
+- `CrossfadeOnBar(2)` – crossfade over 2 bars
+- `CutOnBar` – hard cut on the 1
+- `StingerThen(sound, next)` – short accent, then transition
+- `FadeOutThenPlay(1)` – fade out over 1 bar, silence, new piece
+- `LayerSwap(2)` – swap one layer every 2 bars
 
 ---
 
 ### 20. Stinger Quantization
 
-**Problem:** Ein Tower wird gebaut → kurzer musikalischer Akzent (Stinger). Aber der Stinger soll musikalisch zum laufenden Beat passen, nicht beliebig drübergeklatscht werden.
+**Problem:** A tower is built → short musical accent (stinger). But the stinger should fit musically with the running beat, not be slapped on arbitrarily.
 
-**Lösung:** Stingers haben ein Quantisierungs-Level:
+**Solution:** Stingers have a quantization level:
 
 ```rust
 pub enum StingerQuantize {
-    Immediate,    // sofort abspielen (für dringende Events wie Life-Lost)
-    NextBeat,     // auf dem nächsten Beat (für kleine Events: Tower gebaut)
-    NextBar,      // auf der nächsten 1 (für große Events: Boss spawnt)
+    Immediate,    // play immediately (for urgent events like life lost)
+    NextBeat,     // on the next beat (for small events: tower built)
+    NextBar,      // on the next 1 (for big events: boss spawns)
 }
 ```
 
-**Wo:** Alle Gameplay-Events die einen Audio-Akzent haben. Tower bauen = NextBeat. Wave Start = NextBar. Leben verloren = Immediate.
+**Where:** All gameplay events that have an audio accent. Tower build = NextBeat. Wave start = NextBar. Life lost = Immediate.
 
 ---
 
 ### 21. SFX Variant System
 
-**Problem:** Derselbe Kanonenschuss 50× hintereinander klingt wie ein kaputter Plattenspieler.
+**Problem:** The same cannon shot 50 times in a row sounds like a broken record player.
 
-**Lösung:** Mehrere Varianten pro Sound. Engine wählt zufällig + leichte Pitch-Variation.
+**Solution:** Multiple variants per sound. Engine picks randomly + slight pitch variation.
 
 ```ron
 (
     "impact_01": (
         files: ["sfx/impact_01a.ogg", "sfx/impact_01b.ogg", "sfx/impact_01c.ogg"],
         volume: 0.8,
-        pitch_variance: 0.05,   // ±5% zufällige Tonhöhenverschiebung
-        max_concurrent: 3,       // maximal 3 gleichzeitig
-        cooldown: 0.05,          // mindestens 50ms zwischen Abspielen
+        pitch_variance: 0.05,   // ±5% random pitch shift
+        max_concurrent: 3,       // maximum 3 simultaneous
+        cooldown: 0.05,          // minimum 50ms between plays
     ),
 )
 ```
 
-**Wo:** Jeder wiederholende SFX. Schüsse, Schritte, Treffer, UI-Klicks.
+**Where:** Every repeating SFX. Shots, footsteps, hits, UI clicks.
 
 ---
 
-## DETERMINISMUS & NETZWERK
+## DETERMINISM & NETWORK
 
 ---
 
-### 22. Fixed-Point Arithmetik
+### 22. Fixed-Point Arithmetic
 
-**Problem:** `f32` ist nicht deterministisch über CPUs. Multiplayer und Replays desyncen nach 1000+ Frames.
+**Problem:** `f32` is not deterministic across CPUs. Multiplayer and replays desync after 1000+ frames.
 
-**Lösung:** `I16F16` (16 Bit Integer + 16 Bit Fraction) für alle Simulation. Integer-Operationen sind auf jeder CPU identisch.
+**Solution:** `I16F16` (16-bit integer + 16-bit fraction) for all simulation. Integer operations are identical on every CPU.
 
 ```
-I16F16: Wert 3.75 = 0000000000000011.1100000000000000
-                     ← 16 Bit Integer → ← 16 Bit Frac →
+I16F16: Value 3.75 = 0000000000000011.1100000000000000
+                      ← 16-bit integer → ← 16-bit frac →
 
-Addition = Integer-Addition → deterministisch
-Multiplikation = Integer-Mult + Shift → deterministisch
+Addition = integer addition → deterministic
+Multiplication = integer mult + shift → deterministic
 ```
 
-**Wo:** JEDE Gameplay-Berechnung: Position, Velocity, Damage, Timer, Cooldowns. Rendering darf weiterhin f32 nutzen (nur visuell, nicht simulation-relevant).
+**Where:** EVERY gameplay calculation: position, velocity, damage, timers, cooldowns. Rendering may continue to use f32 (only visual, not simulation-relevant).
 
 ---
 
 ### 23. Seeded RNG
 
-**Problem:** Zufallswerte im Gameplay (Damage-Spread, Spawn-Varianz, Partikel) müssen reproduzierbar sein.
+**Problem:** Random values in gameplay (damage spread, spawn variance, particles) must be reproducible.
 
-**Lösung:** Der RNG ist Teil des GameState, initialisiert mit einem Seed. Jeder Zufallswert kommt aus demselben deterministischen Generator.
+**Solution:** The RNG is part of the GameState, initialized with a seed. Every random value comes from the same deterministic generator.
 
 ```rust
 pub struct GameState {
-    pub rng: StdRng,          // Seeded, deterministisch
-    // ... alles andere
+    pub rng: StdRng,          // Seeded, deterministic
+    // ... everything else
 }
 
-// IMMER: state.rng.gen_range(0..100)
-// NIE:   rand::thread_rng()  ← nicht reproduzierbar!
+// ALWAYS: state.rng.gen_range(0..100)
+// NEVER:  rand::thread_rng()  ← not reproducible!
 ```
 
-**Replay:** Gleicher Seed + gleiche Commands → exakt gleiche Simulation. Auch 10 Jahre später, auf anderer Hardware.
+**Replay:** Same seed + same commands → exactly the same simulation. Even 10 years later, on different hardware.
 
 ---
 
 ### 24. No HashMap Iteration in Simulation
 
-**Problem:** `HashMap::iter()` gibt Elemente in undefinierter Reihenfolge zurück. Auf verschiedenen Maschinen kann die Reihenfolge anders sein → Determinismus gebrochen.
+**Problem:** `HashMap::iter()` returns elements in undefined order. On different machines the order can differ → determinism broken.
 
-**Lösung:** Simulation nutzt `BTreeMap` (sortiert) oder `IndexMap` (Insertion-Order). Iteration ist immer in derselben Reihenfolge. `FxHashMap` (rustc-hash) wird für O(1)-Lookups genutzt wo Iteration nicht nötig ist.
+**Solution:** Simulation uses `BTreeMap` (sorted) or `IndexMap` (insertion order). Iteration is always in the same order. `FxHashMap` (rustc-hash) is used for O(1) lookups where iteration is not needed.
 
 ```rust
-// Gut (deterministisch):
+// Good (deterministic):
 let towers: BTreeMap<EntityId, TowerData> = ...;
-for (id, tower) in &towers { ... }  // immer sortiert nach ID
+for (id, tower) in &towers { ... }  // always sorted by ID
 
-// Schlecht (nicht-deterministisch):
+// Bad (non-deterministic):
 let towers: HashMap<EntityId, TowerData> = ...;
-for (id, tower) in &towers { ... }  // Reihenfolge variiert!
+for (id, tower) in &towers { ... }  // order varies!
 ```
 
-**Wo:** Jede Simulation-Loop die über Entities iteriert.
+**Where:** Every simulation loop that iterates over entities.
 
 ---
 
 ### 25. Command-Based Architecture
 
-**Problem:** Im Multiplayer sendet Client A "Tower platzieren bei (5,3)." Client B muss exakt dasselbe tun. Direkte ECS-Manipulation ist nicht serialisierbar.
+**Problem:** In multiplayer, Client A sends "place tower at (5,3)." Client B must do exactly the same. Direct ECS manipulation is not serializable.
 
-**Lösung:** Alle Spieler-Aktionen als serialisierbare `GameCommand` Enums. Commands werden über das Netzwerk gesendet. Die Simulation führt Commands aus – nicht Raw-Input.
+**Solution:** All player actions as serializable `GameCommand` enums. Commands are sent over the network. The simulation executes commands – not raw input.
 
 ```rust
 pub enum GameCommand {
@@ -600,56 +600,56 @@ pub enum GameCommand {
     SetTargetPriority { tower_id: EntityId, priority: TargetPriority },
     StartWave,
     ActivateAbility { ability: AbilityId },
-    // ... alle Spieler-Aktionen
+    // ... all player actions
 }
 
 // Replay = Vec<(Tick, GameCommand)>
-// Multiplayer = Commands über UDP senden
-// Undo = Command rückwärts ausführen
+// Multiplayer = send commands over UDP
+// Undo = execute command in reverse
 ```
 
-**Wo:** Jede Spieler-Interaktion. Replay-System, Multiplayer, Undo/Redo im Editor.
+**Where:** Every player interaction. Replay system, multiplayer, undo/redo in the editor.
 
 ---
 
 ### 26. Lockstep Multiplayer
 
-**Problem:** Zwei Spieler spielen zusammen. Die Simulation muss auf beiden identisch sein.
+**Problem:** Two players play together. The simulation must be identical on both sides.
 
-**Lösung:** Lockstep-Protokoll. Beide Clients laufen exakt synchron:
+**Solution:** Lockstep protocol. Both clients run exactly in sync:
 
 ```
 Tick 100:
-  Client A sendet: [PlaceTower(5,3)]     → an Client B
-  Client B sendet: [StartWave]            → an Client A
+  Client A sends: [PlaceTower(5,3)]     → to Client B
+  Client B sends: [StartWave]            → to Client A
 
-  Beide warten bis sie die Commands des anderen haben.
+  Both wait until they have the other's commands.
 
-  Dann: beide simulieren Tick 100 mit [PlaceTower(5,3), StartWave]
-  → identisches Ergebnis (dank Fixed-Point + Seeded RNG + geordnete Iteration)
+  Then: both simulate tick 100 with [PlaceTower(5,3), StartWave]
+  → identical result (thanks to fixed-point + seeded RNG + ordered iteration)
 ```
 
-Desync-Detection via CRC: beide Clients berechnen einen Checksum über den GameState. Unterschied → Desync-Warnung.
+Desync detection via CRC: both clients compute a checksum over the GameState. Difference → desync warning.
 
-**Wo:** Co-op Multiplayer. Funktioniert weil die gesamte Simulation deterministisch ist.
-
----
-
-## SPEICHER & PERFORMANCE
+**Where:** Co-op multiplayer. Works because the entire simulation is deterministic.
 
 ---
 
-### 27. Object Pool (Partikel)
+## MEMORY & PERFORMANCE
 
-**Problem:** Explosion spawnt 200 Partikel, nächster Frame alle weg, 150 neue. Hunderte Allokationen pro Frame → Allocator leidet, Speicher fragmentiert.
+---
 
-**Lösung:** Vorallozierter Pool. Slots werden aktiviert/deaktiviert, nie alloziert/freigegeben.
+### 27. Object Pool (Particles)
+
+**Problem:** Explosion spawns 200 particles, next frame all gone, 150 new ones. Hundreds of allocations per frame → allocator suffers, memory fragments.
+
+**Solution:** Pre-allocated pool. Slots are activated/deactivated, never allocated/freed.
 
 ```rust
 pub struct ParticlePool {
-    particles: Vec<Particle>,      // fest alloziert beim Start (z.B. 1000)
-    active: BitSet,                 // welche Slots aktiv sind
-    first_free: usize,              // nächster freier Slot (Linked-List durch freie Slots)
+    particles: Vec<Particle>,      // fixed allocation at startup (e.g. 1000)
+    active: BitSet,                 // which slots are active
+    first_free: usize,              // next free slot (linked list through free slots)
 }
 
 fn spawn(&mut self) -> Option<&mut Particle> {
@@ -658,7 +658,7 @@ fn spawn(&mut self) -> Option<&mut Particle> {
         self.active.set(idx, true);
         self.first_free = self.particles[idx].next_free;
         Some(&mut self.particles[idx])
-    } else { None }  // Pool voll
+    } else { None }  // pool full
 }
 
 fn despawn(&mut self, idx: usize) {
@@ -668,54 +668,54 @@ fn despawn(&mut self, idx: usize) {
 }
 ```
 
-**Wo:** Partikel, Projektile, Floating-Text (Damage Numbers), temporäre Effekte.
+**Where:** Particles, projectiles, floating text (damage numbers), temporary effects.
 
 ---
 
 ### 28. Capacity Hints (Pre-Allocation)
 
-**Problem:** Ein SparseSet wächst dynamisch. Jedes `Vec::push()` kann eine Reallocation auslösen (teuer, kopiert alles).
+**Problem:** A SparseSet grows dynamically. Each `Vec::push()` can trigger a reallocation (expensive, copies everything).
 
-**Lösung:** Bei SparseSet-Erstellung die erwartete Entity-Anzahl angeben. Pre-Allocation einmalig beim Start.
+**Solution:** Specify the expected entity count when creating a SparseSet. One-time pre-allocation at startup.
 
 ```rust
 let mut positions = SparseSet::<Position>::with_capacity(1000);
 let mut velocities = SparseSet::<Velocity>::with_capacity(1000);
 let mut sprites = SparseSet::<SpriteComp>::with_capacity(1000);
-// → 0 Reallocations während des gesamten Spiels
+// → 0 reallocations during the entire game
 ```
 
-**Wo:** Alle SparseSet-Instanzen, alle Vec-basierten Systeme, Partikel-Pools.
+**Where:** All SparseSet instances, all Vec-based systems, particle pools.
 
 ---
 
 ### 29. Arena Allocator (Bumpalo)
 
-**Problem:** Pro Frame werden viele kleine, temporäre Daten erzeugt (Render-Commands, Event-Listen, Debug-Strings). `malloc`/`free` für jedes einzelne → langsam.
+**Problem:** Many small, temporary data items are created per frame (render commands, event lists, debug strings). `malloc`/`free` for each one → slow.
 
-**Lösung:** Bumpalo Arena: ein großer Speicherblock, Allokationen "bumpen" nur einen Pointer vorwärts. Am Frame-Ende: gesamte Arena wird in einem Schritt zurückgesetzt.
+**Solution:** Bumpalo arena: one large memory block, allocations just "bump" a pointer forward. At frame end: the entire arena is reset in one step.
 
 ```rust
 let arena = Bump::new();
 
-// Frame-Start:
+// Frame start:
 let render_cmds = arena.alloc_slice_fill_default::<RenderCmd>(500);
 let events = bumpalo::vec![in &arena; Event::default(); 100];
-// ... benutze render_cmds und events ...
+// ... use render_cmds and events ...
 
-// Frame-Ende:
-arena.reset();  // EIN Pointer-Reset, fertig. Keine einzelnen Frees.
+// Frame end:
+arena.reset();  // ONE pointer reset, done. No individual frees.
 ```
 
-**Wo:** Temporäre Daten pro Frame: Render-Listen, Event-Queues, Debug-Ausgaben, Spatial Hash Rebuild.
+**Where:** Temporary per-frame data: render lists, event queues, debug output, spatial hash rebuild.
 
 ---
 
 ### 30. Memory Debug Overlay
 
-**Problem:** Wo geht der Speicher hin? Gibt es Leaks? Wächst der VRAM?
+**Problem:** Where is the memory going? Are there leaks? Is VRAM growing?
 
-**Lösung:** Debug Overlay (F6) zeigt live: RAM-Nutzung, VRAM-Nutzung, Entity-Count pro Typ, Partikel-Pool-Auslastung, Texture Atlas Größe.
+**Solution:** Debug overlay (F6) shows live: RAM usage, VRAM usage, entity count per type, particle pool utilization, texture atlas size.
 
 ```
 ┌─ Memory ──────────────────┐
@@ -731,7 +731,7 @@ arena.reset();  // EIN Pointer-Reset, fertig. Keine einzelnen Frees.
 └───────────────────────────┘
 ```
 
-**Wo:** Debug-Modus. Wird in jedem Frame aktualisiert. Leak-Detection: wenn Entity-Count stetig wächst ohne State-Wechsel → Warnung in der Konsole.
+**Where:** Debug mode. Updated every frame. Leak detection: if entity count steadily grows without a state change → warning in the console.
 
 ---
 
@@ -741,16 +741,16 @@ arena.reset();  // EIN Pointer-Reset, fertig. Keine einzelnen Frees.
 
 ### 31. Action-Based Input (Abstraction Layer)
 
-**Problem:** Der Spieler drückt "W" auf der Tastatur, "Up" auf dem D-Pad, oder schiebt den linken Stick. Alles soll "nach oben bewegen" heißen. Und der Spieler will vielleicht umbelegen.
+**Problem:** The player presses "W" on the keyboard, "Up" on the D-Pad, or pushes the left stick. All should mean "move up." And the player may want to rebind.
 
-**Lösung:** Abstraktions-Layer. Das Spiel fragt nie nach konkreten Tasten, sondern nach Actions.
+**Solution:** Abstraction layer. The game never asks for specific keys, but for actions.
 
 ```rust
-// Das Spiel fragt:
+// The game asks:
 if engine.input().held(Action::MoveUp) { ... }
 if engine.input().just_pressed(Action::Confirm) { ... }
 
-// Die Zuordnung kommt aus input.ron:
+// The mapping comes from input.ron:
 (
     actions: {
         "move_up": [Key(W), Key(Up), GamepadAxis(LeftStickY, Negative)],
@@ -759,26 +759,26 @@ if engine.input().just_pressed(Action::Confirm) { ... }
 )
 ```
 
-Hot-reloadable. Spieler kann im Settings-Menü umbelegen. Gamepad-Support gratis.
+Hot-reloadable. Player can rebind in the settings menu. Gamepad support for free.
 
 ---
 
 ### 32. Gamepad Hot-Plug
 
-**Problem:** Spieler steckt Controller ein/aus während das Spiel läuft.
+**Problem:** Player plugs controller in/out while the game is running.
 
-**Lösung:** Engine feuert Events: `GamepadConnected(id)` / `GamepadDisconnected(id)`. Das Spiel entscheidet was passiert (Pause? Controller-Auswahl-Screen? Ignorieren?).
+**Solution:** Engine fires events: `GamepadConnected(id)` / `GamepadDisconnected(id)`. The game decides what happens (pause? controller selection screen? ignore?).
 
 ```rust
 for event in engine.events::<GamepadEvent>() {
     match event {
-        GamepadConnected(id) => show_toast("Controller verbunden!"),
+        GamepadConnected(id) => show_toast("Controller connected!"),
         GamepadDisconnected(id) => pause_game(),
     }
 }
 ```
 
-**Wo:** Jede Plattform. Besonders wichtig für Couch-Gaming.
+**Where:** Every platform. Especially important for couch gaming.
 
 ---
 
@@ -788,69 +788,69 @@ for event in engine.events::<GamepadEvent>() {
 
 ### 33. Dual Asset Loader
 
-**Problem:** Während der Entwicklung willst du Sprites direkt aus Aseprite-Dateien laden (Hot Reload!). Für den Release willst du alles in ein gepacktes Archiv (schneller, kleiner, tamper-proof).
+**Problem:** During development you want to load sprites directly from Aseprite files (hot reload!). For release you want everything in a packed archive (faster, smaller, tamper-proof).
 
-**Lösung:** Zwei Loader hinter derselben API:
+**Solution:** Two loaders behind the same API:
 
 ```
-Dev-Modus:                        Release-Modus:
-  assets/sprites/hero.aseprite      game.pak (Archiv)
-  assets/sprites/tiles.png          ├── textures.atlas (gepackt)
-  assets/data/player.ron            ├── data.bin (serialisiert)
-  → Direkt von Disk laden           └── audio.bin (komprimiert)
-  → Hot Reload bei Änderung         → Einmal beim Start laden
+Dev mode:                         Release mode:
+  assets/sprites/hero.aseprite      game.pak (archive)
+  assets/sprites/tiles.png          ├── textures.atlas (packed)
+  assets/data/player.ron            ├── data.bin (serialized)
+  → Load directly from disk         └── audio.bin (compressed)
+  → Hot reload on change            → Load once at startup
 ```
 
 ```rust
-// Game-Code: identisch in beiden Modi
+// Game code: identical in both modes
 let sprite = engine.assets().load_sprite("sprites/hero");
 let data: PlayerStats = engine.assets().load_ron("data/player.ron");
-// → Der Loader entscheidet ob von Disk oder aus .pak
+// → The loader decides whether from disk or from .pak
 ```
 
-**Wo:** Überall. `amigo pack` CLI-Command packt alles für Release.
+**Where:** Everywhere. `amigo pack` CLI command packs everything for release.
 
 ---
 
 ### 34. Hot Reload (File Watcher)
 
-**Problem:** Sprite geändert → Alt-Tab → Spiel neustarten → 30 Sekunden warten → Ergebnis sehen. Kreativitätskiller.
+**Problem:** Sprite changed → Alt-Tab → restart game → wait 30 seconds → see result. Creativity killer.
 
-**Lösung:** `notify` Crate beobachtet das Assets-Verzeichnis. Bei Dateiänderung: Asset neu laden, im Spiel ersetzen. Ohne Neustart.
+**Solution:** `notify` crate watches the assets directory. On file change: reload asset, replace in game. Without restarting.
 
 ```
-1. Artist ändert hero.aseprite in Aseprite, speichert
-2. notify feuert FileChanged("assets/sprites/hero.aseprite")
-3. Engine parst die Datei neu
-4. Sprite-Handle zeigt auf neue Daten
-5. Nächster Frame: neues Sprite sichtbar
+1. Artist changes hero.aseprite in Aseprite, saves
+2. notify fires FileChanged("assets/sprites/hero.aseprite")
+3. Engine parses the file again
+4. Sprite handle points to new data
+5. Next frame: new sprite visible
 
-Gesamtzeit: < 100ms
+Total time: < 100ms
 ```
 
-Funktioniert für: Sprites, Tilemaps, RON-Dateien (Stats, Configs), Audio, Shader. Nicht im Release-Modus (kein File Watcher nötig wenn alles in .pak ist).
+Works for: sprites, tilemaps, RON files (stats, configs), audio, shaders. Not in release mode (no file watcher needed when everything is in .pak).
 
-**Wo:** Entwicklung. Besonders mächtig mit Art Studio: Sprite generiert → in Assets-Ordner → sofort im Spiel sichtbar.
+**Where:** Development. Especially powerful with Art Studio: sprite generated → into assets folder → immediately visible in game.
 
 ---
 
 ### 35. Synchronous Loading (Cartridge Style)
 
-**Problem:** Asynchrones Asset-Loading ist komplex (Futures, Loading-States, Placeholder-Textures). Für ein Pixel Art Spiel mit kleinen Assets: Overkill.
+**Problem:** Asynchronous asset loading is complex (futures, loading states, placeholder textures). For a pixel art game with small assets: overkill.
 
-**Lösung:** Assets werden synchron beim Start geladen. Wie eine Spielkonsolen-Cartridge: alles da, sofort verfügbar. Async nur an Level-Transitions (wo eh ein Ladescreen angezeigt wird).
+**Solution:** Assets are loaded synchronously at startup. Like a game console cartridge: everything there, immediately available. Async only at level transitions (where a loading screen is shown anyway).
 
 ```rust
-// Startup: synchron, blockierend
-let assets = engine.assets().load_all("assets/");  // alles laden, fertig
+// Startup: synchronous, blocking
+let assets = engine.assets().load_all("assets/");  // load everything, done
 
-// Level-Transition: async mit Ladescreen
+// Level transition: async with loading screen
 engine.load_async("levels/world_3/", |progress| {
     render_loading_screen(progress);  // 0% ... 50% ... 100%
 });
 ```
 
-**Wo:** Startup, Level-Transitions. Im Game Loop: keine Ladeoperationen, alles sofort da.
+**Where:** Startup, level transitions. In the game loop: no load operations, everything immediately available.
 
 ---
 
@@ -860,42 +860,42 @@ engine.load_async("levels/world_3/", |progress| {
 
 ### 36. Save-Slot System
 
-**Problem:** Spieler will mehrere Speicherstände. Autosave soll nicht den manuellen Save überschreiben. Corrupted Saves sollen erkannt werden.
+**Problem:** Player wants multiple save files. Autosave should not overwrite the manual save. Corrupted saves should be detected.
 
-**Lösung:** Slot-basiertes System mit Metadata, Kompression und Integritätsprüfung.
+**Solution:** Slot-based system with metadata, compression, and integrity checking.
 
 ```rust
 pub struct SaveSlot {
     pub slot_id: u8,
-    pub metadata: SlotInfo,     // Timestamp, Spielzeit, Label – OHNE den Save zu laden
-    pub data: Vec<u8>,          // LZ4-komprimierter GameState
-    pub crc: u32,               // Corruption-Check
+    pub metadata: SlotInfo,     // Timestamp, play time, label – WITHOUT loading the save
+    pub data: Vec<u8>,          // LZ4-compressed GameState
+    pub crc: u32,               // Corruption check
 }
 ```
 
-- **Autosave:** Rotierende N Slots (Autosave_1, Autosave_2, ...) bei konfigurierbarem Intervall
+- **Autosave:** Rotating N slots (Autosave_1, Autosave_2, ...) at configurable interval
 - **Quicksave/Quickload:** F5/F9
-- **Plattform-aware:** Windows `AppData`, Linux `~/.local/share`
-- **SlotInfo:** Lesbar ohne den ganzen Save zu laden → schnelle Slot-Übersicht im Menü
+- **Platform-aware:** Windows `AppData`, Linux `~/.local/share`
+- **SlotInfo:** Readable without loading the entire save → fast slot overview in the menu
 
 ---
 
 ### 37. Replay System
 
-**Problem:** "Wie hat der Spieler das Level geschafft?" für Debugging, Sharing, Leaderboards.
+**Problem:** "How did the player beat the level?" for debugging, sharing, leaderboards.
 
-**Lösung:** Replays = Liste von `(Tick, GameCommand)`. Abspielen = frischer GameState + Commands einspeisen.
+**Solution:** Replays = list of `(Tick, GameCommand)`. Playback = fresh GameState + feed in commands.
 
 ```rust
 pub struct Replay {
-    pub seed: u64,                          // RNG-Seed
+    pub seed: u64,                          // RNG seed
     pub commands: Vec<(u64, GameCommand)>,   // (Tick, Command)
 }
 
-// Aufnehmen:
+// Recording:
 replay.commands.push((current_tick, command.clone()));
 
-// Abspielen:
+// Playback:
 let mut state = GameState::new(replay.seed);
 for (tick, cmd) in &replay.commands {
     while state.tick < *tick { state.simulate_tick(); }
@@ -903,7 +903,7 @@ for (tick, cmd) in &replay.commands {
 }
 ```
 
-Funktioniert dank Determinismus (Fixed-Point + Seeded RNG + geordnete Iteration). Replay-Dateien sind winzig: nur Commands, kein Full-State.
+Works thanks to determinism (fixed-point + seeded RNG + ordered iteration). Replay files are tiny: only commands, no full state.
 
 ---
 
@@ -913,97 +913,97 @@ Funktioniert dank Determinismus (Fixed-Point + Seeded RNG + geordnete Iteration)
 
 ### 38. Visual Debug Layers (F-Keys)
 
-**Problem:** Wo sind die Kollisionsboxen? Wo laufen die Pfade? Warum schießt der Tower nicht?
+**Problem:** Where are the collision boxes? Where do the paths run? Why isn't the tower shooting?
 
-**Lösung:** F-Key Toggles für visuelle Debug-Overlays:
+**Solution:** F-key toggles for visual debug overlays:
 
-| Key | Overlay | Zeigt |
+| Key | Overlay | Shows |
 |-----|---------|-------|
-| F1 | HUD | FPS, Entity Count, Draw Calls, Memory |
-| F2 | Grid | Tile-Grid Linien |
-| F3 | Collision | AABB-Boxen aller Collider |
-| F4 | Pathfinding | A*-Pfade, Flow Fields, Waypoints |
-| F5 | Spawn/Build Zones | Wo Entities spawnen / platziert werden können |
-| F6 | Memory | RAM/VRAM, Pool-Auslastung, Entity-Typen |
-| F7 | Entity List | Alle Entities mit Komponenten |
-| F8 | Network | Lockstep-Stats, Latenz, Desync-Warnings |
+| F1 | HUD | FPS, entity count, draw calls, memory |
+| F2 | Grid | Tile grid lines |
+| F3 | Collision | AABB boxes of all colliders |
+| F4 | Pathfinding | A* paths, flow fields, waypoints |
+| F5 | Spawn/Build Zones | Where entities can spawn / be placed |
+| F6 | Memory | RAM/VRAM, pool utilization, entity types |
+| F7 | Entity List | All entities with components |
+| F8 | Network | Lockstep stats, latency, desync warnings |
 
-Alle hinter `#[cfg(debug_assertions)]` – existieren nicht im Release Build.
+All behind `#[cfg(debug_assertions)]` – don't exist in the release build.
 
 ---
 
 ### 39. Tracy Integration
 
-**Problem:** "Das Spiel ruckelt bei Wave 5 mit 200 Enemies." Wo genau ist der Bottleneck?
+**Problem:** "The game stutters at wave 5 with 200 enemies." Where exactly is the bottleneck?
 
-**Lösung:** Tracy Profiler Integration über `tracing` + `tracy-client`. Jedes System, jeder Render-Pass, jede Heavy-Operation ist instrumentiert.
+**Solution:** Tracy profiler integration via `tracing` + `tracy-client`. Every system, every render pass, every heavy operation is instrumented.
 
 ```rust
 #[tracing::instrument]
 fn physics_system(world: &mut World) {
-    // ... Tracy sieht: physics_system dauert 2.3ms
+    // ... Tracy sees: physics_system takes 2.3ms
 }
 
 #[tracing::instrument]
 fn render_entities(renderer: &mut Renderer) {
-    // ... Tracy sieht: render_entities dauert 1.1ms
+    // ... Tracy sees: render_entities takes 1.1ms
 }
 ```
 
-Tracy zeigt: Timeline aller Systeme, CPU-Flamegraph, Memory-Allokationen, GPU-Timings. Goldstandard für Game-Performance-Analyse.
+Tracy shows: timeline of all systems, CPU flamegraph, memory allocations, GPU timings. Gold standard for game performance analysis.
 
 ---
 
 ### 40. State Snapshot to File
 
-**Problem:** "Es gibt einen Bug bei Wave 7 wenn der Spieler 3 Cannon-Towers hat." Wie reproduzieren?
+**Problem:** "There's a bug at wave 7 when the player has 3 cannon towers." How to reproduce?
 
-**Lösung:** Jederzeit den kompletten GameState als RON-Datei dumpen. Laden → exakt an diesem Punkt weiterspielen.
+**Solution:** Dump the complete GameState as a RON file at any time. Load → continue playing from exactly that point.
 
 ```bash
-# In-Game: F10 drückt
+# In-game: press F10
 # → saves debug_snapshot_2026-03-15_14-23-01.ron
 
-# Claude Code oder Entwickler:
+# Claude Code or developer:
 amigo run --load-snapshot debug_snapshot_2026-03-15_14-23-01.ron
-# → Spiel startet exakt in diesem Zustand
+# → Game starts in exactly this state
 ```
 
-**Wo:** Bug-Reports, AI-Playtesting (Claude Code macht Snapshot → analysiert → ändert Code → lädt Snapshot).
+**Where:** Bug reports, AI playtesting (Claude Code takes snapshot → analyzes → changes code → loads snapshot).
 
 ---
 
-## SPEZIAL-FEATURES
+## SPECIAL FEATURES
 
 ---
 
 ### 41. Event System (Double Buffer)
 
-**Problem:** System A feuert Event → System B soll reagieren. Aber System B lief schon VOR System A → sieht das Event nicht.
+**Problem:** System A fires event → System B should react. But System B already ran BEFORE System A → doesn't see the event.
 
-**Lösung:** Zwei Vektoren pro Event-Typ. Write-Buffer (aktueller Tick) und Read-Buffer (vorheriger Tick). Am Tick-Ende: swap.
+**Solution:** Two vectors per event type. Write buffer (current tick) and read buffer (previous tick). At tick end: swap.
 
 ```
 Tick 5:
-  Write: [EnemyDied(42)]       ← Systeme schreiben hier
-  Read:  [WaveStarted]          ← Systeme lesen hier (Events von Tick 4)
+  Write: [EnemyDied(42)]       ← systems write here
+  Read:  [WaveStarted]          ← systems read here (events from tick 4)
 
-Ende Tick 5:  Swap!
+End of tick 5:  Swap!
 
 Tick 6:
-  Write: (leer)
-  Read:  [EnemyDied(42)]        ← jetzt sichtbar für alle
+  Write: (empty)
+  Read:  [EnemyDied(42)]        ← now visible to all
 ```
 
-Events leben genau 1 Tick zum Lesen. 1 Tick Verzögerung (~16ms) – nicht wahrnehmbar. Keine Race Conditions.
+Events live exactly 1 tick for reading. 1 tick delay (~16ms) – imperceptible. No race conditions.
 
 ---
 
 ### 42. Atmosphere System (Smooth Interpolation)
 
-**Problem:** Die Lichtstimmung soll sich ändern wenn ein Boss spawnt. Abrupter Wechsel fällt auf.
+**Problem:** The lighting mood should change when a boss spawns. An abrupt switch is noticeable.
 
-**Lösung:** `atmosphere.transition_to("boss", duration)` startet eine Interpolation. Alle Atmosphären-Parameter (Licht, Farbe, Wetter-Intensität, Post-Effects, Music) werden über `duration` Sekunden smooth übergeblendet.
+**Solution:** `atmosphere.transition_to("boss", duration)` starts an interpolation. All atmosphere parameters (light, color, weather intensity, post effects, music) are smoothly blended over `duration` seconds.
 
 ```rust
 pub struct Atmosphere {
@@ -1020,53 +1020,53 @@ fn update_atmosphere(atm: &mut Atmosphere, dt: f32) {
 }
 ```
 
-**Wo:** Welt-Stimmung (calm → storm), Boss-Encounters, Tag/Nacht-Zyklen, Dimension-Wechsel.
+**Where:** World mood (calm → storm), boss encounters, day/night cycles, dimension changes.
 
 ---
 
 ### 43. Scene Stack
 
-**Problem:** Gameplay läuft → Pause-Menü öffnet → das Gameplay soll "eingefroren" im Hintergrund bleiben, nicht despawnt werden.
+**Problem:** Gameplay is running → pause menu opens → the gameplay should remain "frozen" in the background, not be despawned.
 
-**Lösung:** Scenes als Stack. Die oberste Scene ist aktiv. Darunter liegende Scenes sind pausiert aber noch da.
+**Solution:** Scenes as a stack. The topmost scene is active. Scenes below are paused but still there.
 
 ```
 Stack:
   ┌────────────┐
-  │ Pause Menu │  ← aktiv, rendert über dem Gameplay
+  │ Pause Menu │  ← active, renders on top of gameplay
   ├────────────┤
-  │ Gameplay   │  ← pausiert, nicht despawnt, wird noch gerendert (gedimmt)
+  │ Gameplay   │  ← paused, not despawned, still rendered (dimmed)
   ├────────────┤
   │ (base)     │
   └────────────┘
 
-// Push → Pause öffnet sich über dem Gameplay
-// Pop → zurück zum Gameplay, genau wo es war
+// Push → Pause opens on top of gameplay
+// Pop → back to gameplay, exactly where it was
 ```
 
-**Wo:** Pause, Inventar-Overlay, Dialogue über Gameplay, Cutscene-Overlay.
+**Where:** Pause, inventory overlay, dialogue over gameplay, cutscene overlay.
 
 ---
 
 ### 44. Screen Transitions (Shader-based)
 
-**Problem:** Welt-Wechsel: der Bildschirm soll nicht einfach hart schneiden.
+**Problem:** World change: the screen shouldn't just hard-cut.
 
-**Lösung:** Transition-Effekte als Post-Processing Shader. Die aktuelle Szene rendert in Texture A, die neue in Texture B, der Transition-Shader mischt.
+**Solution:** Transition effects as post-processing shaders. The current scene renders into texture A, the new one into texture B, the transition shader blends them.
 
 ```rust
 pub enum Transition {
     Fade { duration: f32, color: Color },           // Fade to black
-    Dissolve { duration: f32, noise: TextureId },    // Pixel lösen sich auf
-    Wipe { duration: f32, direction: Direction },    // Schieben
-    Circle { duration: f32, center: Vec2 },          // Kreis öffnet/schließt
-    VHSStatic { duration: f32 },                     // Für Threadwalker Dimension-Flip
+    Dissolve { duration: f32, noise: TextureId },    // Pixels dissolve
+    Wipe { duration: f32, direction: Direction },    // Slide
+    Circle { duration: f32, center: Vec2 },          // Circle opens/closes
+    VHSStatic { duration: f32 },                     // For Threadwalker dimension flip
     Custom { shader: ShaderId, duration: f32 },      // Custom WGSL
 }
 ```
 
-**Wo:** Welt-Wechsel (Loom → World), Cutscene-Übergänge, Tod/Respawn, Dimension-Flip (Stranger Things → VHS Static).
+**Where:** World change (Loom → World), cutscene transitions, death/respawn, dimension flip (Stranger Things → VHS Static).
 
 ---
 
-*Dieses Dokument ist ein Nachschlagewerk. Alle Techniken sind in der Engine-Spec (amigo-engine-complete.md) verankert, hier werden sie erklärt und illustriert.*
+*This document is a reference guide. All techniques are anchored in the engine spec (amigo-engine-complete.md); here they are explained and illustrated.*

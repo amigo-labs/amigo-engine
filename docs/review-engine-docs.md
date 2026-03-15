@@ -2,103 +2,103 @@
 
 ## Context
 
-Umfassende Überprüfung der Amigo Engine auf: Spec-Vollständigkeit, Developer Experience, AI-Integration, Service-Kommunikation und Lizenzstrategie. Ergebnis: Dokumentation aufbessern + Default-Splashscreen einbauen.
+Comprehensive review of the Amigo Engine covering: spec completeness, developer experience, AI integration, service communication, and licensing strategy. Result: improve documentation + add default splashscreen.
 
-## Entscheidungen
-- **Lizenz:** MIT OR Apache-2.0 bleibt
-- **Splashscreen:** Default "Powered by Amigo Engine", deaktivierbar via `EngineBuilder`
+## Decisions
+- **License:** MIT OR Apache-2.0 remains
+- **Splashscreen:** Default "Powered by Amigo Engine", can be disabled via `EngineBuilder`
 
 ---
 
-## 1. Spec-Implementierungs-Status
+## 1. Spec Implementation Status
 
-### Implementiert (mit echtem Code, ~34.000 LOC Rust)
+### Implemented (with actual code, ~34,000 LOC Rust)
 
-| Crate | LOC | Status | Bemerkung |
-|-------|-----|--------|-----------|
-| `amigo_core` | 15.795 | **Solide** | ECS (SparseSet + Change Tracking), Fixed-Point Math, Pathfinding, Collision, Physics, Save System, Scheduler, Commands, 10+ Genre-Module (TD, Platformer, Roguelike, Fighting, Farming, Puzzle, Bullet-Hell...) |
-| `amigo_render` | 3.695 | **Solide** | wgpu Renderer, Sprite Batcher, Camera, Particles, Lighting, Post-Processing, Atmosphaere, Font-Rendering |
-| `amigo_animation` | 1.935 | **Solide** | Sprite-Animation State Machine, Aseprite-Integration |
-| `amigo_net` | 2.169 | **Solide** | Protocol, Client/Server, Replay, Lobby, Stats, Checksum |
-| `amigo_editor` | 4.829 | **Solide** | Tile-Painter, Wave-Editor, Collision-Editor, Playtest, Heatmap, Visual Scripting, Auto-Path, Wizard |
-| `amigo_input` | 931 | **OK** | Keyboard, Mouse, Gamepad, Action-Maps |
-| `amigo_audio` | 1.112 | **OK** | kira Wrapper, Audio Manager |
-| `amigo_api` | 1.198 | **OK** | JSON-RPC 2.0 Server + Handler |
+| Crate | LOC | Status | Notes |
+|-------|-----|--------|-------|
+| `amigo_core` | 15,795 | **Solid** | ECS (SparseSet + Change Tracking), Fixed-Point Math, Pathfinding, Collision, Physics, Save System, Scheduler, Commands, 10+ Genre Modules (TD, Platformer, Roguelike, Fighting, Farming, Puzzle, Bullet-Hell...) |
+| `amigo_render` | 3,695 | **Solid** | wgpu Renderer, Sprite Batcher, Camera, Particles, Lighting, Post-Processing, Atmosphere, Font Rendering |
+| `amigo_animation` | 1,935 | **Solid** | Sprite Animation State Machine, Aseprite Integration |
+| `amigo_net` | 2,169 | **Solid** | Protocol, Client/Server, Replay, Lobby, Stats, Checksum |
+| `amigo_editor` | 4,829 | **Solid** | Tile Painter, Wave Editor, Collision Editor, Playtest, Heatmap, Visual Scripting, Auto-Path, Wizard |
+| `amigo_input` | 931 | **OK** | Keyboard, Mouse, Gamepad, Action Maps |
+| `amigo_audio` | 1,112 | **OK** | kira Wrapper, Audio Manager |
+| `amigo_api` | 1,198 | **OK** | JSON-RPC 2.0 Server + Handler |
 | `amigo_assets` | 647 | **OK** | Asset Manager, Hot Reload, Aseprite, Handles |
 | `amigo_tilemap` | 762 | **OK** | TileLayer, Auto-Tiling |
 | `amigo_scene` | 361 | **OK** | Scene Stack, Transitions |
-| `amigo_ui` | 361 | **Minimal** | Immediate-Mode Pixel UI (Basis vorhanden) |
-| `amigo_debug` | 274 | **Minimal** | FPS Overlay, Toggle-System |
-| `amigo_engine` | 1.002 | **Solide** | Game Loop, EngineBuilder, Plugin System, GameContext, DrawContext |
+| `amigo_ui` | 361 | **Minimal** | Immediate-Mode Pixel UI (basics present) |
+| `amigo_debug` | 274 | **Minimal** | FPS Overlay, Toggle System |
+| `amigo_engine` | 1,002 | **Solid** | Game Loop, EngineBuilder, Plugin System, GameContext, DrawContext |
 
-### Tools (separate Binaries)
+### Tools (separate binaries)
 
 | Tool | LOC | Status |
 |------|-----|--------|
-| `amigo_cli` | 949 | **OK** -- Projekt-Scaffolding, 10 Templates |
-| `amigo_mcp` | 902 | **OK** -- MCP-Bridge zu amigo_api |
-| `amigo_artgen` | 2.468 | **OK** -- ComfyUI-Integration, Post-Processing |
-| `amigo_audiogen` | 1.762 | **OK** -- ACE-Step + AudioGen Integration |
+| `amigo_cli` | 949 | **OK** -- Project scaffolding, 10 templates |
+| `amigo_mcp` | 902 | **OK** -- MCP bridge to amigo_api |
+| `amigo_artgen` | 2,468 | **OK** -- ComfyUI integration, post-processing |
+| `amigo_audiogen` | 1,762 | **OK** -- ACE-Step + AudioGen integration |
 
-### Spec vs. Implementierung -- Luecken
+### Spec vs. Implementation -- Gaps
 
-| Spec-Feature | Status | Anmerkung |
-|-------------|--------|-----------|
-| Sektionen 10-27 der Spec-v2 | **Nur Verweis** | Die unified spec enthielt Sektionen 10-27 nur als Verweise. Jetzt vervollstaendigt. |
-| Tracy Profiling | **Nicht verbunden** | `amigo_debug` hat kein Tracy-Integration, nur FPS-Overlay |
-| Spatial Hash / Flow Fields | **Nicht gefunden** | Pathfinding ja, aber Spatial Hash Broad-Phase und Flow Fields fehlen im Code |
-| egui Editor-UI | **Nicht integriert** | Editor-Code existiert, aber egui-Rendering-Pipeline fehlt im Engine-Loop |
-| Asset Packing (`game.pak`) | **Nicht implementiert** | CLI hat Scaffolding, aber kein `amigo pack` Command |
-| Headless Simulation | **Nicht implementiert** | Spec beschreibt headless tick-forward fuer AI, Code fehlt |
-| Screenshot API | **Nicht implementiert** | `amigo_screenshot` MCP-Tool beschrieben, aber nicht gebaut |
-| Splashscreen | **Implementiert** | Default "Powered by Amigo Engine", deaktivierbar |
-
----
-
-## 2. Developer Experience -- Kann ein Entwickler ein neues Spiel bauen?
-
-### Was gut ist
-- **Quick Start ist klar:** `cargo install --path tools/amigo_cli && amigo new my_game && cargo run`
-- **10 Genre-Templates** im CLI (platformer, topdown-rpg, roguelike, tower-defense, etc.)
-- **Minimal Example** in README und lib.rs doc-comment
-- **Game Trait** ist simpel: `init()`, `update()`, `draw()` -- kein Macro-Magic
-- **Starter Template** (`examples/starter/`) mit Player-Logic, Asset-Loading, States
-- **Prelude** exportiert alle wichtigen Typen
-
-### Was fehlt / verbessert
-1. **Getting Started Guide** -- `docs/getting-started.md` (NEU)
-2. **API-Referenz** -- `cargo doc --workspace --no-deps` generieren und hosten
-3. **AI Integration Guide** -- `docs/ai-integration.md` (NEU)
-4. **Architecture Diagramm** -- `docs/architecture.md` (NEU)
+| Spec Feature | Status | Notes |
+|-------------|--------|-------|
+| Sections 10-27 of Spec-v2 | **Reference only** | The unified spec contained sections 10-27 only as references. Now completed. |
+| Tracy Profiling | **Not connected** | `amigo_debug` has no Tracy integration, only FPS overlay |
+| Spatial Hash / Flow Fields | **Not found** | Pathfinding yes, but Spatial Hash broad-phase and Flow Fields are missing from the code |
+| egui Editor UI | **Not integrated** | Editor code exists, but egui rendering pipeline is missing from the engine loop |
+| Asset Packing (`game.pak`) | **Not implemented** | CLI has scaffolding, but no `amigo pack` command |
+| Headless Simulation | **Not implemented** | Spec describes headless tick-forward for AI, code is missing |
+| Screenshot API | **Not implemented** | `amigo_screenshot` MCP tool described, but not built |
+| Splashscreen | **Implemented** | Default "Powered by Amigo Engine", can be disabled |
 
 ---
 
-## 3. AI-Integration -- Voraussetzungen beschrieben?
+## 2. Developer Experience -- Can a developer build a new game?
 
-### Was dokumentiert ist
+### What works well
+- **Quick Start is clear:** `cargo install --path tools/amigo_cli && amigo new my_game && cargo run`
+- **10 Genre Templates** in the CLI (platformer, topdown-rpg, roguelike, tower-defense, etc.)
+- **Minimal Example** in README and lib.rs doc comment
+- **Game Trait** is simple: `init()`, `update()`, `draw()` -- no macro magic
+- **Starter Template** (`examples/starter/`) with player logic, asset loading, states
+- **Prelude** exports all important types
+
+### What is missing / improved
+1. **Getting Started Guide** -- `docs/getting-started.md` (NEW)
+2. **API Reference** -- generate and host via `cargo doc --workspace --no-deps`
+3. **AI Integration Guide** -- `docs/ai-integration.md` (NEW)
+4. **Architecture Diagram** -- `docs/architecture.md` (NEW)
+
+---
+
+## 3. AI Integration -- Are prerequisites documented?
+
+### What is documented
 - **Two-Layer Architecture:** `amigo_api` (JSON-RPC IPC) + `amigo_mcp` (MCP Bridge)
-- **MCP Tools** vollstaendig spezifiziert: Screenshot, State, Entities, Perf, Simulation Control, Editor
-- **Art Generation Pipeline:** ComfyUI Integration mit Style-Definitions, Post-Processing
-- **Audio Generation Pipeline:** ACE-Step + AudioGen mit MCP-Tools
-- **AI Integration Guide:** `docs/ai-integration.md` (NEU)
+- **MCP Tools** fully specified: Screenshot, State, Entities, Perf, Simulation Control, Editor
+- **Art Generation Pipeline:** ComfyUI integration with style definitions, post-processing
+- **Audio Generation Pipeline:** ACE-Step + AudioGen with MCP tools
+- **AI Integration Guide:** `docs/ai-integration.md` (NEW)
 
-### Was noch fehlt (Implementierung)
-1. **Headless Mode** -- `amigo_tick(count)` fuer Fast-Forward
-2. **Screenshot API** -- `amigo_screenshot()` MCP-Tool
-3. **Hardware-Requirements fuer AI** -- GPU fuer ComfyUI, ACE-Step
+### What is still missing (implementation)
+1. **Headless Mode** -- `amigo_tick(count)` for fast-forward
+2. **Screenshot API** -- `amigo_screenshot()` MCP tool
+3. **Hardware requirements for AI** -- GPU for ComfyUI, ACE-Step
 
 ---
 
-## 4. Service-Kommunikation
+## 4. Service Communication
 
-Siehe `docs/architecture.md` fuer das vollstaendige Mermaid-Diagramm.
+See `docs/architecture.md` for the complete Mermaid diagram.
 
-### Kommunikationsprotokolle
+### Communication Protocols
 
-| Verbindung | Protokoll | Format | Richtung |
-|-----------|-----------|--------|----------|
-| Claude Code <-> MCP Servers | MCP (stdio) | JSON-RPC 2.0 | Bidirektional |
-| amigo_mcp <-> amigo_api | TCP Socket | JSON-RPC 2.0 | Bidirektional |
+| Connection | Protocol | Format | Direction |
+|-----------|----------|--------|-----------|
+| Claude Code <-> MCP Servers | MCP (stdio) | JSON-RPC 2.0 | Bidirectional |
+| amigo_mcp <-> amigo_api | TCP Socket | JSON-RPC 2.0 | Bidirectional |
 | amigo_artgen <-> ComfyUI | HTTP REST | JSON + Binary | Request/Response |
 | amigo_audiogen <-> ACE-Step | HTTP REST | JSON + WAV | Request/Response |
 | Engine <-> Assets | Filesystem | PNG/ASE/WAV/RON | Watch + Reload |
@@ -106,18 +106,18 @@ Siehe `docs/architecture.md` fuer das vollstaendige Mermaid-Diagramm.
 
 ---
 
-## 5. Lizenz & Splashscreen
+## 5. License & Splashscreen
 
-### Lizenz: MIT OR Apache-2.0 (bleibt)
+### License: MIT OR Apache-2.0 (remains)
 
 ### Splashscreen: Default "Powered by Amigo Engine"
 
-Der Splashscreen ist als **Default-Verhalten** in die Engine eingebaut -- nicht lizenzerzwungen, aber standardmaessig aktiv. Entwickler koennen ihn per `EngineBuilder::splash(false)` deaktivieren.
+The splashscreen is built into the engine as **default behavior** -- not license-enforced, but active by default. Developers can disable it via `EngineBuilder::splash(false)`.
 
-**Technische Umsetzung:**
-- Modul: `crates/amigo_engine/src/splash.rs`
-- Zeigt "Powered by Amigo Engine" fuer 2 Sekunden beim Start
-- Text wird als Pixel-Font gerendert (kein externes Asset noetig)
-- `EngineBuilder::splash(bool)` zum De-/Aktivieren
+**Technical Implementation:**
+- Module: `crates/amigo_engine/src/splash.rs`
+- Shows "Powered by Amigo Engine" for 2 seconds at startup
+- Text is rendered as pixel font (no external asset needed)
+- `EngineBuilder::splash(bool)` to enable/disable
 - `EngineConfig.splash.enabled` in `amigo.toml`
 - Default: `true`
