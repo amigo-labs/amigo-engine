@@ -156,9 +156,7 @@ impl NewProjectWizard {
         }
 
         // For Turn-Based RPG template, add a battle scene linked from gameplay
-        if template.primary_preset == ScenePreset::TopDown
-            && template.name == "Turn-Based RPG"
-        {
+        if template.primary_preset == ScenePreset::TopDown && template.name == "Turn-Based RPG" {
             project.add_scene(SceneDef::new("battle", "Battle", ScenePreset::TurnBased));
             if let Some(gameplay) = project.find_scene_mut("gameplay") {
                 gameplay.transitions.push(SceneTransition {
@@ -211,11 +209,18 @@ impl NewProjectWizard {
         ];
 
         for extra in &self.extra_scenes {
-            lines.push(format!("  - {} ({})", extra.name, extra.preset.display_name()));
+            lines.push(format!(
+                "  - {} ({})",
+                extra.name,
+                extra.preset.display_name()
+            ));
         }
 
         lines.push(String::new());
-        lines.push(format!("Systems: {}", template.primary_preset.default_systems().join(", ")));
+        lines.push(format!(
+            "Systems: {}",
+            template.primary_preset.default_systems().join(", ")
+        ));
 
         lines
     }
@@ -311,7 +316,11 @@ mod tests {
     fn wizard_turn_based_rpg_adds_battle() {
         let mut wiz = NewProjectWizard::new();
         // Find Turn-Based RPG template
-        let idx = wiz.templates.iter().position(|t| t.name == "Turn-Based RPG").unwrap();
+        let idx = wiz
+            .templates
+            .iter()
+            .position(|t| t.name == "Turn-Based RPG")
+            .unwrap();
         wiz.select_template(idx);
         wiz.next(); // settings
         wiz.next(); // scenes
@@ -319,7 +328,10 @@ mod tests {
         wiz.next(); // done
 
         let project = wiz.result.as_ref().unwrap();
-        assert!(project.find_scene("battle").is_some(), "Should auto-add battle scene");
+        assert!(
+            project.find_scene("battle").is_some(),
+            "Should auto-add battle scene"
+        );
         let gameplay = project.find_scene("gameplay").unwrap();
         assert!(
             gameplay.transitions.iter().any(|t| t.target == "battle"),

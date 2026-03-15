@@ -207,12 +207,18 @@ impl EnemyManager {
 
     /// Get an enemy by id.
     pub fn get(&self, id: EntityId) -> Option<&EnemyInstance> {
-        self.enemies.iter().find(|(eid, _)| *eid == id).map(|(_, e)| e)
+        self.enemies
+            .iter()
+            .find(|(eid, _)| *eid == id)
+            .map(|(_, e)| e)
     }
 
     /// Get a mutable reference to an enemy.
     pub fn get_mut(&mut self, id: EntityId) -> Option<&mut EnemyInstance> {
-        self.enemies.iter_mut().find(|(eid, _)| *eid == id).map(|(_, e)| e)
+        self.enemies
+            .iter_mut()
+            .find(|(eid, _)| *eid == id)
+            .map(|(_, e)| e)
     }
 
     /// Get enemy position by id (for projectile homing).
@@ -232,12 +238,18 @@ impl EnemyManager {
 
     /// Iterate all alive enemies.
     pub fn iter_alive(&self) -> impl Iterator<Item = (EntityId, &EnemyInstance)> {
-        self.enemies.iter().filter(|(_, e)| e.alive).map(|(id, e)| (*id, e))
+        self.enemies
+            .iter()
+            .filter(|(_, e)| e.alive)
+            .map(|(id, e)| (*id, e))
     }
 
     /// Iterate all alive enemies mutably.
     pub fn iter_alive_mut(&mut self) -> impl Iterator<Item = (EntityId, &mut EnemyInstance)> {
-        self.enemies.iter_mut().filter(|(_, e)| e.alive).map(|(id, e)| (*id, e))
+        self.enemies
+            .iter_mut()
+            .filter(|(_, e)| e.alive)
+            .map(|(id, e)| (*id, e))
     }
 
     /// Remove dead enemies. Returns a list of (id, def_id, bounty, score, position)
@@ -298,11 +310,7 @@ mod tests {
     }
 
     fn test_path() -> WaypointPath {
-        WaypointPath::from_f32_pairs(&[
-            (0.0, 0.0),
-            (100.0, 0.0),
-            (100.0, 100.0),
-        ])
+        WaypointPath::from_f32_pairs(&[(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)])
     }
 
     #[test]
@@ -366,7 +374,9 @@ mod tests {
         let mut leaked = false;
         for _ in 0..1000 {
             leaked = enemy.update(0.016, &path);
-            if leaked { break; }
+            if leaked {
+                break;
+            }
         }
         assert!(leaked);
         assert!(enemy.path_follower.finished);

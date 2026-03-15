@@ -1,7 +1,7 @@
-use amigo_engine::prelude::*;
-use amigo_core::ecs::world::{Position, SpriteComp, StateScoped};
 use crate::game::AppState;
 use crate::player::Player;
+use amigo_core::ecs::world::{Position, SpriteComp, StateScoped};
+use amigo_engine::prelude::*;
 
 /// The main gameplay state: tilemap, player, decorations, HUD.
 pub struct PlayingState {
@@ -56,9 +56,13 @@ impl PlayingState {
         let positions = [(160.0, 80.0), (240.0, 120.0), (96.0, 144.0)];
         for (x, y) in positions {
             let id = ctx.world.spawn();
-            ctx.world.positions.insert(id, Position(SimVec2::from_f32(x, y)));
+            ctx.world
+                .positions
+                .insert(id, Position(SimVec2::from_f32(x, y)));
             ctx.world.sprites.insert(id, SpriteComp::new("decoration"));
-            ctx.world.state_scoped.insert(id, StateScoped(AppState::Playing as u32));
+            ctx.world
+                .state_scoped
+                .insert(id, StateScoped(AppState::Playing as u32));
         }
     }
 
@@ -67,7 +71,10 @@ impl PlayingState {
         self.player.update(ctx, &self.tiles, self.map_w);
 
         // Camera follows the player
-        let target = RenderVec2 { x: self.player.pos_x, y: self.player.pos_y };
+        let target = RenderVec2 {
+            x: self.player.pos_x,
+            y: self.player.pos_y,
+        };
         ctx.camera.set_target(target);
 
         ctx.input.pressed(KeyCode::Escape)
@@ -93,7 +100,12 @@ impl PlayingState {
                     _ => Color::MAGENTA,
                 };
                 ctx.draw_rect(
-                    Rect::new(x as f32 * tile_size, y as f32 * tile_size, tile_size, tile_size),
+                    Rect::new(
+                        x as f32 * tile_size,
+                        y as f32 * tile_size,
+                        tile_size,
+                        tile_size,
+                    ),
                     color,
                 );
             }
@@ -106,10 +118,23 @@ impl PlayingState {
         let px = self.player.pos_x;
         let py = self.player.pos_y;
         let pos_text = format!("X:{:.0} Y:{:.0}", px, py);
-        ctx.draw_text(&pos_text, 4.0, 4.0, Color::rgb(0.9, 0.9, 0.8).with_alpha(0.7));
+        ctx.draw_text(
+            &pos_text,
+            4.0,
+            4.0,
+            Color::rgb(0.9, 0.9, 0.8).with_alpha(0.7),
+        );
 
         // Hint bar at bottom
-        ctx.draw_rect(Rect::new(0.0, vh - 12.0, vw, 12.0), Color::BLACK.with_alpha(0.5));
-        ctx.draw_text("WASD:Move  ESC:Menu", 4.0, vh - 10.0, Color::rgb(0.7, 0.7, 0.6));
+        ctx.draw_rect(
+            Rect::new(0.0, vh - 12.0, vw, 12.0),
+            Color::BLACK.with_alpha(0.5),
+        );
+        ctx.draw_text(
+            "WASD:Move  ESC:Menu",
+            4.0,
+            vh - 10.0,
+            Color::rgb(0.7, 0.7, 0.6),
+        );
     }
 }

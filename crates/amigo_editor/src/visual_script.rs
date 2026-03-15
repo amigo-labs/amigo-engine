@@ -253,17 +253,13 @@ impl ScriptGraph {
         // Remove existing connection to the target input (inputs accept one connection)
         self.connections.retain(|c| c.to != to);
 
-        self.connections.push(Connection {
-            from,
-            to,
-        });
+        self.connections.push(Connection { from, to });
         true
     }
 
     /// Disconnect a specific connection.
     pub fn disconnect(&mut self, from: PinId, to: PinId) {
-        self.connections
-            .retain(|c| !(c.from == from && c.to == to));
+        self.connections.retain(|c| !(c.from == from && c.to == to));
     }
 
     /// Get a node by id.
@@ -308,10 +304,7 @@ impl ScriptGraph {
         // Check for dangling connections
         for conn in &self.connections {
             if self.get_node(conn.from.node).is_none() {
-                errors.push(format!(
-                    "Connection from deleted node {:?}",
-                    conn.from.node
-                ));
+                errors.push(format!("Connection from deleted node {:?}", conn.from.node));
             }
             if self.get_node(conn.to.node).is_none() {
                 errors.push(format!("Connection to deleted node {:?}", conn.to.node));
@@ -320,10 +313,21 @@ impl ScriptGraph {
 
         // Check for orphan nodes (no connections at all)
         for node in &self.nodes {
-            let has_any = self.connections.iter().any(|c| {
-                c.from.node == node.id || c.to.node == node.id
-            });
-            if !has_any && !matches!(node.kind, NodeKind::OnStart | NodeKind::OnUpdate | NodeKind::OnCollision | NodeKind::OnTriggerEnter | NodeKind::OnTriggerExit | NodeKind::OnCustomEvent(_)) {
+            let has_any = self
+                .connections
+                .iter()
+                .any(|c| c.from.node == node.id || c.to.node == node.id);
+            if !has_any
+                && !matches!(
+                    node.kind,
+                    NodeKind::OnStart
+                        | NodeKind::OnUpdate
+                        | NodeKind::OnCollision
+                        | NodeKind::OnTriggerEnter
+                        | NodeKind::OnTriggerExit
+                        | NodeKind::OnCustomEvent(_)
+                )
+            {
                 errors.push(format!(
                     "Node {:?} is disconnected ({})",
                     node.id, node.comment
@@ -349,32 +353,17 @@ fn pin(name: &str, t: PinType) -> PinDef {
 fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
     match kind {
         // Events → output flow only
-        NodeKind::OnStart | NodeKind::OnUpdate => (
-            vec![],
-            vec![pin("Exec", PinType::Flow)],
-        ),
+        NodeKind::OnStart | NodeKind::OnUpdate => (vec![], vec![pin("Exec", PinType::Flow)]),
         NodeKind::OnCollision | NodeKind::OnTriggerEnter | NodeKind::OnTriggerExit => (
             vec![],
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Other", PinType::Entity),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Other", PinType::Entity)],
         ),
-        NodeKind::OnCustomEvent(_) => (
-            vec![],
-            vec![pin("Exec", PinType::Flow)],
-        ),
+        NodeKind::OnCustomEvent(_) => (vec![], vec![pin("Exec", PinType::Flow)]),
 
         // Flow
         NodeKind::Branch => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Condition", PinType::Bool),
-            ],
-            vec![
-                pin("True", PinType::Flow),
-                pin("False", PinType::Flow),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Condition", PinType::Bool)],
+            vec![pin("True", PinType::Flow), pin("False", PinType::Flow)],
         ),
         NodeKind::Sequence(n) => {
             let inputs = vec![pin("Exec", PinType::Flow)];
@@ -384,10 +373,7 @@ fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
             (inputs, outputs)
         }
         NodeKind::ForLoop { .. } => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Count", PinType::Int),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Count", PinType::Int)],
             vec![
                 pin("Body", PinType::Flow),
                 pin("Index", PinType::Int),
@@ -399,10 +385,7 @@ fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
             vec![pin("Done", PinType::Flow)],
         ),
         NodeKind::Gate { .. } => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Open", PinType::Bool),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Open", PinType::Bool)],
             vec![pin("Exec", PinType::Flow)],
         ),
 
@@ -444,21 +427,12 @@ fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
 
         // Variables
         NodeKind::SetVariable(_) => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Value", PinType::Any),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Value", PinType::Any)],
             vec![pin("Exec", PinType::Flow)],
         ),
-        NodeKind::GetVariable(_) => (
-            vec![],
-            vec![pin("Value", PinType::Any)],
-        ),
+        NodeKind::GetVariable(_) => (vec![], vec![pin("Value", PinType::Any)]),
         NodeKind::Print => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Text", PinType::String),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Text", PinType::String)],
             vec![pin("Exec", PinType::Flow)],
         ),
 
@@ -468,20 +442,11 @@ fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
             vec![pin("Exec", PinType::Flow)],
         ),
         NodeKind::SpawnEntity(_) => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Position", PinType::Vec2),
-            ],
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Spawned", PinType::Entity),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Position", PinType::Vec2)],
+            vec![pin("Exec", PinType::Flow), pin("Spawned", PinType::Entity)],
         ),
         NodeKind::DestroyEntity => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Entity", PinType::Entity),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Entity", PinType::Entity)],
             vec![pin("Exec", PinType::Flow)],
         ),
         NodeKind::SetPosition | NodeKind::SetVelocity | NodeKind::ApplyForce => (
@@ -499,17 +464,11 @@ fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
 
         // AI
         NodeKind::MoveTo | NodeKind::LookAt => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Target", PinType::Vec2),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Target", PinType::Vec2)],
             vec![pin("Done", PinType::Flow)],
         ),
         NodeKind::Patrol { .. } | NodeKind::Chase { .. } | NodeKind::Flee { .. } => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Target", PinType::Entity),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Target", PinType::Entity)],
             vec![pin("Done", PinType::Flow)],
         ),
         NodeKind::Wait { .. } => (
@@ -518,10 +477,7 @@ fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
         ),
         NodeKind::ChooseRandom => (
             vec![pin("Exec", PinType::Flow)],
-            vec![
-                pin("A", PinType::Flow),
-                pin("B", PinType::Flow),
-            ],
+            vec![pin("A", PinType::Flow), pin("B", PinType::Flow)],
         ),
 
         // Game
@@ -534,16 +490,10 @@ fn default_pins(kind: &NodeKind) -> (Vec<PinDef>, Vec<PinDef>) {
             vec![pin("Exec", PinType::Flow)],
         ),
         NodeKind::GiveItem { .. } => (
-            vec![
-                pin("Exec", PinType::Flow),
-                pin("Target", PinType::Entity),
-            ],
+            vec![pin("Exec", PinType::Flow), pin("Target", PinType::Entity)],
             vec![pin("Exec", PinType::Flow)],
         ),
-        NodeKind::CheckFlag(_) => (
-            vec![],
-            vec![pin("Result", PinType::Bool)],
-        ),
+        NodeKind::CheckFlag(_) => (vec![], vec![pin("Result", PinType::Bool)]),
         NodeKind::SetFlag(_) => (
             vec![pin("Exec", PinType::Flow)],
             vec![pin("Exec", PinType::Flow)],
@@ -619,7 +569,11 @@ impl ScriptDebugger {
             Some(id) => id,
             None => {
                 // Find OnStart node
-                if let Some(node) = graph.nodes.iter().find(|n| matches!(n.kind, NodeKind::OnStart)) {
+                if let Some(node) = graph
+                    .nodes
+                    .iter()
+                    .find(|n| matches!(n.kind, NodeKind::OnStart))
+                {
                     self.current_node = Some(node.id);
                     self.log.push(format!("Started at node {:?}", node.id));
                     return true;
@@ -637,8 +591,11 @@ impl ScriptDebugger {
             }
         };
 
-        self.log
-            .push(format!("Executing {:?} ({:?})", node.id, std::mem::discriminant(&node.kind)));
+        self.log.push(format!(
+            "Executing {:?} ({:?})",
+            node.id,
+            std::mem::discriminant(&node.kind)
+        ));
 
         // Find the first flow output connection
         let flow_output = PinId {
@@ -647,11 +604,7 @@ impl ScriptDebugger {
             kind: PinKind::Output,
         };
 
-        if let Some(conn) = graph
-            .connections
-            .iter()
-            .find(|c| c.from == flow_output)
-        {
+        if let Some(conn) = graph.connections.iter().find(|c| c.from == flow_output) {
             self.current_node = Some(conn.to.node);
             true
         } else {

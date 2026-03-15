@@ -1,28 +1,28 @@
 pub mod atlas;
+pub mod atmosphere;
+pub mod camera;
+pub mod font;
+pub mod lighting;
+pub mod particles;
+pub mod post_process;
 pub mod renderer;
 pub mod sprite_batcher;
-pub mod camera;
 pub mod texture;
 pub mod vertex;
-pub mod particles;
-pub mod lighting;
-pub mod post_process;
-pub mod atmosphere;
-pub mod font;
 
 #[cfg(feature = "editor")]
 pub mod egui_integration;
 
+pub use atmosphere::{AtmosphereManager, AtmospherePreset};
+pub use camera::{Camera, CameraMode, Easing};
+pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};
+pub use lighting::{AmbientLight, LightingState, PointLight};
+pub use particles::{BlendMode, EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
+pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
 pub use renderer::Renderer;
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance};
-pub use camera::{Camera, CameraMode, Easing};
 pub use texture::{Texture, TextureId};
 pub use vertex::Vertex;
-pub use particles::{ParticleSystem, ParticleEmitter, EmitterConfig, EmitterShape, BlendMode};
-pub use lighting::{LightingState, PointLight, AmbientLight};
-pub use post_process::{PostProcessPipeline, PostEffect, PostProcessUniforms};
-pub use atmosphere::{AtmosphereManager, AtmospherePreset};
-pub use font::{FontManager, FontAtlas, FontId, GlyphInfo};
 
 // ---------------------------------------------------------------------------
 // Art style configuration

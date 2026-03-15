@@ -1,7 +1,7 @@
 //! MCP protocol handling — initialize, list tools, call tool.
 
-use crate::{McpRequest, McpResponse};
 use crate::tools::tool_definitions;
+use crate::{McpRequest, McpResponse};
 use serde_json::json;
 
 /// Handle an incoming MCP request.
@@ -58,11 +58,7 @@ fn handle_tools_call(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let arguments = req
-        .params
-        .get("arguments")
-        .cloned()
-        .unwrap_or(json!({}));
+    let arguments = req.params.get("arguments").cloned().unwrap_or(json!({}));
 
     // Map MCP tool name → JSON-RPC method
     let rpc_method = match tool_name {
@@ -200,7 +196,10 @@ mod tests {
     #[test]
     fn unknown_tool_returns_error() {
         let resp = handle_mcp_request(
-            &make_req("tools/call", json!({"name": "nonexistent", "arguments": {}})),
+            &make_req(
+                "tools/call",
+                json!({"name": "nonexistent", "arguments": {}}),
+            ),
             &mock_api_call,
         );
         let result = resp.result.unwrap();

@@ -66,8 +66,14 @@ impl Direction {
     /// Returns the 8 directions as an array.
     pub fn all() -> [Direction; 8] {
         [
-            Direction::Up, Direction::UpRight, Direction::Right, Direction::DownRight,
-            Direction::Down, Direction::DownLeft, Direction::Left, Direction::UpLeft,
+            Direction::Up,
+            Direction::UpRight,
+            Direction::Right,
+            Direction::DownRight,
+            Direction::Down,
+            Direction::DownLeft,
+            Direction::Left,
+            Direction::UpLeft,
         ]
     }
 
@@ -217,10 +223,7 @@ impl NavAgent {
                 self.position.y += move_y;
 
                 // Update facing direction
-                self.facing = Direction::from_delta(
-                    dx.to_num::<f32>(),
-                    dy.to_num::<f32>(),
-                );
+                self.facing = Direction::from_delta(dx.to_num::<f32>(), dy.to_num::<f32>());
             }
         }
     }
@@ -276,14 +279,21 @@ mod tests {
 
     impl Walkable for SimpleMap {
         fn is_walkable(&self, x: i32, y: i32) -> bool {
-            x >= 0 && y >= 0 && x < self.width && y < self.height
+            x >= 0
+                && y >= 0
+                && x < self.width
+                && y < self.height
                 && !self.blocked.contains(&IVec2::new(x, y))
         }
     }
 
     #[test]
     fn nav_agent_moves_to_target() {
-        let map = SimpleMap { width: 10, height: 10, blocked: vec![] };
+        let map = SimpleMap {
+            width: 10,
+            height: 10,
+            blocked: vec![],
+        };
         let mut agent = NavAgent::new(
             SimVec2::from_f32(8.0, 8.0), // tile (0,0) center with tile_size=16
             2.0,

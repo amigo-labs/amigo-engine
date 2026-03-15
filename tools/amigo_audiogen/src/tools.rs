@@ -2,7 +2,9 @@
 //!
 //! Each tool maps to an audio generation or processing operation.
 
-use crate::{MusicRequest, MusicResult, MusicSection, SfxRequest, SfxResult, SfxCategory, WorldAudioStyle};
+use crate::{
+    MusicRequest, MusicResult, MusicSection, SfxCategory, SfxRequest, SfxResult, WorldAudioStyle,
+};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -26,10 +28,18 @@ pub struct GenerateMusicParams {
     pub split_stems: bool,
 }
 
-fn default_bpm() -> u32 { 120 }
-fn default_duration() -> f32 { 30.0 }
-fn default_section() -> String { "calm".into() }
-fn default_true() -> bool { true }
+fn default_bpm() -> u32 {
+    120
+}
+fn default_duration() -> f32 {
+    30.0
+}
+fn default_section() -> String {
+    "calm".into()
+}
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenerateSfxParams {
@@ -46,8 +56,12 @@ pub struct GenerateSfxParams {
     pub category: Option<String>,
 }
 
-fn default_sfx_duration() -> f32 { 2.0 }
-fn default_variants() -> u32 { 3 }
+fn default_sfx_duration() -> f32 {
+    2.0
+}
+fn default_variants() -> u32 {
+    3
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SplitStemsParams {
@@ -155,7 +169,8 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_audiogen_split_stems".into(),
-            description: "Split an audio file into stems (drums, bass, vocals, other) using Demucs".into(),
+            description: "Split an audio file into stems (drums, bass, vocals, other) using Demucs"
+                .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -168,7 +183,8 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_audiogen_process".into(),
-            description: "Post-process audio: trim silence, normalize, detect BPM, find loop point".into(),
+            description: "Post-process audio: trim silence, normalize, detect BPM, find loop point"
+                .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -206,7 +222,10 @@ pub enum ToolError {
     InvalidParams(#[from] serde_json::Error),
 }
 
-pub fn dispatch_tool(name: &str, params: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+pub fn dispatch_tool(
+    name: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
     match name {
         "amigo_audiogen_generate_music" => {
             let p: GenerateMusicParams = serde_json::from_value(params)?;
@@ -260,7 +279,9 @@ pub fn dispatch_tool(name: &str, params: serde_json::Value) -> Result<serde_json
         }
         "amigo_audiogen_split_stems" => {
             let p: SplitStemsParams = serde_json::from_value(params)?;
-            let dir = p.output_dir.unwrap_or_else(|| "assets/generated/audio/stems".into());
+            let dir = p
+                .output_dir
+                .unwrap_or_else(|| "assets/generated/audio/stems".into());
             let stem_name = std::path::Path::new(&p.input)
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
@@ -310,19 +331,23 @@ pub fn dispatch_tool(name: &str, params: serde_json::Value) -> Result<serde_json
                 .collect();
             Ok(serde_json::to_value(StylesResult { styles })?)
         }
-        "amigo_audiogen_server_status" => {
-            Ok(serde_json::to_value(ServerStatusResult {
-                acestep_connected: false,
-                audiogen_connected: false,
-            })?)
-        }
+        "amigo_audiogen_server_status" => Ok(serde_json::to_value(ServerStatusResult {
+            acestep_connected: false,
+            audiogen_connected: false,
+        })?),
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }
 
 fn sanitize(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .chars()
         .take(40)

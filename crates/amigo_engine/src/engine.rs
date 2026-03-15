@@ -4,10 +4,10 @@ use crate::splash::{self, SplashState};
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_debug::DebugOverlay;
-use amigo_render::renderer::Renderer;
-use amigo_render::sprite_batcher::SpriteInstance;
 #[cfg(feature = "editor")]
 use amigo_render::egui_integration::egui;
+use amigo_render::renderer::Renderer;
+use amigo_render::sprite_batcher::SpriteInstance;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info, info_span};
@@ -51,10 +51,11 @@ impl PluginContext {
 
     /// Insert a resource that will be available in GameContext.
     pub fn insert_resource<T: 'static>(&mut self, resource: T) {
-        self.resource_insertions
-            .push(Box::new(move |res: &mut amigo_core::resources::Resources| {
+        self.resource_insertions.push(Box::new(
+            move |res: &mut amigo_core::resources::Resources| {
                 res.insert(resource);
-            }));
+            },
+        ));
     }
 }
 
@@ -265,7 +266,9 @@ impl Engine {
                         info!("Headless: unpaused");
                     }
                     "tick" => {
-                        let count = cmd.params.get("count")
+                        let count = cmd
+                            .params
+                            .get("count")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(1);
                         ticks_requested += count;
@@ -408,7 +411,11 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 self.config.window.height,
             ));
 
-        let window = Arc::new(event_loop.create_window(window_attrs).expect("Failed to create window"));
+        let window = Arc::new(
+            event_loop
+                .create_window(window_attrs)
+                .expect("Failed to create window"),
+        );
 
         let mut renderer = pollster::block_on(Renderer::new(
             window.clone(),
@@ -534,7 +541,10 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
             WindowEvent::KeyboardInput { event, .. } => {
                 if !egui_consumed {
-                    state.game_ctx.input.handle_key_event(event.physical_key, event.state);
+                    state
+                        .game_ctx
+                        .input
+                        .handle_key_event(event.physical_key, event.state);
                 }
 
                 // Debug overlay toggle (always active, even when egui has focus)
@@ -553,7 +563,10 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
             WindowEvent::CursorMoved { position, .. } => {
                 if !egui_consumed {
-                    state.game_ctx.input.handle_mouse_move(position.x as f32, position.y as f32);
+                    state
+                        .game_ctx
+                        .input
+                        .handle_mouse_move(position.x as f32, position.y as f32);
 
                     // Update world-space mouse position
                     let (ww, wh) = state.renderer.window_size();
@@ -567,7 +580,11 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 }
             }
 
-            WindowEvent::MouseInput { state: btn_state, button, .. } => {
+            WindowEvent::MouseInput {
+                state: btn_state,
+                button,
+                ..
+            } => {
                 if !egui_consumed {
                     state.game_ctx.input.handle_mouse_button(button, btn_state);
                 }
@@ -710,7 +727,10 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                 // Collect particle sprites
                 let white_tex = state.renderer.white_texture_id;
-                state.game_ctx.particles.collect_sprites(&mut state.sprite_draw_list, white_tex);
+                state
+                    .game_ctx
+                    .particles
+                    .collect_sprites(&mut state.sprite_draw_list, white_tex);
 
                 // Push sprites to batcher
                 for sprite in &state.sprite_draw_list {
@@ -760,14 +780,18 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     match state.renderer.begin_frame() {
                         Ok(frame) => {
                             // Submit sprite pass
-                            state.renderer.queue.submit(std::iter::once(frame.encoder.finish()));
+                            state
+                                .renderer
+                                .queue
+                                .submit(std::iter::once(frame.encoder.finish()));
 
                             // Render egui overlay on top
                             let (sw, sh) = state.renderer.window_size();
-                            let screen_desc = amigo_render::egui_integration::egui_wgpu::ScreenDescriptor {
-                                size_in_pixels: [sw, sh],
-                                pixels_per_point: state.window.scale_factor() as f32,
-                            };
+                            let screen_desc =
+                                amigo_render::egui_integration::egui_wgpu::ScreenDescriptor {
+                                    size_in_pixels: [sw, sh],
+                                    pixels_per_point: state.window.scale_factor() as f32,
+                                };
                             let entity_count = state.game_ctx.world.entity_count();
                             let fps = state.debug.fps();
                             state.egui.render(
@@ -777,13 +801,14 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                                 &frame.view,
                                 screen_desc,
                                 |ctx| {
-                                    egui::Window::new("Editor")
-                                        .default_open(false)
-                                        .show(ctx, |ui| {
+                                    egui::Window::new("Editor").default_open(false).show(
+                                        ctx,
+                                        |ui| {
                                             ui.label("Amigo Editor (egui)");
                                             ui.label(format!("Entities: {}", entity_count));
                                             ui.label(format!("FPS: {:.0}", fps));
-                                        });
+                                        },
+                                    );
                                 },
                             );
 

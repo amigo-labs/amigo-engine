@@ -81,11 +81,7 @@ impl AnimPlayer {
 
     /// Advance the animation by one tick, collecting events from the given
     /// [`EventTrack`] that fire during this tick.
-    pub fn update_with_events(
-        &mut self,
-        animation: &Animation,
-        event_track: Option<&EventTrack>,
-    ) {
+    pub fn update_with_events(&mut self, animation: &Animation, event_track: Option<&EventTrack>) {
         self.pending_events.clear();
 
         if self.finished || animation.frames.is_empty() {
@@ -123,8 +119,7 @@ impl AnimPlayer {
         // Collect events that occurred in the [time_before, time_after) window.
         if let Some(track) = event_track {
             let collected = track.collect_events(time_before, time_after);
-            self.pending_events
-                .extend(collected.into_iter().cloned());
+            self.pending_events.extend(collected.into_iter().cloned());
         }
     }
 
@@ -234,10 +229,7 @@ impl BoneTransform {
                 self.position.1 + sin * sx + cos * sy,
             ),
             rotation: self.rotation + child.rotation,
-            scale: (
-                self.scale.0 * child.scale.0,
-                self.scale.1 * child.scale.1,
-            ),
+            scale: (self.scale.0 * child.scale.0, self.scale.1 * child.scale.1),
         }
     }
 }
@@ -464,11 +456,7 @@ impl SkeletalPlayer {
     }
 
     /// Sample the pose at the current playback time.
-    pub fn sample(
-        &self,
-        skeleton: &Skeleton,
-        skel_anim: &SkeletalAnimation,
-    ) -> Vec<BoneTransform> {
+    pub fn sample(&self, skeleton: &Skeleton, skel_anim: &SkeletalAnimation) -> Vec<BoneTransform> {
         skel_anim.sample(skeleton, self.time)
     }
 
@@ -567,7 +555,11 @@ impl BlendTree {
                 let pose_b = Self::eval_node(b, skeleton, library, time);
                 blend_poses(&pose_a, &pose_b, *factor)
             }
-            BlendNode::Additive { base, layer, weight } => {
+            BlendNode::Additive {
+                base,
+                layer,
+                weight,
+            } => {
                 let pose_base = Self::eval_node(base, skeleton, library, time);
                 let pose_layer = Self::eval_node(layer, skeleton, library, time);
                 additive_blend_poses(&pose_base, &pose_layer, *weight)
@@ -1002,12 +994,7 @@ impl AnimStateMachine {
     }
 
     /// Update the state machine: advance time, check transitions, handle blending.
-    pub fn update(
-        &mut self,
-        dt: f32,
-        skeleton: &Skeleton,
-        library: &SkeletalAnimationLibrary,
-    ) {
+    pub fn update(&mut self, dt: f32, skeleton: &Skeleton, library: &SkeletalAnimationLibrary) {
         // Advance current state time
         if let Some(state) = self.states.get(&self.current_state) {
             let speed = state.speed;
@@ -1073,11 +1060,7 @@ impl AnimStateMachine {
         }
     }
 
-    fn check_transitions(
-        &mut self,
-        _skeleton: &Skeleton,
-        _library: &SkeletalAnimationLibrary,
-    ) {
+    fn check_transitions(&mut self, _skeleton: &Skeleton, _library: &SkeletalAnimationLibrary) {
         let mut best: Option<(i32, usize)> = None; // (priority, rule_index)
 
         for (i, rule) in self.rules.iter().enumerate() {
@@ -1099,18 +1082,10 @@ impl AnimStateMachine {
                 TransitionCondition::LessThan(name, threshold) => {
                     self.params.get_float(name) < *threshold
                 }
-                TransitionCondition::Trigger(name) => {
-                    self.params.peek_trigger(name)
-                }
-                TransitionCondition::BoolTrue(name) => {
-                    self.params.get_bool(name)
-                }
-                TransitionCondition::BoolFalse(name) => {
-                    !self.params.get_bool(name)
-                }
-                TransitionCondition::AnimFinished => {
-                    self.current_finished
-                }
+                TransitionCondition::Trigger(name) => self.params.peek_trigger(name),
+                TransitionCondition::BoolTrue(name) => self.params.get_bool(name),
+                TransitionCondition::BoolFalse(name) => !self.params.get_bool(name),
+                TransitionCondition::AnimFinished => self.current_finished,
                 TransitionCondition::Always => true,
             };
 
@@ -1157,7 +1132,8 @@ impl AnimStateMachine {
         skeleton: &Skeleton,
         library: &SkeletalAnimationLibrary,
     ) -> Vec<BoneTransform> {
-        let current_pose = self.sample_state(self.current_state, self.current_time, skeleton, library);
+        let current_pose =
+            self.sample_state(self.current_state, self.current_time, skeleton, library);
 
         if let Some(ref trans) = self.transition {
             let from_pose = self.sample_state(trans.from_state, trans.from_time, skeleton, library);
@@ -1183,15 +1159,11 @@ impl AnimStateMachine {
         };
 
         match &state.output {
-            AnimStateOutput::Clip(name) => {
-                library
-                    .get(name)
-                    .map(|anim| anim.sample(skeleton, time))
-                    .unwrap_or_else(default_pose)
-            }
-            AnimStateOutput::Tree(tree) => {
-                tree.evaluate(skeleton, library, time)
-            }
+            AnimStateOutput::Clip(name) => library
+                .get(name)
+                .map(|anim| anim.sample(skeleton, time))
+                .unwrap_or_else(default_pose),
+            AnimStateOutput::Tree(tree) => tree.evaluate(skeleton, library, time),
         }
     }
 }
@@ -1507,11 +1479,7 @@ mod tests {
     #[test]
     fn anim_transition_blending() {
         let mut skel = Skeleton::new("s");
-        skel.add_bone(
-            "b0",
-            None,
-            BoneTransform::default(),
-        );
+        skel.add_bone("b0", None, BoneTransform::default());
 
         let mut lib = SkeletalAnimationLibrary::new();
         lib.add(SkeletalAnimation {

@@ -136,7 +136,7 @@ impl FontAtlas {
                 let src = (row * gw + col) as usize;
                 let alpha = bitmap[src];
                 let dst = ((ay + row) * self.atlas_width + (ax + col)) as usize * 4;
-                self.atlas_data[dst] = 255;     // R
+                self.atlas_data[dst] = 255; // R
                 self.atlas_data[dst + 1] = 255; // G
                 self.atlas_data[dst + 2] = 255; // B
                 self.atlas_data[dst + 3] = alpha; // A

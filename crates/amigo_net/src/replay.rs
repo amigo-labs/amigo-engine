@@ -85,8 +85,10 @@ impl ReplayRecorder {
     /// Finish recording and produce the final `ReplayData`.
     pub fn finish(mut self) -> ReplayData {
         let total_ticks = self.frames.last().map(|f| f.tick + 1).unwrap_or(0);
-        self.metadata
-            .insert("duration_secs".into(), format!("{:.2}", self.elapsed_secs()));
+        self.metadata.insert(
+            "duration_secs".into(),
+            format!("{:.2}", self.elapsed_secs()),
+        );
         ReplayData {
             version: 1,
             seed: self.seed,

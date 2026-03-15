@@ -199,9 +199,11 @@ fn cmd_new(args: &[String]) {
     let templates = project_templates();
     let template = templates
         .iter()
-        .find(|t| t.name.to_lowercase().replace(' ', "-") == template_name.to_lowercase()
-            || t.name.to_lowercase().replace(' ', "_") == template_name.to_lowercase()
-            || t.name.to_lowercase() == template_name.to_lowercase())
+        .find(|t| {
+            t.name.to_lowercase().replace(' ', "-") == template_name.to_lowercase()
+                || t.name.to_lowercase().replace(' ', "_") == template_name.to_lowercase()
+                || t.name.to_lowercase() == template_name.to_lowercase()
+        })
         .unwrap_or_else(|| {
             eprintln!("Unknown template: {template_name}");
             eprintln!("Use `amigo list-templates` to see available templates.");
@@ -309,7 +311,10 @@ fn main() {{
     println!("Created project '{name}' with template '{}'", template.name);
     println!("  Directory: {}", base.display());
     println!("  Template:  {}", template.name);
-    println!("  Resolution: {}x{}", project.virtual_width, project.virtual_height);
+    println!(
+        "  Resolution: {}x{}",
+        project.virtual_width, project.virtual_height
+    );
     println!("  Scenes:    {}", project.scenes.len());
     println!();
     println!("Next steps:");
@@ -414,11 +419,19 @@ fn cmd_build(_args: &[String]) {
     let levels_dir = Path::new("assets/levels");
     if levels_dir.exists() {
         let level_count = std::fs::read_dir(levels_dir)
-            .map(|rd| rd.filter(|e| {
-                e.as_ref()
-                    .map(|e| e.path().extension().map(|ext| ext == "amigo").unwrap_or(false))
-                    .unwrap_or(false)
-            }).count())
+            .map(|rd| {
+                rd.filter(|e| {
+                    e.as_ref()
+                        .map(|e| {
+                            e.path()
+                                .extension()
+                                .map(|ext| ext == "amigo")
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false)
+                })
+                .count()
+            })
             .unwrap_or(0);
         println!("  Levels: {level_count}");
     }
@@ -512,15 +525,27 @@ fn cmd_pack(_args: &[String]) {
                         .entries
                         .iter()
                         .map(|(name, entry)| {
-                            (name.clone(), [entry.uv.x, entry.uv.y, entry.uv.w, entry.uv.h])
+                            (
+                                name.clone(),
+                                [entry.uv.x, entry.uv.y, entry.uv.w, entry.uv.h],
+                            )
                         })
                         .collect();
                     let manifest_ron =
                         ron::ser::to_string_pretty(&entries, ron::ser::PrettyConfig::default())
                             .expect("Failed to serialize atlas manifest");
-                    pak.add("atlas.ron", AssetKind::AtlasManifest, manifest_ron.into_bytes());
+                    pak.add(
+                        "atlas.ron",
+                        AssetKind::AtlasManifest,
+                        manifest_ron.into_bytes(),
+                    );
 
-                    println!("  Atlas: {}x{} ({} sprites)", pack.width, pack.height, images.len());
+                    println!(
+                        "  Atlas: {}x{} ({} sprites)",
+                        pack.width,
+                        pack.height,
+                        images.len()
+                    );
                 }
                 Err(e) => {
                     eprintln!("  ERROR: Atlas packing failed: {e}");
@@ -627,7 +652,9 @@ fn cmd_pack(_args: &[String]) {
 }
 
 fn collect_pngs(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -657,7 +684,9 @@ fn collect_files_recursive(
     extensions: &[&str],
     callback: &mut dyn FnMut(String, &Path),
 ) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -724,7 +753,10 @@ fn cmd_release(args: &[String]) {
     println!("\n[3/3] Release summary:");
     println!("  Project:    {}", manifest.name);
     println!("  Version:    {}", manifest.version);
-    println!("  Resolution: {}x{}", manifest.virtual_width, manifest.virtual_height);
+    println!(
+        "  Resolution: {}x{}",
+        manifest.virtual_width, manifest.virtual_height
+    );
     if let Some(ref t) = target {
         println!("  Target:     {t}");
     }
@@ -919,17 +951,21 @@ fn cmd_publish_steam(_args: &[String]) {
         process::exit(1);
     });
 
-    let dist = manifest.distribution.as_ref().and_then(|d| d.steam.as_ref()).unwrap_or_else(|| {
-        eprintln!("No [distribution.steam] section in amigo.toml.");
-        eprintln!();
-        eprintln!("Add the following to your amigo.toml:");
-        eprintln!();
-        eprintln!("  [distribution.steam]");
-        eprintln!("  app_id = 480");
-        eprintln!("  depot_id = 481");
-        eprintln!();
-        process::exit(1);
-    });
+    let dist = manifest
+        .distribution
+        .as_ref()
+        .and_then(|d| d.steam.as_ref())
+        .unwrap_or_else(|| {
+            eprintln!("No [distribution.steam] section in amigo.toml.");
+            eprintln!();
+            eprintln!("Add the following to your amigo.toml:");
+            eprintln!();
+            eprintln!("  [distribution.steam]");
+            eprintln!("  app_id = 480");
+            eprintln!("  depot_id = 481");
+            eprintln!();
+            process::exit(1);
+        });
 
     let steamcmd = dist.steamcmd_path.as_deref().unwrap_or("steamcmd");
 
@@ -989,9 +1025,15 @@ fn cmd_publish_steam(_args: &[String]) {
 
     // Step 3: Show upload command
     println!("\n[3/3] To upload, run:");
-    println!("  {steamcmd} +login <username> +run_app_build {} +quit", vdf_path.display());
+    println!(
+        "  {steamcmd} +login <username> +run_app_build {} +quit",
+        vdf_path.display()
+    );
     println!();
-    println!("Steam build prepared for app {} (depot {}).", dist.app_id, dist.depot_id);
+    println!(
+        "Steam build prepared for app {} (depot {}).",
+        dist.app_id, dist.depot_id
+    );
 }
 
 fn cmd_publish_itch(args: &[String]) {
@@ -1000,16 +1042,20 @@ fn cmd_publish_itch(args: &[String]) {
         process::exit(1);
     });
 
-    let dist = manifest.distribution.as_ref().and_then(|d| d.itch.as_ref()).unwrap_or_else(|| {
-        eprintln!("No [distribution.itch] section in amigo.toml.");
-        eprintln!();
-        eprintln!("Add the following to your amigo.toml:");
-        eprintln!();
-        eprintln!("  [distribution.itch]");
-        eprintln!("  project = \"your-studio/your-game\"");
-        eprintln!();
-        process::exit(1);
-    });
+    let dist = manifest
+        .distribution
+        .as_ref()
+        .and_then(|d| d.itch.as_ref())
+        .unwrap_or_else(|| {
+            eprintln!("No [distribution.itch] section in amigo.toml.");
+            eprintln!();
+            eprintln!("Add the following to your amigo.toml:");
+            eprintln!();
+            eprintln!("  [distribution.itch]");
+            eprintln!("  project = \"your-studio/your-game\"");
+            eprintln!();
+            process::exit(1);
+        });
 
     let butler = dist.butler_path.as_deref().unwrap_or("butler");
     let channel = find_flag(args, "--channel")
@@ -1040,7 +1086,13 @@ fn cmd_publish_itch(args: &[String]) {
 
     println!("  {} push {} {}", butler, target_dir, push_target);
     let status = std::process::Command::new(butler)
-        .args(["push", &target_dir, &push_target, "--userversion", &manifest.version])
+        .args([
+            "push",
+            &target_dir,
+            &push_target,
+            "--userversion",
+            &manifest.version,
+        ])
         .status()
         .unwrap_or_else(|e| {
             eprintln!("Failed to run butler: {e}");
@@ -1053,7 +1105,10 @@ fn cmd_publish_itch(args: &[String]) {
     }
 
     println!();
-    println!("Published {} v{} to itch.io ({})!", manifest.name, manifest.version, push_target);
+    println!(
+        "Published {} v{} to itch.io ({})!",
+        manifest.name, manifest.version, push_target
+    );
 }
 
 fn detect_platform_channel() -> String {

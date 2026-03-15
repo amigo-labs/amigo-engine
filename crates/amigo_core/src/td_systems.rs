@@ -65,10 +65,11 @@ pub fn tower_fire_system(
             continue;
         }
 
-        let target_eid = match select_target(&candidates, tower.targeting, tick + tower_id.index() as u64) {
-            Some(eid) => eid,
-            None => continue,
-        };
+        let target_eid =
+            match select_target(&candidates, tower.targeting, tick + tower_id.index() as u64) {
+                Some(eid) => eid,
+                None => continue,
+            };
 
         tower.current_target = Some(target_eid);
         tower.fire();
@@ -208,10 +209,7 @@ pub struct EnemyUpdateResult {
 // ---------------------------------------------------------------------------
 
 /// Process dead enemies: award bounties for kills, apply leak damage for leakers.
-pub fn process_dead_enemies(
-    dead: &[DeadEnemy],
-    game_state: &mut TdGameState,
-) {
+pub fn process_dead_enemies(dead: &[DeadEnemy], game_state: &mut TdGameState) {
     for enemy in dead {
         if enemy.leaked {
             game_state.on_enemy_leaked(enemy.leak_damage);
@@ -259,28 +257,31 @@ pub fn td_tick(
     // Nothing extra needed — cleanup_dead handles them
 
     // 4. Tower targeting and firing
-    tower_fire_system(towers, tower_defs, enemies, projectiles, scaled_dt, game_state.tick);
+    tower_fire_system(
+        towers,
+        tower_defs,
+        enemies,
+        projectiles,
+        scaled_dt,
+        game_state.tick,
+    );
 
     // 5. Update projectiles and detect hits
-    let hits = projectiles.update(
-        scaled_dt,
-        &|eid| enemies.position_of(eid),
-        |pos, radius| {
-            enemies
-                .iter_alive()
-                .filter_map(|(eid, enemy)| {
-                    let dx = enemy.position.x - pos.x;
-                    let dy = enemy.position.y - pos.y;
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    if dist <= radius + 8.0 {
-                        Some((eid, enemy.position))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        },
-    );
+    let hits = projectiles.update(scaled_dt, &|eid| enemies.position_of(eid), |pos, radius| {
+        enemies
+            .iter_alive()
+            .filter_map(|(eid, enemy)| {
+                let dx = enemy.position.x - pos.x;
+                let dy = enemy.position.y - pos.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist <= radius + 8.0 {
+                    Some((eid, enemy.position))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    });
 
     // 6. Apply damage from hits
     apply_hits_system(&hits, enemies, towers);
@@ -297,7 +298,7 @@ pub fn td_tick(
 mod tests {
     use super::*;
     use crate::math::RenderVec2;
-    use crate::tower::{TowerAttackType, TowerTier, TargetingStrategy};
+    use crate::tower::{TargetingStrategy, TowerAttackType, TowerTier};
 
     fn setup() -> (
         TdGameState,
@@ -324,10 +325,7 @@ mod tests {
 
         let enemy_defs = vec![EnemyDef::basic(1, "Goblin", 100, 0.02, 10)];
 
-        let path = WaypointPath::from_f32_pairs(&[
-            (0.0, 0.0),
-            (500.0, 0.0),
-        ]);
+        let path = WaypointPath::from_f32_pairs(&[(0.0, 0.0), (500.0, 0.0)]);
 
         let game_state = TdGameState::new(200, 20, Vec::new(), Vec::new());
 
@@ -343,12 +341,21 @@ mod tests {
         let enemies = EnemyManager::new();
         let projectiles = ProjectileManager::new();
 
-        (game_state, towers, tower_defs, enemy_defs, enemies, projectiles, path)
+        (
+            game_state,
+            towers,
+            tower_defs,
+            enemy_defs,
+            enemies,
+            projectiles,
+            path,
+        )
     }
 
     #[test]
     fn tower_fires_at_enemy() {
-        let (mut gs, mut towers, tower_defs, enemy_defs, mut enemies, mut projectiles, _path) = setup();
+        let (mut gs, mut towers, tower_defs, enemy_defs, mut enemies, mut projectiles, _path) =
+            setup();
 
         // Spawn an enemy near the tower
         let enemy = EnemyInstance::from_def(&enemy_defs[0]);
@@ -357,7 +364,10 @@ mod tests {
         // Run tower firing
         tower_fire_system(&mut towers, &tower_defs, &enemies, &mut projectiles, 1.0, 0);
 
-        assert!(projectiles.count() > 0, "tower should have fired a projectile");
+        assert!(
+            projectiles.count() > 0,
+            "tower should have fired a projectile"
+        );
     }
 
     #[test]
@@ -392,7 +402,10 @@ mod tests {
         let eid = enemies.spawn(enemy, RenderVec2::ZERO);
 
         // Kill the enemy
-        enemies.get_mut(eid).unwrap().take_damage(999, DamageType::Pure);
+        enemies
+            .get_mut(eid)
+            .unwrap()
+            .take_damage(999, DamageType::Pure);
         assert!(!enemies.get(eid).unwrap().alive);
 
         let dead = enemies.cleanup_dead();
@@ -403,7 +416,8 @@ mod tests {
 
     #[test]
     fn full_td_tick() {
-        let (mut gs, mut towers, tower_defs, enemy_defs, mut enemies, mut projectiles, path) = setup();
+        let (mut gs, mut towers, tower_defs, enemy_defs, mut enemies, mut projectiles, path) =
+            setup();
 
         // Spawn enemy very close to tower so projectile reaches it quickly
         let mut enemy = EnemyInstance::from_def(&enemy_defs[0]);

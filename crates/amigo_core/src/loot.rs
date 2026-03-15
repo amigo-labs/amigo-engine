@@ -29,7 +29,13 @@ impl Rarity {
 
     /// All rarities ordered from common to legendary.
     pub fn all() -> &'static [Rarity] {
-        &[Rarity::Common, Rarity::Uncommon, Rarity::Rare, Rarity::Epic, Rarity::Legendary]
+        &[
+            Rarity::Common,
+            Rarity::Uncommon,
+            Rarity::Rare,
+            Rarity::Epic,
+            Rarity::Legendary,
+        ]
     }
 }
 
@@ -204,7 +210,9 @@ impl LootRng {
     }
 
     fn range_u32(&mut self, min: u32, max: u32) -> u32 {
-        if min >= max { return min; }
+        if min >= max {
+            return min;
+        }
         min + ((self.next_f32() * (max - min + 1) as f32) as u32).min(max - min)
     }
 }

@@ -1,6 +1,6 @@
-use amigo_engine::prelude::*;
-use amigo_core::ecs::world::{Position, Velocity, SpriteComp, StateScoped};
 use crate::game::AppState;
+use amigo_core::ecs::world::{Position, SpriteComp, StateScoped, Velocity};
+use amigo_engine::prelude::*;
 
 pub struct Player {
     entity: Option<EntityId>,
@@ -28,10 +28,14 @@ impl Player {
 
     pub fn spawn(&mut self, ctx: &mut GameContext, x: f32, y: f32) {
         let id = ctx.world.spawn();
-        ctx.world.positions.insert(id, Position(SimVec2::from_f32(x, y)));
+        ctx.world
+            .positions
+            .insert(id, Position(SimVec2::from_f32(x, y)));
         ctx.world.velocities.insert(id, Velocity(SimVec2::ZERO));
         ctx.world.sprites.insert(id, SpriteComp::new("player"));
-        ctx.world.state_scoped.insert(id, StateScoped(AppState::Playing as u32));
+        ctx.world
+            .state_scoped
+            .insert(id, StateScoped(AppState::Playing as u32));
         self.entity = Some(id);
         self.pos_x = x;
         self.pos_y = y;
@@ -46,18 +50,30 @@ impl Player {
         // Input -> velocity
         let mut vx: f32 = 0.0;
         let mut vy: f32 = 0.0;
-        if ctx.input.held(KeyCode::KeyW) || ctx.input.held(KeyCode::ArrowUp) { vy -= 1.0; }
-        if ctx.input.held(KeyCode::KeyS) || ctx.input.held(KeyCode::ArrowDown) { vy += 1.0; }
-        if ctx.input.held(KeyCode::KeyA) || ctx.input.held(KeyCode::ArrowLeft) { vx -= 1.0; }
-        if ctx.input.held(KeyCode::KeyD) || ctx.input.held(KeyCode::ArrowRight) { vx += 1.0; }
+        if ctx.input.held(KeyCode::KeyW) || ctx.input.held(KeyCode::ArrowUp) {
+            vy -= 1.0;
+        }
+        if ctx.input.held(KeyCode::KeyS) || ctx.input.held(KeyCode::ArrowDown) {
+            vy += 1.0;
+        }
+        if ctx.input.held(KeyCode::KeyA) || ctx.input.held(KeyCode::ArrowLeft) {
+            vx -= 1.0;
+        }
+        if ctx.input.held(KeyCode::KeyD) || ctx.input.held(KeyCode::ArrowRight) {
+            vx += 1.0;
+        }
 
         // Normalize diagonal movement
         let len = (vx * vx + vy * vy).sqrt();
         if len > 0.0 {
             vx = vx / len * self.speed;
             vy = vy / len * self.speed;
-            if vx < 0.0 { self.facing_left = true; }
-            if vx > 0.0 { self.facing_left = false; }
+            if vx < 0.0 {
+                self.facing_left = true;
+            }
+            if vx > 0.0 {
+                self.facing_left = false;
+            }
         }
 
         // Apply velocity with tile collision (separate X and Y for sliding)
@@ -65,11 +81,17 @@ impl Player {
         let new_x = self.pos_x + vx * dt;
         let new_y = self.pos_y + vy * dt;
 
-        if !self.tile_blocked(new_x, self.pos_y, tiles, map_w) { self.pos_x = new_x; }
-        if !self.tile_blocked(self.pos_x, new_y, tiles, map_w) { self.pos_y = new_y; }
+        if !self.tile_blocked(new_x, self.pos_y, tiles, map_w) {
+            self.pos_x = new_x;
+        }
+        if !self.tile_blocked(self.pos_x, new_y, tiles, map_w) {
+            self.pos_y = new_y;
+        }
 
         // Write back to ECS
-        ctx.world.positions.insert(id, Position(SimVec2::from_f32(self.pos_x, self.pos_y)));
+        ctx.world
+            .positions
+            .insert(id, Position(SimVec2::from_f32(self.pos_x, self.pos_y)));
 
         // Animation
         if len > 0.0 {
@@ -122,10 +144,7 @@ impl Player {
         );
 
         // Head (lighter)
-        ctx.draw_rect(
-            Rect::new(x + 3.0, y, 10.0, 6.0),
-            Color::rgb(0.5, 0.8, 1.0),
-        );
+        ctx.draw_rect(Rect::new(x + 3.0, y, 10.0, 6.0), Color::rgb(0.5, 0.8, 1.0));
 
         // Walk animation: alternate feet position
         let foot_offset = match self.anim_frame {
@@ -134,7 +153,13 @@ impl Player {
             _ => 0.0,
         };
         let foot_color = Color::rgb(0.2, 0.3, 0.6);
-        ctx.draw_rect(Rect::new(x + 3.0 + foot_offset, y + 14.0, 4.0, 2.0), foot_color);
-        ctx.draw_rect(Rect::new(x + 9.0 - foot_offset, y + 14.0, 4.0, 2.0), foot_color);
+        ctx.draw_rect(
+            Rect::new(x + 3.0 + foot_offset, y + 14.0, 4.0, 2.0),
+            foot_color,
+        );
+        ctx.draw_rect(
+            Rect::new(x + 9.0 - foot_offset, y + 14.0, 4.0, 2.0),
+            foot_color,
+        );
     }
 }

@@ -103,14 +103,8 @@ pub fn generate_path(
     tile_size: f32,
     config: &AutoPathConfig,
 ) -> Option<GeneratedPath> {
-    let start_tile = IVec2::new(
-        (start.0 / tile_size) as i32,
-        (start.1 / tile_size) as i32,
-    );
-    let goal_tile = IVec2::new(
-        (goal.0 / tile_size) as i32,
-        (goal.1 / tile_size) as i32,
-    );
+    let start_tile = IVec2::new((start.0 / tile_size) as i32, (start.1 / tile_size) as i32);
+    let goal_tile = IVec2::new((goal.0 / tile_size) as i32, (goal.1 / tile_size) as i32);
 
     let request = PathRequest {
         start: start_tile,
@@ -304,8 +298,7 @@ mod tests {
         impl Walkable for BlockedGrid {
             fn is_walkable(&self, x: i32, y: i32) -> bool {
                 // Goal tile (9,0) is blocked
-                !(x == 9 && y == 0)
-                    && x >= 0 && y >= 0 && x < 10 && y < 10
+                !(x == 9 && y == 0) && x >= 0 && y >= 0 && x < 10 && y < 10
             }
         }
         let config = AutoPathConfig::default();
@@ -345,12 +338,7 @@ mod tests {
 
     #[test]
     fn tile_grid_walkability() {
-        let tiles = vec![
-            0, 0, 0, 0,
-            0, 1, 1, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-        ];
+        let tiles = vec![0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let grid = TileGrid::new(&tiles, 4, 4);
         assert!(grid.is_walkable(0, 0));
         assert!(!grid.is_walkable(1, 1)); // tile=1 is solid

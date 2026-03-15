@@ -112,8 +112,7 @@ impl LightingState {
         let header_bytes = bytemuck::bytes_of(&header);
 
         let mut buf = Vec::with_capacity(
-            std::mem::size_of::<LightingHeader>()
-                + count * std::mem::size_of::<LightData>(),
+            std::mem::size_of::<LightingHeader>() + count * std::mem::size_of::<LightData>(),
         );
         buf.extend_from_slice(header_bytes);
 

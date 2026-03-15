@@ -1,6 +1,6 @@
 use crate::loot::{ItemDef, ItemInstance, ItemType};
-use serde::{Deserialize, Serialize};
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Item Registry
@@ -126,7 +126,9 @@ impl Inventory {
     pub fn remove_by_id(&mut self, def_id: u32, count: u32) -> u32 {
         let mut remaining = count;
         for slot in &mut self.slots {
-            if remaining == 0 { break; }
+            if remaining == 0 {
+                break;
+            }
             if let Some(item) = &mut slot.item {
                 if item.def_id == def_id {
                     if item.stack_count <= remaining {
@@ -221,10 +223,16 @@ impl EquipSlot {
     /// All equipment slots.
     pub fn all() -> &'static [EquipSlot] {
         &[
-            EquipSlot::MainHand, EquipSlot::OffHand,
-            EquipSlot::Head, EquipSlot::Chest, EquipSlot::Legs,
-            EquipSlot::Boots, EquipSlot::Gloves,
-            EquipSlot::Ring1, EquipSlot::Ring2, EquipSlot::Amulet,
+            EquipSlot::MainHand,
+            EquipSlot::OffHand,
+            EquipSlot::Head,
+            EquipSlot::Chest,
+            EquipSlot::Legs,
+            EquipSlot::Boots,
+            EquipSlot::Gloves,
+            EquipSlot::Ring1,
+            EquipSlot::Ring2,
+            EquipSlot::Amulet,
         ]
     }
 

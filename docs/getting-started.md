@@ -2,6 +2,54 @@
 
 Amigo Engine is a Rust 2D pixel art game engine designed for building retro-style games with modern ergonomics.
 
+## Prerequisites
+
+### Rust
+
+Amigo Engine requires [Rust](https://www.rust-lang.org/) (latest stable). Install via [rustup](https://rustup.rs/):
+
+**Windows:**
+
+```sh
+winget install Rustlang.Rustup
+```
+
+**macOS:**
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**Linux (Ubuntu/Debian):**
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### System Dependencies (Linux)
+
+On Linux you need development libraries for graphics, audio, and input:
+
+```sh
+# Ubuntu / Debian
+sudo apt-get install -y \
+  libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev \
+  libx11-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev \
+  pkg-config
+
+# Fedora
+sudo dnf install -y \
+  alsa-lib-devel systemd-devel wayland-devel libxkbcommon-devel \
+  libX11-devel libXi-devel libXrandr-devel libXcursor-devel libXinerama-devel
+
+# Arch
+sudo pacman -S --needed \
+  alsa-lib systemd-libs wayland libxkbcommon \
+  libx11 libxi libxrandr libxcursor libxinerama pkg-config
+```
+
+Windows and macOS have no additional system dependencies.
+
 ## Installation
 
 Install the Amigo CLI tool:

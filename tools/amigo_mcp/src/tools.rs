@@ -56,7 +56,6 @@ pub fn tool_definitions() -> Vec<Value> {
             "Get performance metrics: FPS, frame time, entity count, draw calls.",
             json!({"type": "object", "properties": {}}),
         ),
-
         // ── Simulation ──
         tool(
             "amigo_place_tower",
@@ -143,7 +142,6 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["type"]
             }),
         ),
-
         // ── Editor ──
         tool(
             "amigo_editor_new_level",
@@ -266,7 +264,6 @@ pub fn tool_definitions() -> Vec<Value> {
             "Redo the last undone editor action.",
             json!({"type": "object", "properties": {}}),
         ),
-
         // ── Audio ──
         tool(
             "amigo_audio_play",
@@ -314,7 +311,6 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["channel", "volume"]
             }),
         ),
-
         // ── Save/Load/Replay ──
         tool(
             "amigo_save",
@@ -366,7 +362,6 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["path"]
             }),
         ),
-
         // ── Debug ──
         tool(
             "amigo_debug_dump_state",

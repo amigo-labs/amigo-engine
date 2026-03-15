@@ -178,16 +178,10 @@ impl DebugOverlay {
             ));
         }
         if self.show_entity_count {
-            lines.push((
-                format!("Entities: {}", self.entity_count),
-                Color::WHITE,
-            ));
+            lines.push((format!("Entities: {}", self.entity_count), Color::WHITE));
         }
         if self.show_draw_calls {
-            lines.push((
-                format!("Draw calls: {}", self.draw_calls),
-                Color::WHITE,
-            ));
+            lines.push((format!("Draw calls: {}", self.draw_calls), Color::WHITE));
         }
         if self.show_memory {
             lines.push((
@@ -197,7 +191,10 @@ impl DebugOverlay {
         }
 
         if self.show_systems && !self.system_timings.is_empty() {
-            lines.push(("--- Systems ---".to_string(), Color::new(0.6, 0.8, 1.0, 1.0)));
+            lines.push((
+                "--- Systems ---".to_string(),
+                Color::new(0.6, 0.8, 1.0, 1.0),
+            ));
             for (name, timing) in &self.system_timings {
                 let color = if timing.avg_ms > 2.0 {
                     Color::RED
@@ -250,12 +247,11 @@ pub fn tracy_enabled() -> bool {
 /// alongside the console output. Connect with the Tracy profiler GUI to
 /// see real-time spans, zones, and frame markers.
 pub fn init_logging() {
-    use tracing_subscriber::{EnvFilter, Layer};
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::{EnvFilter, Layer};
 
-    let filter = EnvFilter::try_from_env("AMIGO_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_env("AMIGO_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)

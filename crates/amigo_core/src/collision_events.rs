@@ -1,5 +1,5 @@
-use crate::ecs::EntityId;
 use crate::collision::ContactInfo;
+use crate::ecs::EntityId;
 use rustc_hash::FxHashSet;
 
 /// The phase of a collision between two entities.
@@ -28,7 +28,11 @@ struct PairKey(EntityId, EntityId);
 
 impl PairKey {
     fn new(a: EntityId, b: EntityId) -> Self {
-        if a < b { Self(a, b) } else { Self(b, a) }
+        if a < b {
+            Self(a, b)
+        } else {
+            Self(b, a)
+        }
     }
 }
 
@@ -100,8 +104,10 @@ impl ContactTracker {
 
     /// Remove an entity from tracking (e.g. when despawned).
     pub fn remove_entity(&mut self, entity: EntityId) {
-        self.previous.retain(|pair| pair.0 != entity && pair.1 != entity);
-        self.current.retain(|pair| pair.0 != entity && pair.1 != entity);
+        self.previous
+            .retain(|pair| pair.0 != entity && pair.1 != entity);
+        self.current
+            .retain(|pair| pair.0 != entity && pair.1 != entity);
     }
 
     pub fn clear(&mut self) {

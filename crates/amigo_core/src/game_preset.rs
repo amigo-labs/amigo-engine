@@ -85,7 +85,15 @@ impl ScenePreset {
     /// Which amigo_core systems this preset activates.
     pub fn default_systems(self) -> Vec<&'static str> {
         match self {
-            Self::TopDown => vec!["navigation", "ai", "combat", "collision", "physics", "dialog", "inventory"],
+            Self::TopDown => vec![
+                "navigation",
+                "ai",
+                "combat",
+                "collision",
+                "physics",
+                "dialog",
+                "inventory",
+            ],
             Self::Platformer => vec!["platformer", "physics", "collision"],
             Self::TurnBased => vec!["turn_combat", "inventory"],
             Self::Arpg => vec!["navigation", "ai", "combat", "loot", "inventory", "waves"],
@@ -329,14 +337,16 @@ pub struct ProjectTemplate {
 impl ProjectTemplate {
     /// Generate a GameProject from this template.
     pub fn create_project(&self, project_name: &str) -> GameProject {
-        let mut project = GameProject::new(project_name)
-            .with_resolution(self.resolution.0, self.resolution.1);
+        let mut project =
+            GameProject::new(project_name).with_resolution(self.resolution.0, self.resolution.1);
 
         // Every project gets a title menu
         let mut title = SceneDef::new("title_menu", "Title Menu", ScenePreset::Menu);
         title.transitions.push(SceneTransition {
             target: "gameplay".to_string(),
-            trigger: TransitionTrigger::Button { label: "Start Game".to_string() },
+            trigger: TransitionTrigger::Button {
+                label: "Start Game".to_string(),
+            },
             effect: "fade".to_string(),
         });
         project.add_scene(title);
@@ -350,7 +360,9 @@ impl ProjectTemplate {
         let mut pause = SceneDef::new("pause_menu", "Pause Menu", ScenePreset::Menu);
         pause.transitions.push(SceneTransition {
             target: "title_menu".to_string(),
-            trigger: TransitionTrigger::Button { label: "Quit to Title".to_string() },
+            trigger: TransitionTrigger::Button {
+                label: "Quit to Title".to_string(),
+            },
             effect: "fade".to_string(),
         });
         project.add_scene(pause);
@@ -521,8 +533,8 @@ mod tests {
     #[test]
     fn project_validation_bad_transition() {
         let mut project = GameProject::new("Bad Trans");
-        let scene = SceneDef::new("menu", "Menu", ScenePreset::Menu)
-            .with_transition(SceneTransition {
+        let scene =
+            SceneDef::new("menu", "Menu", ScenePreset::Menu).with_transition(SceneTransition {
                 target: "nowhere".to_string(),
                 trigger: TransitionTrigger::Manual,
                 effect: "fade".to_string(),
@@ -539,7 +551,11 @@ mod tests {
         for template in &templates {
             let project = template.create_project("My Game");
             assert_eq!(project.name, "My Game");
-            assert!(project.scene_count() >= 2, "Template '{}' should create at least 2 scenes", template.name);
+            assert!(
+                project.scene_count() >= 2,
+                "Template '{}' should create at least 2 scenes",
+                template.name
+            );
             assert!(project.find_scene("title_menu").is_some());
             assert!(project.find_scene("gameplay").is_some());
         }
@@ -551,10 +567,13 @@ mod tests {
         let mut project = GameProject::new("Mixed RPG");
 
         project.add_scene(SceneDef::new("title", "Title", ScenePreset::Menu));
-        project.add_scene(SceneDef::new("worldmap", "World Map", ScenePreset::WorldMap)
-            .with_level("levels/overworld.amigo"));
-        project.add_scene(SceneDef::new("town", "Town", ScenePreset::TopDown)
-            .with_level("levels/town.amigo"));
+        project.add_scene(
+            SceneDef::new("worldmap", "World Map", ScenePreset::WorldMap)
+                .with_level("levels/overworld.amigo"),
+        );
+        project.add_scene(
+            SceneDef::new("town", "Town", ScenePreset::TopDown).with_level("levels/town.amigo"),
+        );
         project.add_scene(SceneDef::new("dungeon", "Dungeon", ScenePreset::Roguelike));
         project.add_scene(SceneDef::new("battle", "Battle", ScenePreset::TurnBased));
         project.add_scene(SceneDef::new("shop", "Shop", ScenePreset::VisualNovel));
@@ -564,9 +583,18 @@ mod tests {
         assert_eq!(project.scene_count(), 6);
 
         // Each scene has its own preset/systems
-        assert_eq!(project.find_scene("worldmap").unwrap().preset, ScenePreset::WorldMap);
-        assert_eq!(project.find_scene("dungeon").unwrap().preset, ScenePreset::Roguelike);
-        assert_eq!(project.find_scene("battle").unwrap().preset, ScenePreset::TurnBased);
+        assert_eq!(
+            project.find_scene("worldmap").unwrap().preset,
+            ScenePreset::WorldMap
+        );
+        assert_eq!(
+            project.find_scene("dungeon").unwrap().preset,
+            ScenePreset::Roguelike
+        );
+        assert_eq!(
+            project.find_scene("battle").unwrap().preset,
+            ScenePreset::TurnBased
+        );
 
         let issues = project.validate();
         assert!(issues.is_empty());

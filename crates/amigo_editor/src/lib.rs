@@ -1,13 +1,13 @@
+pub mod auto_path;
+pub mod collision_editor;
+pub mod heatmap;
+pub mod play_state;
+pub mod playtest;
+pub mod plugin;
 pub mod ui;
+pub mod visual_script;
 pub mod wizard;
 pub mod wizard_ui;
-pub mod visual_script;
-pub mod collision_editor;
-pub mod play_state;
-pub mod plugin;
-pub mod auto_path;
-pub mod heatmap;
-pub mod playtest;
 
 #[cfg(feature = "td")]
 pub mod wave_editor;

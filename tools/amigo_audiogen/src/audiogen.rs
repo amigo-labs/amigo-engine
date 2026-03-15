@@ -3,7 +3,7 @@
 //! Generates short sound effects from text descriptions using Facebook's
 //! AudioGen model running locally via a Gradio API.
 
-use crate::{SfxRequest, SfxResult, SfxCategory};
+use crate::{SfxCategory, SfxRequest, SfxResult};
 use serde::{Deserialize, Serialize};
 
 /// AudioGen server configuration.

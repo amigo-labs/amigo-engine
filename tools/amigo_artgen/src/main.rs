@@ -36,7 +36,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     // Parse --server flag for ComfyUI URL
-    let _server_url = args.iter()
+    let _server_url = args
+        .iter()
         .position(|a| a == "--server")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
@@ -65,7 +66,10 @@ fn main() {
                     jsonrpc: "2.0".into(),
                     id: None,
                     result: None,
-                    error: Some(JsonRpcError { code: -32700, message: format!("Parse error: {e}") }),
+                    error: Some(JsonRpcError {
+                        code: -32700,
+                        message: format!("Parse error: {e}"),
+                    }),
                 };
                 let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
                 let _ = stdout.flush();
@@ -103,10 +107,14 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
             error: None,
         },
         "tools/call" => {
-            let tool_name = req.params.get("name")
+            let tool_name = req
+                .params
+                .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let tool_args = req.params.get("arguments")
+            let tool_args = req
+                .params
+                .get("arguments")
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
 
@@ -126,7 +134,10 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: req.id.clone(),
                     result: None,
-                    error: Some(JsonRpcError { code: -32603, message: e.to_string() }),
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: e.to_string(),
+                    }),
                 },
             }
         }
@@ -134,7 +145,10 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: req.id.clone(),
             result: None,
-            error: Some(JsonRpcError { code: -32601, message: format!("Method not found: {}", req.method) }),
+            error: Some(JsonRpcError {
+                code: -32601,
+                message: format!("Method not found: {}", req.method),
+            }),
         },
     }
 }

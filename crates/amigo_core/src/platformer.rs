@@ -262,14 +262,23 @@ impl PlatformerController {
     }
 
     /// Process one tick of input, returning the desired velocity and events.
-    pub fn tick(&mut self, input: PlatformerInput, gravity: f32) -> (PlatformerOutput, Vec<PlatformerEvent>) {
+    pub fn tick(
+        &mut self,
+        input: PlatformerInput,
+        gravity: f32,
+    ) -> (PlatformerOutput, Vec<PlatformerEvent>) {
         let mut events = Vec::new();
 
         // --- Landing / leaving ground detection ---
         if input.on_ground && !self.was_grounded {
             events.push(PlatformerEvent::Landed);
             self.jumps_remaining = self.config.max_jumps;
-            if self.config.dash.as_ref().map_or(false, |d| d.refresh_on_ground) {
+            if self
+                .config
+                .dash
+                .as_ref()
+                .map_or(false, |d| d.refresh_on_ground)
+            {
                 self.can_dash = true;
             }
         }
@@ -314,13 +323,21 @@ impl PlatformerController {
         }
 
         if let Some(ref dash_cfg) = self.config.dash {
-            if input.dash_pressed && self.can_dash && self.dash_cooldown_counter == 0 && !self.dash_active {
+            if input.dash_pressed
+                && self.can_dash
+                && self.dash_cooldown_counter == 0
+                && !self.dash_active
+            {
                 self.dash_active = true;
                 let dash_duration = dash_cfg.dash_duration;
                 let dash_speed = dash_cfg.dash_speed;
                 let cooldown = dash_cfg.cooldown;
                 self.dash_counter = dash_duration;
-                self.dash_dir_x = if input.move_x != 0.0 { input.move_x.signum() } else { 1.0 };
+                self.dash_dir_x = if input.move_x != 0.0 {
+                    input.move_x.signum()
+                } else {
+                    1.0
+                };
                 self.dash_dir_y = 0.0;
                 self.velocity_x = self.dash_dir_x * dash_speed;
                 self.velocity_y = 0.0;
@@ -682,7 +699,10 @@ mod tests {
             ..Default::default()
         };
         let (out, events) = ctrl.tick(input, 0.5);
-        assert!(events.contains(&PlatformerEvent::Jumped), "Coyote jump should work");
+        assert!(
+            events.contains(&PlatformerEvent::Jumped),
+            "Coyote jump should work"
+        );
         assert!(out.velocity_y < 0.0);
     }
 
@@ -708,7 +728,10 @@ mod tests {
             ..Default::default()
         };
         let (_, events) = ctrl.tick(input, 0.5);
-        assert!(!events.contains(&PlatformerEvent::Jumped), "Should not jump after coyote expires");
+        assert!(
+            !events.contains(&PlatformerEvent::Jumped),
+            "Should not jump after coyote expires"
+        );
     }
 
     #[test]
@@ -721,12 +744,15 @@ mod tests {
 
         // Be grounded first, then jump to use up jumps_remaining
         ctrl.tick(grounded_input(), 0.5);
-        ctrl.tick(PlatformerInput {
-            on_ground: true,
-            jump_pressed: true,
-            jump_held: true,
-            ..Default::default()
-        }, 0.5);
+        ctrl.tick(
+            PlatformerInput {
+                on_ground: true,
+                jump_pressed: true,
+                jump_held: true,
+                ..Default::default()
+            },
+            0.5,
+        );
 
         // In the air, no jumps remaining
         for _ in 0..3 {
@@ -734,19 +760,28 @@ mod tests {
         }
 
         // Press jump while still in air — should buffer (no jumps remaining to use)
-        ctrl.tick(PlatformerInput {
-            jump_pressed: true,
-            jump_held: true,
-            ..Default::default()
-        }, 0.5);
+        ctrl.tick(
+            PlatformerInput {
+                jump_pressed: true,
+                jump_held: true,
+                ..Default::default()
+            },
+            0.5,
+        );
 
         // Land 1 tick later (within buffer window)
-        let (out, events) = ctrl.tick(PlatformerInput {
-            on_ground: true,
-            jump_held: true,
-            ..Default::default()
-        }, 0.5);
-        assert!(events.contains(&PlatformerEvent::Jumped), "Buffered jump should trigger on landing");
+        let (out, events) = ctrl.tick(
+            PlatformerInput {
+                on_ground: true,
+                jump_held: true,
+                ..Default::default()
+            },
+            0.5,
+        );
+        assert!(
+            events.contains(&PlatformerEvent::Jumped),
+            "Buffered jump should trigger on landing"
+        );
         assert!(out.velocity_y < 0.0);
     }
 
@@ -757,29 +792,47 @@ mod tests {
 
         // Full jump: hold button
         ctrl.tick(grounded_input(), 0.5);
-        ctrl.tick(PlatformerInput {
-            on_ground: true,
-            jump_pressed: true,
-            jump_held: true,
-            ..Default::default()
-        }, 0.5);
+        ctrl.tick(
+            PlatformerInput {
+                on_ground: true,
+                jump_pressed: true,
+                jump_held: true,
+                ..Default::default()
+            },
+            0.5,
+        );
         // Keep holding for 2 ticks
         for _ in 0..2 {
-            ctrl.tick(PlatformerInput { jump_held: true, ..Default::default() }, 0.5);
+            ctrl.tick(
+                PlatformerInput {
+                    jump_held: true,
+                    ..Default::default()
+                },
+                0.5,
+            );
         }
         let full_vy = ctrl.velocity_y;
 
         // Short jump: release button immediately after jump
         let mut ctrl2 = PlatformerController::new(config);
         ctrl2.tick(grounded_input(), 0.5);
-        ctrl2.tick(PlatformerInput {
-            on_ground: true,
-            jump_pressed: true,
-            jump_held: true,
-            ..Default::default()
-        }, 0.5);
+        ctrl2.tick(
+            PlatformerInput {
+                on_ground: true,
+                jump_pressed: true,
+                jump_held: true,
+                ..Default::default()
+            },
+            0.5,
+        );
         // Release immediately — this should cut the velocity
-        ctrl2.tick(PlatformerInput { jump_held: false, ..Default::default() }, 0.5);
+        ctrl2.tick(
+            PlatformerInput {
+                jump_held: false,
+                ..Default::default()
+            },
+            0.5,
+        );
         // One more tick to match total tick count
         ctrl2.tick(default_input(), 0.5);
         let short_vy = ctrl2.velocity_y;
@@ -787,7 +840,10 @@ mod tests {
         // Short jump should have more downward velocity (velocity cut happened)
         // Full: -6.0 + gravity*2 = -6.0 + 1.0 = -5.0
         // Short: -6.0 * 0.4 = -2.4, then -2.4 + gravity*2 = -2.4 + 1.0 = -1.4
-        assert!(short_vy > full_vy, "Short jump should lose momentum faster: short={short_vy} full={full_vy}");
+        assert!(
+            short_vy > full_vy,
+            "Short jump should lose momentum faster: short={short_vy} full={full_vy}"
+        );
     }
 
     #[test]
@@ -799,12 +855,15 @@ mod tests {
 
         // Ground and jump
         ctrl.tick(grounded_input(), 0.5);
-        ctrl.tick(PlatformerInput {
-            on_ground: true,
-            jump_pressed: true,
-            jump_held: true,
-            ..Default::default()
-        }, 0.5);
+        ctrl.tick(
+            PlatformerInput {
+                on_ground: true,
+                jump_pressed: true,
+                jump_held: true,
+                ..Default::default()
+            },
+            0.5,
+        );
 
         // In air past coyote time
         for _ in 0..5 {
@@ -832,13 +891,20 @@ mod tests {
 
         // Fall next to a wall for many ticks to build up velocity and let wall slide cap it
         for _ in 0..30 {
-            ctrl.tick(PlatformerInput {
-                wall_right: true,
-                ..Default::default()
-            }, 0.5);
+            ctrl.tick(
+                PlatformerInput {
+                    wall_right: true,
+                    ..Default::default()
+                },
+                0.5,
+            );
         }
         // Velocity should be capped at wall slide speed (1.5)
-        assert!(ctrl.velocity_y <= 1.5 + 0.1, "Wall slide should cap fall speed, got {}", ctrl.velocity_y);
+        assert!(
+            ctrl.velocity_y <= 1.5 + 0.1,
+            "Wall slide should cap fall speed, got {}",
+            ctrl.velocity_y
+        );
 
         // Wall jump
         let input = PlatformerInput {
@@ -896,17 +962,19 @@ mod tests {
         let (out3, _) = ctrl.tick(input, 0.5);
 
         assert!(out2.velocity_x > out1.velocity_x, "Should accelerate");
-        assert!(out3.velocity_x >= out2.velocity_x, "Should keep accelerating");
-        assert!(out3.velocity_x <= 3.0 + 0.01, "Should not exceed move_speed");
+        assert!(
+            out3.velocity_x >= out2.velocity_x,
+            "Should keep accelerating"
+        );
+        assert!(
+            out3.velocity_x <= 3.0 + 0.01,
+            "Should not exceed move_speed"
+        );
     }
 
     #[test]
     fn moving_platform_loop() {
-        let mut plat = MovingPlatform::new(
-            vec![(0.0, 0.0), (100.0, 0.0)],
-            10.0,
-            PathMode::Loop,
-        );
+        let mut plat = MovingPlatform::new(vec![(0.0, 0.0), (100.0, 0.0)], 10.0, PathMode::Loop);
 
         let mut last_x = 0.0;
         let mut moved_right = false;
@@ -929,11 +997,8 @@ mod tests {
 
     #[test]
     fn moving_platform_pingpong() {
-        let mut plat = MovingPlatform::new(
-            vec![(0.0, 0.0), (100.0, 0.0)],
-            10.0,
-            PathMode::PingPong,
-        );
+        let mut plat =
+            MovingPlatform::new(vec![(0.0, 0.0), (100.0, 0.0)], 10.0, PathMode::PingPong);
 
         let mut reached_end = false;
         let mut came_back = false;
@@ -954,27 +1019,22 @@ mod tests {
 
     #[test]
     fn moving_platform_once() {
-        let mut plat = MovingPlatform::new(
-            vec![(0.0, 0.0), (50.0, 0.0)],
-            10.0,
-            PathMode::Once,
-        );
+        let mut plat = MovingPlatform::new(vec![(0.0, 0.0), (50.0, 0.0)], 10.0, PathMode::Once);
 
         for _ in 0..100 {
             plat.tick();
         }
 
         let (x, _, _, _) = plat.tick();
-        assert!((x - 50.0).abs() < 1.0, "Should stop at last waypoint, got {x}");
+        assert!(
+            (x - 50.0).abs() < 1.0,
+            "Should stop at last waypoint, got {x}"
+        );
     }
 
     #[test]
     fn moving_platform_delta_for_riders() {
-        let mut plat = MovingPlatform::new(
-            vec![(0.0, 0.0), (100.0, 0.0)],
-            10.0,
-            PathMode::Loop,
-        );
+        let mut plat = MovingPlatform::new(vec![(0.0, 0.0), (100.0, 0.0)], 10.0, PathMode::Loop);
 
         let (_, _, dx, _) = plat.tick();
         assert!(dx > 0.0, "Delta should be positive when moving right");

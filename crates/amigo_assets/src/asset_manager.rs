@@ -1,8 +1,8 @@
 use crate::AssetError;
 use amigo_core::Rect;
 use rustc_hash::FxHashMap;
-use tracing::{info, warn};
 use std::path::{Path, PathBuf};
+use tracing::{info, warn};
 
 /// Data for a loaded sprite.
 #[derive(Clone, Debug)]
@@ -97,7 +97,10 @@ impl AssetManager {
             Some(s) => Some(s),
             None => {
                 if let Some(suggestion) = self.fuzzy_match(name) {
-                    warn!("Sprite '{}' not found. Did you mean '{}'?", name, suggestion);
+                    warn!(
+                        "Sprite '{}' not found. Did you mean '{}'?",
+                        name, suggestion
+                    );
                 } else {
                     warn!("Sprite '{}' not found", name);
                 }
@@ -117,7 +120,10 @@ impl AssetManager {
     }
 
     /// Load a RON data file.
-    pub fn load_ron<T: serde::de::DeserializeOwned>(&self, relative_path: &str) -> Result<T, AssetError> {
+    pub fn load_ron<T: serde::de::DeserializeOwned>(
+        &self,
+        relative_path: &str,
+    ) -> Result<T, AssetError> {
         let path = self.base_path.join("data").join(relative_path);
         let contents = std::fs::read_to_string(&path).map_err(|_| AssetError::NotFound {
             path: relative_path.to_string(),
@@ -165,12 +171,11 @@ impl AssetManager {
 
         // Load atlas manifest to get sprite UV coordinates
         if let Some(manifest_data) = reader.read_entry("atlas.ron") {
-            let manifest_str = std::str::from_utf8(manifest_data).map_err(|e| {
-                AssetError::LoadFailed {
+            let manifest_str =
+                std::str::from_utf8(manifest_data).map_err(|e| AssetError::LoadFailed {
                     path: "atlas.ron".into(),
                     reason: e.to_string(),
-                }
-            })?;
+                })?;
 
             let entries: Vec<(String, [f32; 4])> =
                 ron::from_str(manifest_str).map_err(|e| AssetError::LoadFailed {
@@ -198,14 +203,9 @@ impl AssetManager {
                     let pixel_h = (h * atlas_h as f32) as u32;
 
                     // Extract sub-image for this sprite
-                    let sub_img = image::imageops::crop_imm(
-                        &atlas_img,
-                        pixel_x,
-                        pixel_y,
-                        pixel_w,
-                        pixel_h,
-                    )
-                    .to_image();
+                    let sub_img =
+                        image::imageops::crop_imm(&atlas_img, pixel_x, pixel_y, pixel_w, pixel_h)
+                            .to_image();
 
                     self.sprite_names.push(name.clone());
                     self.sprites.insert(

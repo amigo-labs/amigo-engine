@@ -3,7 +3,7 @@
 //! Feature-gated behind `td`. Provides data structures and UI for
 //! designing waves (enemy types, counts, timing, spawn points).
 
-use amigo_core::waves::{WaveDef, SpawnGroup};
+use amigo_core::waves::{SpawnGroup, WaveDef};
 use amigo_core::{Color, Rect};
 use amigo_input::InputState;
 use amigo_ui::UiContext;
@@ -354,7 +354,11 @@ pub fn draw_wave_editor(
         }
 
         let is_selected = state.selected_wave == Some(i);
-        let bg = if is_selected { WAVE_SELECTED } else { WAVE_ITEM };
+        let bg = if is_selected {
+            WAVE_SELECTED
+        } else {
+            WAVE_ITEM
+        };
         let item_rect = Rect::new(x + 4.0, iy, panel_w - 8.0, item_h - 2.0);
         ui.filled_rect(item_rect, bg);
 
@@ -472,9 +476,7 @@ mod tests {
     #[test]
     fn from_existing_waves() {
         let waves = vec![
-            WaveDef::new()
-                .with_delay(2.0)
-                .with_group(1, 10, 0.5, 0),
+            WaveDef::new().with_delay(2.0).with_group(1, 10, 0.5, 0),
             WaveDef::new()
                 .with_delay(5.0)
                 .with_group(2, 20, 0.3, 0)

@@ -1,10 +1,10 @@
 use super::entity::{EntityId, GenerationalArena};
 use super::sparse_set::SparseSet;
-use crate::math::SimVec2;
 use crate::color::Color;
+use crate::math::SimVec2;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
-use rustc_hash::FxHashMap;
 
 // ── Core Components (statically typed for zero-overhead) ──
 
@@ -79,8 +79,12 @@ trait AnyStorage: Any {
 }
 
 impl<T: 'static> AnyStorage for SparseSet<T> {
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 
     fn remove_entity(&mut self, id: EntityId) {
         self.remove(id);

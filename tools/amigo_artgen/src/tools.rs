@@ -248,13 +248,19 @@ pub fn list_tools() -> Vec<ToolDef> {
 }
 
 /// Dispatch a tool call by name
-pub fn dispatch_tool(name: &str, params: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+pub fn dispatch_tool(
+    name: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
     match name {
         "amigo_artgen_generate_sprite" => {
             let p: GenerateSpriteParams = serde_json::from_value(params)?;
             // In production: build workflow, send to ComfyUI, post-process, save
             Ok(serde_json::to_value(GenerateResult {
-                paths: vec![format!("assets/generated/sprites/{}_v1.png", sanitize(&p.prompt))],
+                paths: vec![format!(
+                    "assets/generated/sprites/{}_v1.png",
+                    sanitize(&p.prompt)
+                )],
                 preview: None,
             })?)
         }
@@ -268,11 +274,14 @@ pub fn dispatch_tool(name: &str, params: serde_json::Value) -> Result<serde_json
         "amigo_artgen_generate_spritesheet" => {
             let p: GenerateSpritesheetParams = serde_json::from_value(params)?;
             Ok(serde_json::to_value(SpritesheetResult {
-                path: format!("assets/generated/spritesheets/{}_{}.png",
-                    std::path::Path::new(&p.base).file_stem()
+                path: format!(
+                    "assets/generated/spritesheets/{}_{}.png",
+                    std::path::Path::new(&p.base)
+                        .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default(),
-                    p.animation),
+                    p.animation
+                ),
                 frames: p.frames,
             })?)
         }
@@ -306,29 +315,40 @@ pub fn dispatch_tool(name: &str, params: serde_json::Value) -> Result<serde_json
                 path: "output.png".into(),
             })?)
         }
-        "amigo_artgen_list_styles" => {
-            Ok(serde_json::to_value(ListResult {
-                items: vec!["caribbean", "lotr", "dune", "matrix", "got", "stranger_things"]
-                    .into_iter().map(String::from).collect(),
-            })?)
-        }
+        "amigo_artgen_list_styles" => Ok(serde_json::to_value(ListResult {
+            items: vec![
+                "caribbean",
+                "lotr",
+                "dune",
+                "matrix",
+                "got",
+                "stranger_things",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        })?),
         "amigo_artgen_list_checkpoints" | "amigo_artgen_list_loras" => {
             Ok(serde_json::to_value(ListResult { items: vec![] })?)
         }
-        "amigo_artgen_server_status" => {
-            Ok(serde_json::to_value(ServerStatusResult {
-                connected: false,
-                gpu: "unknown".into(),
-                vram: "unknown".into(),
-            })?)
-        }
+        "amigo_artgen_server_status" => Ok(serde_json::to_value(ServerStatusResult {
+            connected: false,
+            gpu: "unknown".into(),
+            vram: "unknown".into(),
+        })?),
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }
 
 fn sanitize(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .chars()
         .take(40)
@@ -354,10 +374,13 @@ mod tests {
 
     #[test]
     fn dispatch_generate_sprite() {
-        let result = dispatch_tool("amigo_artgen_generate_sprite", serde_json::json!({
-            "prompt": "pirate tower",
-            "style": "caribbean"
-        }));
+        let result = dispatch_tool(
+            "amigo_artgen_generate_sprite",
+            serde_json::json!({
+                "prompt": "pirate tower",
+                "style": "caribbean"
+            }),
+        );
         assert!(result.is_ok());
     }
 

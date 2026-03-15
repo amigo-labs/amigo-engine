@@ -102,12 +102,20 @@ impl NetStats {
 
     /// Minimum RTT in the window.
     pub fn rtt_min(&self) -> f32 {
-        self.rtt_samples.iter().copied().reduce(f32::min).unwrap_or(0.0)
+        self.rtt_samples
+            .iter()
+            .copied()
+            .reduce(f32::min)
+            .unwrap_or(0.0)
     }
 
     /// Maximum RTT in the window.
     pub fn rtt_max(&self) -> f32 {
-        self.rtt_samples.iter().copied().reduce(f32::max).unwrap_or(0.0)
+        self.rtt_samples
+            .iter()
+            .copied()
+            .reduce(f32::max)
+            .unwrap_or(0.0)
     }
 
     /// Jitter: standard deviation of RTT samples.
@@ -116,7 +124,11 @@ impl NetStats {
             return 0.0;
         }
         let avg = self.rtt_avg();
-        let variance: f32 = self.rtt_samples.iter().map(|&r| (r - avg) * (r - avg)).sum::<f32>()
+        let variance: f32 = self
+            .rtt_samples
+            .iter()
+            .map(|&r| (r - avg) * (r - avg))
+            .sum::<f32>()
             / self.rtt_samples.len() as f32;
         variance.sqrt()
     }

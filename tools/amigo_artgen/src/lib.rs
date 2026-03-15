@@ -120,7 +120,8 @@ impl WorldStyle {
             WorldStyle {
                 name: "caribbean".into(),
                 lora: None,
-                style_prompt_prefix: "pixel art, 16-bit, tropical pirate theme, warm colors, ".into(),
+                style_prompt_prefix: "pixel art, 16-bit, tropical pirate theme, warm colors, "
+                    .into(),
                 palette_path: None,
                 max_colors: 32,
                 outline_color: Some([20, 12, 8, 255]),
@@ -128,7 +129,8 @@ impl WorldStyle {
             WorldStyle {
                 name: "lotr".into(),
                 lora: None,
-                style_prompt_prefix: "pixel art, 16-bit, high fantasy medieval, earth tones, ".into(),
+                style_prompt_prefix: "pixel art, 16-bit, high fantasy medieval, earth tones, "
+                    .into(),
                 palette_path: None,
                 max_colors: 32,
                 outline_color: Some([15, 15, 10, 255]),
@@ -144,7 +146,8 @@ impl WorldStyle {
             WorldStyle {
                 name: "matrix".into(),
                 lora: None,
-                style_prompt_prefix: "pixel art, 16-bit, cyberpunk dark, green on black, neon, ".into(),
+                style_prompt_prefix: "pixel art, 16-bit, cyberpunk dark, green on black, neon, "
+                    .into(),
                 palette_path: None,
                 max_colors: 16,
                 outline_color: Some([0, 30, 0, 255]),
@@ -152,7 +155,8 @@ impl WorldStyle {
             WorldStyle {
                 name: "got".into(),
                 lora: None,
-                style_prompt_prefix: "pixel art, 16-bit, dark medieval, grim, muted colors, ".into(),
+                style_prompt_prefix: "pixel art, 16-bit, dark medieval, grim, muted colors, "
+                    .into(),
                 palette_path: None,
                 max_colors: 32,
                 outline_color: Some([10, 10, 15, 255]),
@@ -160,7 +164,8 @@ impl WorldStyle {
             WorldStyle {
                 name: "stranger_things".into(),
                 lora: None,
-                style_prompt_prefix: "pixel art, 16-bit, 1980s retro, neon, synthwave colors, ".into(),
+                style_prompt_prefix: "pixel art, 16-bit, 1980s retro, neon, synthwave colors, "
+                    .into(),
                 palette_path: None,
                 max_colors: 24,
                 outline_color: Some([30, 10, 40, 255]),

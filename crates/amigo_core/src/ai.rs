@@ -183,9 +183,15 @@ pub fn monster_ai(
 
     // Any state → DEAD: health depleted
     sm.add_transition(states::IDLE, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
-    sm.add_transition(states::PATROL, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
-    sm.add_transition(states::CHASE, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
-    sm.add_transition(states::ATTACK, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
+    sm.add_transition(states::PATROL, states::DEAD, |ctx| {
+        ctx.health_fraction <= 0.0
+    });
+    sm.add_transition(states::CHASE, states::DEAD, |ctx| {
+        ctx.health_fraction <= 0.0
+    });
+    sm.add_transition(states::ATTACK, states::DEAD, |ctx| {
+        ctx.health_fraction <= 0.0
+    });
     sm.add_transition(states::FLEE, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
 
     sm
@@ -212,9 +218,15 @@ pub fn patrol_ai(aggro_range: f32, attack_range: f32) -> StateMachine {
     });
 
     // Dead
-    sm.add_transition(states::PATROL, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
-    sm.add_transition(states::CHASE, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
-    sm.add_transition(states::ATTACK, states::DEAD, |ctx| ctx.health_fraction <= 0.0);
+    sm.add_transition(states::PATROL, states::DEAD, |ctx| {
+        ctx.health_fraction <= 0.0
+    });
+    sm.add_transition(states::CHASE, states::DEAD, |ctx| {
+        ctx.health_fraction <= 0.0
+    });
+    sm.add_transition(states::ATTACK, states::DEAD, |ctx| {
+        ctx.health_fraction <= 0.0
+    });
 
     sm
 }
@@ -250,7 +262,12 @@ impl Steering {
     }
 
     /// Arrive: seek with deceleration near target.
-    pub fn arrive(pos: RenderVec2, target: RenderVec2, max_speed: f32, slow_radius: f32) -> RenderVec2 {
+    pub fn arrive(
+        pos: RenderVec2,
+        target: RenderVec2,
+        max_speed: f32,
+        slow_radius: f32,
+    ) -> RenderVec2 {
         let dx = target.x - pos.x;
         let dy = target.y - pos.y;
         let dist = (dx * dx + dy * dy).sqrt();
@@ -266,7 +283,11 @@ impl Steering {
     }
 
     /// Separation: steer away from nearby entities.
-    pub fn separation(pos: RenderVec2, neighbors: &[RenderVec2], desired_distance: f32) -> RenderVec2 {
+    pub fn separation(
+        pos: RenderVec2,
+        neighbors: &[RenderVec2],
+        desired_distance: f32,
+    ) -> RenderVec2 {
         let mut steer = RenderVec2::ZERO;
         let mut count = 0;
         for n in neighbors {
@@ -323,29 +344,15 @@ mod tests {
 
     #[test]
     fn steering_seek() {
-        let vel = Steering::seek(
-            RenderVec2::new(0.0, 0.0),
-            RenderVec2::new(10.0, 0.0),
-            5.0,
-        );
+        let vel = Steering::seek(RenderVec2::new(0.0, 0.0), RenderVec2::new(10.0, 0.0), 5.0);
         assert!((vel.x - 5.0).abs() < 0.01);
         assert!(vel.y.abs() < 0.01);
     }
 
     #[test]
     fn steering_arrive_slows_down() {
-        let vel_far = Steering::arrive(
-            RenderVec2::ZERO,
-            RenderVec2::new(100.0, 0.0),
-            10.0,
-            50.0,
-        );
-        let vel_near = Steering::arrive(
-            RenderVec2::ZERO,
-            RenderVec2::new(25.0, 0.0),
-            10.0,
-            50.0,
-        );
+        let vel_far = Steering::arrive(RenderVec2::ZERO, RenderVec2::new(100.0, 0.0), 10.0, 50.0);
+        let vel_near = Steering::arrive(RenderVec2::ZERO, RenderVec2::new(25.0, 0.0), 10.0, 50.0);
         assert!(vel_far.x > vel_near.x);
     }
 }
