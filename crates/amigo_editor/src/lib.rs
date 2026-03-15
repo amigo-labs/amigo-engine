@@ -12,6 +12,9 @@ pub mod wizard_ui;
 #[cfg(feature = "td")]
 pub mod wave_editor;
 
+#[cfg(feature = "egui")]
+pub mod egui_ui;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
