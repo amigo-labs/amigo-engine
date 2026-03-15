@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 use kira::manager::backend::DefaultBackend;
 use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};

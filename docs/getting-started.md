@@ -50,6 +50,21 @@ sudo pacman -S --needed \
 
 Windows and macOS have no additional system dependencies.
 
+**Verify installation:**
+
+```sh
+rustc --version   # should print 1.xx.x
+cargo --version   # should print 1.xx.x
+```
+
+### Recommended Extras (optional)
+
+| Tool | Purpose | Installation |
+|------|---------|-------------|
+| `mold` | Faster linker (dev builds 2-3x faster) | `sudo apt install mold` / `brew install mold` |
+| Tracy | GPU/CPU profiler | [github.com/wolfpld/tracy](https://github.com/wolfpld/tracy) |
+| Aseprite | Pixel art editor (`.ase` files) | [aseprite.org](https://www.aseprite.org) |
+
 ## Installation
 
 Install the Amigo CLI tool:

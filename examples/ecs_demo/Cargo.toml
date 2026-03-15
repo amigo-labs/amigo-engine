@@ -1,0 +1,12 @@
+[package]
+name = "amigo_ecs_demo"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "amigo_ecs_demo"
+path = "src/main.rs"
+
+[dependencies]
+amigo_engine = { workspace = true }
+amigo_core = { workspace = true }

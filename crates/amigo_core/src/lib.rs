@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 pub mod ai;
 pub mod bullet_pattern;
 pub mod collision;

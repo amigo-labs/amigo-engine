@@ -1,0 +1,12 @@
+[package]
+name = "amigo_tilemap_demo"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "amigo_tilemap_demo"
+path = "src/main.rs"
+
+[dependencies]
+amigo_engine = { workspace = true }
+amigo_tilemap = { workspace = true }

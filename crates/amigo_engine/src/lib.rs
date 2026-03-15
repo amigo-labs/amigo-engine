@@ -1,10 +1,10 @@
-//! # amigo_engine
+#![warn(missing_docs)]
+//! # Amigo Engine
 //!
-//! A 2D game engine built on fixed-point math, ECS, and wgpu rendering.
-//! amigo_engine is the top-level crate that ties together all sub-crates
-//! into a single, batteries-included framework for building 2D games.
+//! A modern 2D pixel art game engine in Rust, built on fixed-point math,
+//! ECS, and wgpu rendering.
 //!
-//! ## Quick start
+//! ## Quick Start
 //!
 //! ```rust,no_run
 //! use amigo_engine::prelude::*;
@@ -12,19 +12,31 @@
 //! struct MyGame;
 //!
 //! impl Game for MyGame {
-//!     fn update(&mut self, _ctx: &mut GameContext) -> SceneAction {
+//!     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
 //!         SceneAction::Continue
 //!     }
-//!
-//!     fn draw(&self, _ctx: &mut DrawContext) {}
+//!     fn draw(&self, ctx: &mut DrawContext) {
+//!         ctx.draw_text("Hello!", 10.0, 10.0, Color::WHITE);
+//!     }
 //! }
 //!
 //! fn main() {
-//!     EngineBuilder::new()
+//!     Engine::build()
+//!         .title("My Game")
+//!         .virtual_resolution(480, 270)
 //!         .build()
 //!         .run(MyGame);
 //! }
 //! ```
+//!
+//! ## Feature Flags
+//!
+//! | Flag | Description |
+//! |------|-------------|
+//! | `audio` | Audio playback via kira (default) |
+//! | `editor` | egui editor overlay |
+//! | `api` | JSON-RPC API + headless mode |
+//! | `tracy` | Tracy profiler integration |
 //!
 //! ## Sub-crates / modules
 //!

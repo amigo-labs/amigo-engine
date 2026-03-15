@@ -1,0 +1,11 @@
+[package]
+name = "amigo_input_demo"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "amigo_input_demo"
+path = "src/main.rs"
+
+[dependencies]
+amigo_engine = { workspace = true }

@@ -39,6 +39,13 @@ tools/
   amigo_audiogen/   # Audio generation
 examples/
   starter/          # Starter template project
+  particles/        # Particle system demo
+  tilemap_demo/     # Tilemap rendering + camera scrolling
+  audio_demo/       # Audio playback, crossfade, volume
+  ecs_demo/         # ECS spawn/despawn, bouncing balls
+  input_demo/       # Keyboard, mouse, gamepad visualization
+  animation_demo/   # Sprite animation state machine
+  pathfinding_demo/ # A* pathfinding + flow fields
 docs/               # Specs, guides, architecture docs
 ```
 
@@ -130,6 +137,20 @@ cargo test -p amigo_core -- pathfinding::tests
 
 Tests live in `#[cfg(test)] mod tests` blocks within each module. Integration
 tests can go in `tests/` directories within each crate.
+
+## API Documentation
+
+Build and browse the API reference locally:
+
+```sh
+# Build all docs and open in browser
+cargo doc --workspace --no-deps --open
+
+# With all features (incl. editor, api, tracy)
+cargo doc --workspace --no-deps --all-features --open
+```
+
+CI automatically builds docs on every PR and fails on doc warnings.
 
 ## Commit messages
 

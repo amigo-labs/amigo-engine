@@ -85,6 +85,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_animation_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_animation",
+ "amigo_engine",
+]
+
+[[package]]
 name = "amigo_api"
 version = "0.1.0"
 dependencies = [
@@ -265,6 +273,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_pathfinding_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_core",
+ "amigo_engine",
+]
+
+[[package]]
 name = "amigo_render"
 version = "0.1.0"
 dependencies = [
@@ -317,6 +333,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "amigo_tilemap_demo"
+version = "0.1.0"
+dependencies = [
+ "amigo_engine",
+ "amigo_tilemap",
 ]
 
 [[package]]

@@ -171,7 +171,7 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         // ── Observation ──
         "engine.status" | "get_state" => handle_status(req, state),
         "perf" => handle_perf(req, state),
-        "screenshot" => handle_screenshot(req, state),
+        "screenshot" | "amigo_screenshot" => handle_screenshot(req, state),
         "screenshot.results" => handle_screenshot_results(req, state),
         "list_entities" => handle_list_entities(req, state),
         "inspect_entity" => handle_inspect_entity(req, state),
@@ -182,7 +182,7 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         "engine.step" | "debug.step" => handle_step(req, state),
         "engine.command" => handle_command(req, state),
         "set_speed" => handle_set_speed(req, state),
-        "tick" => handle_tick(req, state),
+        "tick" | "amigo_tick" => handle_tick(req, state),
 
         // ── Simulation ──
         "place_tower" => handle_place_tower(req, state),
