@@ -119,4 +119,4 @@ graph BT
     ENGINE --> DEBUG
 ```
 
-For detailed architecture documentation, see the [Engine Spec](../specs/01-engine-spec.md) (Section 3).
+For detailed architecture documentation, see the [Engine Spec](specs/01-engine-spec.md) (Section 3).
