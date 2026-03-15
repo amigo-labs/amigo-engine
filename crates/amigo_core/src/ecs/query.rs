@@ -29,6 +29,7 @@ use super::sparse_set::SparseSet;
 // ---------------------------------------------------------------------------
 
 /// Iterator over entities that exist in both `A` and `B` SparseSets.
+#[allow(dead_code)]
 pub struct Join2<'a, A, B> {
     /// We iterate the smaller set and look up in the larger one.
     small_ids: &'a [EntityId],
@@ -68,6 +69,7 @@ pub struct JoinIter2<'a, A, B> {
     drive_idx: usize,
     a: &'a SparseSet<A>,
     b: &'a SparseSet<B>,
+    #[allow(dead_code)]
     swapped: bool,
 }
 

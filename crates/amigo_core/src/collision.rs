@@ -101,6 +101,7 @@ struct CellKey(i32, i32);
 
 /// Spatial hash grid for broad-phase collision detection.
 pub struct SpatialHash {
+    #[allow(dead_code)]
     cell_size: f32,
     inv_cell_size: f32,
     cells: FxHashMap<CellKey, Vec<EntityId>>,

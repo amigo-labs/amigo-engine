@@ -75,6 +75,7 @@ trait AnyStorage: Any {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn remove_entity(&mut self, id: EntityId);
     fn flush(&mut self);
+    #[allow(dead_code)]
     fn len(&self) -> usize;
 }
 

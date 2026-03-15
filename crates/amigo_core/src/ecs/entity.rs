@@ -45,6 +45,7 @@ impl GenerationalArena {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             generations: Vec::with_capacity(capacity),

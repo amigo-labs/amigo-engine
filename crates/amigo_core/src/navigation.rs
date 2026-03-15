@@ -1,4 +1,3 @@
-use crate::ecs::EntityId;
 use crate::math::{Fix, IVec2, RenderVec2, SimVec2};
 use crate::pathfinding::{self, PathRequest, Walkable};
 

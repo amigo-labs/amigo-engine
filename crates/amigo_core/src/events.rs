@@ -25,6 +25,7 @@ impl EventChannel {
         }
     }
 
+    #[allow(dead_code)]
     fn swap<T: 'static>(&mut self) {
         // Move write → read, clear write
         let write = self.write.downcast_mut::<Vec<T>>().unwrap();

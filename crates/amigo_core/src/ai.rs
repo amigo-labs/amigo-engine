@@ -1,6 +1,5 @@
 use crate::ecs::EntityId;
-use crate::math::{Fix, RenderVec2, SimVec2};
-use serde::{Deserialize, Serialize};
+use crate::math::{RenderVec2, SimVec2};
 
 // ---------------------------------------------------------------------------
 // Generic Finite State Machine

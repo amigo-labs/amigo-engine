@@ -31,6 +31,7 @@ pub trait Walkable {
 #[derive(Clone, Copy)]
 struct AStarNode {
     pos: IVec2,
+    #[allow(dead_code)]
     g_cost: u32,
     f_cost: u32,
 }
