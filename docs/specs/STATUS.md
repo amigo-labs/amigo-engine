@@ -26,7 +26,7 @@ Last updated: 2026-03-15 (full audit against source code)
 | 12 | Animation System | ✅ Implemented | Aseprite integration, state machine (amigo_animation, 1,903 LOC) |
 | 13 | Camera System | ✅ Implemented | Follow, shake, clamp, deadzone (amigo_render/camera.rs) |
 | 14 | Input System | ✅ Implemented | Keyboard, mouse, gamepad, action maps (amigo_input, 944 LOC) |
-| 15 | Audio System | ✅ Implemented | kira wrapper, SFX, music, volume channels (amigo_audio, 1,126 LOC) |
+| 15 | Audio System | ✅ Implemented | kira wrapper, SFX with variants, AdaptiveMusicEngine (BarClock, LayerRule, MusicTransition, Stingers), volume channels (amigo_audio, 1,126 LOC) |
 | 16 | Level Editor | ✅ Implemented | Tile painter, wave editor, collision editor, playtest, heatmap, visual scripting, auto-path, egui UI, wizard (amigo_editor, 5,103 LOC) |
 | 17 | AI Agent Interface | ✅ Implemented | JSON-RPC server with 40+ methods, MCP bridge, screenshot, tick, headless (amigo_api, 1,291 LOC + amigo_mcp, 902 LOC) |
 | 18 | Debug & Profiling | ✅ Implemented | FPS overlay, Tracy integration (feature-gated), F-keys (amigo_debug, 306 LOC) |
@@ -55,7 +55,7 @@ Last updated: 2026-03-15 (full audit against source code)
 | Gap | Status | Notes |
 |-----|--------|-------|
 | Tier 2 Pixel UI widgets | 🗓 Roadmap | Spec describes text_input, slider, dropdown, color_picker, scrollable_list, tree_view in Pixel UI style. Reality: editor uses egui for these. No Pixel UI tier 2 exists |
-| Adaptive Music Engine (runtime) | 🗓 Roadmap | Spec §15.2 describes `AdaptiveMusicEngine`, `BarClock`, `MusicSection`, `LayerRule`, `MusicTransition`. Not implemented in amigo_audio — only basic playback/crossfade exists |
+| ~~Adaptive Music Engine (runtime)~~ | ✅ Implemented | `AdaptiveMusicEngine`, `BarClock`, `MusicSection`, `LayerRule`, `MusicTransition`, `Stinger` with quantization — all in amigo_audio/lib.rs |
 | Isometric tilemap mode | 🗓 Roadmap | Spec §10 describes `GridMode::Isometric`. Not implemented — only orthogonal exists |
 | Chunk streaming tilemap | 🗓 Roadmap | Spec §10 describes `ChunkedTilemap` with load/unload by camera position. Not implemented |
 | Skeleton animation (Phase 2) | 🗓 Roadmap | Spec §12 mentions skeletal animation for large bosses — not implemented |
@@ -102,7 +102,7 @@ Last updated: 2026-03-15 (full audit against source code)
 | 9 | AI Models | ✅ Implemented | ACE-Step 1.5 + Meta AudioGen |
 | 10 | Stem Strategy | ✅ Implemented | Quick Mode (generate & split) + Clean Mode (per-stem conditioned) |
 | 11 | Audio MCP Tools | ✅ Implemented | generate_core_melody, generate_stem, generate_track, generate_variation, extend_track, remix, generate_sfx, generate_ambient, stem_split, loop_trim, normalize, convert, preview, server_status, list_styles |
-| 12 | Adaptive Music System (engine-side) | 🗓 Roadmap | Spec describes full system (BarClock, LayerRule, MusicTransition, stingers). Not implemented in engine. amigo_audio has basic playback only |
+| 12 | Adaptive Music System (engine-side) | ✅ Implemented | Full system in amigo_audio: AdaptiveMusicEngine, BarClock, LayerRule (Lerp/Threshold/Toggle), MusicTransition (CrossfadeOnBar/FadeOutThenPlay/CutOnBar/StingerThen/LayerSwap), Stinger with beat/bar quantization |
 | 13 | Sound Effects Pipeline | ✅ Implemented | SFX categories, variation system (amigo_audio) |
 | 14 | World Audio Styles | ✅ Implemented | Per-world style RON files with instrument mapping, mood prompts, SFX styles |
 | 15 | Audio Post-Processing | ✅ Implemented | Loop detection/trim, loudness normalization, format conversion, loop validation (amigo_audiogen/post_processing.rs) |
@@ -113,9 +113,8 @@ Last updated: 2026-03-15 (full audit against source code)
 
 | Gap | Status | Notes |
 |-----|--------|-------|
-| Adaptive Music runtime | 🗓 Roadmap | §12 is fully spec'd but engine-side implementation (BarClock, vertical layering, horizontal transitions, stingers) doesn't exist in amigo_audio |
-| Stinger quantization | 🗓 Roadmap | Beat/bar-synced stinger playback not in amigo_audio |
-| Music parameter-driven layer volumes | 🗓 Roadmap | MusicParameters → LayerRule evaluation not in amigo_audio |
+| ~~Adaptive Music runtime~~ | ✅ Implemented | Full system exists in amigo_audio: BarClock, vertical layering, horizontal transitions, stingers |
+| RON-based music config loading | 🗓 Roadmap | Spec §12 shows `.music.ron` and `.sequence.ron` config files — engine has the runtime structs but no RON loader for adaptive music definitions |
 
 ---
 
@@ -136,7 +135,7 @@ Last updated: 2026-03-15 (full audit against source code)
 | 11 | Build System (`amigo build`) | 🔧 Partial | `amigo build` exists but only validates project structure. Full asset build pipeline (image → .ait, WAV → OGG, pattern compile) not implemented |
 | 12 | Import Pipeline | 🔧 Partial | Aseprite import works (amigo_assets/aseprite.rs). Tiled, LDTK, MML, VGM, ROM imports not built |
 | 13 | Export Pipeline | 🗓 Roadmap | `amigo export-level` converts .amigo → JSON. Full Tiled/LDTK/Aseprite/MML export not built |
-| 14 | .amigo-pak Binary Format | 🔧 Partial | PakWriter exists (amigo_assets/pak.rs), packs sprites into atlas. Full .amigo-pak format with TOC, type tags, SHA256 manifest per spec not implemented |
+| 14 | .amigo-pak Binary Format | 🔧 Partial | PakWriter exists (amigo_assets/pak.rs) with magic `AMIGOPAK`, asset kinds (Sprite/Audio/Data/Level/Font/AtlasImage/AtlasManifest). Differs from spec: no type tags (0x01-0x07), no LZ4 block compression, no flags, no SHA256 manifest. Functional but simpler format |
 | 15 | CLI Integration | 🔧 Partial | `amigo build`, `amigo pack` exist but don't implement full spec pipeline. `amigo import/export` subcommands not implemented |
 | 16 | Migration & Versioning | 🗓 Roadmap | Spec only |
 | 17 | Future Extensions (§14) | 🗓 Roadmap | World format, dialogue format, shader format, PICO-8/Godot import, tier 2 ROM support — all future |
@@ -163,7 +162,7 @@ The Asset Format spec is a comprehensive design document for the v0.2.0 asset pi
 | 01 | §20 Plugin | Generic trait shown. Missing: lifecycle order, resource registration, plugin dependencies, how plugins interact with ECS |
 | 01 | §24 Genre Modules | Only covers 4 of 18 implemented modules (platformer, farming, bullet_pattern, puzzle). Missing: combat, loot, inventory, turn_combat, dialog, crafting, procgen, economy, ai, navigation, status_effect, projectile, roguelike, fighting |
 | 01 | — | Missing sections: Atmosphere system, save/load system (only appendix A.7), collision events, game presets/templates, level loader, scene transitions |
-| 02 | §12 Adaptive Music | Fully spec'd but marked as engine-side. Should clarify that amigo_audio currently only has basic playback, not the full adaptive system |
+| 02 | §12 Adaptive Music | Engine-side runtime (AdaptiveMusicEngine) IS implemented. Remaining gap: RON config loading for music definitions not built |
 | 03 | §9 Pattern Language | Grammar defined, but no detail on: synthesizer architecture (oscillators, envelopes, filters), sample playback engine, pattern evaluation algorithm, MIDI-like event generation |
 | 03 | §11 Build System | Pipeline steps listed but no detail on: incremental builds, dependency tracking, cache invalidation, parallel processing |
 

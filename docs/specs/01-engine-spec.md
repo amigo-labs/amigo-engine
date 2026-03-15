@@ -1676,7 +1676,7 @@ Window, sprite rendering, sprite batcher, virtual resolution, input, tilemap, ba
 
 Command system, serializable GameState, Aseprite loading, animations, AABB + spatial hash collision, waypoint pathfinding, tower/enemy/projectile systems, tower targeting, wave system, gold/lives, atmosphere manager, SFX manager with variants, gamepad. 18 genre modules (see §24).
 
-> **Note:** Adaptive music engine (vertical layering, bar clock, layer rules, horizontal transitions, stingers) from original Phase 2 scope is **not yet implemented** in amigo_audio. Only basic SFX playback and music crossfade exist. See §15.2 for the full spec.
+> **Note:** The full adaptive music engine (AdaptiveMusicEngine, BarClock, LayerRule, MusicTransition, Stingers) is implemented in amigo_audio. Remaining gap: RON-based music config loading for `.music.ron` / `.sequence.ron` files.
 
 ### ~~Phase 3: Polish & Content~~ — MOVED TO GAME REPO
 
@@ -1704,7 +1704,7 @@ amigo CLI (pack, build, release, publish steam/itch), 10 project templates, 13 s
 
 ### Remaining work (not yet implemented)
 
-- **Adaptive music engine** (§15.2) — BarClock, vertical layering, horizontal transitions, stingers
+- **RON-based adaptive music config** — Engine has AdaptiveMusicEngine runtime, but no `.music.ron` / `.sequence.ron` loader
 - **Isometric tilemap mode** (§10) — only orthogonal implemented
 - **Chunk streaming tilemap** (§10) — opt-in for large worlds
 - **Skeletal animation** (§12) — Phase 2 planned for large bosses

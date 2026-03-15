@@ -608,7 +608,7 @@ amigo_audiogen_list_styles()                    # available world presets
 
 ## 12. Adaptive Music System (Engine-Side)
 
-> **Implementation Status:** 🗓 **Not yet implemented.** This section describes the target design for the adaptive music runtime. Currently, `amigo_audio` provides basic music playback and crossfade only. The full system (BarClock, vertical layering, horizontal transitions, layer rules, stingers) has not been built. The generation side (amigo_audiogen stems, style files) is ready — the engine runtime needs to be implemented to consume these assets.
+> **Implementation Status:** ✅ **Implemented.** The full adaptive music runtime exists in `amigo_audio`: `AdaptiveMusicEngine`, `BarClock`, `MusicSection`, `MusicLayer`, `LayerRule` (Lerp/Threshold/Toggle), `MusicTransition` (CrossfadeOnBar/FadeOutThenPlay/CutOnBar/StingerThen/LayerSwap), `Stinger` with beat/bar quantization (`StingerQuantize`). Remaining gap: RON-based music configuration loading (`.music.ron`, `.sequence.ron`) is not built — the engine structs must be configured programmatically.
 
 This runs inside the Amigo Engine at runtime, powered by kira. No AI at runtime -- everything is pre-generated stems controlled by game parameters.
 
