@@ -48,6 +48,7 @@
 pub mod engine;
 pub mod config;
 pub mod context;
+pub mod splash;
 
 // Re-export all sub-crates for convenient access
 pub use amigo_core;
@@ -90,6 +91,7 @@ pub mod prelude {
     pub use amigo_core::ecs::{self, SparseSet, Component, join, join3, join4, join_mut};
     pub use amigo_core::save::{SaveManager, SaveConfig, SlotInfo, SaveError};
     pub use amigo_core::scheduler::{TickScheduler, CallbackId};
+    pub use amigo_core::{SpatialHash, CollisionWorld, CollisionShape, FlowField, WaypointPath, PathFollower, PathRequest, Walkable, find_path};
     pub use amigo_scene::SceneAction;
     pub use amigo_input::InputState;
     pub use amigo_render::{Camera, CameraMode, Easing, FontId, FontManager, ArtStyle, SamplerMode};

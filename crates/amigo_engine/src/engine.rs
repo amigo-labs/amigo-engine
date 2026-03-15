@@ -1,13 +1,16 @@
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
+use crate::splash::{self, SplashState};
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_debug::DebugOverlay;
 use amigo_render::renderer::Renderer;
 use amigo_render::sprite_batcher::SpriteInstance;
+#[cfg(feature = "editor")]
+use amigo_render::egui_integration::egui;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, info_span};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -95,6 +98,23 @@ impl EngineBuilder {
         self
     }
 
+    /// Enable or disable the default "Powered by Amigo Engine" splash screen.
+    /// Enabled by default.
+    pub fn splash(mut self, enabled: bool) -> Self {
+        self.config.splash.enabled = enabled;
+        self
+    }
+
+    /// Enable headless mode (no window/renderer). The engine runs simulation
+    /// only, controlled via the JSON-RPC API. Implies `api_server: true`.
+    pub fn headless(mut self, enabled: bool) -> Self {
+        self.config.dev.headless = enabled;
+        if enabled {
+            self.config.dev.api_server = true;
+        }
+        self
+    }
+
     pub fn config(mut self, config: EngineConfig) -> Self {
         self.config = config;
         self
@@ -140,6 +160,18 @@ impl Engine {
         amigo_debug::init_logging();
         info!("Amigo Engine starting: {}", self.config.window.title);
 
+        #[cfg(feature = "api")]
+        if self.config.dev.headless {
+            self.run_headless(game);
+            return;
+        }
+
+        #[cfg(not(feature = "api"))]
+        if self.config.dev.headless {
+            error!("Headless mode requires the 'api' feature. Enable it with: cargo run --features api");
+            return;
+        }
+
         let event_loop = EventLoop::new().expect("Failed to create event loop");
         event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -153,6 +185,169 @@ impl Engine {
         };
 
         event_loop.run_app(&mut app).expect("Event loop failed");
+    }
+
+    /// Run the engine in headless mode: simulation only, no window or renderer.
+    /// Controlled entirely via the JSON-RPC API server.
+    #[cfg(feature = "api")]
+    fn run_headless<G: Game>(self, mut game: G) {
+        use amigo_api::handler::{new_shared_state, ApiCommand};
+        use amigo_api::server::ApiServer;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        info!("Starting in HEADLESS mode (no window/renderer)");
+        info!("API server on port {}", self.config.dev.api_port);
+
+        let vw = self.config.render.virtual_width as f32;
+        let vh = self.config.render.virtual_height as f32;
+        let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+
+        // Apply plugin registrations
+        let plugin_ctx = self.plugin_ctx;
+        for reg in plugin_ctx.event_registrations {
+            reg(&mut game_ctx.events);
+        }
+        for ins in plugin_ctx.resource_insertions {
+            ins(&mut game_ctx.resources);
+        }
+
+        // Initialize plugins
+        for plugin in &self.plugins {
+            plugin.init(&mut game_ctx);
+        }
+
+        // Initialize the game
+        game.init(&mut game_ctx);
+
+        // Start the API server
+        let shared_state = new_shared_state();
+        let _api_server = match ApiServer::start(self.config.dev.api_port, shared_state.clone()) {
+            Ok(server) => server,
+            Err(e) => {
+                error!("Failed to start API server: {}", e);
+                return;
+            }
+        };
+
+        info!("Headless engine ready. Waiting for commands via JSON-RPC...");
+
+        // Signal handling for graceful shutdown
+        let running = Arc::new(AtomicBool::new(true));
+        {
+            let running = running.clone();
+            let _ = ctrlc::set_handler(move || {
+                running.store(false, Ordering::Relaxed);
+            });
+        }
+
+        let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
+        let mut paused = false;
+
+        // Main headless loop: process API commands, run ticks on demand
+        while running.load(Ordering::Relaxed) {
+            // Drain commands from the API
+            let commands = {
+                let mut state = shared_state.lock().unwrap();
+                state.drain_commands()
+            };
+
+            let mut ticks_requested: u64 = 0;
+            let mut quit = false;
+
+            for cmd in &commands {
+                match cmd.action.as_str() {
+                    "pause" => {
+                        paused = true;
+                        info!("Headless: paused");
+                    }
+                    "unpause" => {
+                        paused = false;
+                        info!("Headless: unpaused");
+                    }
+                    "tick" => {
+                        let count = cmd.params.get("count")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(1);
+                        ticks_requested += count;
+                    }
+                    "quit" => {
+                        quit = true;
+                    }
+                    _ => {
+                        // Other commands can be handled by game code via resources
+                    }
+                }
+            }
+
+            if quit {
+                info!("Headless: quit command received");
+                break;
+            }
+
+            // Execute requested ticks at max CPU speed
+            if ticks_requested > 0 {
+                let start = Instant::now();
+                for _ in 0..ticks_requested {
+                    game_ctx.time.dt = tick_duration as f32;
+                    game_ctx.time.elapsed += tick_duration;
+                    game_ctx.input.begin_frame();
+
+                    let action = game.update(&mut game_ctx);
+                    game_ctx.time.tick += 1;
+
+                    match action {
+                        amigo_scene::SceneAction::Quit => {
+                            quit = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+
+                    game_ctx.world.flush();
+                    game_ctx.events.flush();
+                    game_ctx.particles.update(tick_duration as f32);
+                }
+                let elapsed = start.elapsed();
+                info!(
+                    "Headless: executed {} ticks in {:.1}ms ({:.0} ticks/sec)",
+                    ticks_requested,
+                    elapsed.as_secs_f64() * 1000.0,
+                    ticks_requested as f64 / elapsed.as_secs_f64().max(0.000001),
+                );
+
+                if quit {
+                    break;
+                }
+            }
+
+            // Handle screenshot requests (no GPU in headless — return error)
+            {
+                let mut state = shared_state.lock().unwrap();
+                let requests = state.drain_screenshot_requests();
+                for req in &requests {
+                    state.screenshot_results.push(serde_json::json!({
+                        "ok": false,
+                        "error": "Screenshots not available in headless mode (no GPU renderer)",
+                        "path": req.path,
+                    }));
+                }
+            }
+
+            // Update shared state snapshot for API queries
+            {
+                let mut state = shared_state.lock().unwrap();
+                state.snapshot.tick = game_ctx.time.tick;
+                state.snapshot.entity_count = game_ctx.world.entity_count();
+                state.snapshot.paused = paused;
+            }
+
+            // If no ticks were requested, sleep briefly to avoid busy-waiting
+            if ticks_requested == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+
+        info!("Headless engine shutting down");
     }
 }
 
@@ -178,6 +373,17 @@ struct EngineState {
     sprite_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
     accumulator: f64,
+    splash: Option<SplashState>,
+    #[cfg(feature = "api")]
+    api_state: Option<ApiEngineState>,
+    #[cfg(feature = "editor")]
+    egui: amigo_render::egui_integration::EguiRenderer,
+}
+
+#[cfg(feature = "api")]
+struct ApiEngineState {
+    shared_state: amigo_api::handler::SharedState,
+    _server: amigo_api::server::ApiServer,
 }
 
 struct EngineApp<G: Game> {
@@ -248,10 +454,44 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             plugin.init(&mut game_ctx);
         }
 
-        self.game.init(&mut game_ctx);
-
         // Upload font atlas textures to GPU
         upload_font_atlases(&mut game_ctx, &mut renderer);
+
+        let splash = if self.config.splash.enabled {
+            Some(SplashState::new())
+        } else {
+            // No splash — init game immediately
+            self.game.init(&mut game_ctx);
+            None
+        };
+
+        // Start API server if configured
+        #[cfg(feature = "api")]
+        let api_state = if self.config.dev.api_server {
+            let shared = amigo_api::handler::new_shared_state();
+            match amigo_api::server::ApiServer::start(self.config.dev.api_port, shared.clone()) {
+                Ok(server) => {
+                    info!("API server started on port {}", self.config.dev.api_port);
+                    Some(ApiEngineState {
+                        shared_state: shared,
+                        _server: server,
+                    })
+                }
+                Err(e) => {
+                    error!("Failed to start API server: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        #[cfg(feature = "editor")]
+        let egui = amigo_render::egui_integration::EguiRenderer::new(
+            &renderer.device,
+            renderer.surface_config.format,
+            &window,
+        );
 
         info!("Engine initialized successfully");
 
@@ -265,11 +505,22 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             sprite_draw_list: Vec::new(),
             last_frame: Instant::now(),
             accumulator: 0.0,
+            splash,
+            #[cfg(feature = "api")]
+            api_state,
+            #[cfg(feature = "editor")]
+            egui,
         });
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(state) = &mut self.state else { return };
+
+        // Forward events to egui first; if consumed, skip game input
+        #[cfg(feature = "editor")]
+        let egui_consumed = state.egui.handle_window_event(&state.window, &event);
+        #[cfg(not(feature = "editor"))]
+        let egui_consumed = false;
 
         match event {
             WindowEvent::CloseRequested => {
@@ -282,9 +533,11 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
-                state.game_ctx.input.handle_key_event(event.physical_key, event.state);
+                if !egui_consumed {
+                    state.game_ctx.input.handle_key_event(event.physical_key, event.state);
+                }
 
-                // Debug overlay toggle
+                // Debug overlay toggle (always active, even when egui has focus)
                 if event.state == ElementState::Pressed {
                     if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
                         match code {
@@ -299,29 +552,35 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                state.game_ctx.input.handle_mouse_move(position.x as f32, position.y as f32);
+                if !egui_consumed {
+                    state.game_ctx.input.handle_mouse_move(position.x as f32, position.y as f32);
 
-                // Update world-space mouse position
-                let (ww, wh) = state.renderer.window_size();
-                let world_pos = state.game_ctx.camera.screen_to_world(
-                    position.x as f32,
-                    position.y as f32,
-                    ww as f32,
-                    wh as f32,
-                );
-                state.game_ctx.input.set_mouse_world_pos(world_pos);
+                    // Update world-space mouse position
+                    let (ww, wh) = state.renderer.window_size();
+                    let world_pos = state.game_ctx.camera.screen_to_world(
+                        position.x as f32,
+                        position.y as f32,
+                        ww as f32,
+                        wh as f32,
+                    );
+                    state.game_ctx.input.set_mouse_world_pos(world_pos);
+                }
             }
 
             WindowEvent::MouseInput { state: btn_state, button, .. } => {
-                state.game_ctx.input.handle_mouse_button(button, btn_state);
+                if !egui_consumed {
+                    state.game_ctx.input.handle_mouse_button(button, btn_state);
+                }
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let scroll = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                    winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
-                };
-                state.game_ctx.input.handle_scroll(scroll);
+                if !egui_consumed {
+                    let scroll = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                        winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
+                    };
+                    state.game_ctx.input.handle_scroll(scroll);
+                }
             }
 
             WindowEvent::RedrawRequested => {
@@ -331,6 +590,49 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                 // Cap dt to prevent spiral of death
                 let dt = dt.min(0.25);
+
+                // ── Splash screen phase ──────────────────────────────
+                if let Some(ref mut splash_state) = state.splash {
+                    let finished = splash_state.tick(dt);
+                    let splash_alpha = splash_state.alpha();
+
+                    state.sprite_draw_list.clear();
+                    let vw = state.renderer.camera.virtual_width;
+                    let vh = state.renderer.camera.virtual_height;
+                    let white_tex = state.renderer.white_texture_id;
+                    splash::render_splash(
+                        &mut state.sprite_draw_list,
+                        white_tex,
+                        vw,
+                        vh,
+                        splash_alpha,
+                    );
+
+                    for sprite in &state.sprite_draw_list {
+                        state.renderer.batcher.push(sprite.clone());
+                    }
+
+                    match state.renderer.render() {
+                        Ok(_) => {}
+                        Err(wgpu::SurfaceError::Lost) => {
+                            let (w, h) = state.renderer.window_size();
+                            state.renderer.resize(w, h);
+                        }
+                        Err(e) => {
+                            error!("Render error during splash: {:?}", e);
+                        }
+                    }
+
+                    if finished {
+                        state.splash = None;
+                        self.game.init(&mut state.game_ctx);
+                    }
+                    return;
+                }
+
+                // ── Normal game loop ─────────────────────────────────
+                let _frame_span = info_span!("frame").entered();
+
                 state.accumulator += dt;
 
                 state.game_ctx.time.dt = dt as f32;
@@ -347,9 +649,14 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // Fixed timestep simulation
                 let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
                 while state.accumulator >= tick_duration {
+                    let _tick_span = info_span!("tick").entered();
+
                     state.game_ctx.input.begin_frame();
 
-                    let action = self.game.update(&mut state.game_ctx);
+                    let action = {
+                        let _update_span = info_span!("game_update").entered();
+                        self.game.update(&mut state.game_ctx)
+                    };
                     state.game_ctx.time.tick += 1;
 
                     match action {
@@ -360,8 +667,11 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                         _ => {}
                     }
 
-                    state.game_ctx.world.flush();
-                    state.game_ctx.events.flush();
+                    {
+                        let _flush_span = info_span!("ecs_flush").entered();
+                        state.game_ctx.world.flush();
+                        state.game_ctx.events.flush();
+                    }
                     state.game_ctx.particles.update(tick_duration as f32);
                     state.accumulator -= tick_duration;
                 }
@@ -379,6 +689,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // Render
                 state.sprite_draw_list.clear();
                 {
+                    let _draw_span = info_span!("game_draw").entered();
                     let camera_pos = state.renderer.camera.effective_position();
                     let vw = state.renderer.camera.virtual_width;
                     let vh = state.renderer.camera.virtual_height;
@@ -406,6 +717,33 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     state.renderer.batcher.push(sprite.clone());
                 }
 
+                // Process screenshot requests from API (before render clears batcher)
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    let requests = {
+                        let mut s = api.shared_state.lock().unwrap();
+                        s.drain_screenshot_requests()
+                    };
+                    for req in &requests {
+                        let result = state.renderer.capture_screenshot(&req.path);
+                        let mut s = api.shared_state.lock().unwrap();
+                        match result {
+                            Ok(()) => {
+                                s.screenshot_results.push(serde_json::json!({
+                                    "ok": true,
+                                    "path": req.path,
+                                }));
+                            }
+                            Err(e) => {
+                                s.screenshot_results.push(serde_json::json!({
+                                    "ok": false,
+                                    "error": e,
+                                }));
+                            }
+                        }
+                    }
+                }
+
                 // Update debug overlay
                 state.debug.update(
                     dt,
@@ -414,6 +752,59 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 );
 
                 // Render frame
+                let _render_span = info_span!("gpu_render").entered();
+
+                #[cfg(feature = "editor")]
+                {
+                    // Render sprites first, then overlay egui on top
+                    match state.renderer.begin_frame() {
+                        Ok(frame) => {
+                            // Submit sprite pass
+                            state.renderer.queue.submit(std::iter::once(frame.encoder.finish()));
+
+                            // Render egui overlay on top
+                            let (sw, sh) = state.renderer.window_size();
+                            let screen_desc = amigo_render::egui_integration::egui_wgpu::ScreenDescriptor {
+                                size_in_pixels: [sw, sh],
+                                pixels_per_point: state.window.scale_factor() as f32,
+                            };
+                            let entity_count = state.game_ctx.world.entity_count();
+                            let fps = state.debug.fps();
+                            state.egui.render(
+                                &state.renderer.device,
+                                &state.renderer.queue,
+                                &state.window,
+                                &frame.view,
+                                screen_desc,
+                                |ctx| {
+                                    egui::Window::new("Editor")
+                                        .default_open(false)
+                                        .show(ctx, |ui| {
+                                            ui.label("Amigo Editor (egui)");
+                                            ui.label(format!("Entities: {}", entity_count));
+                                            ui.label(format!("FPS: {:.0}", fps));
+                                        });
+                                },
+                            );
+
+                            frame.output.present();
+                            state.renderer.batcher.clear();
+                        }
+                        Err(wgpu::SurfaceError::Lost) => {
+                            let (w, h) = state.renderer.window_size();
+                            state.renderer.resize(w, h);
+                        }
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            error!("GPU out of memory");
+                            event_loop.exit();
+                        }
+                        Err(e) => {
+                            error!("Render error: {:?}", e);
+                        }
+                    }
+                }
+
+                #[cfg(not(feature = "editor"))]
                 match state.renderer.render() {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => {
@@ -429,8 +820,21 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     }
                 }
 
+                // Update API snapshot after frame
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    let mut s = api.shared_state.lock().unwrap();
+                    s.snapshot.tick = state.game_ctx.time.tick;
+                    s.snapshot.fps = state.debug.fps() as f32;
+                    s.snapshot.entity_count = state.game_ctx.world.entity_count();
+                    s.snapshot.draw_calls = state.renderer.draw_call_count();
+                }
+
                 // Swap camera back to GameContext so game code can read updated state
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
+
+                // Mark frame end for Tracy profiler
+                amigo_debug::frame_mark();
             }
 
             _ => {}

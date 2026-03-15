@@ -149,6 +149,89 @@ impl AssetManager {
     pub fn base_path(&self) -> &Path {
         &self.base_path
     }
+
+    /// Load assets from a `game.pak` file. Returns the PakReader for
+    /// further queries (audio, data, levels, fonts).
+    ///
+    /// Sprites are loaded from the embedded atlas + manifest. Other asset
+    /// types remain accessible via the returned reader.
+    pub fn load_from_pak(&mut self, pak_path: &Path) -> Result<crate::pak::PakReader, AssetError> {
+        use crate::pak::PakReader;
+
+        let reader = PakReader::open(pak_path).map_err(|e| AssetError::LoadFailed {
+            path: pak_path.to_string_lossy().to_string(),
+            reason: e.to_string(),
+        })?;
+
+        // Load atlas manifest to get sprite UV coordinates
+        if let Some(manifest_data) = reader.read_entry("atlas.ron") {
+            let manifest_str = std::str::from_utf8(manifest_data).map_err(|e| {
+                AssetError::LoadFailed {
+                    path: "atlas.ron".into(),
+                    reason: e.to_string(),
+                }
+            })?;
+
+            let entries: Vec<(String, [f32; 4])> =
+                ron::from_str(manifest_str).map_err(|e| AssetError::LoadFailed {
+                    path: "atlas.ron".into(),
+                    reason: e.to_string(),
+                })?;
+
+            // Load atlas image
+            if let Some(atlas_data) = reader.read_entry("atlas.png") {
+                let atlas_img = image::load_from_memory(atlas_data)
+                    .map_err(|e| AssetError::LoadFailed {
+                        path: "atlas.png".into(),
+                        reason: e.to_string(),
+                    })?
+                    .to_rgba8();
+
+                let atlas_w = atlas_img.width();
+                let atlas_h = atlas_img.height();
+
+                // Register each sprite with its UV rect from the atlas
+                for (name, [u, v, w, h]) in &entries {
+                    let pixel_x = (u * atlas_w as f32) as u32;
+                    let pixel_y = (v * atlas_h as f32) as u32;
+                    let pixel_w = (w * atlas_w as f32) as u32;
+                    let pixel_h = (h * atlas_h as f32) as u32;
+
+                    // Extract sub-image for this sprite
+                    let sub_img = image::imageops::crop_imm(
+                        &atlas_img,
+                        pixel_x,
+                        pixel_y,
+                        pixel_w,
+                        pixel_h,
+                    )
+                    .to_image();
+
+                    self.sprite_names.push(name.clone());
+                    self.sprites.insert(
+                        name.clone(),
+                        SpriteData {
+                            name: name.clone(),
+                            width: pixel_w,
+                            height: pixel_h,
+                            image: sub_img,
+                            uv: amigo_core::Rect::new(*u, *v, *w, *h),
+                            texture_index: 0,
+                        },
+                    );
+                }
+
+                info!(
+                    "Loaded {} sprites from pak atlas ({}x{})",
+                    entries.len(),
+                    atlas_w,
+                    atlas_h,
+                );
+            }
+        }
+
+        Ok(reader)
+    }
 }
 
 /// Simple Levenshtein distance for fuzzy matching.

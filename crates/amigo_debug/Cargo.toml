@@ -3,9 +3,14 @@ name = "amigo_debug"
 version.workspace = true
 edition.workspace = true
 
+[features]
+tracy = ["dep:tracing-tracy", "dep:tracy-client"]
+
 [dependencies]
 amigo_core = { workspace = true }
 amigo_render = { workspace = true }
 amigo_ui = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-tracy = { workspace = true, optional = true, features = ["enable"] }
+tracy-client = { workspace = true, optional = true, features = ["enable"] }

@@ -6,8 +6,9 @@ edition.workspace = true
 [features]
 default = ["audio", "input"]
 audio = ["dep:amigo_audio"]
-editor = ["dep:amigo_editor"]
-api = ["dep:amigo_api"]
+editor = ["dep:amigo_editor", "amigo_render/editor"]
+api = ["dep:amigo_api", "dep:ctrlc", "dep:serde_json"]
+tracy = ["amigo_debug/tracy"]
 input = []
 
 [dependencies]
@@ -24,6 +25,8 @@ amigo_debug = { workspace = true }
 amigo_audio = { workspace = true, optional = true }
 amigo_editor = { workspace = true, optional = true }
 amigo_api = { workspace = true, optional = true }
+ctrlc = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 tracing = { workspace = true }

@@ -584,28 +584,293 @@ File watcher on assets directory. Sprites, configs, levels, audio, shaders all h
 
 ---
 
-## 10-27 & Appendix
+## 10. Tilemap System
 
-See full specification sections in the source document for:
-- Tilemap System (Section 10)
-- Pathfinding (Section 11)
-- Animation System (Section 12)
-- Camera System (Section 13)
-- Input System (Section 14)
-- Audio System & Audio Generation Pipeline (Sections 15, 15b)
-- Level Editor, Art Studio & Art Generation Pipeline (Sections 16, 16b, 16c)
-- AI Agent Interface (Section 17)
-- Debug & Profiling (Section 18)
-- Build & Distribution (Section 19)
-- Plugin System (Section 20)
-- UI System - Dual Layer: Pixel UI + egui (Section 21)
-- Error Handling & Logging (Section 22)
-- Configuration (Section 23)
-- Starter Template (Section 24)
-- Game-Specific Design (Section 25)
-- Implementation Phases (Section 26)
-- Key Decisions Summary (Section 27)
-- Appendix A: Detailed Design Decisions
+First-class engine feature. Multiple layers, auto-tiling (bitmask-based), animated tiles, collision layer with solid/one-way/slope/trigger types.
+
+### Grid Modes
+
+```rust
+pub enum GridMode {
+    Orthogonal { tile_width: u32, tile_height: u32 },
+    Isometric { tile_width: u32, tile_height: u32 },
+}
+```
+
+Both modes share the same API -- the engine handles coordinate conversion internally. Isometric rendering sorts tiles back-to-front automatically.
+
+### Chunk Streaming
+
+For large worlds, the tilemap is divided into chunks that load/unload based on camera position. For small levels (TD, Platformer): entire map in memory, no streaming needed. Chunk streaming is opt-in.
+
+### Tilemap API
+
+```rust
+let is_solid = tilemap.is_solid(x, y);
+tilemap.set(layer, x, y, TileId(42));
+tilemap.set_terrain(x, y, TerrainType::Water); // auto-selects variant
+```
+
+---
+
+## 11. Pathfinding
+
+Engine-level pathfinding for any genre.
+
+- **A* on Tile Grid:** Configurable 4-way or 8-way movement, max search budget
+- **Predefined Waypoint Paths (TD):** Editor-defined waypoints, no dynamic pathfinding
+- **Flow Fields (optional):** For horde modes / RTS. Grid-sized field, O(1) per entity lookup. Opt-in.
+
+---
+
+## 12. Animation System
+
+Sprite animations from Aseprite tags. Frame-based with per-frame duration (fixed-point). Looping/one-shot/ping-pong modes. State machine for animation transitions. Phase 2: skeletal animation for large bosses.
+
+---
+
+## 13. Camera System
+
+Pre-built patterns: Fixed, Follow (with deadzone + lookahead), FollowSmooth, ScreenLock (Zelda), RoomTransition (Metroidvania), BossArena, CinematicPan.
+
+Effects: shake (configurable decay), zoom (with easing).
+
+Parallax: each tile layer has independent scroll factor.
+
+---
+
+## 14. Input System
+
+Abstract action mapping (RON-defined). Keyboard, mouse, gamepad (gilrs). API: `pressed()`, `released()`, `held()`, `axis()`, `mouse_pos()`, `mouse_world_pos()`.
+
+---
+
+## 15. Audio System
+
+Wrapper around `kira`. Three subsystems: SFX playback, Adaptive Music Engine, and Ambient layers.
+
+### 15.1 SFX Playback
+
+Per-sound cooldowns, concurrency limits, pitch variance, sound variants. Spatial SFX with distance-based volume falloff.
+
+```rust
+res.audio.play_sfx("cannon_fire"); // picks random variant
+```
+
+### 15.2 Adaptive Music Engine
+
+Vertical layering (multiple stems synchronized, volume driven by game parameters) + horizontal re-sequencing (bar-synced section transitions) + stingers (one-shot cues quantized to beat/bar).
+
+```rust
+pub struct AdaptiveMusicEngine {
+    active_section: Option<MusicSection>,
+    pending_transition: Option<(String, MusicTransition)>,
+    bar_clock: BarClock,
+    params: MusicParameters,
+    stinger_queue: Vec<StingerRequest>,
+}
+```
+
+### 15.3 Ambient Layer
+
+Looping environmental audio per world. Crossfades when atmosphere changes.
+
+### 15.4 Volume Channels
+
+Master -> Music / SFX / Ambient. All configurable and saved.
+
+---
+
+## 15b. Audio Generation Pipeline
+
+See `docs/plans/02-asset-pipeline-spec.md` for the complete amigo_audiogen MCP server specification: ACE-Step music generation, AudioGen SFX, adaptive music stems, MCP tools.
+
+---
+
+## 16. Integrated Level Editor
+
+In-engine tool, uses own Pixel UI system, enabled via `--features editor`. Zero overhead in release builds. Toggle with `Tab` between Play and Edit mode.
+
+- **Phase 1:** Tile painter, entity placement, path editor, undo/redo, `.amigo` format
+- **Phase 2:** Edit-while-playing, live preview
+- **Phase 3:** AI-assisted features (auto-pathing, wave balancing, auto-decoration, heatmaps)
+
+---
+
+## 16b. Art Studio
+
+Managed ComfyUI integration with egui panel for in-editor art generation. See `docs/plans/02-asset-pipeline-spec.md`.
+
+---
+
+## 16c. Art Generation Pipeline
+
+See `docs/plans/02-asset-pipeline-spec.md` for the complete amigo_artgen MCP server specification: ComfyUI workflows, style definitions, post-processing pipeline.
+
+---
+
+## 17. AI Agent Interface (amigo_api + amigo_mcp)
+
+### Architecture (Two Layers)
+
+```
+Claude Code <-> MCP (stdio) <-> amigo_mcp <-> JSON-RPC (TCP) <-> amigo_api
+```
+
+`amigo_api` is the engine's raw IPC interface (JSON-RPC 2.0). `amigo_mcp` translates MCP protocol to JSON-RPC.
+
+### MCP Tools
+
+**Observation:** screenshot, get_state, list_entities, inspect_entity, perf
+**Simulation:** place_tower, sell_tower, upgrade_tower, start_wave, tick (headless), set_speed, pause/unpause, spawn
+**Editor:** new_level, paint_tile, fill_rect, place_entity, add_path, auto_decorate, save/load, undo/redo
+**Audio:** play, play_music, crossfade, set_volume
+**Save/Load/Replay:** save, load, replay_record, replay_play
+**Debug:** dump_state, tile_collision, step, state_crc
+
+### Headless Mode
+
+```bash
+amigo run --api --headless --level caribbean_01
+```
+
+Simulation runs at max CPU speed. 3-minute game in <1 second.
+
+### Event Streaming
+
+Subscribe to events: enemy_killed, wave_complete, tower_fired, game_over.
+
+See `docs/ai-integration.md` for the complete AI integration guide.
+
+---
+
+## 18. Debug & Profiling
+
+- **Debug Overlay (F1):** FPS, entity count, draw calls, memory
+- **Visual Debug:** F2 Grid, F3 Collision, F4 Paths, F5 Zones, F6 Perf, F7 Entities, F8 Network
+- **Dev Mode:** Hot reload, state snapshots, tick stepping, speed control
+- **Tracy:** Integration planned for detailed profiling
+
+---
+
+## 19. Build & Distribution
+
+```bash
+amigo new my_game              # scaffold project
+amigo run                      # dev build + run
+amigo run --api                # with AI API server
+amigo run --api --headless     # headless simulation
+amigo pack                     # assets -> game.pak
+amigo build --release          # optimized binary
+amigo release --target windows,linux  # full pipeline
+```
+
+Release profile: LTO, single codegen unit, stripped, abort on panic.
+
+---
+
+## 20. Plugin System
+
+Feature flags (compile-time) + Plugin trait (runtime lifecycle).
+
+```rust
+pub trait Plugin {
+    fn build(&self, ctx: &mut PluginContext);
+    fn init(&self, ctx: &mut GameContext) {}
+}
+
+Engine::build()
+    .add_plugin(AudioPlugin)
+    .add_plugin(InputPlugin)
+    .build()
+    .run(MyGame);
+```
+
+---
+
+## 21. UI System (Pixel-Native, Two Tiers)
+
+### Tier 1: Game HUD (always available)
+
+```rust
+ui.pixel_text("Gold: 350", pos, Color::GOLD);
+if ui.sprite_button("btn_archer", pos) { /* select tower */ }
+ui.progress_bar(rect, health / max_health, Color::RED);
+```
+
+### Tier 2: Editor Widgets (behind `editor` feature flag)
+
+Text inputs, sliders, dropdowns, color pickers, scrollable containers, tree views.
+
+---
+
+## 22. Error Handling & Logging
+
+- **Engine init:** `Result<T, EngineError>` -- fatal if fails
+- **Game loop:** No `Result` in hot path, graceful fallbacks
+- **Asset loading:** Dev mode: fuzzy-match suggestion. Release mode: fallback sprite
+- **Logging:** `tracing` crate, env-configurable (`AMIGO_LOG=debug`)
+
+---
+
+## 23. Configuration (Three Layers)
+
+| Layer | Format | File | Hot Reload | Purpose |
+|-------|--------|------|------------|---------|
+| Engine | TOML | `amigo.toml` | No | Window, rendering, audio, dev settings |
+| Input | RON | `input.ron` | Yes | Key/gamepad bindings |
+| Game Data | RON | `assets/data/*.ron` | Yes (dev) | Tower stats, wave configs, etc. |
+
+---
+
+## 24. Additional Engine Systems (Phase 2+)
+
+Genre-specific engine modules (data-driven, game defines content):
+
+- **`farming.rs`** -- Growth stages, calendar system, farm tile grid
+- **`bullet_pattern.rs`** -- Bullet pool, pattern shapes (radial, spiral, aimed, wave), boss sequencer
+- **`puzzle.rs`** -- Generic grid, pattern matching, move system, block spawning
+- **`platformer.rs`** -- Jump buffering, coyote time, variable jump, wall interactions, dash, moving platforms
+
+---
+
+## 25. Game-Specific Design
+
+Asset pipeline decisions are maintained in `docs/plans/02-asset-pipeline-spec.md`.
+
+---
+
+## 26. Implementation Phases
+
+| Phase | Focus | Duration |
+|-------|-------|----------|
+| 1 | Engine Foundation (window, renderer, input, tilemap, ECS, game loop) | 4-6 weeks |
+| 2 | Game Systems (commands, animations, collision, pathfinding, audio) | 4-6 weeks |
+| 4 | Editor (tile painter, entity placement, path editor, undo/redo) | 3-5 weeks |
+| 5 | AI API + Asset Pipelines (IPC, MCP, artgen, audiogen) | 3-4 weeks |
+| 6 | Multiplayer (transport, lockstep, UDP, lobby, replay) | 3-5 weeks |
+| 7 | AI Editor Features (auto-pathing, balancing, heatmaps) | 3-5 weeks |
+| 8 | Release (CLI, typed handles, CI/CD, distribution) | 2-3 weeks |
+
+---
+
+## 27. Key Decisions Summary
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Language | Pure Rust | Safety, compiler feedback, AI-dev friendly |
+| Rendering | wgpu | Cross-platform GPU (Vulkan/DX12/Metal/WebGPU) |
+| ECS | SparseSet + Change Tracking | Cache-friendly, no macro magic |
+| Arithmetic | Fixed-Point Q16.16 | Deterministic simulation |
+| Audio | kira | Tweening, spatial, streaming, crossfade |
+| UI | Own Pixel UI (two tiers) | Consistent pixel art aesthetic |
+| Sprites | Aseprite native | No manual export, tag-based animations |
+| Tilemap | Orthogonal + Isometric | First-class, auto-tiling, chunk streaming |
+| Networking | Client-Server (lockstep UDP) | Multiplayer-ready, enables replays |
+| AI Interface | amigo_api + amigo_mcp | MCP for Claude Code, JSON-RPC for scripts |
+| Art Pipeline | amigo_artgen + ComfyUI | External backend, post-processing in Rust |
+| Audio Pipeline | amigo_audiogen + ACE-Step | Local GPU, royalty-free |
+| Splashscreen | Default "Powered by Amigo Engine" | Opt-out via `EngineBuilder::splash(false)` |
 
 ---
 

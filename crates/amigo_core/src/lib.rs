@@ -56,6 +56,8 @@ pub use save::{SaveManager, SaveConfig, SlotInfo, SaveError};
 pub use command::{CommandQueue, CommandLog};
 pub use physics::{PhysicsWorld, RigidBody, BodyType, PhysicsContact};
 pub use collision_events::{ContactTracker, CollisionEvent, CollisionPhase};
+pub use collision::{SpatialHash, CollisionWorld, CollisionShape, ContactInfo, TriggerZone, TriggerEvent};
+pub use pathfinding::{FlowField, WaypointPath, PathFollower, PathRequest, Walkable, find_path};
 pub use events::EventHub;
 pub use resources::Resources;
 pub use economy::Economy;

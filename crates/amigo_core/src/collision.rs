@@ -234,6 +234,17 @@ pub fn shape_to_aabb(pos: RenderVec2, shape: &CollisionShape) -> Rect {
     }
 }
 
+/// Return the number of occupied cells in the spatial hash.
+impl SpatialHash {
+    pub fn cell_count(&self) -> usize {
+        self.cells.len()
+    }
+
+    pub fn entity_count(&self) -> usize {
+        self.entity_cells.len()
+    }
+}
+
 pub fn check_shapes(pos_a: RenderVec2, shape_a: &CollisionShape, pos_b: RenderVec2, shape_b: &CollisionShape) -> Option<ContactInfo> {
     match (shape_a, shape_b) {
         (CollisionShape::Aabb(a), CollisionShape::Aabb(b)) => {
@@ -249,5 +260,161 @@ pub fn check_shapes(pos_a: RenderVec2, shape_a: &CollisionShape, pos_b: RenderVe
             let c = circle_vs_aabb(pos_b.x + cx, pos_b.y + cy, *radius, &Rect::new(pos_a.x + a.x, pos_a.y + a.y, a.w, a.h))?;
             Some(ContactInfo { penetration: c.penetration, normal: RenderVec2::new(-c.normal.x, -c.normal.y) })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::EntityId;
+
+    #[test]
+    fn aabb_overlap() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(5.0, 5.0, 10.0, 10.0);
+        assert!(aabb_vs_aabb(&a, &b).is_some());
+    }
+
+    #[test]
+    fn aabb_no_overlap() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(20.0, 20.0, 10.0, 10.0);
+        assert!(aabb_vs_aabb(&a, &b).is_none());
+    }
+
+    #[test]
+    fn circle_overlap() {
+        assert!(circle_vs_circle(0.0, 0.0, 5.0, 3.0, 0.0, 5.0).is_some());
+    }
+
+    #[test]
+    fn circle_no_overlap() {
+        assert!(circle_vs_circle(0.0, 0.0, 5.0, 20.0, 0.0, 5.0).is_none());
+    }
+
+    #[test]
+    fn spatial_hash_insert_and_query() {
+        let mut hash = SpatialHash::new(32.0);
+        let e1 = EntityId::from_raw(1, 0);
+        let e2 = EntityId::from_raw(2, 0);
+        let e3 = EntityId::from_raw(3, 0);
+
+        hash.insert(e1, &Rect::new(0.0, 0.0, 16.0, 16.0));
+        hash.insert(e2, &Rect::new(100.0, 100.0, 16.0, 16.0));
+        hash.insert(e3, &Rect::new(8.0, 8.0, 16.0, 16.0));
+
+        // Query near e1 — should find e1 and e3 (overlapping region)
+        let near_origin = hash.query_aabb(&Rect::new(0.0, 0.0, 20.0, 20.0));
+        assert!(near_origin.contains(&e1));
+        assert!(near_origin.contains(&e3));
+        assert!(!near_origin.contains(&e2));
+
+        // Query near e2 — should find only e2
+        let near_e2 = hash.query_aabb(&Rect::new(90.0, 90.0, 30.0, 30.0));
+        assert!(near_e2.contains(&e2));
+        assert!(!near_e2.contains(&e1));
+    }
+
+    #[test]
+    fn spatial_hash_remove() {
+        let mut hash = SpatialHash::new(32.0);
+        let e1 = EntityId::from_raw(1, 0);
+
+        hash.insert(e1, &Rect::new(0.0, 0.0, 16.0, 16.0));
+        assert_eq!(hash.entity_count(), 1);
+
+        hash.remove(e1);
+        assert_eq!(hash.entity_count(), 0);
+
+        let result = hash.query_aabb(&Rect::new(0.0, 0.0, 100.0, 100.0));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn spatial_hash_clear() {
+        let mut hash = SpatialHash::new(32.0);
+        for i in 0..10 {
+            hash.insert(
+                EntityId::from_raw(i, 0),
+                &Rect::new(i as f32 * 10.0, 0.0, 8.0, 8.0),
+            );
+        }
+        assert_eq!(hash.entity_count(), 10);
+        hash.clear();
+        assert_eq!(hash.entity_count(), 0);
+        assert_eq!(hash.cell_count(), 0);
+    }
+
+    #[test]
+    fn spatial_hash_point_query() {
+        let mut hash = SpatialHash::new(32.0);
+        let e1 = EntityId::from_raw(1, 0);
+        hash.insert(e1, &Rect::new(0.0, 0.0, 32.0, 32.0));
+
+        let found = hash.query_point(16.0, 16.0);
+        assert!(found.contains(&e1));
+
+        let not_found = hash.query_point(100.0, 100.0);
+        assert!(!not_found.contains(&e1));
+    }
+
+    #[test]
+    fn spatial_hash_circle_query() {
+        let mut hash = SpatialHash::new(32.0);
+        let e1 = EntityId::from_raw(1, 0);
+        hash.insert(e1, &Rect::new(10.0, 10.0, 8.0, 8.0));
+
+        let found = hash.query_circle(14.0, 14.0, 20.0);
+        assert!(found.contains(&e1));
+
+        let not_found = hash.query_circle(200.0, 200.0, 5.0);
+        assert!(!not_found.contains(&e1));
+    }
+
+    #[test]
+    fn spatial_hash_update_position() {
+        let mut hash = SpatialHash::new(32.0);
+        let e1 = EntityId::from_raw(1, 0);
+
+        hash.insert(e1, &Rect::new(0.0, 0.0, 8.0, 8.0));
+        let near_origin = hash.query_point(4.0, 4.0);
+        assert!(near_origin.contains(&e1));
+
+        // Move far away
+        hash.insert(e1, &Rect::new(500.0, 500.0, 8.0, 8.0));
+        let near_origin = hash.query_point(4.0, 4.0);
+        assert!(!near_origin.contains(&e1));
+        let near_new = hash.query_point(504.0, 504.0);
+        assert!(near_new.contains(&e1));
+    }
+
+    #[test]
+    fn collision_world_check_pair() {
+        let mut world = CollisionWorld::new(32.0);
+        let e1 = EntityId::from_raw(1, 0);
+        let e2 = EntityId::from_raw(2, 0);
+
+        world.update_entity(e1, RenderVec2::new(0.0, 0.0), CollisionShape::Aabb(Rect::new(0.0, 0.0, 10.0, 10.0)));
+        world.update_entity(e2, RenderVec2::new(5.0, 5.0), CollisionShape::Aabb(Rect::new(0.0, 0.0, 10.0, 10.0)));
+
+        assert!(world.check_pair(e1, e2).is_some());
+    }
+
+    #[test]
+    fn trigger_zone_enter_exit() {
+        let mut zone = TriggerZone::new(1, Rect::new(0.0, 0.0, 50.0, 50.0));
+        let e1 = EntityId::from_raw(1, 0);
+
+        // Enter
+        let event = zone.check(e1, &Rect::new(10.0, 10.0, 5.0, 5.0));
+        assert!(matches!(event, Some(TriggerEvent::Enter { .. })));
+
+        // Stay inside — no event
+        let event = zone.check(e1, &Rect::new(20.0, 20.0, 5.0, 5.0));
+        assert!(event.is_none());
+
+        // Exit
+        let event = zone.check(e1, &Rect::new(100.0, 100.0, 5.0, 5.0));
+        assert!(matches!(event, Some(TriggerEvent::Exit { .. })));
     }
 }
