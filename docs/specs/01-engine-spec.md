@@ -123,8 +123,15 @@ amigo-engine/                   # github.com/amigo-labs/amigo-engine
 │   ├── amigo_mcp/               # MCP server wrapping amigo_api for Claude Code
 │   ├── amigo_artgen/            # MCP server for AI art generation (ComfyUI)
 │   └── amigo_audiogen/          # MCP server for AI audio generation (ACE-Step, AudioGen)
-├── games/
-│   └── amigo_td/                # Tower Defense game
+├── examples/
+│   ├── starter/                 # Starter template
+│   ├── ecs_demo/                # ECS bouncing balls
+│   ├── tilemap_demo/            # Tilemap + camera scrolling
+│   ├── animation_demo/          # Animation state machine
+│   ├── input_demo/              # Keyboard, mouse, gamepad
+│   ├── audio_demo/              # Audio playback, crossfade
+│   ├── particles/               # Particle system
+│   └── pathfinding_demo/        # A* + flow fields
 └── assets/
     └── ...
 ```
@@ -517,7 +524,7 @@ File watcher on assets directory. Sprites, configs, levels, audio, shaders all h
 
 ### Asset Packing (Release)
 
-`amigo pack`: sprites → texture atlases, audio → compressed, data → validated, all → `game.pak` (memory-mappable).
+`amigo pack`: sprites → texture atlases, audio → compressed, data → validated, all → `game.pak` (memory-mappable). Implemented in `amigo_cli` (PakWriter in `amigo_assets/pak.rs`).
 
 ---
 
@@ -1269,14 +1276,24 @@ F2: Grid, F3: Collision boxes, F4: Pathfinding, F5: Spawn/build zones, F6: Perfo
 ### CLI Tool
 
 ```bash
-amigo new my_game              # scaffold project
-amigo run                      # dev build + run
-amigo run --api                # with AI API server
-amigo run --api --headless     # headless simulation
-amigo pack                     # assets → game.pak
-amigo build --release          # optimized binary
-amigo release --target windows,linux  # full pipeline
+amigo new my_game [--template T]     # scaffold project (10 templates)
+amigo scene gameplay [--preset P]    # add scene to project (13 presets)
+amigo build                          # validate project structure
+amigo run [--headless] [--api]       # dev build + run
+amigo pack                           # assets → texture atlas + game.pak
+amigo release [--target TARGET]      # optimized release binary
+amigo publish steam                  # upload to Steam (via steamcmd)
+amigo publish itch [--channel C]     # upload to itch.io (via butler)
+amigo editor                         # launch level editor
+amigo export-level <path> [--format json]  # convert .amigo → JSON
+amigo list-templates                 # show project templates
+amigo list-presets                   # show scene presets
+amigo info                           # show current project info
 ```
+
+**Templates:** platformer, topdown-rpg, turn-based-rpg, roguelike, tower-defense, bullet-hell, puzzle, farming-sim, fighting, visual-novel.
+
+**Scene Presets:** top-down, platformer, turn-based, arpg, roguelike, tower-defense, bullet-hell, puzzle, farming-sim, fighting, visual-novel, menu, world-map, custom.
 
 ### Release Profile
 
@@ -1335,37 +1352,41 @@ No dynamic plugin loading, no runtime discovery. Compile-time decides what's inc
 
 ---
 
-## 21. UI System (Pixel-Native, Two Tiers)
+## 21. UI System (Two Tiers, Two Renderers)
 
-One UI system, two complexity levels. All rendering through the engine's sprite batcher – bitmap fonts, sprite-based widgets, pixel-perfect at virtual resolution.
+Two UI tiers with different rendering backends. Game HUD renders through the engine's sprite batcher at virtual resolution (pixel-perfect). Editor UI renders through egui at native resolution on top of the sprite pipeline.
 
-### Tier 1: Game HUD (always available)
+### Tier 1: Game HUD (`amigo_ui`, always available)
 
 ```rust
-ui.sprite("gold_icon", pos);
 ui.pixel_text("Gold: 350", pos, Color::GOLD);
-if ui.sprite_button("btn_archer", pos) { /* select tower */ }
-ui.panel(rect, |ui| { /* nested content */ });
-ui.progress_bar(rect, health / max_health, Color::RED);
+ui.rect(rect, Color::RED, true);
+ui.sprite("gold_icon", pos);
+ui.progress_bar(rect, health / max_health, Color::RED, Color::DARK_GRAY);
 ```
 
-Immediate mode, ~20-30 functions. Bitmap fonts, sprite buttons, panels, progress bars, text. Renders identically to game sprites – no anti-aliasing, no style mismatch.
+Immediate mode, minimal (~352 LOC). Text, rect, sprite, progress bar draw commands. Renders identically to game sprites at virtual resolution – no anti-aliasing, no style mismatch.
 
-### Tier 2: Editor Widgets (behind `editor` feature flag)
+### Tier 2: Editor Widgets (`egui`, behind `editor` feature flag)
 
 ```rust
 #[cfg(feature = "editor")]
 {
-    ui.text_input("tower_name", &mut name);
-    ui.slider("range", &mut range, 1.0..=20.0);
-    ui.dropdown("type", &mut tower_type, &["Archer", "Mage", "Cannon"]);
-    ui.color_picker("tint", &mut color);
-    ui.scrollable_list("entities", &entity_list, |item, ui| { ... });
-    ui.tree_view("hierarchy", &tree, |node, ui| { ... });
+    // Editor uses egui via amigo_render/egui_integration.rs
+    // Renders at native window resolution on top of sprite pipeline
+    egui::Window::new("Properties").show(ctx, |ui| {
+        ui.text_edit_singleline(&mut name);
+        ui.add(egui::Slider::new(&mut range, 1.0..=20.0));
+        egui::ComboBox::from_label("Type")
+            .selected_text(&tower_type)
+            .show_ui(ui, |ui| { ... });
+    });
 }
 ```
 
-Builds on Tier 1. Added: text input, sliders, dropdowns, color pickers, scrollable containers, tree views. Editor look is consistent with the game's pixel art aesthetic – not a generic desktop UI.
+The editor uses `egui` (via `egui-winit` + `egui-wgpu`) for complex widgets: text input, sliders, dropdowns, tree views, scrollable panels. This is a **dual-layer rendering** approach: game at low virtual res, editor UI at native res. The `EguiRenderer` in `amigo_render/egui_integration.rs` handles input translation and wgpu rendering.
+
+> **Note:** The original design called for a pure Pixel UI for both tiers. In practice, egui was adopted for editor widgets because it provides production-ready complex widgets (text editing, scrolling, layout) that would have taken months to reimplement in pixel style. Game HUD remains pure Pixel UI.
 
 ---
 
@@ -1444,9 +1465,54 @@ Overridable via CLI flags (`amigo run --fullscreen`). Saved when player changes 
 
 ---
 
-## 24. Additional Engine Systems (Phase 2+)
+## 24. Genre Modules (18 systems in amigo_core)
 
-The engine provides generic, reusable mechanics that work across many game types. These systems are **engine-level** -- data-driven, with the game defining the concrete content (which crops, which bullets, which puzzle pieces). The engine executes the logic.
+The engine provides 18 generic, reusable game mechanics modules in `amigo_core`. All are **engine-level** -- data-driven, with the game defining the concrete content. The engine executes the logic. Each module is a standalone `.rs` file with serializable data types and pure functions.
+
+### Module Overview
+
+| Module | File | Key Types | Purpose |
+|--------|------|-----------|---------|
+| `platformer` | platformer.rs | `PlatformerController`, `JumpBuffer`, `CoyoteTime`, `WallInteraction`, `DashState`, `MovingPlatform` | Jump buffer, coyote time, variable jump, wall slide/jump, dash, ground detection, moving platforms |
+| `farming` | farming.rs | `GrowthStage`, `GrowthDef`, `Calendar`, `Season`, `FarmTile`, `FarmGrid` | Growth stages, calendar (day/season/year), tilled/watered/planted grid |
+| `bullet_pattern` | bullet_pattern.rs | `BulletPool`, `PatternShape`, `BulletEmitter`, `PhasePattern`, `PatternSequence` | Object-pooled bullets, radial/spiral/aimed/wave/random patterns, boss sequencer |
+| `puzzle` | puzzle.rs | `PuzzleGrid<T>`, `MatchResult`, `PuzzleMove`, `BlockShape`, `BlockBag` | Generic grid, match-finding, gravity, undo/redo, Tetris-style blocks |
+| `combat` | combat.rs | `DamageType`, `DamageInstance`, `Ability`, `AoeShape`, `Projectile`, `StatusOnHit` | Damage calculation (physical/magical/elemental), abilities, AoE shapes, resistances |
+| `loot` | loot.rs | `ItemRarity`, `ItemDef`, `ItemInstance`, `DropTable`, `LootRoll` | 5-tier rarity, weighted drop tables, loot rolling |
+| `inventory` | inventory.rs | `Inventory`, `EquipmentSlots`, `ItemRegistry`, `StackableSlot` | Grid-based storage, equipment slots, stacking, item registry |
+| `turn_combat` | turn_combat.rs | `TurnAction`, `Combatant`, `TurnOrder`, `TurnCombatState` | Full turn-based RPG: actions, combatant stats, turn ordering, state machine |
+| `dialog` | dialog.rs | `DialogTree`, `DialogNode`, `DialogChoice`, `Condition`, `DialogEffect` | Branching dialogue with conditions, effects, variable tracking |
+| `crafting` | crafting.rs | `Recipe`, `CraftingStation`, `CraftingJob`, `DiscoveryTracker` | Recipes, stations, timed jobs, discovery system |
+| `procgen` | procgen.rs | `PerlinNoise`, `FractalNoise`, `BiomeMap`, `CellularAutomata` | Perlin/fractal noise, biome generation, cellular automata |
+| `economy` | economy.rs | `EconomyState`, `Transaction`, `EconomyEvent` | Gold, lives, score, transaction tracking with events |
+| `ai` | ai.rs | `FsmState`, `StateMachine`, `SteeringBehavior`, `SteeringAgent` | Finite state machines, steering behaviors (seek, flee, wander, arrive) |
+| `navigation` | navigation.rs | `NavigationAgent`, `NavigationPath` | Click-to-move agents with A* pathfinding, 8-directional movement |
+| `status_effect` | status_effect.rs | `StatusEffectDef`, `ActiveEffect`, `StatusManager`, `StackBehavior` | Buff/debuff system with duration, stacking rules, tick effects |
+| `projectile` | projectile.rs | `ProjectileSpawner`, `HomingParams`, `ProjectileLifecycle` | Spawn, homing, lifetime, collision lifecycle |
+| `roguelike` | roguelike.rs | `DungeonFloor`, `Room`, `RunState`, `MetaProgression` | Procedural dungeon generation, run tracking, meta-progression |
+| `fighting` | fighting.rs | `FrameData`, `HitboxFrame`, `MotionInput`, `ComboState`, `FighterState` | Frame-based mechanics, motion input recognition, hit/hurt boxes, combos |
+
+### Tower Defense (specialized)
+
+Three additional TD-specific modules that compose with the generic ones:
+
+| Module | File | Key Types | Purpose |
+|--------|------|-----------|---------|
+| `td_systems` | td_systems.rs | `TdState`, targeting systems | TD game loop, tower targeting priority |
+| `tower` | tower.rs | `TowerDef`, `TowerInstance`, `UpgradePath` | Tower definitions, placement, upgrades |
+| `waves` | waves.rs | `WaveDef`, `WaveSpawner`, `WaveState` | Wave definitions, enemy spawning, wave progression |
+
+### Composition Examples
+
+- **Tower Defense:** `economy` + `pathfinding` + `projectile` + `status_effect` + `tower` + `waves` + `td_systems`
+- **RPG:** `combat` + `loot` + `inventory` + `turn_combat` + `dialog` + `status_effect` + `crafting`
+- **Metroidvania:** `platformer` + `combat` + `inventory` + `navigation` + `procgen`
+- **Farming Sim:** `farming` + `inventory` + `crafting` + `dialog` + `economy`
+- **Roguelike:** `roguelike` + `combat` + `loot` + `procgen` + `status_effect`
+- **Fighting Game:** `fighting` + `combat` + `status_effect`
+- **Shmup:** `bullet_pattern` + `projectile` + `economy`
+
+### Detailed Module Descriptions (selected)
 
 ### 24.1 `farming.rs` -- Growth & Calendar System
 
@@ -1602,37 +1668,49 @@ Asset pipeline decisions are maintained in a separate spec file:
 
 ## 26. Implementation Phases
 
-### Phase 1: Engine Foundation (4-6 weeks)
+### Phase 1: Engine Foundation ✅ Complete
 
 Window, sprite rendering, sprite batcher, virtual resolution, input, tilemap, basic camera, game loop (fixed timestep), scene machine, Lightweight ECS (SparseSet + Change Tracking), Pixel UI (Tier 1: Game HUD), RON/TOML config loading, asset hot reload, `tracing` logging.
 
-### Phase 2: Game Systems (4-6 weeks)
+### Phase 2: Game Systems ✅ Complete
 
-Command system, serializable GameState, Aseprite loading, animations, AABB + spatial hash collision, waypoint pathfinding, tower/enemy/projectile systems, tower targeting (switchable priority), wave system, gold/lives, atmosphere manager (transitions, interpolation), adaptive music engine (vertical layering, bar clock, layer rules, horizontal transitions, stingers), SFX manager with variants, gamepad.
+Command system, serializable GameState, Aseprite loading, animations, AABB + spatial hash collision, waypoint pathfinding, tower/enemy/projectile systems, tower targeting, wave system, gold/lives, atmosphere manager, SFX manager with variants, gamepad. 18 genre modules (see §24).
+
+> **Note:** Adaptive music engine (vertical layering, bar clock, layer rules, horizontal transitions, stingers) from original Phase 2 scope is **not yet implemented** in amigo_audio. Only basic SFX playback and music crossfade exist. See §15.2 for the full spec.
 
 ### ~~Phase 3: Polish & Content~~ — MOVED TO GAME REPO
 
 _Phase 3 (6 worlds, tower/enemy types, upgrades, particles, lighting, menus, save/load) is game-specific content and lives in the game repository, not the engine. The engine provides the systems; the game repo provides the content._
 
-### Phase 4: Editor (3-5 weeks)
+### Phase 4: Editor ✅ Complete
 
-Editor plugin (feature flag), extended Pixel UI with editor widgets, tile painter, entity placement, path editor, undo/redo, .amigo format, edit-while-playing, wave editor UI.
+Editor plugin (feature flag), egui-based editor widgets (dual-layer rendering), tile painter, entity placement, path editor, undo/redo, collision editor, wave editor, visual scripting, heatmap, playtest mode, project wizard (amigo_editor, 5,103 LOC).
 
-### Phase 5: AI API + Asset Pipelines (3-4 weeks)
+### Phase 5: AI API + Asset Pipelines ✅ Complete
 
-IPC server (amigo_api), JSON-RPC protocol, screenshot export, headless mode, event streaming. MCP server wrapper (amigo_mcp). Art generation pipeline (amigo_artgen): ComfyUI client, workflow builder, post-processing (palette clamp, outline, AA removal). Audio generation pipeline (amigo_audiogen): ACE-Step client, AudioGen client, stem generation, loop trimming, adaptive music config generation. Claude Code integration testing with all three MCP servers.
+IPC server (amigo_api, 40+ JSON-RPC methods), screenshot API, headless simulation mode, event polling. MCP server wrapper (amigo_mcp). Art generation pipeline (amigo_artgen): ComfyUI client, workflow builder, post-processing. Audio generation pipeline (amigo_audiogen): ACE-Step client, AudioGen client, stem generation, loop trimming.
 
-### Phase 6: Multiplayer (3-5 weeks)
+### Phase 6: Multiplayer ✅ Complete
 
-Transport trait, deterministic verification (CRC), lockstep protocol, UDP networking, lobby, co-op mode, network debug overlay, replay system.
+Transport trait, deterministic verification (CRC), lockstep protocol, UDP networking (laminar), replay system (amigo_net, 2,208 LOC).
 
-### Phase 7: AI Editor Features (3-5 weeks)
+### Phase 7: AI Editor Features ✅ Complete
 
-Auto-pathing, wave balancing, auto-decoration, AI playtesting (simulation + heatmaps), LLM integration (optional).
+Auto-pathing (auto_path.rs), playtest simulation (playtest.rs), heatmap analysis (heatmap.rs), visual scripting (visual_script.rs).
 
-### Phase 8: Release (2-3 weeks)
+### Phase 8: Release ✅ Complete
 
-amigo CLI (pack, build, release), typed asset handles (build script), release optimization, CI/CD, Steam/itch.io integration.
+amigo CLI (pack, build, release, publish steam/itch), 10 project templates, 13 scene presets, level export, distribution config (amigo_cli, 1,151 LOC).
+
+### Remaining work (not yet implemented)
+
+- **Adaptive music engine** (§15.2) — BarClock, vertical layering, horizontal transitions, stingers
+- **Isometric tilemap mode** (§10) — only orthogonal implemented
+- **Chunk streaming tilemap** (§10) — opt-in for large worlds
+- **Skeletal animation** (§12) — Phase 2 planned for large bosses
+- **Camera patterns** (§13) — only Follow/Shake/Clamp; ScreenLock, RoomTransition, BossArena, CinematicPan not built
+- **Spatial SFX** (§15.1) — position-based volume falloff
+- **Asset Format pipeline** (03-asset-format-spec.md) — complete design, no tooling
 
 ---
 
@@ -1648,7 +1726,7 @@ amigo CLI (pack, build, release), typed asset handles (build script), release op
 | ECS Storage           | Hybrid: hot components statisch, rest dynamisch         | Best of both: zero-overhead core, flexible extensions                                         |
 | Arithmetic            | Fixed-Point Q16.16                                      | Deterministic simulation for multiplayer + replays                                            |
 | Audio                 | kira                                                    | Tweening, spatial, streaming, crossfade                                                       |
-| UI                    | Own Pixel UI, two tiers                                 | Game HUD (always) + Editor widgets (feature flag). No egui                                    |
+| UI                    | Pixel UI (Game HUD) + egui (Editor)                     | Game HUD at virtual res (Pixel UI), Editor at native res (egui). Dual-layer rendering         |
 | Text Rendering        | TTF rasterizer (fontdue)                                | Unicode gratis, no font tools needed, pixel-fonts available                                   |
 | Sprites               | Aseprite native                                         | No manual export, tag-based animations                                                        |
 | Sprite Sorting        | Z-index only, Y-sort is game logic                      | Engine sorts by Z, game sets Z based on Y if needed                                           |

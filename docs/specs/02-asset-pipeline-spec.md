@@ -608,6 +608,8 @@ amigo_audiogen_list_styles()                    # available world presets
 
 ## 12. Adaptive Music System (Engine-Side)
 
+> **Implementation Status:** 🗓 **Not yet implemented.** This section describes the target design for the adaptive music runtime. Currently, `amigo_audio` provides basic music playback and crossfade only. The full system (BarClock, vertical layering, horizontal transitions, layer rules, stingers) has not been built. The generation side (amigo_audiogen stems, style files) is ready — the engine runtime needs to be implemented to consume these assets.
+
 This runs inside the Amigo Engine at runtime, powered by kira. No AI at runtime -- everything is pre-generated stems controlled by game parameters.
 
 ### Three Techniques Combined

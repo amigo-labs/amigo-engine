@@ -1,9 +1,29 @@
 # Amigo Engine - Asset Format & Import/Export Specification
 
 **Version:** 0.2.0-draft
-**Status:** Design Phase
+**Status:** Design Phase — no tooling implemented yet (see implementation notes below)
 **Author:** Daniel (via Claude)
-**Depends on:** Amigo RomKit Spec v0.1
+**Depends on:** Amigo RomKit Spec v0.1 (not yet written)
+
+> ### Implementation Status (2026-03-15)
+>
+> This spec is a **complete design document** for the v0.2.0 asset pipeline. Currently implemented:
+> - ✅ **Aseprite import** (`amigo_assets/aseprite.rs`) — direct `.aseprite` loading
+> - ✅ **Basic .pak packing** (`amigo_assets/pak.rs`, `amigo_cli pack`) — sprite atlas, not full spec format
+> - ✅ **Project manifest** (`Amigo.toml`) — parsed by CLI, simpler schema than spec
+> - ✅ **Level export** (`amigo_cli export-level`) — `.amigo` → JSON
+> - ✅ **`amigo build`** — project validation only, not full asset build pipeline
+>
+> Not yet implemented:
+> - TOML asset descriptors (`.sprite.toml`, `.tileset.toml`, `.map.toml`, `.entity.toml`, `.palette.toml`)
+> - Runtime formats (`.ait` indexed tiles, WebP conversion, OGG/FLAC encoding, pattern bytecode)
+> - Pattern language parser and runtime synthesizer (§9, §10)
+> - Full build pipeline (image → .ait, WAV → OGG, pattern compile → bytecode)
+> - Import/export for Tiled, LDTK, MML, VGM, ROM formats
+> - Full `.amigo-pak` binary format with TOC, type tags, SHA256 manifest
+> - `amigo import` / `amigo export` CLI subcommands
+>
+> The engine currently loads assets directly (PNG, `.aseprite`, WAV) without the intermediate TOML descriptor layer. This spec envisions a fundamentally different pipeline that requires significant new tooling.
 
 ---
 
@@ -567,6 +587,8 @@ duration = 100                     # ms — auto-revert
 
 ## 9. Audio System — Pattern-Based (Strudel/TidalCycles-Inspired)
 
+> **Implementation Status:** 🗓 Not implemented. No pattern parser, no runtime synthesizer, no bytecode compiler. The engine currently uses WAV/OGG audio files directly via kira. This section describes a future built-in audio synthesis system.
+
 ### 9.1 Core Concepts
 
 The Amigo audio system uses a cycle-based pattern language inspired by TidalCycles/Strudel. Music is defined as patterns that repeat over cycles, enabling compact, composable, reactive game music.
@@ -738,6 +760,8 @@ PatternOp::Random { probability, inner }
 
 ## 11. Build System
 
+> **Implementation Status:** 🔧 Partial. `amigo build` exists but only validates project structure (scene references, manifest integrity). The full asset build pipeline (image processing → .ait, WAV → OGG, pattern compilation, atlas packing with TOC) is not implemented. `amigo pack` handles basic sprite atlas packing.
+
 ### 11.1 Build Pipeline
 
 ```
@@ -827,6 +851,8 @@ amigo build --release              # Optimized (max WebP compression, strip debu
 ---
 
 ## 12. Import / Export CLI
+
+> **Implementation Status:** 🔧 Partial. Aseprite import works (`amigo_assets/aseprite.rs`). `amigo export-level` converts `.amigo` → JSON. All other import/export commands (`amigo import tiled/ldtk/mml/vgm`, `amigo export tiled/aseprite/ldtk/mml`, `amigo romkit extract`) are not implemented.
 
 ### 12.1 Import
 

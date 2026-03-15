@@ -1,8 +1,10 @@
 # Spec Implementation Status
 
-> **Legend:** ✅ Implemented | 🗓 Roadmap | ❓ Unclear | ⛔ Intentionally not done
+> **Legend:** ✅ Implemented | 🔧 Partial | 🗓 Roadmap | ⛔ Intentionally not done
 
-Last updated: 2026-03-15
+Last updated: 2026-03-15 (full audit against source code)
+
+**Codebase summary:** 39,713 LOC across 14 crates, 6,517 LOC across 4 tools, 8 examples.
 
 ---
 
@@ -12,40 +14,76 @@ Last updated: 2026-03-15
 |---|---------|--------|-------|
 | 1 | Vision & Philosophy | ✅ Implemented | Core principles reflected in codebase |
 | 2 | Tech Stack | ✅ Implemented | All core deps in Cargo.toml |
-| 3 | Architecture Overview | ✅ Implemented | 14 crates + 4 tools |
-| 4 | Core Types, Math & ECS | ✅ Implemented | SparseSet, Fixed-Point, Change Tracking |
-| 5 | Rendering Pipeline | ✅ Implemented | 7-stage batcher (amigo_render, 3695 LOC) |
-| 6 | Memory & Performance | ✅ Implemented | Pooling, arena, budgets |
-| 7 | API Design | ✅ Implemented | Game trait, EngineBuilder, GameContext, DrawContext |
-| 8 | Command System & Networking | ✅ Implemented | amigo_net (2169 LOC), lockstep, replay |
-| 9 | Asset Pipeline | 🗓 Roadmap | Hot reload works; `.pak` packing not implemented (`amigo pack` missing) |
-| 10 | Tilemap System | ✅ Implemented | amigo_tilemap (762 LOC), auto-tiling |
-| 11 | Pathfinding | ✅ Implemented | A*, flow fields (Dijkstra), waypoints |
-| 12 | Animation System | ✅ Implemented | Aseprite integration (amigo_animation, 1935 LOC) |
-| 13 | Camera System | ✅ Implemented | Follow, shake, clamp |
-| 14 | Input System | ✅ Implemented | Keyboard, mouse, gamepad, action maps (amigo_input, 931 LOC) |
-| 15 | Audio System | ✅ Implemented | kira wrapper (amigo_audio, 1112 LOC) |
-| 16 | Level Editor | ✅ Implemented | Tile painter, wave editor, collision editor, playtest, heatmap, visual scripting (amigo_editor, 4829 LOC) |
-| 17 | AI Agent Interface | ✅ Implemented | amigo_api JSON-RPC (1198 LOC) + amigo_mcp bridge (902 LOC) |
-| 18 | Debug & Profiling | ✅ Implemented | FPS overlay, Tracy integration (feature-gated), F-keys |
-| 19 | Build & Distribution | 🗓 Roadmap | CLI scaffolding done (949 LOC); `amigo pack` command missing |
-| 20 | Plugin System | ✅ Implemented | Plugin trait, events, resources |
-| 21 | UI System | ❓ Unclear | amigo_ui minimal (361 LOC); egui not integrated in game loop |
+| 3 | Architecture Overview | ✅ Implemented | 14 crates + 4 tools; spec lists `games/amigo_td/` but dir doesn't exist (game lives in separate repo) |
+| 4 | Core Types, Math & ECS | ✅ Implemented | SparseSet, Fixed-Point, Change Tracking, BitSet (amigo_core, 18,360 LOC) |
+| 5 | Rendering Pipeline | ✅ Implemented | Sprite batcher, atlas, camera, particles, lighting, post-processing, atmosphere (amigo_render, 4,223 LOC) |
+| 6 | Memory & Performance | ✅ Implemented | Pooling, arena (bumpalo), scheduler, spatial hash |
+| 7 | API Design | ✅ Implemented | Game trait, EngineBuilder, GameContext, DrawContext, splash screen (amigo_engine, 1,720 LOC) |
+| 8 | Command System & Networking | ✅ Implemented | Lockstep, replay, command serialization, transport trait (amigo_net, 2,208 LOC) |
+| 9 | Asset Pipeline | ✅ Implemented | Hot reload, handle system, `.pak` packing via `amigo pack` (amigo_assets, 1,030 LOC) |
+| 10 | Tilemap System | ✅ Implemented | Auto-tiling, chunk caching, properties (amigo_tilemap, 774 LOC) |
+| 11 | Pathfinding | ✅ Implemented | A*, flow fields (Dijkstra), waypoints (amigo_core/pathfinding.rs) |
+| 12 | Animation System | ✅ Implemented | Aseprite integration, state machine (amigo_animation, 1,903 LOC) |
+| 13 | Camera System | ✅ Implemented | Follow, shake, clamp, deadzone (amigo_render/camera.rs) |
+| 14 | Input System | ✅ Implemented | Keyboard, mouse, gamepad, action maps (amigo_input, 944 LOC) |
+| 15 | Audio System | ✅ Implemented | kira wrapper, SFX, music, volume channels (amigo_audio, 1,126 LOC) |
+| 16 | Level Editor | ✅ Implemented | Tile painter, wave editor, collision editor, playtest, heatmap, visual scripting, auto-path, egui UI, wizard (amigo_editor, 5,103 LOC) |
+| 17 | AI Agent Interface | ✅ Implemented | JSON-RPC server with 40+ methods, MCP bridge, screenshot, tick, headless (amigo_api, 1,291 LOC + amigo_mcp, 902 LOC) |
+| 18 | Debug & Profiling | ✅ Implemented | FPS overlay, Tracy integration (feature-gated), F-keys (amigo_debug, 306 LOC) |
+| 19 | Build & Distribution | ✅ Implemented | `amigo pack`, `amigo build`, `amigo release`, `amigo publish steam/itch`, `amigo export-level` (amigo_cli, 1,151 LOC) |
+| 20 | Plugin System | ✅ Implemented | Plugin trait, feature flags |
+| 21 | UI System | 🔧 Partial | Tier 1 Game HUD implemented (amigo_ui, 352 LOC): text, rect, sprite, progress bar. Tier 2 Editor Widgets use egui (amigo_editor/egui_ui.rs), not Pixel UI. Spec describes both tiers as Pixel UI — reality: editor uses egui overlay at native res |
 | 22 | Error Handling & Logging | ✅ Implemented | thiserror + tracing |
-| 23 | Configuration | ✅ Implemented | amigo.toml, RON |
-| 24 | Starter Template | ✅ Implemented | 10 templates via CLI |
+| 23 | Configuration | ✅ Implemented | amigo.toml, RON, CLI flag overrides |
+| 24 | Starter Template | ✅ Implemented | 10 project templates + 13 scene presets via CLI |
 | 25 | Game-Specific Design | ⛔ Not done | Lives in game repo, not engine — by design |
-| 26 | Implementation Phases | ✅ Implemented | Phase 0–1 complete |
+| 26 | Implementation Phases | ✅ Implemented | Phase 0–5 largely complete |
 | 27 | Key Decisions | ✅ Implemented | All resolved |
 
-### Open gaps (Engine)
+### Previously reported gaps — now resolved
+
+| Gap | Previous Status | Current Status | Notes |
+|-----|----------------|----------------|-------|
+| egui Editor UI | 🗓 Roadmap | ✅ Implemented | `amigo_render/egui_integration.rs` + `amigo_editor/egui_ui.rs` — egui runs behind `editor` feature flag, renders at native res on top of sprite pipeline |
+| Headless Simulation | 🗓 Roadmap | ✅ Implemented | `amigo_engine/engine.rs:run_headless()` — full headless loop, API-driven, tick-on-demand |
+| Screenshot API | 🗓 Roadmap | ✅ Implemented | `amigo_api/handler.rs` — `screenshot` + `screenshot.results` JSON-RPC methods with overlay support |
+| `amigo pack` | 🗓 Roadmap | ✅ Implemented | `amigo_cli/main.rs:cmd_pack()` + `amigo_assets/pak.rs` — PakWriter with sprite atlas packing |
+| Splashscreen | ✅ Implemented | ✅ Implemented | `amigo_engine/splash.rs`, disableable via `EngineBuilder::splash(false)` |
+
+### Remaining gaps (Engine)
 
 | Gap | Status | Notes |
 |-----|--------|-------|
-| egui Editor UI | 🗓 Roadmap | Editor code exists, but egui rendering pipeline not in engine loop |
-| Headless Simulation | 🗓 Roadmap | Spec describes `amigo_tick(count)` for AI fast-forward — not implemented |
-| Screenshot API | 🗓 Roadmap | `amigo_screenshot()` MCP tool described but not built |
-| Splashscreen | ✅ Implemented | Default "Powered by Amigo Engine", disableable via `EngineBuilder::splash(false)` |
+| Tier 2 Pixel UI widgets | 🗓 Roadmap | Spec describes text_input, slider, dropdown, color_picker, scrollable_list, tree_view in Pixel UI style. Reality: editor uses egui for these. No Pixel UI tier 2 exists |
+| Adaptive Music Engine (runtime) | 🗓 Roadmap | Spec §15.2 describes `AdaptiveMusicEngine`, `BarClock`, `MusicSection`, `LayerRule`, `MusicTransition`. Not implemented in amigo_audio — only basic playback/crossfade exists |
+| Isometric tilemap mode | 🗓 Roadmap | Spec §10 describes `GridMode::Isometric`. Not implemented — only orthogonal exists |
+| Chunk streaming tilemap | 🗓 Roadmap | Spec §10 describes `ChunkedTilemap` with load/unload by camera position. Not implemented |
+| Skeleton animation (Phase 2) | 🗓 Roadmap | Spec §12 mentions skeletal animation for large bosses — not implemented |
+| Camera patterns | 🔧 Partial | Spec §13 lists ScreenLock, RoomTransition, BossArena, CinematicPan. Only Follow + Shake + FixedFollow implemented |
+| Spatial SFX | 🗓 Roadmap | Spec §15.1 mentions position-based volume falloff — not in amigo_audio |
+| Event streaming (WebSocket) | 🗓 Roadmap | `subscribe`/`poll_events` methods exist in API but events are polled, not streamed via persistent connection |
+| `games/amigo_td/` directory | ⛔ Not applicable | Spec §3 references this path but game lives in a separate repository |
+
+### Features in code but NOT in spec
+
+| Feature | Location | Notes |
+|---------|----------|-------|
+| `amigo scene` CLI command | amigo_cli | Add scenes to projects with 13 presets — not documented in spec |
+| `amigo publish steam/itch` | amigo_cli | Steam (steamcmd) and itch.io (butler) upload — not documented in spec |
+| `amigo export-level` | amigo_cli | Export .amigo levels to JSON — not documented in spec |
+| `amigo editor` CLI command | amigo_cli | Launch editor from CLI — not documented in spec |
+| `amigo info` CLI command | amigo_cli | Show project info — not documented in spec |
+| 18 genre modules | amigo_core | platformer, roguelike, fighting, farming, bullet_pattern, puzzle, combat, loot, inventory, turn_combat, dialog, crafting, procgen, economy, ai, navigation, status_effect, projectile — spec §24 only covers 4 |
+| TD systems | amigo_core | td_systems.rs, tower.rs, waves.rs, enemy.rs — TD-specific systems not detailed in engine spec |
+| Game presets | amigo_core/game_preset.rs | Scene presets and project templates — not in spec |
+| Level loader | amigo_core/level_loader.rs | Level loading system — not in spec |
+| Save system | amigo_core/save.rs | Save/load with slot management — described briefly in spec A.7, but actual implementation not documented |
+| Collision events | amigo_core/collision_events.rs | Typed collision events — not in spec |
+| Wizard UI | amigo_editor/wizard.rs | Project creation wizard — not in spec |
+| Atmosphere system | amigo_render/atmosphere.rs | Mood/atmosphere interpolation — mentioned in tricks-patterns.md but not in engine spec |
+| Font rendering | amigo_render/font.rs | Font system via fontdue — not detailed in spec |
+| egui integration | amigo_render/egui_integration.rs | Full egui-wgpu rendering layer — not in spec (spec says "no egui") |
+| Distribution config | amigo_cli | Steam app ID, depot, branch + itch.io game/channel config — not in spec |
 
 ---
 
@@ -53,18 +91,31 @@ Last updated: 2026-03-15
 
 | # | Section | Status | Notes |
 |---|---------|--------|-------|
-| 1 | Overview | ✅ Implemented | amigo_artgen (2468 LOC) + amigo_audiogen (1762 LOC) |
+| 1 | Overview | ✅ Implemented | amigo_artgen (2,608 LOC) + amigo_audiogen (1,856 LOC) |
 | 2 | Art Architecture | ✅ Implemented | ComfyUI workflow builder + HTTP client + post-processing |
 | 3 | Connection | ✅ Implemented | Local/Remote/Cloud modes |
-| 4 | Style Definitions | ✅ Implemented | Per-world style TOML files |
-| 5 | Sprite Generation | ✅ Implemented | MCP tools for sprite/tileset/animation generation |
-| 6 | Tileset Generation | ✅ Implemented | Auto-tiling compatible output |
-| 7 | Post-Processing | ✅ Implemented | Color quantization, outline, palette enforcement |
-| 8 | Audio Architecture | ✅ Implemented | ACE-Step + AudioGen integration |
-| 9 | Music Generation | ✅ Implemented | ACE-Step for music tracks and stems |
-| 10 | SFX Generation | ✅ Implemented | AudioGen for sound effects |
-| 11 | Audio MCP Tools | ✅ Implemented | audiogen MCP server |
-| 12 | Adaptive Music | 🗓 Roadmap | Spec only — not wired into engine loop |
+| 4 | Style Definitions | ✅ Implemented | Per-world style RON files |
+| 5 | Art MCP Tools | ✅ Implemented | generate_sprite, generate_tileset, generate_spritesheet, variation, inpaint, palette_swap, upscale, post_process, list_styles, list_checkpoints, list_loras, server_status |
+| 6 | Post-Processing Pipeline | ✅ Implemented | Downscale, palette clamp, AA removal, transparency cleanup, outline, tile edge check |
+| 7 | Workflow Builder | ✅ Implemented | Template JSON workflows + parameter injection |
+| 8 | Audio Architecture | ✅ Implemented | ACE-Step (Gradio) + AudioGen (Python) dual backend |
+| 9 | AI Models | ✅ Implemented | ACE-Step 1.5 + Meta AudioGen |
+| 10 | Stem Strategy | ✅ Implemented | Quick Mode (generate & split) + Clean Mode (per-stem conditioned) |
+| 11 | Audio MCP Tools | ✅ Implemented | generate_core_melody, generate_stem, generate_track, generate_variation, extend_track, remix, generate_sfx, generate_ambient, stem_split, loop_trim, normalize, convert, preview, server_status, list_styles |
+| 12 | Adaptive Music System (engine-side) | 🗓 Roadmap | Spec describes full system (BarClock, LayerRule, MusicTransition, stingers). Not implemented in engine. amigo_audio has basic playback only |
+| 13 | Sound Effects Pipeline | ✅ Implemented | SFX categories, variation system (amigo_audio) |
+| 14 | World Audio Styles | ✅ Implemented | Per-world style RON files with instrument mapping, mood prompts, SFX styles |
+| 15 | Audio Post-Processing | ✅ Implemented | Loop detection/trim, loudness normalization, format conversion, loop validation (amigo_audiogen/post_processing.rs) |
+| 16 | GPU Scheduling | ✅ Implemented | Sequential scheduling with lock file |
+| 17 | Workspace Structure | ✅ Implemented | Matches spec layout |
+
+### Gaps (Asset Pipeline)
+
+| Gap | Status | Notes |
+|-----|--------|-------|
+| Adaptive Music runtime | 🗓 Roadmap | §12 is fully spec'd but engine-side implementation (BarClock, vertical layering, horizontal transitions, stingers) doesn't exist in amigo_audio |
+| Stinger quantization | 🗓 Roadmap | Beat/bar-synced stinger playback not in amigo_audio |
+| Music parameter-driven layer volumes | 🗓 Roadmap | MusicParameters → LayerRule evaluation not in amigo_audio |
 
 ---
 
@@ -73,16 +124,94 @@ Last updated: 2026-03-15
 | # | Section | Status | Notes |
 |---|---------|--------|-------|
 | 1 | Overview | 🗓 Roadmap | v0.2.0-draft — design phase |
-| 2 | Project Structure | 🗓 Roadmap | Convention defined, not enforced by tooling |
-| 3 | Sprite Format | 🗓 Roadmap | TOML descriptor spec complete, tooling not built |
-| 4 | Tileset Format | 🗓 Roadmap | Spec complete, tooling not built |
-| 5 | Tilemap Format | 🗓 Roadmap | Spec complete, tooling not built |
-| 6 | Entity Format | 🗓 Roadmap | Spec complete, tooling not built |
-| 7 | Palette Format | 🗓 Roadmap | Spec complete, tooling not built |
-| 8 | Audio Format | 🗓 Roadmap | Pattern language spec complete, runtime not built |
-| 9 | Build System | 🗓 Roadmap | `amigo build` not implemented |
-| 10 | Import Pipeline | 🗓 Roadmap | Aseprite import works; Tiled/LDTK/ROM import not built |
-| 11 | Export Pipeline | 🗓 Roadmap | Not implemented |
-| 12 | Runtime Formats | 🗓 Roadmap | .ait (indexed tile) and .pak not implemented |
-| 13 | Migration & Versioning | 🗓 Roadmap | Spec only |
-| 14 | CLI Integration | 🗓 Roadmap | `amigo asset` subcommands not implemented |
+| 2 | Project Structure | 🔧 Partial | `Amigo.toml` manifest exists and is parsed by `amigo_cli`, but fields differ from spec (simpler schema) |
+| 3 | Runtime Formats (.ait, WebP, OGG, FLAC, pattern bytecode) | 🗓 Roadmap | Spec complete, none implemented. Engine uses PNG + WAV directly |
+| 4 | Sprite Format (.sprite.toml) | 🗓 Roadmap | TOML descriptor spec complete, no tooling. Engine reads .aseprite directly |
+| 5 | Tileset Format (.tileset.toml) | 🗓 Roadmap | Spec complete, no tooling |
+| 6 | Map Format (.map.toml) | 🗓 Roadmap | Spec complete. Engine uses .amigo (RON) format instead |
+| 7 | Entity Format (.entity.toml) | 🗓 Roadmap | Spec complete, no tooling |
+| 8 | Palette Format (.palette.toml) | 🗓 Roadmap | Spec complete, no tooling |
+| 9 | Audio Pattern Language | 🗓 Roadmap | Mini-notation spec + formal grammar complete, no parser or runtime synthesizer |
+| 10 | Instrument Bank (.bank.toml) | 🗓 Roadmap | Spec complete, no tooling |
+| 11 | Build System (`amigo build`) | 🔧 Partial | `amigo build` exists but only validates project structure. Full asset build pipeline (image → .ait, WAV → OGG, pattern compile) not implemented |
+| 12 | Import Pipeline | 🔧 Partial | Aseprite import works (amigo_assets/aseprite.rs). Tiled, LDTK, MML, VGM, ROM imports not built |
+| 13 | Export Pipeline | 🗓 Roadmap | `amigo export-level` converts .amigo → JSON. Full Tiled/LDTK/Aseprite/MML export not built |
+| 14 | .amigo-pak Binary Format | 🔧 Partial | PakWriter exists (amigo_assets/pak.rs), packs sprites into atlas. Full .amigo-pak format with TOC, type tags, SHA256 manifest per spec not implemented |
+| 15 | CLI Integration | 🔧 Partial | `amigo build`, `amigo pack` exist but don't implement full spec pipeline. `amigo import/export` subcommands not implemented |
+| 16 | Migration & Versioning | 🗓 Roadmap | Spec only |
+| 17 | Future Extensions (§14) | 🗓 Roadmap | World format, dialogue format, shader format, PICO-8/Godot import, tier 2 ROM support — all future |
+
+### Summary
+
+The Asset Format spec is a comprehensive design document for the v0.2.0 asset pipeline. Currently:
+- **Implemented:** Aseprite import, basic .pak packing, project manifest parsing, level export
+- **Not implemented:** TOML asset descriptors (.sprite.toml, .tileset.toml, etc.), runtime formats (.ait, WebP conversion, OGG/FLAC encoding), pattern language parser, full build pipeline, Tiled/LDTK/ROM importers, round-trip export
+- **Gap:** The engine currently loads assets directly (PNG, .aseprite, WAV) without the intermediate TOML descriptor layer. The spec envisions a fundamentally different pipeline that would require significant new tooling
+
+---
+
+## Spec Completeness Audit
+
+### Gaps in spec definitions (incomplete or vague)
+
+| Spec | Section | Issue |
+|------|---------|-------|
+| 01 | §12 Animation | Very brief (4 lines). No detail on AnimationStateMachine API, transition rules, blending, or frame event callbacks. Actual implementation (1,903 LOC) is far richer than spec |
+| 01 | §13 Camera | Brief list of patterns. Missing: API examples, configuration parameters, easing functions. Implementation has Follow/Shake/Clamp but spec lists 7 patterns |
+| 01 | §14 Input | Single paragraph. Missing: ActionMap RON format, rebinding API, input priority, touch support plans |
+| 01 | §18 Debug | Brief. Missing: exact F-key mappings, memory overlay details, Tracy configuration |
+| 01 | §20 Plugin | Generic trait shown. Missing: lifecycle order, resource registration, plugin dependencies, how plugins interact with ECS |
+| 01 | §24 Genre Modules | Only covers 4 of 18 implemented modules (platformer, farming, bullet_pattern, puzzle). Missing: combat, loot, inventory, turn_combat, dialog, crafting, procgen, economy, ai, navigation, status_effect, projectile, roguelike, fighting |
+| 01 | — | Missing sections: Atmosphere system, save/load system (only appendix A.7), collision events, game presets/templates, level loader, scene transitions |
+| 02 | §12 Adaptive Music | Fully spec'd but marked as engine-side. Should clarify that amigo_audio currently only has basic playback, not the full adaptive system |
+| 03 | §9 Pattern Language | Grammar defined, but no detail on: synthesizer architecture (oscillators, envelopes, filters), sample playback engine, pattern evaluation algorithm, MIDI-like event generation |
+| 03 | §11 Build System | Pipeline steps listed but no detail on: incremental builds, dependency tracking, cache invalidation, parallel processing |
+
+### Inconsistencies between specs
+
+| Issue | Details |
+|-------|---------|
+| UI decision conflict | Spec §21 describes two-tier Pixel UI. Key Decisions table §27 says "No egui". Reality: editor uses egui. Spec needs to acknowledge egui for editor |
+| LOC counts outdated | All LOC figures in STATUS.md were stale. Updated in this revision |
+| Module structure mismatch | Spec §3 shows `games/amigo_td/` directory — doesn't exist, game is in separate repo |
+| Asset Pipeline §9 vs §19 | Engine spec §9 says `.pak` packing is CLI tool. §19 says `amigo pack` missing. Both outdated — `amigo pack` is implemented |
+| Phase tracking | §26 says "Phase 0–1 complete" but phases 2–5 are also largely done (editor, API, CLI, headless, distribution) |
+| Spec version | 03-asset-format-spec.md references "Amigo RomKit Spec v0.1" in depends-on — this spec doesn't exist in the repo |
+
+---
+
+## LOC Summary (source of truth)
+
+### Engine Crates
+
+| Crate | LOC | Primary Responsibility |
+|-------|-----|----------------------|
+| amigo_core | 18,360 | Math, ECS, physics, collision, pathfinding, 18 genre modules, game state, events, save, scheduler |
+| amigo_editor | 5,103 | Level editor: tile painter, wave editor, collision editor, playtest, heatmap, visual scripting, wizard, egui UI |
+| amigo_render | 4,223 | wgpu renderer, sprite batcher, atlas, camera, particles, lighting, post-processing, atmosphere, font, egui integration |
+| amigo_net | 2,208 | Networking, lockstep, replay, command serialization, transport trait |
+| amigo_animation | 1,903 | Sprite animation state machine, Aseprite integration, frame events |
+| amigo_engine | 1,720 | Engine builder, game loop, config, context, splash screen, headless mode |
+| amigo_api | 1,291 | JSON-RPC IPC server (40+ methods), screenshot, tick, entity inspection |
+| amigo_audio | 1,126 | kira wrapper, SFX with variants, music playback, volume channels |
+| amigo_assets | 1,030 | Asset manager, Aseprite parser, hot reload, handle system, .pak writer |
+| amigo_input | 944 | Keyboard, mouse, gamepad (gilrs), action maps |
+| amigo_tilemap | 774 | Tilemap data structures, auto-tiling, tile properties |
+| amigo_scene | 373 | Scene stack, state machine, transitions |
+| amigo_ui | 352 | Pixel UI context (Tier 1: text, rect, sprite, progress bar) |
+| amigo_debug | 306 | FPS overlay, Tracy integration, debug toggles |
+| **Total** | **39,713** | |
+
+### Tools
+
+| Tool | LOC | Purpose |
+|------|-----|---------|
+| amigo_artgen | 2,608 | MCP server for AI art generation (ComfyUI) |
+| amigo_audiogen | 1,856 | MCP server for AI audio generation (ACE-Step, AudioGen) |
+| amigo_cli | 1,151 | CLI: new, scene, build, run, pack, release, publish, editor, export-level, info |
+| amigo_mcp | 902 | MCP bridge wrapping amigo_api JSON-RPC |
+| **Total** | **6,517** | |
+
+### Examples (8)
+
+starter, particles, tilemap_demo, audio_demo, ecs_demo, input_demo, animation_demo, pathfinding_demo
