@@ -425,8 +425,14 @@ mod tests {
     fn all_tools_have_required_fields() {
         for tool in tool_definitions() {
             assert!(tool.get("name").is_some(), "Tool missing name");
-            assert!(tool.get("description").is_some(), "Tool missing description");
-            assert!(tool.get("inputSchema").is_some(), "Tool missing inputSchema");
+            assert!(
+                tool.get("description").is_some(),
+                "Tool missing description"
+            );
+            assert!(
+                tool.get("inputSchema").is_some(),
+                "Tool missing inputSchema"
+            );
         }
     }
 

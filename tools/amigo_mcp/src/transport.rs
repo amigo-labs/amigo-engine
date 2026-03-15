@@ -3,8 +3,8 @@
 //! Reads MCP messages from stdin, sends JSON-RPC to the engine API server,
 //! and writes MCP responses to stdout.
 
-use crate::{McpRequest, McpResponse, McpServerConfig};
 use crate::protocol::handle_mcp_request;
+use crate::{McpRequest, McpResponse, McpServerConfig};
 use std::io::{self, BufRead, Write};
 
 /// Run the MCP server on stdio, forwarding tool calls to the engine API.
