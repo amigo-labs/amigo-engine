@@ -123,9 +123,7 @@ impl ActionBindings {
 
     /// Bind a gamepad button to an action using a string name (e.g. "South", "A", "DPadUp").
     pub fn bind_gamepad(&mut self, action: &str, button_name: &str) {
-        if let Some(idx) = super::gamepad::str_to_button(button_name)
-            .map(|b| button_to_index(b))
-        {
+        if let Some(idx) = super::gamepad::str_to_button(button_name).map(|b| button_to_index(b)) {
             self.bindings
                 .entry(action.to_string())
                 .or_default()
@@ -251,7 +249,9 @@ impl ActionState {
             for binding in inputs {
                 match binding {
                     InputBinding::Key(key_name) => {
-                        let Some(key) = str_to_keycode(key_name) else { continue };
+                        let Some(key) = str_to_keycode(key_name) else {
+                            continue;
+                        };
                         if input.pressed(key) {
                             self.pressed.insert(action.clone());
                         }
@@ -281,7 +281,9 @@ impl ActionState {
                     }
                     InputBinding::GamepadButton(idx) => {
                         let Some(gp) = gamepad else { continue };
-                        let Some(button) = index_to_button(*idx) else { continue };
+                        let Some(button) = index_to_button(*idx) else {
+                            continue;
+                        };
                         // Check all connected gamepads — any matching triggers the action
                         for pad_id in gp.connected_ids() {
                             if gp.pressed(pad_id, button) {

@@ -111,7 +111,9 @@ pub struct RecipeRegistry {
 
 impl RecipeRegistry {
     pub fn new() -> Self {
-        Self { recipes: FxHashMap::default() }
+        Self {
+            recipes: FxHashMap::default(),
+        }
     }
 
     pub fn register(&mut self, recipe: Recipe) {
@@ -124,21 +126,24 @@ impl RecipeRegistry {
 
     /// Get all recipes in a category.
     pub fn by_category(&self, category: &str) -> Vec<&Recipe> {
-        self.recipes.values()
+        self.recipes
+            .values()
             .filter(|r| r.category == category)
             .collect()
     }
 
     /// Get all recipes that require a specific station.
     pub fn by_station(&self, station_id: u32) -> Vec<&Recipe> {
-        self.recipes.values()
+        self.recipes
+            .values()
             .filter(|r| r.required_station == Some(station_id))
             .collect()
     }
 
     /// Get recipes craftable without a station.
     pub fn portable(&self) -> Vec<&Recipe> {
-        self.recipes.values()
+        self.recipes
+            .values()
             .filter(|r| r.required_station.is_none())
             .collect()
     }
@@ -174,7 +179,10 @@ pub enum CraftError {
 
 /// Check if an inventory has enough materials for a recipe.
 pub fn can_craft(recipe: &Recipe, inventory: &Inventory) -> bool {
-    recipe.ingredients.iter().all(|ing| inventory.has(ing.item_id, ing.count))
+    recipe
+        .ingredients
+        .iter()
+        .all(|ing| inventory.has(ing.item_id, ing.count))
 }
 
 /// Execute a crafting recipe: consume ingredients and produce results.
@@ -217,7 +225,8 @@ pub fn available_recipes<'a>(
     inventory: &Inventory,
     station: Option<u32>,
 ) -> Vec<&'a Recipe> {
-    registry.all()
+    registry
+        .all()
         .filter(|r| {
             // Station check
             match (r.required_station, station) {
@@ -232,10 +241,13 @@ pub fn available_recipes<'a>(
 
 /// Discover recipes whose ingredients the player has (even if not enough quantity).
 pub fn auto_discover(registry: &RecipeRegistry, inventory: &Inventory) -> Vec<RecipeId> {
-    registry.all()
+    registry
+        .all()
         .filter(|r| {
             // Player has at least 1 of each ingredient type
-            r.ingredients.iter().all(|ing| inventory.count(ing.item_id) > 0)
+            r.ingredients
+                .iter()
+                .all(|ing| inventory.count(ing.item_id) > 0)
         })
         .map(|r| r.id)
         .collect()
@@ -271,7 +283,11 @@ impl CraftingJob {
     }
 
     pub fn fraction(&self) -> f32 {
-        if self.duration <= 0.0 { 1.0 } else { self.progress / self.duration }
+        if self.duration <= 0.0 {
+            1.0
+        } else {
+            self.progress / self.duration
+        }
     }
 }
 
@@ -330,7 +346,11 @@ impl CraftingState {
     }
 
     /// Discover and unlock recipes based on inventory contents.
-    pub fn discover_recipes(&mut self, registry: &RecipeRegistry, inventory: &Inventory) -> Vec<RecipeId> {
+    pub fn discover_recipes(
+        &mut self,
+        registry: &RecipeRegistry,
+        inventory: &Inventory,
+    ) -> Vec<RecipeId> {
         let discovered = auto_discover(registry, inventory);
         let mut newly_unlocked = Vec::new();
         for id in discovered {
@@ -350,18 +370,58 @@ mod tests {
 
     fn test_registry() -> (RecipeRegistry, ItemRegistry) {
         let mut items = ItemRegistry::new();
-        items.register(ItemDef { id: 1, name: "Wood".into(), item_type: ItemType::Material, rarity: Rarity::Common, max_stack: 99, icon_name: "wood".into(), value: 1 });
-        items.register(ItemDef { id: 2, name: "Stone".into(), item_type: ItemType::Material, rarity: Rarity::Common, max_stack: 99, icon_name: "stone".into(), value: 1 });
-        items.register(ItemDef { id: 3, name: "Wooden Sword".into(), item_type: ItemType::Weapon, rarity: Rarity::Common, max_stack: 1, icon_name: "sword_wood".into(), value: 10 });
-        items.register(ItemDef { id: 4, name: "Stone Axe".into(), item_type: ItemType::Weapon, rarity: Rarity::Common, max_stack: 1, icon_name: "axe_stone".into(), value: 15 });
-        items.register(ItemDef { id: 5, name: "Iron Ingot".into(), item_type: ItemType::Material, rarity: Rarity::Uncommon, max_stack: 50, icon_name: "iron".into(), value: 5 });
+        items.register(ItemDef {
+            id: 1,
+            name: "Wood".into(),
+            item_type: ItemType::Material,
+            rarity: Rarity::Common,
+            max_stack: 99,
+            icon_name: "wood".into(),
+            value: 1,
+        });
+        items.register(ItemDef {
+            id: 2,
+            name: "Stone".into(),
+            item_type: ItemType::Material,
+            rarity: Rarity::Common,
+            max_stack: 99,
+            icon_name: "stone".into(),
+            value: 1,
+        });
+        items.register(ItemDef {
+            id: 3,
+            name: "Wooden Sword".into(),
+            item_type: ItemType::Weapon,
+            rarity: Rarity::Common,
+            max_stack: 1,
+            icon_name: "sword_wood".into(),
+            value: 10,
+        });
+        items.register(ItemDef {
+            id: 4,
+            name: "Stone Axe".into(),
+            item_type: ItemType::Weapon,
+            rarity: Rarity::Common,
+            max_stack: 1,
+            icon_name: "axe_stone".into(),
+            value: 15,
+        });
+        items.register(ItemDef {
+            id: 5,
+            name: "Iron Ingot".into(),
+            item_type: ItemType::Material,
+            rarity: Rarity::Uncommon,
+            max_stack: 50,
+            icon_name: "iron".into(),
+            value: 5,
+        });
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(
             Recipe::new(1, "Wooden Sword")
                 .with_ingredient(1, 5)
                 .with_result(3, 1)
-                .with_category("Weapons")
+                .with_category("Weapons"),
         );
         recipes.register(
             Recipe::new(2, "Stone Axe")
@@ -369,7 +429,7 @@ mod tests {
                 .with_ingredient(2, 2)
                 .with_result(4, 1)
                 .with_category("Weapons")
-                .with_station(1) // requires workbench
+                .with_station(1), // requires workbench
         );
         recipes.register(
             Recipe::new(3, "Smelt Iron")
@@ -377,7 +437,7 @@ mod tests {
                 .with_result(5, 1)
                 .with_time(5.0)
                 .with_station(2) // requires furnace
-                .with_category("Smelting")
+                .with_category("Smelting"),
         );
 
         (recipes, items)

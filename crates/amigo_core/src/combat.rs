@@ -136,7 +136,11 @@ impl Cooldown {
     }
 
     pub fn fraction_remaining(&self) -> f32 {
-        if self.duration <= 0.0 { 0.0 } else { self.remaining / self.duration }
+        if self.duration <= 0.0 {
+            0.0
+        } else {
+            self.remaining / self.duration
+        }
     }
 }
 
@@ -260,7 +264,15 @@ impl Projectile {
         damage_type: DamageType,
         max_range: f32,
     ) -> Self {
-        let mut p = Self::new(owner, start, RenderVec2::new(1.0, 0.0), speed, damage, damage_type, max_range);
+        let mut p = Self::new(
+            owner,
+            start,
+            RenderVec2::new(1.0, 0.0),
+            speed,
+            damage,
+            damage_type,
+            max_range,
+        );
         p.target_entity = Some(target);
         p
     }
@@ -413,9 +425,7 @@ pub fn point_in_aoe(
             let perp = (dx * (-ndy) + dy * ndx).abs();
             perp <= *width * 0.5
         }
-        AoeShape::Rect { width, height } => {
-            dx.abs() <= *width * 0.5 && dy.abs() <= *height * 0.5
-        }
+        AoeShape::Rect { width, height } => dx.abs() <= *width * 0.5 && dy.abs() <= *height * 0.5,
     }
 }
 
@@ -425,8 +435,15 @@ mod tests {
 
     #[test]
     fn damage_calculation() {
-        let attacker = CombatStats { attack_power: 20, critical_chance: 0.0, ..Default::default() };
-        let defender = CombatStats { defense: 10, ..Default::default() };
+        let attacker = CombatStats {
+            attack_power: 20,
+            critical_chance: 0.0,
+            ..Default::default()
+        };
+        let defender = CombatStats {
+            defense: 10,
+            ..Default::default()
+        };
 
         let result = calculate_damage(10, DamageType::Physical, &attacker, &defender, 42);
         assert!(result.final_amount > 0);

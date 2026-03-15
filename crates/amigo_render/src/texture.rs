@@ -26,7 +26,15 @@ impl Texture {
         id: TextureId,
         label: &str,
     ) -> Self {
-        Self::from_image_with_mode(device, queue, bind_group_layout, image, id, label, SamplerMode::Nearest)
+        Self::from_image_with_mode(
+            device,
+            queue,
+            bind_group_layout,
+            image,
+            id,
+            label,
+            SamplerMode::Nearest,
+        )
     }
 
     /// Create a texture with a specific sampler mode.
@@ -118,6 +126,13 @@ impl Texture {
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
-        Self::from_image(device, queue, bind_group_layout, &img, TextureId(0), "white_pixel")
+        Self::from_image(
+            device,
+            queue,
+            bind_group_layout,
+            &img,
+            TextureId(0),
+            "white_pixel",
+        )
     }
 }

@@ -45,6 +45,7 @@ impl GenerationalArena {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             generations: Vec::with_capacity(capacity),
@@ -76,10 +77,7 @@ impl GenerationalArena {
 
     pub fn despawn(&mut self, id: EntityId) -> bool {
         let idx = id.index as usize;
-        if idx < self.alive.len()
-            && self.alive[idx]
-            && self.generations[idx] == id.generation
-        {
+        if idx < self.alive.len() && self.alive[idx] && self.generations[idx] == id.generation {
             self.alive[idx] = false;
             self.free_list.push(id.index);
             self.count -= 1;
@@ -91,9 +89,7 @@ impl GenerationalArena {
 
     pub fn is_alive(&self, id: EntityId) -> bool {
         let idx = id.index as usize;
-        idx < self.alive.len()
-            && self.alive[idx]
-            && self.generations[idx] == id.generation
+        idx < self.alive.len() && self.alive[idx] && self.generations[idx] == id.generation
     }
 
     pub fn count(&self) -> usize {

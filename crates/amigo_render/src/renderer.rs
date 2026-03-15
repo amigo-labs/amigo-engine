@@ -101,12 +101,15 @@ impl Renderer {
         info!("GPU adapter: {:?}", adapter.get_info().name);
 
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("amigo_device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: Default::default(),
-            }, None)
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("amigo_device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    memory_hints: Default::default(),
+                },
+                None,
+            )
             .await
             .expect("Failed to create GPU device");
 
@@ -582,7 +585,11 @@ impl Renderer {
             let row = &data[src_offset..src_offset + (4 * width) as usize];
             for x in 0..width {
                 let i = (x * 4) as usize;
-                img.put_pixel(x, y, image::Rgba([row[i], row[i + 1], row[i + 2], row[i + 3]]));
+                img.put_pixel(
+                    x,
+                    y,
+                    image::Rgba([row[i], row[i + 1], row[i + 2], row[i + 3]]),
+                );
             }
         }
 
@@ -596,7 +603,8 @@ impl Renderer {
             }
         }
 
-        img.save(path).map_err(|e| format!("Failed to save screenshot: {e}"))?;
+        img.save(path)
+            .map_err(|e| format!("Failed to save screenshot: {e}"))?;
         info!("Screenshot saved: {} ({}x{})", path, width, height);
 
         Ok(())

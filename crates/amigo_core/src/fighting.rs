@@ -149,7 +149,12 @@ impl HitBox {
     /// Get the hitbox rect in world space given fighter position and facing.
     pub fn world_rect(&self, pos: RenderVec2, facing_right: bool) -> Rect {
         if facing_right {
-            Rect::new(pos.x + self.rect.x, pos.y + self.rect.y, self.rect.w, self.rect.h)
+            Rect::new(
+                pos.x + self.rect.x,
+                pos.y + self.rect.y,
+                self.rect.w,
+                self.rect.h,
+            )
         } else {
             Rect::new(
                 pos.x - self.rect.x - self.rect.w,
@@ -237,21 +242,33 @@ impl MoveDef {
     }
 
     pub fn startup_frames(&self) -> usize {
-        self.frames.iter().take_while(|f| f.phase == FramePhase::Startup).count()
+        self.frames
+            .iter()
+            .take_while(|f| f.phase == FramePhase::Startup)
+            .count()
     }
 
     pub fn active_frames(&self) -> usize {
-        self.frames.iter().filter(|f| f.phase == FramePhase::Active).count()
+        self.frames
+            .iter()
+            .filter(|f| f.phase == FramePhase::Active)
+            .count()
     }
 
     pub fn recovery_frames(&self) -> usize {
-        self.frames.iter().rev().take_while(|f| f.phase == FramePhase::Recovery).count()
+        self.frames
+            .iter()
+            .rev()
+            .take_while(|f| f.phase == FramePhase::Recovery)
+            .count()
     }
 
     /// Frame advantage on hit (positive = attacker can act first).
     pub fn frame_advantage_hit(&self) -> i32 {
         let recovery = self.recovery_frames() as i32;
-        let hitstun = self.frames.iter()
+        let hitstun = self
+            .frames
+            .iter()
             .find(|f| f.phase == FramePhase::Active)
             .and_then(|f| f.hitboxes.first())
             .map(|h| h.hitstun as i32)
@@ -262,7 +279,9 @@ impl MoveDef {
     /// Frame advantage on block.
     pub fn frame_advantage_block(&self) -> i32 {
         let recovery = self.recovery_frames() as i32;
-        let blockstun = self.frames.iter()
+        let blockstun = self
+            .frames
+            .iter()
             .find(|f| f.phase == FramePhase::Active)
             .and_then(|f| f.hitboxes.first())
             .map(|h| h.blockstun as i32)
@@ -316,7 +335,9 @@ impl InputFrame {
 }
 
 impl Default for InputFrame {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Input buffer for motion detection.
@@ -396,27 +417,48 @@ pub mod motions {
 
     /// Half circle forward (←↙↓↘→).
     pub fn hcf() -> Vec<InputDir> {
-        vec![InputDir::Back, InputDir::DownBack, InputDir::Down, InputDir::DownForward, InputDir::Forward]
+        vec![
+            InputDir::Back,
+            InputDir::DownBack,
+            InputDir::Down,
+            InputDir::DownForward,
+            InputDir::Forward,
+        ]
     }
 
     /// Half circle back (→↘↓↙←).
     pub fn hcb() -> Vec<InputDir> {
-        vec![InputDir::Forward, InputDir::DownForward, InputDir::Down, InputDir::DownBack, InputDir::Back]
+        vec![
+            InputDir::Forward,
+            InputDir::DownForward,
+            InputDir::Down,
+            InputDir::DownBack,
+            InputDir::Back,
+        ]
     }
 
     /// Double quarter circle forward (↓↘→↓↘→) — Super motion.
     pub fn double_qcf() -> Vec<InputDir> {
         vec![
-            InputDir::Down, InputDir::DownForward, InputDir::Forward,
-            InputDir::Down, InputDir::DownForward, InputDir::Forward,
+            InputDir::Down,
+            InputDir::DownForward,
+            InputDir::Forward,
+            InputDir::Down,
+            InputDir::DownForward,
+            InputDir::Forward,
         ]
     }
 
     /// 360 motion (SPD / command grab).
     pub fn spd() -> Vec<InputDir> {
         vec![
-            InputDir::Forward, InputDir::DownForward, InputDir::Down, InputDir::DownBack,
-            InputDir::Back, InputDir::UpBack, InputDir::Up,
+            InputDir::Forward,
+            InputDir::DownForward,
+            InputDir::Down,
+            InputDir::DownBack,
+            InputDir::Back,
+            InputDir::UpBack,
+            InputDir::Up,
         ]
     }
 }
@@ -486,7 +528,9 @@ impl ComboTracker {
 
     /// Call every frame to check for combo drops.
     pub fn update(&mut self) {
-        if !self.active { return; }
+        if !self.active {
+            return;
+        }
         self.gap_timer += 1;
         if self.gap_timer > self.max_gap {
             self.end();
@@ -514,7 +558,9 @@ impl ComboTracker {
 }
 
 impl Default for ComboTracker {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -675,7 +721,10 @@ impl Fighter {
     }
 
     pub fn can_act(&self) -> bool {
-        matches!(self.state, FighterState::Idle | FighterState::Walking | FighterState::Crouching)
+        matches!(
+            self.state,
+            FighterState::Idle | FighterState::Walking | FighterState::Crouching
+        )
     }
 
     pub fn is_blocking(&self) -> bool {
@@ -727,18 +776,25 @@ mod tests {
     fn jab() -> MoveDef {
         MoveDef::new("Jab")
             .with_startup(3)
-            .with_active(2, HitBox::new(
-                Rect::new(8.0, -32.0, 32.0, 16.0), 30,
-            ).with_hitstun(12).with_blockstun(5))
+            .with_active(
+                2,
+                HitBox::new(Rect::new(8.0, -32.0, 32.0, 16.0), 30)
+                    .with_hitstun(12)
+                    .with_blockstun(5),
+            )
             .with_recovery(6)
     }
 
     fn heavy_kick() -> MoveDef {
         MoveDef::new("Heavy Kick")
             .with_startup(8)
-            .with_active(4, HitBox::new(
-                Rect::new(4.0, -16.0, 48.0, 20.0), 80,
-            ).with_hitstun(20).with_blockstun(10).with_knockback(8.0, -2.0))
+            .with_active(
+                4,
+                HitBox::new(Rect::new(4.0, -16.0, 48.0, 20.0), 80)
+                    .with_hitstun(20)
+                    .with_blockstun(10)
+                    .with_knockback(8.0, -2.0),
+            )
             .with_recovery(12)
     }
 
@@ -791,9 +847,19 @@ mod tests {
         let mut buf = InputBuffer::new(30);
 
         // Input a quarter circle forward
-        buf.push(InputFrame { direction: InputDir::Down, ..Default::default() });
-        buf.push(InputFrame { direction: InputDir::DownForward, ..Default::default() });
-        buf.push(InputFrame { direction: InputDir::Forward, light: true, ..Default::default() });
+        buf.push(InputFrame {
+            direction: InputDir::Down,
+            ..Default::default()
+        });
+        buf.push(InputFrame {
+            direction: InputDir::DownForward,
+            ..Default::default()
+        });
+        buf.push(InputFrame {
+            direction: InputDir::Forward,
+            light: true,
+            ..Default::default()
+        });
 
         assert!(buf.check_motion(&motions::qcf(), 10));
         assert!(!buf.check_motion(&motions::dp(), 10));
@@ -821,7 +887,9 @@ mod tests {
         let defender = Fighter::new(RenderVec2::new(130.0, 200.0), 1000);
 
         // Skip startup
-        for _ in 0..3 { attacker.advance_move(&moves); }
+        for _ in 0..3 {
+            attacker.advance_move(&moves);
+        }
         // Active frame
         let frame_idx = attacker.advance_move(&moves).unwrap();
         let pos = attacker.position;
@@ -846,9 +914,12 @@ mod tests {
     fn move_builder_pattern() {
         let fireball = MoveDef::new("Hadouken")
             .with_startup(12)
-            .with_active(3, HitBox::new(
-                Rect::new(16.0, -20.0, 24.0, 24.0), 60,
-            ).with_hit_type(HitType::Projectile).with_guard_type(GuardType::Mid))
+            .with_active(
+                3,
+                HitBox::new(Rect::new(16.0, -20.0, 24.0, 24.0), 60)
+                    .with_hit_type(HitType::Projectile)
+                    .with_guard_type(GuardType::Mid),
+            )
             .with_recovery(18);
 
         assert_eq!(fireball.total_frames(), 33);

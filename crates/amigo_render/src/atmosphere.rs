@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Lerp between two RGBA colors by factor `t` (0.0 = a, 1.0 = b).
 pub fn lerp_color(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
@@ -211,7 +211,11 @@ impl AtmosphereManager {
     /// The interpolated ambient color for the current frame.
     pub fn current_ambient_color(&self) -> [f32; 4] {
         match &self.target {
-            Some(target) => lerp_color(self.current.ambient_color, target.ambient_color, self.transition_progress),
+            Some(target) => lerp_color(
+                self.current.ambient_color,
+                target.ambient_color,
+                self.transition_progress,
+            ),
             None => self.current.ambient_color,
         }
     }
@@ -219,7 +223,11 @@ impl AtmosphereManager {
     /// The interpolated fog color for the current frame.
     pub fn current_fog_color(&self) -> [f32; 4] {
         match &self.target {
-            Some(target) => lerp_color(self.current.fog_color, target.fog_color, self.transition_progress),
+            Some(target) => lerp_color(
+                self.current.fog_color,
+                target.fog_color,
+                self.transition_progress,
+            ),
             None => self.current.fog_color,
         }
     }
@@ -227,7 +235,11 @@ impl AtmosphereManager {
     /// The interpolated fog density for the current frame.
     pub fn current_fog_density(&self) -> f32 {
         match &self.target {
-            Some(target) => lerp(self.current.fog_density, target.fog_density, self.transition_progress),
+            Some(target) => lerp(
+                self.current.fog_density,
+                target.fog_density,
+                self.transition_progress,
+            ),
             None => self.current.fog_density,
         }
     }
@@ -235,7 +247,11 @@ impl AtmosphereManager {
     /// The interpolated brightness for the current frame.
     pub fn current_brightness(&self) -> f32 {
         match &self.target {
-            Some(target) => lerp(self.current.brightness, target.brightness, self.transition_progress),
+            Some(target) => lerp(
+                self.current.brightness,
+                target.brightness,
+                self.transition_progress,
+            ),
             None => self.current.brightness,
         }
     }
@@ -243,7 +259,11 @@ impl AtmosphereManager {
     /// The interpolated contrast for the current frame.
     pub fn current_contrast(&self) -> f32 {
         match &self.target {
-            Some(target) => lerp(self.current.contrast, target.contrast, self.transition_progress),
+            Some(target) => lerp(
+                self.current.contrast,
+                target.contrast,
+                self.transition_progress,
+            ),
             None => self.current.contrast,
         }
     }
@@ -251,7 +271,11 @@ impl AtmosphereManager {
     /// The interpolated saturation for the current frame.
     pub fn current_saturation(&self) -> f32 {
         match &self.target {
-            Some(target) => lerp(self.current.saturation, target.saturation, self.transition_progress),
+            Some(target) => lerp(
+                self.current.saturation,
+                target.saturation,
+                self.transition_progress,
+            ),
             None => self.current.saturation,
         }
     }
@@ -259,7 +283,11 @@ impl AtmosphereManager {
     /// The interpolated vignette strength for the current frame.
     pub fn current_vignette(&self) -> f32 {
         match &self.target {
-            Some(target) => lerp(self.current.vignette_strength, target.vignette_strength, self.transition_progress),
+            Some(target) => lerp(
+                self.current.vignette_strength,
+                target.vignette_strength,
+                self.transition_progress,
+            ),
             None => self.current.vignette_strength,
         }
     }

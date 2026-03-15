@@ -23,12 +23,24 @@ impl Rect {
         }
     }
 
-    pub fn left(&self) -> f32 { self.x }
-    pub fn right(&self) -> f32 { self.x + self.w }
-    pub fn top(&self) -> f32 { self.y }
-    pub fn bottom(&self) -> f32 { self.y + self.h }
-    pub fn center_x(&self) -> f32 { self.x + self.w * 0.5 }
-    pub fn center_y(&self) -> f32 { self.y + self.h * 0.5 }
+    pub fn left(&self) -> f32 {
+        self.x
+    }
+    pub fn right(&self) -> f32 {
+        self.x + self.w
+    }
+    pub fn top(&self) -> f32 {
+        self.y
+    }
+    pub fn bottom(&self) -> f32 {
+        self.y + self.h
+    }
+    pub fn center_x(&self) -> f32 {
+        self.x + self.w * 0.5
+    }
+    pub fn center_y(&self) -> f32 {
+        self.y + self.h * 0.5
+    }
 
     pub fn contains(&self, px: f32, py: f32) -> bool {
         px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h

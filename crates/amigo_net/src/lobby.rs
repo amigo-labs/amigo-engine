@@ -240,12 +240,7 @@ impl LobbyManager {
     }
 
     /// Create a new room. Returns the room ID.
-    pub fn create_room(
-        &mut self,
-        host: PlayerId,
-        host_name: String,
-        config: RoomConfig,
-    ) -> RoomId {
+    pub fn create_room(&mut self, host: PlayerId, host_name: String, config: RoomConfig) -> RoomId {
         let id = RoomId(self.next_room_id);
         self.next_room_id += 1;
         let room = Room::new(id, host, host_name, config);

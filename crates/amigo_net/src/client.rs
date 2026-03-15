@@ -35,9 +35,9 @@ pub struct NetworkClient<C> {
 impl<C: Clone + Serialize + DeserializeOwned> NetworkClient<C> {
     /// Create a client and begin connecting to the server.
     pub fn connect(server_addr: &str) -> std::io::Result<Self> {
-        let server: SocketAddr = server_addr.parse().map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
-        })?;
+        let server: SocketAddr = server_addr
+            .parse()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.set_nonblocking(true)?;
         debug!("Client connecting to {}", server);
@@ -87,8 +87,7 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkClient<C> {
         }
 
         // Send heartbeat every 2 seconds when connected
-        if self.state == ConnectionState::Connected
-            && self.last_heartbeat.elapsed().as_secs() >= 2
+        if self.state == ConnectionState::Connected && self.last_heartbeat.elapsed().as_secs() >= 2
         {
             self.send_heartbeat();
             self.last_heartbeat = Instant::now();

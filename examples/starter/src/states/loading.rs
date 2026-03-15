@@ -27,7 +27,12 @@ impl LoadingState {
 
         // "Loading..." text
         let (tw, _) = ctx.measure_text("Loading...");
-        ctx.draw_text("Loading...", (ctx.virtual_width - tw) * 0.5, ctx.virtual_height * 0.45, Color::WHITE);
+        ctx.draw_text(
+            "Loading...",
+            (ctx.virtual_width - tw) * 0.5,
+            ctx.virtual_height * 0.45,
+            Color::WHITE,
+        );
 
         // Simple "loading" indicator bar
         let bar_w = 120.0;
@@ -35,6 +40,9 @@ impl LoadingState {
         let x = (ctx.virtual_width - bar_w) * 0.5;
         let y = ctx.virtual_height * 0.55;
         ctx.draw_rect(Rect::new(x, y, bar_w, bar_h), Color::rgb(0.2, 0.2, 0.25));
-        ctx.draw_rect(Rect::new(x, y, bar_w * 0.6, bar_h), Color::rgb(0.4, 0.7, 1.0));
+        ctx.draw_rect(
+            Rect::new(x, y, bar_w * 0.6, bar_h),
+            Color::rgb(0.4, 0.7, 1.0),
+        );
     }
 }

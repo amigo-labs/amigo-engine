@@ -25,7 +25,11 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
     /// Create a grid pre-filled with values.
     pub fn from_data(width: u32, height: u32, data: Vec<Option<T>>) -> Self {
         assert_eq!(data.len(), (width * height) as usize);
-        Self { width, height, cells: data }
+        Self {
+            width,
+            height,
+            cells: data,
+        }
     }
 
     fn idx(&self, x: u32, y: u32) -> Option<usize> {
@@ -52,8 +56,14 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
 
     /// Swap two cells. Returns true if both are in bounds.
     pub fn swap(&mut self, x1: u32, y1: u32, x2: u32, y2: u32) -> bool {
-        let i1 = match self.idx(x1, y1) { Some(i) => i, None => return false };
-        let i2 = match self.idx(x2, y2) { Some(i) => i, None => return false };
+        let i1 = match self.idx(x1, y1) {
+            Some(i) => i,
+            None => return false,
+        };
+        let i2 = match self.idx(x2, y2) {
+            Some(i) => i,
+            None => return false,
+        };
         self.cells.swap(i1, i2);
         true
     }
@@ -136,7 +146,10 @@ pub struct MatchGroup {
 }
 
 /// Find horizontal matches of `min_length` or more.
-pub fn find_horizontal_matches<T: Copy + Eq>(grid: &PuzzleGrid<T>, min_length: u32) -> Vec<MatchGroup> {
+pub fn find_horizontal_matches<T: Copy + Eq>(
+    grid: &PuzzleGrid<T>,
+    min_length: u32,
+) -> Vec<MatchGroup> {
     let mut groups = Vec::new();
 
     for y in 0..grid.height {
@@ -152,7 +165,8 @@ pub fn find_horizontal_matches<T: Copy + Eq>(grid: &PuzzleGrid<T>, min_length: u
                 }
                 (Some(v), _) => {
                     if run_len >= min_length {
-                        let cells: Vec<_> = (run_start..run_start + run_len).map(|rx| (rx, y)).collect();
+                        let cells: Vec<_> =
+                            (run_start..run_start + run_len).map(|rx| (rx, y)).collect();
                         groups.push(MatchGroup { cells });
                     }
                     run_start = x;
@@ -161,7 +175,8 @@ pub fn find_horizontal_matches<T: Copy + Eq>(grid: &PuzzleGrid<T>, min_length: u
                 }
                 (None, _) => {
                     if run_len >= min_length {
-                        let cells: Vec<_> = (run_start..run_start + run_len).map(|rx| (rx, y)).collect();
+                        let cells: Vec<_> =
+                            (run_start..run_start + run_len).map(|rx| (rx, y)).collect();
                         groups.push(MatchGroup { cells });
                     }
                     run_val = None;
@@ -180,7 +195,10 @@ pub fn find_horizontal_matches<T: Copy + Eq>(grid: &PuzzleGrid<T>, min_length: u
 }
 
 /// Find vertical matches of `min_length` or more.
-pub fn find_vertical_matches<T: Copy + Eq>(grid: &PuzzleGrid<T>, min_length: u32) -> Vec<MatchGroup> {
+pub fn find_vertical_matches<T: Copy + Eq>(
+    grid: &PuzzleGrid<T>,
+    min_length: u32,
+) -> Vec<MatchGroup> {
     let mut groups = Vec::new();
 
     for x in 0..grid.width {
@@ -196,7 +214,8 @@ pub fn find_vertical_matches<T: Copy + Eq>(grid: &PuzzleGrid<T>, min_length: u32
                 }
                 (Some(v), _) => {
                     if run_len >= min_length {
-                        let cells: Vec<_> = (run_start..run_start + run_len).map(|ry| (x, ry)).collect();
+                        let cells: Vec<_> =
+                            (run_start..run_start + run_len).map(|ry| (x, ry)).collect();
                         groups.push(MatchGroup { cells });
                     }
                     run_start = y;
@@ -205,7 +224,8 @@ pub fn find_vertical_matches<T: Copy + Eq>(grid: &PuzzleGrid<T>, min_length: u32
                 }
                 (None, _) => {
                     if run_len >= min_length {
-                        let cells: Vec<_> = (run_start..run_start + run_len).map(|ry| (x, ry)).collect();
+                        let cells: Vec<_> =
+                            (run_start..run_start + run_len).map(|ry| (x, ry)).collect();
                         groups.push(MatchGroup { cells });
                     }
                     run_val = None;
@@ -247,10 +267,18 @@ pub fn find_connected<T: Copy + Eq>(grid: &PuzzleGrid<T>, sx: u32, sy: u32) -> V
 
         result.push((x, y));
 
-        if x > 0 { stack.push((x - 1, y)); }
-        if x + 1 < grid.width { stack.push((x + 1, y)); }
-        if y > 0 { stack.push((x, y - 1)); }
-        if y + 1 < grid.height { stack.push((x, y + 1)); }
+        if x > 0 {
+            stack.push((x - 1, y));
+        }
+        if x + 1 < grid.width {
+            stack.push((x + 1, y));
+        }
+        if y > 0 {
+            stack.push((x, y - 1));
+        }
+        if y + 1 < grid.height {
+            stack.push((x, y + 1));
+        }
     }
 
     result
@@ -653,8 +681,18 @@ mod tests {
     fn move_history_undo_redo() {
         let mut hist = MoveHistory::new();
 
-        hist.push(PuzzleMove::Swap { x1: 0, y1: 0, x2: 1, y2: 0 });
-        hist.push(PuzzleMove::Swap { x1: 1, y1: 0, x2: 2, y2: 0 });
+        hist.push(PuzzleMove::Swap {
+            x1: 0,
+            y1: 0,
+            x2: 1,
+            y2: 0,
+        });
+        hist.push(PuzzleMove::Swap {
+            x1: 1,
+            y1: 0,
+            x2: 2,
+            y2: 0,
+        });
 
         assert_eq!(hist.move_count(), 2);
         assert!(hist.can_undo());

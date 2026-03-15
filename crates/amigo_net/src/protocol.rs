@@ -38,9 +38,20 @@ pub struct Packet {
 }
 
 impl Packet {
-    pub fn new(kind: PacketKind, sequence: u16, ack: u16, player_id: u32, payload: Vec<u8>) -> Self {
+    pub fn new(
+        kind: PacketKind,
+        sequence: u16,
+        ack: u16,
+        player_id: u32,
+        payload: Vec<u8>,
+    ) -> Self {
         Self {
-            header: PacketHeader { kind, sequence, ack, player_id },
+            header: PacketHeader {
+                kind,
+                sequence,
+                ack,
+                player_id,
+            },
             payload,
         }
     }
@@ -94,7 +105,10 @@ mod tests {
         assert!(SeqNum::is_newer(100, 50));
         assert!(!SeqNum::is_newer(50, 100));
         // Wrapping: 0 is newer than 65530
-        assert!(SeqNum::is_newer(0_u16.wrapping_sub(1), 0_u16.wrapping_sub(10)));
+        assert!(SeqNum::is_newer(
+            0_u16.wrapping_sub(1),
+            0_u16.wrapping_sub(10)
+        ));
     }
 
     #[test]

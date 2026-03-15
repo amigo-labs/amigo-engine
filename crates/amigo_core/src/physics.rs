@@ -228,15 +228,16 @@ impl PhysicsWorld {
                 };
 
                 // Skip static-static and kinematic-kinematic pairs
-                if body_a.body_type != BodyType::Dynamic
-                    && body_b.body_type != BodyType::Dynamic
-                {
+                if body_a.body_type != BodyType::Dynamic && body_b.body_type != BodyType::Dynamic {
                     continue;
                 }
 
-                if let Some(contact) =
-                    check_shapes(body_a.position, &body_a.shape, body_b.position, &body_b.shape)
-                {
+                if let Some(contact) = check_shapes(
+                    body_a.position,
+                    &body_a.shape,
+                    body_b.position,
+                    &body_b.shape,
+                ) {
                     pairs.push((entity_a, entity_b, contact));
                 }
             }
@@ -244,12 +245,7 @@ impl PhysicsWorld {
         pairs
     }
 
-    fn resolve_collision(
-        &mut self,
-        id_a: EntityId,
-        id_b: EntityId,
-        contact: &ContactInfo,
-    ) {
+    fn resolve_collision(&mut self, id_a: EntityId, id_b: EntityId, contact: &ContactInfo) {
         // Get inverse masses first (avoids borrow issues)
         let (inv_a, inv_b, vel_a, vel_b, rest, friction) = {
             let a = match self.bodies.get(&id_a) {
@@ -260,8 +256,16 @@ impl PhysicsWorld {
                 Some(b) => b,
                 None => return,
             };
-            let inv_a = if a.body_type == BodyType::Dynamic { a.inv_mass } else { 0.0 };
-            let inv_b = if b.body_type == BodyType::Dynamic { b.inv_mass } else { 0.0 };
+            let inv_a = if a.body_type == BodyType::Dynamic {
+                a.inv_mass
+            } else {
+                0.0
+            };
+            let inv_b = if b.body_type == BodyType::Dynamic {
+                b.inv_mass
+            } else {
+                0.0
+            };
             let rest = a.restitution.max(b.restitution);
             let friction = (a.friction + b.friction) * 0.5;
             (inv_a, inv_b, a.velocity, b.velocity, rest, friction)
@@ -318,8 +322,16 @@ impl PhysicsWorld {
 
         // --- Friction impulse ---
         // Recompute relative velocity after normal impulse
-        let vel_a = self.bodies.get(&id_a).map(|b| b.velocity).unwrap_or(RenderVec2::new(0.0, 0.0));
-        let vel_b = self.bodies.get(&id_b).map(|b| b.velocity).unwrap_or(RenderVec2::new(0.0, 0.0));
+        let vel_a = self
+            .bodies
+            .get(&id_a)
+            .map(|b| b.velocity)
+            .unwrap_or(RenderVec2::new(0.0, 0.0));
+        let vel_b = self
+            .bodies
+            .get(&id_b)
+            .map(|b| b.velocity)
+            .unwrap_or(RenderVec2::new(0.0, 0.0));
         let rel_vel = RenderVec2::new(vel_a.x - vel_b.x, vel_a.y - vel_b.y);
         let vel_along_normal = rel_vel.x * normal.x + rel_vel.y * normal.y;
         let tangent_x = rel_vel.x - vel_along_normal * normal.x;
@@ -424,7 +436,11 @@ mod tests {
 
         let body = world.get_body(dyn_id).unwrap();
         // Body should rest on or near the floor, not fall through
-        assert!(body.position.y < 25.0, "Body should be resting on floor, got y={}", body.position.y);
+        assert!(
+            body.position.y < 25.0,
+            "Body should be resting on floor, got y={}",
+            body.position.y
+        );
     }
 
     #[test]
@@ -433,7 +449,11 @@ mod tests {
 
         let mut ball = RigidBody::dynamic(
             RenderVec2::new(0.0, 0.0),
-            CollisionShape::Circle { cx: 0.0, cy: 0.0, radius: 8.0 },
+            CollisionShape::Circle {
+                cx: 0.0,
+                cy: 0.0,
+                radius: 8.0,
+            },
             1.0,
         );
         ball.restitution = 1.0;

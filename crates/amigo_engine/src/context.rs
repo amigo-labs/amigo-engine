@@ -1,15 +1,15 @@
-use amigo_core::{Color, Rect, RenderVec2, TimeInfo, World};
 use amigo_core::events::EventHub;
 use amigo_core::resources::Resources;
-use amigo_core::save::{SaveManager, SaveConfig};
+use amigo_core::save::{SaveConfig, SaveManager};
 use amigo_core::scheduler::TickScheduler;
+use amigo_core::{Color, Rect, RenderVec2, TimeInfo, World};
 use amigo_input::InputState;
 use amigo_render::camera::Camera;
-use amigo_render::font::{FontManager, FontId};
+use amigo_render::font::{FontId, FontManager};
 use amigo_render::particles::ParticleSystem;
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
-use amigo_tilemap::{TileLayer, TileId};
+use amigo_tilemap::{TileId, TileLayer};
 
 #[cfg(feature = "audio")]
 use amigo_audio::AudioManager;
@@ -64,7 +64,13 @@ impl GameContext {
         self.fonts.load_font(data, px)
     }
 
-    pub fn register_sprite_texture(&mut self, name: String, texture_id: TextureId, width: u32, height: u32) {
+    pub fn register_sprite_texture(
+        &mut self,
+        name: String,
+        texture_id: TextureId,
+        width: u32,
+        height: u32,
+    ) {
         self.sprite_textures.push((name, texture_id, width, height));
     }
 
@@ -183,8 +189,12 @@ impl<'a> DrawContext<'a> {
     /// The font must have been loaded via `GameContext::load_font()` before
     /// calling this. If no font is loaded, this is a no-op.
     pub fn draw_text(&mut self, text: &str, x: f32, y: f32, color: Color) {
-        let Some(font) = self.game_ctx.fonts.default_font() else { return };
-        let Some(tex_id) = font.texture_id else { return };
+        let Some(font) = self.game_ctx.fonts.default_font() else {
+            return;
+        };
+        let Some(tex_id) = font.texture_id else {
+            return;
+        };
         let px = font.px;
 
         let mut cx = x;
@@ -213,16 +223,13 @@ impl<'a> DrawContext<'a> {
     }
 
     /// Draw text using a specific font by FontId.
-    pub fn draw_text_font(
-        &mut self,
-        font_id: FontId,
-        text: &str,
-        x: f32,
-        y: f32,
-        color: Color,
-    ) {
-        let Some(font) = self.game_ctx.fonts.get(font_id) else { return };
-        let Some(tex_id) = font.texture_id else { return };
+    pub fn draw_text_font(&mut self, font_id: FontId, text: &str, x: f32, y: f32, color: Color) {
+        let Some(font) = self.game_ctx.fonts.get(font_id) else {
+            return;
+        };
+        let Some(tex_id) = font.texture_id else {
+            return;
+        };
         let px = font.px;
 
         let mut cx = x;

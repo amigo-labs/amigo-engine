@@ -148,7 +148,8 @@ impl GamepadState {
     /// Returns `0.0` if the gamepad or axis is not found, or if the value is within
     /// the deadzone.
     pub fn axis(&self, id: GamepadId, axis: Axis) -> f32 {
-        let raw = self.pads
+        let raw = self
+            .pads
             .get(&id)
             .and_then(|p| p.axis_values.get(&axis).copied())
             .unwrap_or(0.0);
@@ -238,13 +239,7 @@ impl GamepadState {
     /// `duration` is how long the effect plays.
     ///
     /// This is a best-effort API — not all platforms/gamepads support rumble.
-    pub fn rumble(
-        &mut self,
-        id: GamepadId,
-        strong: f32,
-        weak: f32,
-        duration: std::time::Duration,
-    ) {
+    pub fn rumble(&mut self, id: GamepadId, strong: f32, weak: f32, duration: std::time::Duration) {
         let strong = strong.clamp(0.0, 1.0);
         let weak = weak.clamp(0.0, 1.0);
         if strong == 0.0 && weak == 0.0 {
@@ -253,13 +248,23 @@ impl GamepadState {
         let dur = ff::Ticks::from_ms(duration.as_millis().min(10_000) as u32);
         if let Ok(effect) = ff::EffectBuilder::new()
             .add_effect(ff::BaseEffect {
-                kind: ff::BaseEffectType::Strong { magnitude: (strong * 65535.0) as u16 },
-                scheduling: ff::Replay { play_for: dur, ..Default::default() },
+                kind: ff::BaseEffectType::Strong {
+                    magnitude: (strong * 65535.0) as u16,
+                },
+                scheduling: ff::Replay {
+                    play_for: dur,
+                    ..Default::default()
+                },
                 envelope: Default::default(),
             })
             .add_effect(ff::BaseEffect {
-                kind: ff::BaseEffectType::Weak { magnitude: (weak * 65535.0) as u16 },
-                scheduling: ff::Replay { play_for: dur, ..Default::default() },
+                kind: ff::BaseEffectType::Weak {
+                    magnitude: (weak * 65535.0) as u16,
+                },
+                scheduling: ff::Replay {
+                    play_for: dur,
+                    ..Default::default()
+                },
                 envelope: Default::default(),
             })
             .gamepads(&[id])
@@ -403,7 +408,11 @@ mod tests {
     fn button_name_roundtrip() {
         for &btn in &ALL_BUTTONS {
             let name = button_to_str(btn);
-            assert_eq!(str_to_button(name), Some(btn), "roundtrip failed for {name}");
+            assert_eq!(
+                str_to_button(name),
+                Some(btn),
+                "roundtrip failed for {name}"
+            );
         }
     }
 

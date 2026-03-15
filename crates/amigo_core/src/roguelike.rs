@@ -19,7 +19,14 @@ pub struct Room {
 
 impl Room {
     pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
-        Self { x, y, width, height, room_type: RoomType::Normal, connected_to: Vec::new() }
+        Self {
+            x,
+            y,
+            width,
+            height,
+            room_type: RoomType::Normal,
+            connected_to: Vec::new(),
+        }
     }
 
     pub fn center(&self) -> (i32, i32) {
@@ -39,7 +46,10 @@ impl Room {
 
     pub fn world_center(&self, tile_size: f32) -> RenderVec2 {
         let (cx, cy) = self.center();
-        RenderVec2::new(cx as f32 * tile_size + tile_size * 0.5, cy as f32 * tile_size + tile_size * 0.5)
+        RenderVec2::new(
+            cx as f32 * tile_size + tile_size * 0.5,
+            cy as f32 * tile_size + tile_size * 0.5,
+        )
     }
 }
 
@@ -95,7 +105,10 @@ impl Dungeon {
 
     /// Get rooms by type.
     pub fn rooms_of_type(&self, room_type: RoomType) -> Vec<&Room> {
-        self.rooms.iter().filter(|r| r.room_type == room_type).collect()
+        self.rooms
+            .iter()
+            .filter(|r| r.room_type == room_type)
+            .collect()
     }
 }
 
@@ -140,7 +153,9 @@ impl DungeonRng {
     }
 
     fn range_i32(&mut self, min: i32, max: i32) -> i32 {
-        if min >= max { return min; }
+        if min >= max {
+            return min;
+        }
         min + (self.next() % (max - min + 1) as u64) as i32
     }
 
@@ -168,14 +183,22 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
 
         let room = Room::new(x, y, w, h);
 
-        let overlaps = rooms.iter().any(|r: &Room| r.intersects(&room, config.room_padding));
+        let overlaps = rooms
+            .iter()
+            .any(|r: &Room| r.intersects(&room, config.room_padding));
         if !overlaps {
             rooms.push(room);
         }
     }
 
     if rooms.is_empty() {
-        return Dungeon { width: config.width, height: config.height, rooms, corridors: Vec::new(), tiles };
+        return Dungeon {
+            width: config.width,
+            height: config.height,
+            rooms,
+            corridors: Vec::new(),
+            tiles,
+        };
     }
 
     // Carve room floors
@@ -215,7 +238,13 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
             }
         }
 
-        let corr = carve_corridor(&rooms[best_from], &rooms[best_to], &mut tiles, config.width, &mut rng);
+        let corr = carve_corridor(
+            &rooms[best_from],
+            &rooms[best_to],
+            &mut tiles,
+            config.width,
+            &mut rng,
+        );
         corridors.push(corr);
         rooms[best_from].connected_to.push(best_to);
         rooms[best_to].connected_to.push(best_from);
@@ -243,7 +272,9 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
 
         // Boss room = furthest from spawn
         let (sx, sy) = rooms[0].center();
-        let boss_idx = rooms.iter().enumerate()
+        let boss_idx = rooms
+            .iter()
+            .enumerate()
             .skip(1)
             .max_by_key(|(_, r)| {
                 let (cx, cy) = r.center();
@@ -255,7 +286,9 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
 
         // Random treasure rooms
         for i in 1..rooms.len() {
-            if i == boss_idx { continue; }
+            if i == boss_idx {
+                continue;
+            }
             if rng.f32() < 0.2 {
                 rooms[i].room_type = RoomType::Treasure;
             } else if rng.f32() < 0.1 {
@@ -264,10 +297,22 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
         }
     }
 
-    Dungeon { width: config.width, height: config.height, rooms, corridors, tiles }
+    Dungeon {
+        width: config.width,
+        height: config.height,
+        rooms,
+        corridors,
+        tiles,
+    }
 }
 
-fn carve_corridor(from: &Room, to: &Room, tiles: &mut [DungeonTile], width: i32, rng: &mut DungeonRng) -> Corridor {
+fn carve_corridor(
+    from: &Room,
+    to: &Room,
+    tiles: &mut [DungeonTile],
+    width: i32,
+    rng: &mut DungeonRng,
+) -> Corridor {
     let (fx, fy) = from.center();
     let (tx, ty) = to.center();
     let mut points = Vec::new();
@@ -365,13 +410,18 @@ impl Run {
 
     /// Generate a floor-specific seed.
     pub fn floor_seed(&self) -> u64 {
-        let mut s = self.seed.wrapping_add(self.floor as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let mut s = self
+            .seed
+            .wrapping_add(self.floor as u64)
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15);
         s ^= s >> 30;
         s = s.wrapping_mul(0xBF58_476D_1CE4_E5B9);
         s ^= s >> 27;
         s = s.wrapping_mul(0x94D0_49BB_1331_11EB);
         s ^= s >> 31;
-        if s == 0 { s = 1; }
+        if s == 0 {
+            s = 1;
+        }
         s
     }
 
@@ -406,24 +456,44 @@ pub struct ItemPool {
 
 impl ItemPool {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     pub fn with_entry(mut self, id: u32, weight: f32, rarity: u32) -> Self {
-        self.entries.push(PoolEntry { id, weight, rarity_tier: rarity, max_per_run: 0 });
+        self.entries.push(PoolEntry {
+            id,
+            weight,
+            rarity_tier: rarity,
+            max_per_run: 0,
+        });
         self
     }
 
     pub fn with_limited_entry(mut self, id: u32, weight: f32, rarity: u32, max: u32) -> Self {
-        self.entries.push(PoolEntry { id, weight, rarity_tier: rarity, max_per_run: max });
+        self.entries.push(PoolEntry {
+            id,
+            weight,
+            rarity_tier: rarity,
+            max_per_run: max,
+        });
         self
     }
 
     /// Pick a random item from the pool, excluding already-picked items that hit their limit.
-    pub fn pick(&self, seed: u64, picked_counts: &std::collections::HashMap<u32, u32>) -> Option<u32> {
-        let available: Vec<&PoolEntry> = self.entries.iter()
+    pub fn pick(
+        &self,
+        seed: u64,
+        picked_counts: &std::collections::HashMap<u32, u32>,
+    ) -> Option<u32> {
+        let available: Vec<&PoolEntry> = self
+            .entries
+            .iter()
             .filter(|e| {
-                if e.max_per_run == 0 { return true; }
+                if e.max_per_run == 0 {
+                    return true;
+                }
                 let count = picked_counts.get(&e.id).copied().unwrap_or(0);
                 count < e.max_per_run
             })
@@ -476,7 +546,9 @@ impl ItemPool {
 }
 
 impl Default for ItemPool {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -505,11 +577,15 @@ pub struct MetaProgress {
 }
 
 impl MetaProgress {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn record_run(&mut self, run: &Run, won: bool) {
         self.total_runs += 1;
-        if won { self.total_wins += 1; }
+        if won {
+            self.total_wins += 1;
+        }
         self.best_score = self.best_score.max(run.score);
         self.best_floor = self.best_floor.max(run.floor);
     }
@@ -576,8 +652,16 @@ mod tests {
         let config = DungeonConfig::default();
         let dungeon = generate_dungeon(&config, 42);
 
-        let floors = dungeon.tiles.iter().filter(|&&t| t == DungeonTile::Floor).count();
-        let corridors = dungeon.tiles.iter().filter(|&&t| t == DungeonTile::Corridor).count();
+        let floors = dungeon
+            .tiles
+            .iter()
+            .filter(|&&t| t == DungeonTile::Floor)
+            .count();
+        let corridors = dungeon
+            .tiles
+            .iter()
+            .filter(|&&t| t == DungeonTile::Corridor)
+            .count();
 
         assert!(floors > 0, "should have floor tiles");
         assert!(corridors > 0, "should have corridor tiles");
@@ -600,7 +684,9 @@ mod tests {
         assert_eq!(run.floor, 2);
 
         // Go to max
-        for _ in 0..3 { run.next_floor(); }
+        for _ in 0..3 {
+            run.next_floor();
+        }
         assert_eq!(run.floor, 5);
         assert!(!run.next_floor()); // at max
     }
@@ -608,11 +694,13 @@ mod tests {
     #[test]
     fn run_floor_seeds_differ() {
         let run = Run::new(42, 10);
-        let seeds: Vec<u64> = (1..=5).map(|f| {
-            let mut r = run.clone();
-            r.floor = f;
-            r.floor_seed()
-        }).collect();
+        let seeds: Vec<u64> = (1..=5)
+            .map(|f| {
+                let mut r = run.clone();
+                r.floor = f;
+                r.floor_seed()
+            })
+            .collect();
 
         // All different
         for i in 0..seeds.len() {
@@ -651,7 +739,17 @@ mod tests {
     #[test]
     fn meta_progress_tracking() {
         let mut meta = MetaProgress::new();
-        let run = Run { seed: 42, floor: 5, max_floor: 10, gold: 100, score: 500, kills: 20, items_collected: 5, run_time_secs: 300.0, active: false };
+        let run = Run {
+            seed: 42,
+            floor: 5,
+            max_floor: 10,
+            gold: 100,
+            score: 500,
+            kills: 20,
+            items_collected: 5,
+            run_time_secs: 300.0,
+            active: false,
+        };
 
         meta.record_run(&run, false);
         assert_eq!(meta.total_runs, 1);

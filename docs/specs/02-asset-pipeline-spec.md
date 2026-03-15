@@ -1,4 +1,4 @@
-# Amigo Engine -- AI Asset Generation Pipeline Specification
+# Amigo Engine - AI Asset Generation Pipeline Specification
 
 ## amigo_artgen + amigo_audiogen v1.0
 
@@ -827,14 +827,14 @@ Each world has a distinct sonic identity: different musical genre, different ins
 
 ### Per-World Audio Profiles
 
-| World | Music Genre | Key Instruments | SFX Style |
-|-------|-------------|-----------------|-----------|
-| Caribbean | Orchestral sea shanty | Fiddle, accordion, war drums, brass, harpsichord | Wooden, explosive, wet (splashes, creaking) |
-| Lord of the Rings | Epic orchestral / Howard Shore | French horn, cello, choir, harp, bodhran | Metallic, reverberant, stone (clang, echo) |
-| Dune | Ambient electronic / Hans Zimmer | Duduk, throat singing, deep synth pads, tabla | Sandy, dry, resonant (wind, rumble, vibration) |
-| Matrix | Dark synthwave / industrial | Analog synth, drum machine, distorted bass, glitch | Digital, crisp, processed (beeps, whooshes, electric) |
-| Game of Thrones | Dark medieval orchestral | Cello, war drums, raven calls, low brass | Cold, metallic, heavy (ice crack, fire roar, steel) |
-| Stranger Things | 80s retro synth / John Carpenter | Moog synth, Juno pads, gated reverb drums, arpeggios | Eerie, analog, distorted (static, warble, flicker) |
+| World             | Music Genre                      | Key Instruments                                      | SFX Style                                             |
+| ----------------- | -------------------------------- | ---------------------------------------------------- | ----------------------------------------------------- |
+| Caribbean         | Orchestral sea shanty            | Fiddle, accordion, war drums, brass, harpsichord     | Wooden, explosive, wet (splashes, creaking)           |
+| Lord of the Rings | Epic orchestral / Howard Shore   | French horn, cello, choir, harp, bodhran             | Metallic, reverberant, stone (clang, echo)            |
+| Dune              | Ambient electronic / Hans Zimmer | Duduk, throat singing, deep synth pads, tabla        | Sandy, dry, resonant (wind, rumble, vibration)        |
+| Matrix            | Dark synthwave / industrial      | Analog synth, drum machine, distorted bass, glitch   | Digital, crisp, processed (beeps, whooshes, electric) |
+| Game of Thrones   | Dark medieval orchestral         | Cello, war drums, raven calls, low brass             | Cold, metallic, heavy (ice crack, fire roar, steel)   |
+| Stranger Things   | 80s retro synth / John Carpenter | Moog synth, Juno pads, gated reverb drums, arpeggios | Eerie, analog, distorted (static, warble, flicker)    |
 
 ### Style Definition Files
 
@@ -1148,11 +1148,11 @@ Three MCP servers side by side: `amigo` for engine control, `amigo-artgen` for p
 
 All generated audio is royalty-free and commercially usable:
 
-| Model | License | Training Data | Commercial Use |
-|-------|---------|--------------|----------------|
-| ACE-Step 1.5 | Apache 2.0 | Original training data | Yes |
-| AudioGen (AudioCraft) | MIT (code) | Public sound effects | Yes (verify per-model) |
-| Demucs (stem split) | MIT | N/A (inference only) | Yes |
+| Model                 | License    | Training Data          | Commercial Use         |
+| --------------------- | ---------- | ---------------------- | ---------------------- |
+| ACE-Step 1.5          | Apache 2.0 | Original training data | Yes                    |
+| AudioGen (AudioCraft) | MIT (code) | Public sound effects   | Yes (verify per-model) |
+| Demucs (stem split)   | MIT        | N/A (inference only)   | Yes                    |
 
 Generated output is original -- not copies of training data. Standard disclaimer: verify uniqueness of generated tracks before commercial release.
 
@@ -1302,4 +1302,4 @@ Total time: ~30 minutes. Quality: release-grade, zero stem bleed.
 
 ---
 
-*For the engine specification, see 01-engine-spec.md.*
+_For the engine specification, see 01-engine-spec.md._

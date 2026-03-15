@@ -1,5 +1,5 @@
-use crate::ecs::EntityId;
 use crate::economy::Economy;
+use crate::ecs::EntityId;
 use crate::math::RenderVec2;
 use crate::tower::{TargetingStrategy, TowerDef, TowerInstance};
 use crate::waves::{WaveDef, WavePhase, WaveSpawner};
@@ -29,9 +29,15 @@ pub enum GameCommand {
     /// Sell an existing tower.
     SellTower { tower_id: EntityId },
     /// Upgrade a tower along a path.
-    UpgradeTower { tower_id: EntityId, path: UpgradePath },
+    UpgradeTower {
+        tower_id: EntityId,
+        path: UpgradePath,
+    },
     /// Change a tower's targeting strategy.
-    SetTargeting { tower_id: EntityId, strategy: TargetingStrategy },
+    SetTargeting {
+        tower_id: EntityId,
+        strategy: TargetingStrategy,
+    },
     /// Start the next wave manually.
     StartWave,
     /// Pause the game.
@@ -149,7 +155,9 @@ impl TdGameState {
 
                 self.economy.try_spend(
                     cost,
-                    crate::economy::TransactionKind::TowerPlace { tower_type: *tower_type },
+                    crate::economy::TransactionKind::TowerPlace {
+                        tower_type: *tower_type,
+                    },
                 );
 
                 // Tower instance creation is left to the caller — we just validate and deduct gold.
@@ -167,7 +175,9 @@ impl TdGameState {
                         let refund = instance.sell_value(def) as i32;
                         self.economy.add_gold(
                             refund,
-                            crate::economy::TransactionKind::TowerSell { tower_id: tower_id.index() },
+                            crate::economy::TransactionKind::TowerSell {
+                                tower_id: tower_id.index(),
+                            },
                         );
                         towers.swap_remove(idx);
                         CommandResult::TowerSold {
@@ -192,7 +202,9 @@ impl TdGameState {
                         let cost = def.tiers[next_tier].cost as i32;
                         if !self.economy.try_spend(
                             cost,
-                            crate::economy::TransactionKind::TowerUpgrade { tower_id: tower_id.index() },
+                            crate::economy::TransactionKind::TowerUpgrade {
+                                tower_id: tower_id.index(),
+                            },
                         ) {
                             return CommandResult::Failed("not enough gold".into());
                         }
@@ -304,7 +316,12 @@ impl TdGameState {
     }
 
     /// Create a snapshot of current state for API/save.
-    pub fn snapshot(&self, tower_count: usize, enemy_count: usize, projectile_count: usize) -> GameSnapshot {
+    pub fn snapshot(
+        &self,
+        tower_count: usize,
+        enemy_count: usize,
+        projectile_count: usize,
+    ) -> GameSnapshot {
         GameSnapshot {
             tick: self.tick,
             gold: self.economy.gold,
@@ -326,10 +343,21 @@ impl TdGameState {
 pub enum CommandResult {
     Ok,
     Failed(String),
-    TowerPlaced { gold_remaining: i32, position: (u32, u32) },
-    TowerSold { refund: i32, gold_remaining: i32 },
-    TowerUpgraded { new_tier: usize, gold_remaining: i32 },
-    WaveStarted { wave: usize },
+    TowerPlaced {
+        gold_remaining: i32,
+        position: (u32, u32),
+    },
+    TowerSold {
+        refund: i32,
+        gold_remaining: i32,
+    },
+    TowerUpgraded {
+        new_tier: usize,
+        gold_remaining: i32,
+    },
+    WaveStarted {
+        wave: usize,
+    },
 }
 
 impl CommandResult {
@@ -376,7 +404,10 @@ mod tests {
         let mut towers = Vec::new();
 
         let result = state.execute_command(
-            &GameCommand::PlaceTower { pos: (3, 4), tower_type: 1 },
+            &GameCommand::PlaceTower {
+                pos: (3, 4),
+                tower_type: 1,
+            },
             &defs,
             &mut towers,
         );
@@ -391,7 +422,10 @@ mod tests {
         let mut towers = Vec::new();
 
         let result = state.execute_command(
-            &GameCommand::PlaceTower { pos: (0, 0), tower_type: 1 },
+            &GameCommand::PlaceTower {
+                pos: (0, 0),
+                tower_type: 1,
+            },
             &defs,
             &mut towers,
         );
@@ -404,7 +438,12 @@ mod tests {
         let mut state = TdGameState::new(200, 20, Vec::new(), Vec::new());
         let defs = test_defs();
         let eid = EntityId::from_raw(1, 0);
-        let instance = TowerInstance::new(1, RenderVec2::ZERO, &defs[0].tiers[0], TargetingStrategy::First);
+        let instance = TowerInstance::new(
+            1,
+            RenderVec2::ZERO,
+            &defs[0].tiers[0],
+            TargetingStrategy::First,
+        );
         let mut towers = vec![(eid, instance)];
 
         let result = state.execute_command(

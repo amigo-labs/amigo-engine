@@ -14,7 +14,11 @@ pub(crate) struct Rng {
 impl Rng {
     fn new(seed: u64) -> Self {
         Self {
-            state: if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed },
+            state: if seed == 0 {
+                0xDEAD_BEEF_CAFE_BABE
+            } else {
+                seed
+            },
         }
     }
 
@@ -331,10 +335,14 @@ impl ParticleEmitter {
         };
 
         let (ox, oy) = self.spawn_offset();
-        let angle = self.config.direction
-            + self.rng.range_f32(-self.config.spread, self.config.spread);
-        let speed = self.rng.range_f32(self.config.speed_min, self.config.speed_max);
-        let lifetime = self.rng.range_f32(self.config.lifetime_min, self.config.lifetime_max);
+        let angle =
+            self.config.direction + self.rng.range_f32(-self.config.spread, self.config.spread);
+        let speed = self
+            .rng
+            .range_f32(self.config.speed_min, self.config.speed_max);
+        let lifetime = self
+            .rng
+            .range_f32(self.config.lifetime_min, self.config.lifetime_max);
 
         self.particles[slot] = Particle {
             position_x: self.x + ox,
@@ -458,11 +466,26 @@ pub enum ForceField {
     /// Constant directional wind.
     Wind { force_x: f32, force_y: f32 },
     /// Attracts particles toward a point.
-    Attractor { x: f32, y: f32, strength: f32, radius: f32 },
+    Attractor {
+        x: f32,
+        y: f32,
+        strength: f32,
+        radius: f32,
+    },
     /// Repels particles away from a point.
-    Repulsor { x: f32, y: f32, strength: f32, radius: f32 },
+    Repulsor {
+        x: f32,
+        y: f32,
+        strength: f32,
+        radius: f32,
+    },
     /// Swirling vortex.
-    Vortex { x: f32, y: f32, strength: f32, radius: f32 },
+    Vortex {
+        x: f32,
+        y: f32,
+        strength: f32,
+        radius: f32,
+    },
     /// Drag / air resistance (slows particles over time).
     Drag { coefficient: f32 },
     /// Turbulence (random per-particle noise force).
@@ -471,13 +494,26 @@ pub enum ForceField {
 
 impl ForceField {
     /// Apply force to a particle, modifying its velocity.
-    pub fn apply(&self, px: f32, py: f32, vx: &mut f32, vy: &mut f32, dt: f32, rng: &mut impl FnMut() -> f32) {
+    pub fn apply(
+        &self,
+        px: f32,
+        py: f32,
+        vx: &mut f32,
+        vy: &mut f32,
+        dt: f32,
+        rng: &mut impl FnMut() -> f32,
+    ) {
         match self {
             ForceField::Wind { force_x, force_y } => {
                 *vx += force_x * dt;
                 *vy += force_y * dt;
             }
-            ForceField::Attractor { x, y, strength, radius } => {
+            ForceField::Attractor {
+                x,
+                y,
+                strength,
+                radius,
+            } => {
                 let dx = x - px;
                 let dy = y - py;
                 let dist_sq = dx * dx + dy * dy;
@@ -488,7 +524,12 @@ impl ForceField {
                     *vy += (dy / dist) * factor;
                 }
             }
-            ForceField::Repulsor { x, y, strength, radius } => {
+            ForceField::Repulsor {
+                x,
+                y,
+                strength,
+                radius,
+            } => {
                 let dx = px - x;
                 let dy = py - y;
                 let dist_sq = dx * dx + dy * dy;
@@ -499,7 +540,12 @@ impl ForceField {
                     *vy += (dy / dist) * factor;
                 }
             }
-            ForceField::Vortex { x, y, strength, radius } => {
+            ForceField::Vortex {
+                x,
+                y,
+                strength,
+                radius,
+            } => {
                 let dx = px - x;
                 let dy = py - y;
                 let dist_sq = dx * dx + dy * dy;
@@ -575,8 +621,10 @@ impl ParticleSystem {
                     }
                     for field in &self.force_fields {
                         field.apply(
-                            p.position_x, p.position_y,
-                            &mut p.velocity_x, &mut p.velocity_y,
+                            p.position_x,
+                            p.position_y,
+                            &mut p.velocity_x,
+                            &mut p.velocity_y,
                             dt,
                             &mut || emitter.rng.next_f32(),
                         );

@@ -25,6 +25,7 @@ impl EventChannel {
         }
     }
 
+    #[allow(dead_code)]
     fn swap<T: 'static>(&mut self) {
         // Move write → read, clear write
         let write = self.write.downcast_mut::<Vec<T>>().unwrap();
@@ -253,8 +254,14 @@ mod tests {
         let mut hub = EventHub::new();
         hub.register::<DamageEvent>();
 
-        hub.emit(DamageEvent { target: 1, amount: 10 });
-        hub.emit(DamageEvent { target: 2, amount: 20 });
+        hub.emit(DamageEvent {
+            target: 1,
+            amount: 10,
+        });
+        hub.emit(DamageEvent {
+            target: 2,
+            amount: 20,
+        });
 
         // Not readable yet (in write buffer)
         assert_eq!(hub.read::<DamageEvent>().len(), 0);
@@ -273,7 +280,10 @@ mod tests {
         let mut hub = EventHub::new();
         hub.register::<DamageEvent>();
 
-        hub.emit(DamageEvent { target: 1, amount: 10 });
+        hub.emit(DamageEvent {
+            target: 1,
+            amount: 10,
+        });
         hub.flush();
         assert_eq!(hub.count::<DamageEvent>(), 1);
 
@@ -288,8 +298,14 @@ mod tests {
         hub.register::<DamageEvent>();
         hub.register::<HealEvent>();
 
-        hub.emit(DamageEvent { target: 1, amount: 50 });
-        hub.emit(HealEvent { target: 2, amount: 30 });
+        hub.emit(DamageEvent {
+            target: 1,
+            amount: 50,
+        });
+        hub.emit(HealEvent {
+            target: 2,
+            amount: 30,
+        });
         hub.flush();
 
         assert_eq!(hub.count::<DamageEvent>(), 1);
@@ -310,7 +326,10 @@ mod tests {
         let mut hub = EventHub::new();
         hub.register::<DamageEvent>();
 
-        hub.emit(DamageEvent { target: 1, amount: 10 });
+        hub.emit(DamageEvent {
+            target: 1,
+            amount: 10,
+        });
         hub.flush();
         assert_eq!(hub.count::<DamageEvent>(), 1);
 
@@ -324,11 +343,17 @@ mod tests {
         hub.register::<DamageEvent>();
 
         // Tick 1: emit A
-        hub.emit(DamageEvent { target: 1, amount: 10 });
+        hub.emit(DamageEvent {
+            target: 1,
+            amount: 10,
+        });
         hub.flush();
 
         // Tick 2: emit B while A is readable
-        hub.emit(DamageEvent { target: 2, amount: 20 });
+        hub.emit(DamageEvent {
+            target: 2,
+            amount: 20,
+        });
         assert_eq!(hub.read::<DamageEvent>().len(), 1);
         assert_eq!(hub.read::<DamageEvent>()[0].target, 1); // still A
 

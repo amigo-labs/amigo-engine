@@ -162,10 +162,22 @@ impl HeatmapCollection {
     /// Create a standard set of heatmaps for a level.
     pub fn for_level(width: u32, height: u32, tile_size: f32) -> Self {
         let mut c = Self::new();
-        c.add("enemy_deaths", Heatmap::new(HeatmapType::EnemyDeaths, width, height, tile_size));
-        c.add("damage_taken", Heatmap::new(HeatmapType::DamageTaken, width, height, tile_size));
-        c.add("tower_coverage", Heatmap::new(HeatmapType::TowerCoverage, width, height, tile_size));
-        c.add("enemy_density", Heatmap::new(HeatmapType::EnemyDensity, width, height, tile_size));
+        c.add(
+            "enemy_deaths",
+            Heatmap::new(HeatmapType::EnemyDeaths, width, height, tile_size),
+        );
+        c.add(
+            "damage_taken",
+            Heatmap::new(HeatmapType::DamageTaken, width, height, tile_size),
+        );
+        c.add(
+            "tower_coverage",
+            Heatmap::new(HeatmapType::TowerCoverage, width, height, tile_size),
+        );
+        c.add(
+            "enemy_density",
+            Heatmap::new(HeatmapType::EnemyDensity, width, height, tile_size),
+        );
         c
     }
 
@@ -181,7 +193,10 @@ impl HeatmapCollection {
 
     /// Get a mutable heatmap by name.
     pub fn get_mut(&mut self, name: &str) -> Option<&mut Heatmap> {
-        self.maps.iter_mut().find(|(n, _)| n == name).map(|(_, h)| h)
+        self.maps
+            .iter_mut()
+            .find(|(n, _)| n == name)
+            .map(|(_, h)| h)
     }
 
     /// List all heatmap names.

@@ -13,7 +13,9 @@ pub fn permutation_table(seed: u64) -> [u8; 512] {
     }
     // Fisher-Yates shuffle using xorshift
     let mut rng = seed;
-    if rng == 0 { rng = 0xDEAD_BEEF_CAFE; }
+    if rng == 0 {
+        rng = 0xDEAD_BEEF_CAFE;
+    }
     for i in (1..256).rev() {
         rng ^= rng << 13;
         rng ^= rng >> 7;
@@ -30,8 +32,14 @@ pub fn permutation_table(seed: u64) -> [u8; 512] {
 
 // Gradient vectors for 2D Perlin noise (unit circle, 8 directions)
 const GRAD2: [(f64, f64); 8] = [
-    (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
-    (0.7071, 0.7071), (-0.7071, 0.7071), (0.7071, -0.7071), (-0.7071, -0.7071),
+    (1.0, 0.0),
+    (-1.0, 0.0),
+    (0.0, 1.0),
+    (0.0, -1.0),
+    (0.7071, 0.7071),
+    (-0.7071, 0.7071),
+    (0.7071, -0.7071),
+    (-0.7071, -0.7071),
 ];
 
 fn fade(t: f64) -> f64 {
@@ -125,13 +133,7 @@ pub fn ridge2d(
 }
 
 /// Domain warping: distort coordinates using noise.
-pub fn warp2d(
-    x: f64,
-    y: f64,
-    perm: &[u8; 512],
-    warp_scale: f64,
-    warp_strength: f64,
-) -> (f64, f64) {
+pub fn warp2d(x: f64, y: f64, perm: &[u8; 512], warp_scale: f64, warp_strength: f64) -> (f64, f64) {
     let wx = perlin2d(x * warp_scale, y * warp_scale, perm) * warp_strength;
     let wy = perlin2d(x * warp_scale + 100.0, y * warp_scale + 100.0, perm) * warp_strength;
     (x + wx, y + wy)
@@ -163,7 +165,11 @@ impl NoiseMap {
             }
         }
 
-        Self { width, height, data }
+        Self {
+            width,
+            height,
+            data,
+        }
     }
 
     /// Generate with ridged noise (good for mountains/terrain).
@@ -179,7 +185,11 @@ impl NoiseMap {
             }
         }
 
-        Self { width, height, data }
+        Self {
+            width,
+            height,
+            data,
+        }
     }
 
     /// Get value at coordinates.
@@ -276,8 +286,10 @@ impl BiomeDef {
 
     /// Check if a temperature/moisture point falls in this biome.
     pub fn contains(&self, temperature: f64, moisture: f64) -> bool {
-        temperature >= self.temperature_range.0 && temperature <= self.temperature_range.1
-            && moisture >= self.moisture_range.0 && moisture <= self.moisture_range.1
+        temperature >= self.temperature_range.0
+            && temperature <= self.temperature_range.1
+            && moisture >= self.moisture_range.0
+            && moisture <= self.moisture_range.1
     }
 }
 
@@ -291,11 +303,7 @@ pub struct BiomeMap {
 
 impl BiomeMap {
     /// Generate a biome map from temperature and moisture noise maps.
-    pub fn from_noise(
-        temperature: &NoiseMap,
-        moisture: &NoiseMap,
-        biomes: &[BiomeDef],
-    ) -> Self {
+    pub fn from_noise(temperature: &NoiseMap, moisture: &NoiseMap, biomes: &[BiomeDef]) -> Self {
         assert_eq!(temperature.width, moisture.width);
         assert_eq!(temperature.height, moisture.height);
 
@@ -308,7 +316,8 @@ impl BiomeMap {
                 let temp = temperature.get(x, y);
                 let moist = moisture.get(x, y);
 
-                let biome_id = biomes.iter()
+                let biome_id = biomes
+                    .iter()
                     .find(|b| b.contains(temp, moist))
                     .map(|b| b.id)
                     .unwrap_or(0);
@@ -317,7 +326,11 @@ impl BiomeMap {
             }
         }
 
-        Self { width, height, data }
+        Self {
+            width,
+            height,
+            data,
+        }
     }
 
     /// Get biome ID at coordinates.
@@ -408,7 +421,11 @@ impl WorldGenerator {
             }
         }
 
-        NoiseMap { width: self.width, height: self.height, data }
+        NoiseMap {
+            width: self.width,
+            height: self.height,
+            data,
+        }
     }
 
     /// Generate a moisture map (normalized 0..1).
@@ -445,7 +462,9 @@ impl WorldGenerator {
                     tiles.push(0); // Water tile (convention: 0 = water)
                 } else {
                     let biome_id = biome_map.get_biome(x, y);
-                    let tile = self.biomes.iter()
+                    let tile = self
+                        .biomes
+                        .iter()
                         .find(|b| b.id == biome_id)
                         .map(|b| b.ground_tile)
                         .unwrap_or(1);
@@ -633,15 +652,21 @@ mod tests {
     #[test]
     fn biome_map_from_noise() {
         let biomes = vec![
-            BiomeDef::new(1, "Low").with_temperature(0.0, 0.5).with_moisture(0.0, 1.0),
-            BiomeDef::new(2, "High").with_temperature(0.5, 1.0).with_moisture(0.0, 1.0),
+            BiomeDef::new(1, "Low")
+                .with_temperature(0.0, 0.5)
+                .with_moisture(0.0, 1.0),
+            BiomeDef::new(2, "High")
+                .with_temperature(0.5, 1.0)
+                .with_moisture(0.0, 1.0),
         ];
 
         // Create simple noise maps
         let temp = NoiseMap {
             width: 4,
             height: 4,
-            data: vec![0.1, 0.2, 0.6, 0.8, 0.3, 0.4, 0.7, 0.9, 0.1, 0.3, 0.6, 0.8, 0.2, 0.4, 0.7, 0.9],
+            data: vec![
+                0.1, 0.2, 0.6, 0.8, 0.3, 0.4, 0.7, 0.9, 0.1, 0.3, 0.6, 0.8, 0.2, 0.4, 0.7, 0.9,
+            ],
         };
         let moisture = NoiseMap {
             width: 4,

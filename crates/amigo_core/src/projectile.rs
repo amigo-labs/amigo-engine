@@ -1,4 +1,4 @@
-use crate::combat::{DamageType, AoeShape, Projectile};
+use crate::combat::{AoeShape, DamageType, Projectile};
 use crate::ecs::EntityId;
 use crate::math::RenderVec2;
 
@@ -191,7 +191,9 @@ impl ProjectileManager {
 
     /// Iterate active projectiles with their sprite names.
     pub fn iter(&self) -> impl Iterator<Item = (&Projectile, &str)> {
-        self.projectiles.iter().zip(self.sprite_names.iter().map(|s| s.as_str()))
+        self.projectiles
+            .iter()
+            .zip(self.sprite_names.iter().map(|s| s.as_str()))
     }
 
     /// Clear all projectiles.

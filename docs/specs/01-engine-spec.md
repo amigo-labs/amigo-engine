@@ -1,4 +1,4 @@
-# Amigo Engine – Modern Pixel Art Game Engine
+# Amigo Engine - Modern Pixel Art Game Engine
 
 ## Architecture Specification v1.0
 
@@ -30,42 +30,42 @@ The engine supports all classic 2D pixel art genres: Tower Defense, Platformer/J
 
 ### Language & Toolchain
 
-| Component | Choice | Rationale |
-|-----------|--------|-----------|
-| Language | Rust (latest stable) | Performance, safety, compiler feedback for AI dev |
-| Build | Cargo | Standard Rust toolchain |
-| Data Format | RON (primary), TOML (config) | Rust-native, readable, hot-reloadable |
-| Linker (dev) | mold | Fast incremental builds (1-3s) |
+| Component    | Choice                       | Rationale                                         |
+| ------------ | ---------------------------- | ------------------------------------------------- |
+| Language     | Rust (latest stable)         | Performance, safety, compiler feedback for AI dev |
+| Build        | Cargo                        | Standard Rust toolchain                           |
+| Data Format  | RON (primary), TOML (config) | Rust-native, readable, hot-reloadable             |
+| Linker (dev) | mold                         | Fast incremental builds (1-3s)                    |
 
 ### Core Dependencies (Crates)
 
-| Crate | Purpose |
-|-------|---------|
-| `wgpu` | GPU rendering (Vulkan/DX12/Metal/WebGPU) |
-| `winit` | Window creation, event loop, input |
-| `gilrs` | Gamepad input |
-| `kira` | Audio (playback, mixing, spatial, crossfade) |
-| `fixed` (I16F16) | Fixed-point arithmetic for deterministic simulation |
-| `thiserror` | Ergonomic custom error types |
-| `tracing` | Structured logging + Tracy integration |
-| `serde` + `serde_ron` | Serialization (state, commands, assets, saves) |
-| `notify` | Filesystem watcher for hot reload |
-| `bumpalo` | Arena allocator for per-frame temp data |
-| `tracy-client` | Performance profiling |
-| `asefile` | Aseprite file parsing |
-| `fontdue` | TTF font rasterization for Pixel UI |
-| `image` | Image loading/processing |
-| `laminar` | UDP networking with reliability layer |
-| `rustc-hash` | Fast deterministic hashing (FxHashMap) |
+| Crate                 | Purpose                                             |
+| --------------------- | --------------------------------------------------- |
+| `wgpu`                | GPU rendering (Vulkan/DX12/Metal/WebGPU)            |
+| `winit`               | Window creation, event loop, input                  |
+| `gilrs`               | Gamepad input                                       |
+| `kira`                | Audio (playback, mixing, spatial, crossfade)        |
+| `fixed` (I16F16)      | Fixed-point arithmetic for deterministic simulation |
+| `thiserror`           | Ergonomic custom error types                        |
+| `tracing`             | Structured logging + Tracy integration              |
+| `serde` + `serde_ron` | Serialization (state, commands, assets, saves)      |
+| `notify`              | Filesystem watcher for hot reload                   |
+| `bumpalo`             | Arena allocator for per-frame temp data             |
+| `tracy-client`        | Performance profiling                               |
+| `asefile`             | Aseprite file parsing                               |
+| `fontdue`             | TTF font rasterization for Pixel UI                 |
+| `image`               | Image loading/processing                            |
+| `laminar`             | UDP networking with reliability layer               |
+| `rustc-hash`          | Fast deterministic hashing (FxHashMap)              |
 
 ### Target Platforms (Phase 1)
 
-| Platform | Backend | Priority |
-|----------|---------|----------|
-| Windows | DX12 via wgpu | Primary |
-| Linux | Vulkan via wgpu | Primary |
-| macOS | Metal via wgpu | Later |
-| Web/WASM | WebGPU via wgpu | Later |
+| Platform | Backend         | Priority |
+| -------- | --------------- | -------- |
+| Windows  | DX12 via wgpu   | Primary  |
+| Linux    | Vulkan via wgpu | Primary  |
+| macOS    | Metal via wgpu  | Later    |
+| Web/WASM | WebGPU via wgpu | Later    |
 
 ---
 
@@ -150,11 +150,11 @@ All player input becomes serializable Commands. The server validates and applies
 
 All simulation uses Q16.16 fixed-point (`I16F16` from the `fixed` crate). Float (`f32`) is used only for rendering.
 
-| Domain | Number Type | Deterministic | Used For |
-|--------|-------------|---------------|----------|
-| Simulation | `Fix` (I16F16) | Yes | Positions, velocities, health, damage, range, timers, cooldowns, pathfinding |
-| Rendering | `f32` | No (irrelevant) | Screen positions, particles, camera, screen shake, UI |
-| Data Files | `f32` literals | N/A | Converted to `Fix` on load |
+| Domain     | Number Type    | Deterministic   | Used For                                                                     |
+| ---------- | -------------- | --------------- | ---------------------------------------------------------------------------- |
+| Simulation | `Fix` (I16F16) | Yes             | Positions, velocities, health, damage, range, timers, cooldowns, pathfinding |
+| Rendering  | `f32`          | No (irrelevant) | Screen positions, particles, camera, screen shake, UI                        |
+| Data Files | `f32` literals | N/A             | Converted to `Fix` on load                                                   |
 
 ### Key Types
 
@@ -286,16 +286,16 @@ scheduler.every(60, |world| cleanup_system(world));       // once per second
 
 ### Layer Model (SNES-inspired)
 
-| Layer | Z-Order | Content |
-|-------|---------|---------|
-| Background | 0 | Sky, distant scenery (parallax) |
-| Terrain | 1 | Tilemap ground layer |
-| Decoration (back) | 2 | Behind-entity decorations |
-| Entities | 3 | Towers, enemies, projectiles |
-| Decoration (front) | 4 | In-front decorations |
-| Effects | 5 | Particles, explosions |
-| UI | 6 | HUD, menus |
-| Debug | 7 | Debug overlay (dev only) |
+| Layer              | Z-Order | Content                         |
+| ------------------ | ------- | ------------------------------- |
+| Background         | 0       | Sky, distant scenery (parallax) |
+| Terrain            | 1       | Tilemap ground layer            |
+| Decoration (back)  | 2       | Behind-entity decorations       |
+| Entities           | 3       | Towers, enemies, projectiles    |
+| Decoration (front) | 4       | In-front decorations            |
+| Effects            | 5       | Particles, explosions           |
+| UI                 | 6       | HUD, menus                      |
+| Debug              | 7       | Debug overlay (dev only)        |
 
 Each layer has independent scroll factor for parallax.
 
@@ -317,11 +317,11 @@ Entity data stored as Structure of Arrays for cache efficiency.
 
 ### Allocator Strategy
 
-| Allocator | Use Case |
-|-----------|----------|
-| Arena (`bumpalo`) | Per-frame temporary data. Reset at frame end. |
-| Object Pool | Entities (enemies, projectiles, particles). Pre-allocated. |
-| Standard heap | Long-lived data (assets, tilemap, config). Load-time only. |
+| Allocator         | Use Case                                                   |
+| ----------------- | ---------------------------------------------------------- |
+| Arena (`bumpalo`) | Per-frame temporary data. Reset at frame end.              |
+| Object Pool       | Entities (enemies, projectiles, particles). Pre-allocated. |
+| Standard heap     | Long-lived data (assets, tilemap, config). Load-time only. |
 
 ### Fixed Timestep Game Loop
 
@@ -467,14 +467,14 @@ Dev: loose files, hot reload, Aseprite native. Release: packed into `game.pak`.
 
 ### Supported Formats
 
-| Asset Type | Dev Format | Tool |
-|------------|------------|------|
-| Sprites | `.aseprite` (native), `.png` | Aseprite |
-| Tilemaps | `.amigo` (engine format) | Amigo Editor |
-| Audio SFX | `.wav`, `.ogg` | Audacity/sfxr |
-| Audio Music | `.ogg` | Any DAW |
-| Data | `.ron`, `.toml` | VS Code |
-| Shaders | `.wgsl` | VS Code |
+| Asset Type  | Dev Format                   | Tool          |
+| ----------- | ---------------------------- | ------------- |
+| Sprites     | `.aseprite` (native), `.png` | Aseprite      |
+| Tilemaps    | `.amigo` (engine format)     | Amigo Editor  |
+| Audio SFX   | `.wav`, `.ogg`               | Audacity/sfxr |
+| Audio Music | `.ogg`                       | Any DAW       |
+| Data        | `.ron`, `.toml`              | VS Code       |
+| Shaders     | `.wgsl`                      | VS Code       |
 
 ### Aseprite Integration
 
@@ -585,7 +585,7 @@ tilemap.set_terrain(x, y, TerrainType::Water);
 
 Engine-level pathfinding for any genre that needs it.
 
-### A* on Tile Grid
+### A\* on Tile Grid
 
 ```rust
 // Basic A* pathfinding
@@ -828,6 +828,7 @@ All configurable in settings. Saved to user preferences.
 In-engine tool, uses own Pixel UI system, enabled via `--features editor`. Zero overhead in release builds. Toggle with `Tab` between Play and Edit mode.
 
 ### Phase 1: Core Features
+
 - Tile painter (paint, erase, fill, layer select)
 - Entity placement + property inspector
 - Path editor with visual preview
@@ -835,11 +836,13 @@ In-engine tool, uses own Pixel UI system, enabled via `--features editor`. Zero 
 - `.amigo` format save/load (RON-based)
 
 ### Phase 2: Live Preview
+
 - Edit-while-playing (game simulation continues during editing)
 - Changes take effect immediately
 - Tower ranges, enemy paths, spawn points visualized
 
 ### Phase 3: AI-Assisted Features (now Phase 7)
+
 - Auto-pathing (algorithmic path generation from start/end)
 - Wave balancing (difficulty curve analysis)
 - Auto-decoration (themed tile filling per world)
@@ -851,7 +854,7 @@ In-engine tool, uses own Pixel UI system, enabled via `--features editor`. Zero 
 
 ### Purpose
 
-Amigo is designed to be developed *with* AI agents, not just *by* humans. The AI API provides a persistent IPC interface that allows Claude Code (or any AI agent) to observe, control, and debug the running engine as a first-class development workflow.
+Amigo is designed to be developed _with_ AI agents, not just _by_ humans. The AI API provides a persistent IPC interface that allows Claude Code (or any AI agent) to observe, control, and debug the running engine as a first-class development workflow.
 
 ### Architecture (Two Layers)
 
@@ -933,6 +936,7 @@ Three MCP servers side by side: `amigo` for engine control, `amigo-artgen` for a
 Claude Code sees these as native tools it can call directly:
 
 **Observation:**
+
 - `amigo_screenshot(path, overlays?, area?)` → captures frame, returns image
 - `amigo_get_state()` → returns tick, gold, lives, wave, entity counts
 - `amigo_list_entities(filter?, near?, radius?)` → entity list with details
@@ -940,6 +944,7 @@ Claude Code sees these as native tools it can call directly:
 - `amigo_perf()` → FPS, frame time, draw calls, entity count
 
 **Simulation:**
+
 - `amigo_place_tower(x, y, tower_type)` → entity_id, gold_remaining
 - `amigo_sell_tower(tower_id)`
 - `amigo_upgrade_tower(tower_id, path)`
@@ -950,6 +955,7 @@ Claude Code sees these as native tools it can call directly:
 - `amigo_spawn(type, subtype, pos)` → debug entity spawning
 
 **Editor:**
+
 - `amigo_editor_new_level(world, width, height)`
 - `amigo_editor_paint_tile(layer, x, y, tile)`
 - `amigo_editor_fill_rect(layer, x, y, w, h, tile)`
@@ -961,16 +967,19 @@ Claude Code sees these as native tools it can call directly:
 - `amigo_editor_undo()` / `amigo_editor_redo()`
 
 **Audio:**
+
 - `amigo_audio_play(name)` / `amigo_audio_play_music(name)`
 - `amigo_audio_crossfade(name, duration)`
 - `amigo_audio_set_volume(channel, volume)`
 
 **Save/Load/Replay:**
+
 - `amigo_save(slot)` / `amigo_load(slot)`
 - `amigo_replay_record_start()` / `amigo_replay_record_stop(path)`
 - `amigo_replay_play(path, from_tick?)`
 
 **Debug:**
+
 - `amigo_debug_dump_state(path)`
 - `amigo_debug_tile_collision(x, y)`
 - `amigo_debug_step()` → advance one tick
@@ -1184,6 +1193,7 @@ In headless mode, simulation runs as fast as the CPU allows. A 3-minute game can
 ### Example: Claude Code Workflow (via MCP)
 
 **Building a level:**
+
 ```
 Claude Code calls MCP tools natively:
 
@@ -1201,6 +1211,7 @@ Claude Code calls MCP tools natively:
 ```
 
 **Balancing:**
+
 ```
 1. amigo_editor_load(path="levels/dune/level_02.amigo")
 2. amigo_tick(count=10800)  // simulate 3 minutes at max speed
@@ -1215,6 +1226,7 @@ Claude Code calls MCP tools natively:
 ```
 
 **Debugging:**
+
 ```
 1. User reports: "Enemies get stuck at tile 7,4"
 2. amigo_load(slot="buggy")
@@ -1394,11 +1406,11 @@ Integrates with Tracy for performance profiling.
 
 ## 23. Configuration (Three Layers)
 
-| Layer | Format | File | Hot Reload | Purpose |
-|-------|--------|------|------------|---------|
-| Engine | TOML | `amigo.toml` | No (restart) | Window, rendering, audio hardware, dev settings |
-| Input | RON | `input.ron` | Yes | Key/gamepad bindings, rebindable by player |
-| Game Data | RON | `assets/data/*.ron` | Yes (dev mode) | Tower stats, wave configs, enemy definitions |
+| Layer     | Format | File                | Hot Reload     | Purpose                                         |
+| --------- | ------ | ------------------- | -------------- | ----------------------------------------------- |
+| Engine    | TOML   | `amigo.toml`        | No (restart)   | Window, rendering, audio hardware, dev settings |
+| Input     | RON    | `input.ron`         | Yes            | Key/gamepad bindings, rebindable by player      |
+| Game Data | RON    | `assets/data/*.ron` | Yes (dev mode) | Tower stats, wave configs, enemy definitions    |
 
 ### Engine Config Example
 
@@ -1441,18 +1453,21 @@ The engine provides generic, reusable mechanics that work across many game types
 **Engine-Level Mechanics:**
 
 #### GrowthStage System
+
 - `GrowthStage { id, duration_ticks, next_stage }` -- generic growth stages
 - `GrowthDef { stages: Vec<GrowthStage>, requires_water, requires_light }` -- definition of a growing thing
 - `GrowthInstance { def_id, current_stage, ticks_in_stage, watered, lit }` -- running instance
 - `tick_growth()` -- advances all instances, returns events (StageChanged, Completed, Withered)
 
 #### Calendar System
+
 - `Calendar { day, season, year, ticks_per_day }` -- time tracking
 - `Season` enum (Spring, Summer, Autumn, Winter) -- 28 days each
 - `tick_calendar()` -- advances calendar, returns DayChanged/SeasonChanged events
 - `TimeOfDay { hour, minute }` -- derived from tick position in day
 
 #### TileGrid (interactive grid)
+
 - `FarmTile { soil_state, moisture, fertility, content }` -- generic tile
 - `SoilState` enum (Empty, Tilled, Planted, Watered)
 - `FarmGrid { width, height, tiles }` -- grid with tile operations
@@ -1465,12 +1480,14 @@ The engine provides generic, reusable mechanics that work across many game types
 **Engine-Level Mechanics:**
 
 #### BulletPool
+
 - `Bullet { position, velocity, lifetime, damage, radius, active }` -- single projectile
 - `BulletPool { bullets: Vec<Bullet>, active_count }` -- object pool for performance
 - `spawn()`, `despawn()`, `tick()` -- pool management
 - Collision check against Rect/Circle shapes (uses existing collision.rs)
 
 #### Pattern System
+
 - `PatternShape` enum:
   - `Radial { count, speed }` -- evenly distributed in a circle
   - `Spiral { count, speed, rotation_speed }` -- rotating spiral
@@ -1481,6 +1498,7 @@ The engine provides generic, reusable mechanics that work across many game types
 - `tick_emitters()` -- advances all emitters, spawns bullets in pool
 
 #### Boss Pattern Sequencer
+
 - `PhasePattern { emitters: Vec<BulletEmitter>, duration_ticks }` -- one phase
 - `PatternSequence { phases, current_phase, loop_mode }` -- sequence of phases
 - `LoopMode` enum (Once, Loop, PingPong)
@@ -1492,6 +1510,7 @@ The engine provides generic, reusable mechanics that work across many game types
 **Engine-Level Mechanics:**
 
 #### PuzzleGrid
+
 - `Cell<T: Copy + Eq>` -- generic cell (T = game-defined enum for colors/types)
 - `PuzzleGrid<T> { width, height, cells }` -- 2D grid
 - `get()`, `set()`, `swap()` -- basic operations
@@ -1499,6 +1518,7 @@ The engine provides generic, reusable mechanics that work across many game types
 - `is_empty()`, `find_all(predicate)` -- queries
 
 #### Pattern Matching
+
 - `MatchResult { cells: Vec<(u32, u32)>, pattern_type }` -- found match
 - `find_horizontal_matches(min_length)` -- find rows
 - `find_vertical_matches(min_length)` -- find columns
@@ -1506,12 +1526,14 @@ The engine provides generic, reusable mechanics that work across many game types
 - `clear_matches()` -- remove found matches, returns ClearEvent
 
 #### Move System
+
 - `PuzzleMove` enum (Swap, Insert, Rotate, Slide) -- generic moves
 - `MoveHistory { moves: Vec<PuzzleMove>, cursor }` -- undo/redo stack
 - `apply_move()`, `undo()`, `redo()` -- move management
 - `validate_move()` -- checks if a move is legal (callback-based)
 
 #### Block Spawning (for Tetris-style games)
+
 - `BlockShape { cells: Vec<(i32, i32)> }` -- relative cell positions
 - `rotate_cw()`, `rotate_ccw()` -- rotation
 - `can_place(grid, x, y)`, `place(grid, x, y)` -- placement
@@ -1524,6 +1546,7 @@ The engine provides generic, reusable mechanics that work across many game types
 **Engine-Level Mechanics:**
 
 #### PlatformerController
+
 - Input buffering: `JumpBuffer { buffered, buffer_ticks }` -- jump input stored for N ticks
 - `CoyoteTime { grounded_ticks, coyote_ticks }` -- can still jump after leaving edge
 - `VariableJump { jump_velocity, cut_multiplier, holding }` -- short press = small jump
@@ -1532,29 +1555,34 @@ The engine provides generic, reusable mechanics that work across many game types
 - `PlatformerState` -- combines everything, `tick()` returns desired velocity
 
 #### Ground Detection
+
 - `GroundCheck { is_grounded, was_grounded, ground_normal, on_slope }` -- ground detection
 - `check_ground(position, shape, tilemap_query)` -- checks ground below feet
 - Slope handling: adjust speed on slopes
 
 #### Moving Platforms
+
 - `PlatformPath { waypoints: Vec<RenderVec2>, speed, mode }` -- path definition
 - `PathMode` enum (Loop, PingPong, Once)
 - `MovingPlatform { path, current_segment, t, riders }` -- platform instance
 - `tick_platforms()` -- moves platforms, shifts riders along
 
 #### One-Way & Through Platforms
+
 - `PlatformType` enum (Solid, OneWay, Through) -- already partly in tilemap
 - `should_collide(player_velocity, platform_type)` -- collision logic
 
 **NOT in the engine:** Character sprites, level design, enemy-specific AI, power-ups
 
 ### Implementation Order
+
 1. `platformer.rs` -- builds on existing physics.rs + collision.rs
 2. `farming.rs` -- independent, uses scheduler concept
 3. `bullet_pattern.rs` -- uses existing collision.rs
 4. `puzzle.rs` -- completely independent
 
 ### Conventions
+
 - Builder pattern with `.with_*()` for all config structs
 - Serde Serialize/Deserialize where possible (no RenderVec2 in serialized structs)
 - Internal XorShift RNG where randomization is needed
@@ -1575,106 +1603,121 @@ Asset pipeline decisions are maintained in a separate spec file:
 ## 26. Implementation Phases
 
 ### Phase 1: Engine Foundation (4-6 weeks)
+
 Window, sprite rendering, sprite batcher, virtual resolution, input, tilemap, basic camera, game loop (fixed timestep), scene machine, Lightweight ECS (SparseSet + Change Tracking), Pixel UI (Tier 1: Game HUD), RON/TOML config loading, asset hot reload, `tracing` logging.
 
 ### Phase 2: Game Systems (4-6 weeks)
+
 Command system, serializable GameState, Aseprite loading, animations, AABB + spatial hash collision, waypoint pathfinding, tower/enemy/projectile systems, tower targeting (switchable priority), wave system, gold/lives, atmosphere manager (transitions, interpolation), adaptive music engine (vertical layering, bar clock, layer rules, horizontal transitions, stingers), SFX manager with variants, gamepad.
 
 ### ~~Phase 3: Polish & Content~~ — MOVED TO GAME REPO
-*Phase 3 (6 worlds, tower/enemy types, upgrades, particles, lighting, menus, save/load) is game-specific content and lives in the game repository, not the engine. The engine provides the systems; the game repo provides the content.*
+
+_Phase 3 (6 worlds, tower/enemy types, upgrades, particles, lighting, menus, save/load) is game-specific content and lives in the game repository, not the engine. The engine provides the systems; the game repo provides the content._
 
 ### Phase 4: Editor (3-5 weeks)
+
 Editor plugin (feature flag), extended Pixel UI with editor widgets, tile painter, entity placement, path editor, undo/redo, .amigo format, edit-while-playing, wave editor UI.
 
 ### Phase 5: AI API + Asset Pipelines (3-4 weeks)
+
 IPC server (amigo_api), JSON-RPC protocol, screenshot export, headless mode, event streaming. MCP server wrapper (amigo_mcp). Art generation pipeline (amigo_artgen): ComfyUI client, workflow builder, post-processing (palette clamp, outline, AA removal). Audio generation pipeline (amigo_audiogen): ACE-Step client, AudioGen client, stem generation, loop trimming, adaptive music config generation. Claude Code integration testing with all three MCP servers.
 
 ### Phase 6: Multiplayer (3-5 weeks)
+
 Transport trait, deterministic verification (CRC), lockstep protocol, UDP networking, lobby, co-op mode, network debug overlay, replay system.
 
 ### Phase 7: AI Editor Features (3-5 weeks)
+
 Auto-pathing, wave balancing, auto-decoration, AI playtesting (simulation + heatmaps), LLM integration (optional).
 
 ### Phase 8: Release (2-3 weeks)
+
 amigo CLI (pack, build, release), typed asset handles (build script), release optimization, CI/CD, Steam/itch.io integration.
 
 ---
 
 ## 27. Key Decisions Summary
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Engine Name | **Amigo Engine** | Org: amigo-labs, Repo: amigo-engine, CLI: amigo |
-| Language | Pure Rust | Type safety, compiler feedback, AI-dev friendly |
-| Rendering | wgpu, feste Pipeline mit konfigurierbaren Stages | No render graph, built-in + custom shaders per stage |
-| Scripting | None | One language, one toolchain, compiler catches errors |
-| ECS | Lightweight, SparseSet + Change Tracking | Cache-friendly, flexible for multi-genre, no macro magic |
-| ECS Storage | Hybrid: hot components statisch, rest dynamisch | Best of both: zero-overhead core, flexible extensions |
-| Arithmetic | Fixed-Point Q16.16 | Deterministic simulation for multiplayer + replays |
-| Audio | kira | Tweening, spatial, streaming, crossfade |
-| UI | Own Pixel UI, two tiers | Game HUD (always) + Editor widgets (feature flag). No egui |
-| Text Rendering | TTF rasterizer (fontdue) | Unicode gratis, no font tools needed, pixel-fonts available |
-| Sprites | Aseprite native | No manual export, tag-based animations |
-| Sprite Sorting | Z-index only, Y-sort is game logic | Engine sorts by Z, game sets Z based on Y if needed |
-| Atlas Pipeline | Dev: loose files, Release: packed | Fast iteration in dev, optimal draw calls in release |
-| Asset Loading | Synchronous at startup | No async handle-checking, cartridge-style, instant access |
-| Tilemap | Orthogonal + Isometric, chunk streaming | First-class, auto-tiling, supports TD to Diablo-style |
-| Pathfinding | A* (dynamic) + Waypoints (TD) + Flow Fields (opt-in) | Engine-level, covers all genres |
-| Level Design | Integrated editor (.amigo format) | Live preview, edit-while-playing, AI features |
-| Networking | Client-Server from day 1 | Multiplayer-ready, enables replays + save/load |
-| AI Interface | amigo_api (JSON-RPC) + amigo_mcp (MCP wrapper) | Claude Code uses native MCP tools, scripts use JSON-RPC |
-| Art Pipeline | amigo_artgen MCP + external ComfyUI | Krita-style: engine is client, ComfyUI is backend, post-processing in Rust |
-| Audio Pipeline | amigo_audiogen MCP + ACE-Step + AudioGen | Local GPU, dual mode (quick split / clean per-stem), royalty-free |
-| Adaptive Music | Vertical layering + horizontal re-sequencing + stingers | Core melody conditioning, bar-synced transitions, per-world hybrid genres |
-| Sound Style | Hybrid (per world different genre + SFX style) | Caribbean=shanty, LotR=orchestral, Dune=ambient, Matrix=synthwave, GoT=medieval, ST=80s synth |
-| Transport | Lockstep over UDP (laminar) | Simple, deterministic, co-op TD |
-| Plugin System | Feature Flags + Plugin Trait (World + Resources split) | Compile-time modularity + clean lifecycle, no borrow issues |
-| Commands ↔ ECS | Commands = high-level API, ECS = implementation | Commands travel over network/replay, ECS is internal |
-| Event System | Double-buffer, events live one tick | Deterministic, no stale events, no memory growth |
-| Particles | CPU-based, sprite batcher, RON templates | No GPU compute needed for pixel art particle counts |
-| Error Handling | `thiserror` + `Result` for init/assets | Graceful fallbacks in game loop, panics only for bugs |
-| Logging | `tracing` crate | Structured logging, Tracy integration, env-configurable |
-| Config | TOML (engine), RON (input + game data) | Three clear layers, hot-reloadable game data |
-| Save/Load | Engine slot system (autosave, quicksave, rotation) | Platform-aware paths, compression, corruption check |
-| Window/Event Loop | winit ApplicationHandler internally | Clean Game trait API externally, headless mode bypasses winit |
-| Screen Transitions | Game logic, not engine | Engine provides tools (shaders, scene stack), game composes |
-| Gamepad Hot-Plug | Engine fires event, game decides | No auto-pause, game-specific handling |
-| Memory Pre-Allocation | Capacity hints per SparseSet | No reallocation in hot path, graceful growth if exceeded |
-| Query Caching | Not now, optimize when Tracy shows need | Avoid premature complexity |
-| Memory Budget | No hard limits, debug overlay logs usage | Pixel art has no memory pressure, monitor for leaks |
-| Distribution | Windows + Linux | Primary targets, cross-compile from WSL2 |
-| Profiling | Tracy from day 1 | Real profiling > guessing |
-| Editor | In-engine (own Pixel UI), feature flag | Zero release overhead, consistent pixel art aesthetic |
-| Camera | Pre-built patterns | Follow, deadzone, room-lock, shake built-in |
-| From Bevy | State-scoped cleanup, Tick Scheduler | Improved: sync assets, no macros, better error msgs |
+| Decision              | Choice                                                  | Rationale                                                                                     |
+| --------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Engine Name           | **Amigo Engine**                                        | Org: amigo-labs, Repo: amigo-engine, CLI: amigo                                               |
+| Language              | Pure Rust                                               | Type safety, compiler feedback, AI-dev friendly                                               |
+| Rendering             | wgpu, feste Pipeline mit konfigurierbaren Stages        | No render graph, built-in + custom shaders per stage                                          |
+| Scripting             | None                                                    | One language, one toolchain, compiler catches errors                                          |
+| ECS                   | Lightweight, SparseSet + Change Tracking                | Cache-friendly, flexible for multi-genre, no macro magic                                      |
+| ECS Storage           | Hybrid: hot components statisch, rest dynamisch         | Best of both: zero-overhead core, flexible extensions                                         |
+| Arithmetic            | Fixed-Point Q16.16                                      | Deterministic simulation for multiplayer + replays                                            |
+| Audio                 | kira                                                    | Tweening, spatial, streaming, crossfade                                                       |
+| UI                    | Own Pixel UI, two tiers                                 | Game HUD (always) + Editor widgets (feature flag). No egui                                    |
+| Text Rendering        | TTF rasterizer (fontdue)                                | Unicode gratis, no font tools needed, pixel-fonts available                                   |
+| Sprites               | Aseprite native                                         | No manual export, tag-based animations                                                        |
+| Sprite Sorting        | Z-index only, Y-sort is game logic                      | Engine sorts by Z, game sets Z based on Y if needed                                           |
+| Atlas Pipeline        | Dev: loose files, Release: packed                       | Fast iteration in dev, optimal draw calls in release                                          |
+| Asset Loading         | Synchronous at startup                                  | No async handle-checking, cartridge-style, instant access                                     |
+| Tilemap               | Orthogonal + Isometric, chunk streaming                 | First-class, auto-tiling, supports TD to Diablo-style                                         |
+| Pathfinding           | A\* (dynamic) + Waypoints (TD) + Flow Fields (opt-in)   | Engine-level, covers all genres                                                               |
+| Level Design          | Integrated editor (.amigo format)                       | Live preview, edit-while-playing, AI features                                                 |
+| Networking            | Client-Server from day 1                                | Multiplayer-ready, enables replays + save/load                                                |
+| AI Interface          | amigo_api (JSON-RPC) + amigo_mcp (MCP wrapper)          | Claude Code uses native MCP tools, scripts use JSON-RPC                                       |
+| Art Pipeline          | amigo_artgen MCP + external ComfyUI                     | Krita-style: engine is client, ComfyUI is backend, post-processing in Rust                    |
+| Audio Pipeline        | amigo_audiogen MCP + ACE-Step + AudioGen                | Local GPU, dual mode (quick split / clean per-stem), royalty-free                             |
+| Adaptive Music        | Vertical layering + horizontal re-sequencing + stingers | Core melody conditioning, bar-synced transitions, per-world hybrid genres                     |
+| Sound Style           | Hybrid (per world different genre + SFX style)          | Caribbean=shanty, LotR=orchestral, Dune=ambient, Matrix=synthwave, GoT=medieval, ST=80s synth |
+| Transport             | Lockstep over UDP (laminar)                             | Simple, deterministic, co-op TD                                                               |
+| Plugin System         | Feature Flags + Plugin Trait (World + Resources split)  | Compile-time modularity + clean lifecycle, no borrow issues                                   |
+| Commands ↔ ECS        | Commands = high-level API, ECS = implementation         | Commands travel over network/replay, ECS is internal                                          |
+| Event System          | Double-buffer, events live one tick                     | Deterministic, no stale events, no memory growth                                              |
+| Particles             | CPU-based, sprite batcher, RON templates                | No GPU compute needed for pixel art particle counts                                           |
+| Error Handling        | `thiserror` + `Result` for init/assets                  | Graceful fallbacks in game loop, panics only for bugs                                         |
+| Logging               | `tracing` crate                                         | Structured logging, Tracy integration, env-configurable                                       |
+| Config                | TOML (engine), RON (input + game data)                  | Three clear layers, hot-reloadable game data                                                  |
+| Save/Load             | Engine slot system (autosave, quicksave, rotation)      | Platform-aware paths, compression, corruption check                                           |
+| Window/Event Loop     | winit ApplicationHandler internally                     | Clean Game trait API externally, headless mode bypasses winit                                 |
+| Screen Transitions    | Game logic, not engine                                  | Engine provides tools (shaders, scene stack), game composes                                   |
+| Gamepad Hot-Plug      | Engine fires event, game decides                        | No auto-pause, game-specific handling                                                         |
+| Memory Pre-Allocation | Capacity hints per SparseSet                            | No reallocation in hot path, graceful growth if exceeded                                      |
+| Query Caching         | Not now, optimize when Tracy shows need                 | Avoid premature complexity                                                                    |
+| Memory Budget         | No hard limits, debug overlay logs usage                | Pixel art has no memory pressure, monitor for leaks                                           |
+| Distribution          | Windows + Linux                                         | Primary targets, cross-compile from WSL2                                                      |
+| Profiling             | Tracy from day 1                                        | Real profiling > guessing                                                                     |
+| Editor                | In-engine (own Pixel UI), feature flag                  | Zero release overhead, consistent pixel art aesthetic                                         |
+| Camera                | Pre-built patterns                                      | Follow, deadzone, room-lock, shake built-in                                                   |
+| From Bevy             | State-scoped cleanup, Tick Scheduler                    | Improved: sync assets, no macros, better error msgs                                           |
 
 ---
 
 ## Appendix A: Detailed Design Decisions
 
 ### A.1 ECS Serialization
+
 SparseSet serializes only `dense_ids` + `dense_data` vectors. The `sparse` index array is rebuilt on deserialization. Change tracking bitsets are not serialized (irrelevant after load).
 
 ### A.2 Hybrid World Storage
+
 Core engine components (`Position`, `Velocity`, `Health`, `SpriteComp`) are statically typed fields on `World` for zero-overhead access. Game-specific components (`TowerData`, `Poisoned`, `LootTable`, etc.) use dynamic storage via `HashMap<TypeId, Box<dyn AnyStorage>>`. Game code uses `world.get_dynamic::<T>(id)` for dynamic components.
 
 ### A.3 Command → ECS Translation
+
 `GameCommand` variants are the network/replay-safe high-level API. The server's `execute_command()` function translates each command into ECS operations (spawn, add components, despawn). Commands travel over network and are logged for replays. ECS operations are never serialized or sent.
 
 ### A.4 Plugin Borrow Resolution
+
 Plugins receive `(&mut World, &mut Resources)` as separate parameters. `World` holds ECS data, `Resources` holds engine systems (AudioManager, InputState, AssetManager, TimeInfo, EventQueues). No borrow conflict between the two.
 
 ### A.5 Event Double-Buffer
+
 Two `Vec<T>` per event type. Current tick writes to the write-buffer, all systems read from the read-buffer (previous tick's events). At tick end: clear read-buffer, swap. Events live exactly one tick for reading. One tick delay (~16ms at 60fps) – not perceptible.
 
 ### A.6 Render Pipeline Stages
+
 Fixed order, configurable per stage: Background (parallax) → Tilemap (cached chunks) → Entities (sprite batcher, per-sprite shader) → Particles (additive blend) → Lighting (ambient + point lights + normal maps) → Post-Processing Stack (bloom, chromatic aberration, color grading, vignette, custom) → UI (no post-processing). Post-processing stack is a `Vec<PostEffect>` configurable per world via RON.
 
 ### A.7 Save System
+
 Engine provides: slot management (configurable count), autosave (rotating N slots at configurable interval), quicksave/quickload, platform-aware paths (AppData on Windows, ~/.local/share on Linux), LZ4 compression, CRC corruption check, `SlotInfo` metadata (timestamp, play time, label) without loading full save. Game provides: the `SaveData` struct content.
 
 ---
 
-*This specification is a living document. It will evolve as implementation progresses and new requirements emerge.*
+_This specification is a living document. It will evolve as implementation progresses and new requirements emerge._
 
-*For asset generation (art + audio), see 02-asset-pipeline-spec.md.*
+_For asset generation (art + audio), see 02-asset-pipeline-spec.md._

@@ -131,7 +131,10 @@ impl Hasher for SimpleHasher {
 
     fn write(&mut self, bytes: &[u8]) {
         for &b in bytes {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(b as u64);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(b as u64);
         }
     }
 }
@@ -254,10 +257,7 @@ mod tests {
             Fix::from_num((seed % 100) as i32),
             Fix::from_num((seed % 50) as i32),
         );
-        let velocity = SimVec2::new(
-            Fix::from_num(1),
-            Fix::from_num(0),
-        );
+        let velocity = SimVec2::new(Fix::from_num(1), Fix::from_num(0));
         let mut health: Fix = Fix::from_num(100);
         let damage_per_tick: Fix = Fix::from_bits(0x0000_4000); // ~0.25 in Q16.16
         let mut gold: u32 = 50;
@@ -305,8 +305,14 @@ mod tests {
         let (hash_a, trail_a) = run_deterministic_sim(42, 1000);
         let (hash_b, trail_b) = run_deterministic_sim(42, 1000);
 
-        assert_eq!(hash_a, hash_b, "Same seed must produce identical final hash");
-        assert_eq!(trail_a, trail_b, "Same seed must produce identical per-tick trail");
+        assert_eq!(
+            hash_a, hash_b,
+            "Same seed must produce identical final hash"
+        );
+        assert_eq!(
+            trail_a, trail_b,
+            "Same seed must produce identical per-tick trail"
+        );
     }
 
     #[test]
@@ -314,7 +320,10 @@ mod tests {
         let (hash_a, _) = run_deterministic_sim(42, 1000);
         let (hash_b, _) = run_deterministic_sim(99, 1000);
 
-        assert_ne!(hash_a, hash_b, "Different seeds must produce different hashes");
+        assert_ne!(
+            hash_a, hash_b,
+            "Different seeds must produce different hashes"
+        );
     }
 
     #[test]
@@ -328,7 +337,8 @@ mod tests {
         let mut det_b = super::super::replay::DesyncDetector::new();
         let mut det_c = super::super::replay::DesyncDetector::new();
 
-        for (tick, (&ca, (&cb, &cc))) in trail_a.iter()
+        for (tick, (&ca, (&cb, &cc))) in trail_a
+            .iter()
             .zip(trail_b.iter().zip(trail_c.iter()))
             .enumerate()
         {
@@ -340,7 +350,11 @@ mod tests {
         // Same sim → no desync
         assert_eq!(det_a.compare(&det_b), None, "Same sim should not desync");
         // Different seed → desync at tick 0
-        assert_eq!(det_a.compare(&det_c), Some(0), "Different seeds should desync at tick 0");
+        assert_eq!(
+            det_a.compare(&det_c),
+            Some(0),
+            "Different seeds should desync at tick 0"
+        );
     }
 
     #[test]

@@ -85,7 +85,11 @@ impl StatusEffects {
     /// Apply a new status effect. If an effect of the same type already exists,
     /// refresh duration if new one is longer, and use the stronger magnitude.
     pub fn apply(&mut self, effect: StatusEffect) {
-        if let Some(existing) = self.effects.iter_mut().find(|e| e.effect_type == effect.effect_type) {
+        if let Some(existing) = self
+            .effects
+            .iter_mut()
+            .find(|e| e.effect_type == effect.effect_type)
+        {
             // Refresh: keep the stronger magnitude and longer remaining duration
             if effect.magnitude > existing.magnitude {
                 existing.magnitude = effect.magnitude;

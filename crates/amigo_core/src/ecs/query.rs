@@ -29,6 +29,7 @@ use super::sparse_set::SparseSet;
 // ---------------------------------------------------------------------------
 
 /// Iterator over entities that exist in both `A` and `B` SparseSets.
+#[allow(dead_code)]
 pub struct Join2<'a, A, B> {
     /// We iterate the smaller set and look up in the larger one.
     small_ids: &'a [EntityId],
@@ -68,6 +69,7 @@ pub struct JoinIter2<'a, A, B> {
     drive_idx: usize,
     a: &'a SparseSet<A>,
     b: &'a SparseSet<B>,
+    #[allow(dead_code)]
     swapped: bool,
 }
 
@@ -90,7 +92,10 @@ impl<'a, A, B> Iterator for JoinIter2<'a, A, B> {
 impl<'a, A, B> JoinIter2<'a, A, B> {
     /// Filter: only yield entities that also have component `C`.
     pub fn with<C>(self, filter: &'a SparseSet<C>) -> JoinIter2With<'a, A, B, C> {
-        JoinIter2With { inner: self, filter }
+        JoinIter2With {
+            inner: self,
+            filter,
+        }
     }
 }
 
@@ -158,9 +163,7 @@ impl<'a, A, B, C> Iterator for JoinIter3<'a, A, B, C> {
             let id = self.drive_ids[self.drive_idx];
             self.drive_idx += 1;
 
-            if let (Some(a), Some(b), Some(c)) =
-                (self.a.get(id), self.b.get(id), self.c.get(id))
-            {
+            if let (Some(a), Some(b), Some(c)) = (self.a.get(id), self.b.get(id), self.c.get(id)) {
                 return Some((id, a, b, c));
             }
         }
@@ -171,7 +174,10 @@ impl<'a, A, B, C> Iterator for JoinIter3<'a, A, B, C> {
 impl<'a, A, B, C> JoinIter3<'a, A, B, C> {
     /// Filter: only yield entities that also have component `D`.
     pub fn with<D>(self, filter: &'a SparseSet<D>) -> JoinIter3With<'a, A, B, C, D> {
-        JoinIter3With { inner: self, filter }
+        JoinIter3With {
+            inner: self,
+            filter,
+        }
     }
 }
 
@@ -242,9 +248,12 @@ impl<'a, A, B, C, D> Iterator for JoinIter4<'a, A, B, C, D> {
             let id = self.drive_ids[self.drive_idx];
             self.drive_idx += 1;
 
-            if let (Some(a), Some(b), Some(c), Some(d)) =
-                (self.a.get(id), self.b.get(id), self.c.get(id), self.d.get(id))
-            {
+            if let (Some(a), Some(b), Some(c), Some(d)) = (
+                self.a.get(id),
+                self.b.get(id),
+                self.c.get(id),
+                self.d.get(id),
+            ) {
                 return Some((id, a, b, c, d));
             }
         }

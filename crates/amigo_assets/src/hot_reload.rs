@@ -13,13 +13,10 @@ impl HotReloader {
     pub fn new(watch_path: PathBuf) -> Option<Self> {
         let (tx, rx) = mpsc::channel();
 
-        let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-            match res {
+        let mut watcher =
+            notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
                 Ok(event) => {
-                    if matches!(
-                        event.kind,
-                        EventKind::Modify(_) | EventKind::Create(_)
-                    ) {
+                    if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                         for path in event.paths {
                             let _ = tx.send(path);
                         }
@@ -28,11 +25,13 @@ impl HotReloader {
                 Err(e) => {
                     warn!("File watcher error: {}", e);
                 }
-            }
-        })
-        .ok()?;
+            })
+            .ok()?;
 
-        if watcher.watch(&watch_path, RecursiveMode::Recursive).is_err() {
+        if watcher
+            .watch(&watch_path, RecursiveMode::Recursive)
+            .is_err()
+        {
             warn!("Failed to watch directory: {:?}", watch_path);
             return None;
         }

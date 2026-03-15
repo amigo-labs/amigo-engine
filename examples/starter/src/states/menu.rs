@@ -22,14 +22,24 @@ impl MenuState {
         // Title text
         let title = "AMIGO STARTER";
         let (tw, _) = ctx.measure_text(title);
-        ctx.draw_text(title, (vw - tw) * 0.5, vh * 0.35, Color::rgb(0.94, 0.86, 0.70));
+        ctx.draw_text(
+            title,
+            (vw - tw) * 0.5,
+            vh * 0.35,
+            Color::rgb(0.94, 0.86, 0.70),
+        );
 
         // "Press SPACE" prompt — blinking text
         let blink = ((ctx.alpha * 60.0) as u32 / 30) % 2 == 0;
         if blink {
             let prompt = "Press SPACE to start";
             let (pw, _) = ctx.measure_text(prompt);
-            ctx.draw_text(prompt, (vw - pw) * 0.5, vh * 0.55, Color::rgb(0.6, 0.55, 0.5));
+            ctx.draw_text(
+                prompt,
+                (vw - pw) * 0.5,
+                vh * 0.55,
+                Color::rgb(0.6, 0.55, 0.5),
+            );
         }
     }
 }

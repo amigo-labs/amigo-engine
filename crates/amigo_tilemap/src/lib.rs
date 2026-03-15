@@ -25,8 +25,13 @@ pub enum CollisionType {
     Empty,
     Solid,
     OneWay,
-    Slope { left_height: u8, right_height: u8 },
-    Trigger { id: u32 },
+    Slope {
+        left_height: u8,
+        right_height: u8,
+    },
+    Trigger {
+        id: u32,
+    },
 }
 
 /// Grid mode for the tilemap.
@@ -146,8 +151,14 @@ impl TileMap {
 
     pub fn tile_size(&self) -> (u32, u32) {
         match &self.grid_mode {
-            GridMode::Orthogonal { tile_width, tile_height } => (*tile_width, *tile_height),
-            GridMode::Isometric { tile_width, tile_height } => (*tile_width, *tile_height),
+            GridMode::Orthogonal {
+                tile_width,
+                tile_height,
+            } => (*tile_width, *tile_height),
+            GridMode::Isometric {
+                tile_width,
+                tile_height,
+            } => (*tile_width, *tile_height),
         }
     }
 
@@ -162,7 +173,10 @@ impl TileMap {
                 (screen_x / tw as f32).floor() as i32,
                 (screen_y / th as f32).floor() as i32,
             ),
-            GridMode::Isometric { tile_width, tile_height } => {
+            GridMode::Isometric {
+                tile_width,
+                tile_height,
+            } => {
                 let tw = *tile_width as f32;
                 let th = *tile_height as f32;
                 let x = (screen_x / tw + screen_y / th) / 2.0;

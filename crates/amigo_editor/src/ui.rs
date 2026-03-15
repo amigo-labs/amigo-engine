@@ -1,14 +1,34 @@
-use crate::{AmigoLevel, EditorState, EditorTool, EditorCommand};
 use crate::wizard_ui::draw_wizard_ui;
+use crate::{AmigoLevel, EditorCommand, EditorState, EditorTool};
 use amigo_core::{Color, Rect};
-use amigo_ui::UiContext;
 use amigo_input::InputState;
+use amigo_ui::UiContext;
 
 /// Colors for the editor UI.
-const PANEL_BG: Color = Color { r: 0.15, g: 0.15, b: 0.18, a: 0.95 };
-const TOOL_ACTIVE: Color = Color { r: 0.3, g: 0.5, b: 0.8, a: 1.0 };
-const TOOL_INACTIVE: Color = Color { r: 0.25, g: 0.25, b: 0.28, a: 1.0 };
-const HEADER_COLOR: Color = Color { r: 0.8, g: 0.9, b: 1.0, a: 1.0 };
+const PANEL_BG: Color = Color {
+    r: 0.15,
+    g: 0.15,
+    b: 0.18,
+    a: 0.95,
+};
+const TOOL_ACTIVE: Color = Color {
+    r: 0.3,
+    g: 0.5,
+    b: 0.8,
+    a: 1.0,
+};
+const TOOL_INACTIVE: Color = Color {
+    r: 0.25,
+    g: 0.25,
+    b: 0.28,
+    a: 1.0,
+};
+const HEADER_COLOR: Color = Color {
+    r: 0.8,
+    g: 0.9,
+    b: 1.0,
+    a: 1.0,
+};
 
 /// Draw the complete editor UI. Returns any command produced by user interaction.
 pub fn draw_editor_ui(
@@ -24,8 +44,7 @@ pub fn draw_editor_ui(
         let done = draw_wizard_ui(ui, wizard, input, screen_w, screen_h);
         if done {
             // Extract result before removing the wizard
-            let result = state.project_wizard.as_ref()
-                .and_then(|w| w.result.clone());
+            let result = state.project_wizard.as_ref().and_then(|w| w.result.clone());
             if let Some(project) = result {
                 state.created_project = Some(project);
             }
@@ -75,7 +94,11 @@ fn draw_toolbar(ui: &mut UiContext, state: &mut EditorState, input: &InputState)
 
     for (tool, label) in &tools {
         let is_active = state.tool == *tool;
-        let bg = if is_active { TOOL_ACTIVE } else { TOOL_INACTIVE };
+        let bg = if is_active {
+            TOOL_ACTIVE
+        } else {
+            TOOL_INACTIVE
+        };
         let btn_rect = Rect::new(x + 4.0, y, w - 8.0, 14.0);
         ui.filled_rect(btn_rect, bg);
         ui.pixel_text(label, x + 8.0, y + 3.0, Color::WHITE);
@@ -245,11 +268,21 @@ fn handle_shortcuts(state: &mut EditorState, input: &InputState) -> Option<Edito
     }
 
     // Tool shortcuts
-    if input.pressed(KeyCode::KeyS) { state.tool = EditorTool::Select; }
-    if input.pressed(KeyCode::KeyP) { state.tool = EditorTool::PaintTile; }
-    if input.pressed(KeyCode::KeyE) { state.tool = EditorTool::Erase; }
-    if input.pressed(KeyCode::KeyF) { state.tool = EditorTool::Fill; }
-    if input.pressed(KeyCode::KeyG) { state.grid_visible = !state.grid_visible; }
+    if input.pressed(KeyCode::KeyS) {
+        state.tool = EditorTool::Select;
+    }
+    if input.pressed(KeyCode::KeyP) {
+        state.tool = EditorTool::PaintTile;
+    }
+    if input.pressed(KeyCode::KeyE) {
+        state.tool = EditorTool::Erase;
+    }
+    if input.pressed(KeyCode::KeyF) {
+        state.tool = EditorTool::Fill;
+    }
+    if input.pressed(KeyCode::KeyG) {
+        state.grid_visible = !state.grid_visible;
+    }
 
     None
 }

@@ -45,8 +45,9 @@ Comprehensive review of the Amigo Engine covering: spec completeness, developer 
 | Spec Feature | Status | Notes |
 |-------------|--------|-------|
 | Sections 10-27 of Spec-v2 | **Reference only** | The unified spec contained sections 10-27 only as references. Now completed. |
-| Tracy Profiling | **Not connected** | `amigo_debug` has no Tracy integration, only FPS overlay |
-| Spatial Hash / Flow Fields | **Not found** | Pathfinding yes, but Spatial Hash broad-phase and Flow Fields are missing from the code |
+| Tracy Profiling | **Implemented** | `amigo_debug/src/lib.rs` — `frame_mark()`, `init_logging()` with Tracy layer (feature-gated `tracy`). `tracing-tracy` + `tracy-client` in deps. Frame mark called in engine loop. |
+| Spatial Hash | **Implemented** | `amigo_core/src/collision.rs` — `SpatialHash` with `insert`, `remove`, `query_aabb`, `query_point`, `query_circle`. 7 unit tests. Used in `CollisionWorld` and `PhysicsWorld`. |
+| Flow Fields | **Implemented** | `amigo_core/src/pathfinding.rs` — `FlowField::compute()` via Dijkstra. 5 unit tests. Exported in prelude. |
 | egui Editor UI | **Not integrated** | Editor code exists, but egui rendering pipeline is missing from the engine loop |
 | Asset Packing (`game.pak`) | **Not implemented** | CLI has scaffolding, but no `amigo pack` command |
 | Headless Simulation | **Not implemented** | Spec describes headless tick-forward for AI, code is missing |

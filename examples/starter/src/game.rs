@@ -1,5 +1,5 @@
-use amigo_engine::prelude::*;
 use crate::states::{LoadingState, MenuState, PlayingState};
+use amigo_engine::prelude::*;
 
 /// Top-level game state enum.
 #[derive(Clone, Copy, PartialEq, Eq)]

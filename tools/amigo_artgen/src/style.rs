@@ -86,8 +86,7 @@ impl StyleDef {
 
     /// Get outline color as RGBA
     pub fn outline_rgba(&self) -> [u8; 4] {
-        let rgb =
-            Self::parse_hex_color(&self.post_processing.outline_color).unwrap_or([0, 0, 0]);
+        let rgb = Self::parse_hex_color(&self.post_processing.outline_color).unwrap_or([0, 0, 0]);
         [rgb[0], rgb[1], rgb[2], 255]
     }
 
@@ -137,15 +136,15 @@ impl StyleDef {
             checkpoint: "pixel_art_xl_v1.safetensors".into(),
             lora: Some(("pixel_art_16bit.safetensors".into(), 0.7)),
             palette: vec![
-                "#1a1a2e", "#e8c170", "#8b5e3c", "#3b7dd8", "#4caf50",
-                "#f5f5dc", "#c0392b", "#f39c12", "#2c3e50", "#ecf0f1",
+                "#1a1a2e", "#e8c170", "#8b5e3c", "#3b7dd8", "#4caf50", "#f5f5dc", "#c0392b",
+                "#f39c12", "#2c3e50", "#ecf0f1",
             ]
             .into_iter()
             .map(String::from)
             .collect(),
             prompt_prefix: "pixel art, 16-bit style, tropical pirate theme,".into(),
-            negative_prompt:
-                "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo".into(),
+            negative_prompt: "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo"
+                .into(),
             default_size: (32, 32),
             steps: 20,
             cfg_scale: 7.0,
@@ -167,15 +166,15 @@ impl StyleDef {
             checkpoint: "pixel_art_xl_v1.safetensors".into(),
             lora: Some(("pixel_art_16bit.safetensors".into(), 0.7)),
             palette: vec![
-                "#2d1b00", "#5c3a1e", "#8b6914", "#4a7023", "#2e4600",
-                "#808080", "#c0c0c0", "#f0e68c", "#1a1a2e", "#d4c4a8",
+                "#2d1b00", "#5c3a1e", "#8b6914", "#4a7023", "#2e4600", "#808080", "#c0c0c0",
+                "#f0e68c", "#1a1a2e", "#d4c4a8",
             ]
             .into_iter()
             .map(String::from)
             .collect(),
             prompt_prefix: "pixel art, 16-bit style, high fantasy medieval,".into(),
-            negative_prompt:
-                "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo".into(),
+            negative_prompt: "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo"
+                .into(),
             default_size: (32, 32),
             steps: 20,
             cfg_scale: 7.0,
@@ -193,15 +192,15 @@ impl StyleDef {
             checkpoint: "pixel_art_xl_v1.safetensors".into(),
             lora: Some(("pixel_art_16bit.safetensors".into(), 0.6)),
             palette: vec![
-                "#2a1a0a", "#c2956a", "#e8c170", "#f0d890", "#4a3520",
-                "#6b4226", "#d4a06a", "#1a1a2e", "#8b7355", "#f5deb3",
+                "#2a1a0a", "#c2956a", "#e8c170", "#f0d890", "#4a3520", "#6b4226", "#d4a06a",
+                "#1a1a2e", "#8b7355", "#f5deb3",
             ]
             .into_iter()
             .map(String::from)
             .collect(),
             prompt_prefix: "pixel art, 16-bit style, desert sci-fi, sandworm,".into(),
-            negative_prompt:
-                "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo".into(),
+            negative_prompt: "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo"
+                .into(),
             default_size: (32, 32),
             steps: 20,
             cfg_scale: 7.0,
@@ -219,14 +218,13 @@ impl StyleDef {
             checkpoint: "pixel_art_xl_v1.safetensors".into(),
             lora: None,
             palette: vec![
-                "#000000", "#001a00", "#003300", "#006600", "#00cc00",
-                "#00ff00", "#0a0a0a", "#1a1a1a", "#2a2a2a", "#00ff41",
+                "#000000", "#001a00", "#003300", "#006600", "#00cc00", "#00ff00", "#0a0a0a",
+                "#1a1a1a", "#2a2a2a", "#00ff41",
             ]
             .into_iter()
             .map(String::from)
             .collect(),
-            prompt_prefix:
-                "pixel art, 16-bit style, cyberpunk dark, green on black, neon,".into(),
+            prompt_prefix: "pixel art, 16-bit style, cyberpunk dark, green on black, neon,".into(),
             negative_prompt:
                 "realistic, 3d, smooth, anti-aliased, gradient, blurry, colorful, bright".into(),
             default_size: (32, 32),
@@ -246,8 +244,8 @@ impl StyleDef {
             checkpoint: "pixel_art_xl_v1.safetensors".into(),
             lora: Some(("pixel_art_16bit.safetensors".into(), 0.7)),
             palette: vec![
-                "#1a1a2e", "#2c2c3e", "#4a4a5e", "#8b8b8b", "#c0c0c0",
-                "#8b0000", "#b22222", "#f5f5dc", "#2f4f4f", "#696969",
+                "#1a1a2e", "#2c2c3e", "#4a4a5e", "#8b8b8b", "#c0c0c0", "#8b0000", "#b22222",
+                "#f5f5dc", "#2f4f4f", "#696969",
             ]
             .into_iter()
             .map(String::from)
@@ -272,8 +270,8 @@ impl StyleDef {
             checkpoint: "pixel_art_xl_v1.safetensors".into(),
             lora: Some(("pixel_art_16bit.safetensors".into(), 0.65)),
             palette: vec![
-                "#1a0a2e", "#2e0854", "#6a0dad", "#ff1493", "#ff6ec7",
-                "#00ffff", "#ff4500", "#ffd700", "#1a1a2e", "#e0e0e0",
+                "#1a0a2e", "#2e0854", "#6a0dad", "#ff1493", "#ff6ec7", "#00ffff", "#ff4500",
+                "#ffd700", "#1a1a2e", "#e0e0e0",
             ]
             .into_iter()
             .map(String::from)

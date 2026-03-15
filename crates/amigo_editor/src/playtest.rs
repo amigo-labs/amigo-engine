@@ -403,7 +403,9 @@ mod tests {
         results.add_run(m);
 
         let suggestions = analyze_balance(&results);
-        assert!(suggestions.iter().any(|s| s.category == "tower_balance" && s.description.contains("ice")));
+        assert!(suggestions
+            .iter()
+            .any(|s| s.category == "tower_balance" && s.description.contains("ice")));
     }
 
     #[test]

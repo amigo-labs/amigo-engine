@@ -72,7 +72,12 @@ impl PakWriter {
     }
 
     /// Add an asset from a file on disk.
-    pub fn add_file(&mut self, name: impl Into<String>, kind: AssetKind, path: &Path) -> io::Result<()> {
+    pub fn add_file(
+        &mut self,
+        name: impl Into<String>,
+        kind: AssetKind,
+        path: &Path,
+    ) -> io::Result<()> {
         let data = std::fs::read(path)?;
         self.add(name, kind, data);
         Ok(())
@@ -146,7 +151,10 @@ impl PakReader {
         let mut magic = [0u8; 8];
         cursor.read_exact(&mut magic)?;
         if &magic != MAGIC {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Not a valid AMIGOPAK file"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Not a valid AMIGOPAK file",
+            ));
         }
 
         let mut buf4 = [0u8; 4];
@@ -177,7 +185,10 @@ impl PakReader {
             let mut kind_buf = [0u8; 1];
             cursor.read_exact(&mut kind_buf)?;
             let kind = AssetKind::from_u8(kind_buf[0]).ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("Unknown asset kind: {}", kind_buf[0]))
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Unknown asset kind: {}", kind_buf[0]),
+                )
             })?;
 
             let mut buf8 = [0u8; 8];

@@ -45,29 +45,29 @@
 //! The [`engine`], [`config`], and [`context`] modules live in this crate
 //! and provide the main loop, configuration, and per-frame contexts.
 
-pub mod engine;
 pub mod config;
 pub mod context;
+pub mod engine;
 pub mod splash;
 
 // Re-export all sub-crates for convenient access
-pub use amigo_core;
-pub use amigo_render;
-pub use amigo_input;
-pub use amigo_assets;
-pub use amigo_tilemap;
 pub use amigo_animation;
-pub use amigo_scene;
-pub use amigo_ui;
-pub use amigo_net;
+pub use amigo_assets;
+pub use amigo_core;
 pub use amigo_debug;
+pub use amigo_input;
+pub use amigo_net;
+pub use amigo_render;
+pub use amigo_scene;
+pub use amigo_tilemap;
+pub use amigo_ui;
 
 #[cfg(feature = "audio")]
 pub use amigo_audio;
 
-pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
-pub use context::{GameContext, DrawContext};
 pub use config::EngineConfig;
+pub use context::{DrawContext, GameContext};
+pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
 
 /// The Game trait that all games implement.
 pub trait Game: 'static {
@@ -83,32 +83,39 @@ pub trait Game: 'static {
 
 /// Prelude with commonly used types.
 pub mod prelude {
-    pub use crate::{Game, Engine, EngineBuilder, Plugin, PluginContext, GameContext, DrawContext, EngineConfig};
-    pub use amigo_core::events::EventHub;
-    pub use amigo_core::resources::Resources;
-    pub use amigo_core::{Fix, SimVec2, RenderVec2, Color, Rect, EntityId, World, TimeInfo};
-    pub use amigo_core::math::{vec2, IVec2};
-    pub use amigo_core::ecs::{self, SparseSet, Component, join, join3, join4, join_mut};
-    pub use amigo_core::save::{SaveManager, SaveConfig, SlotInfo, SaveError};
-    pub use amigo_core::scheduler::{TickScheduler, CallbackId};
-    pub use amigo_core::{SpatialHash, CollisionWorld, CollisionShape, FlowField, WaypointPath, PathFollower, PathRequest, Walkable, find_path};
-    pub use amigo_scene::SceneAction;
-    pub use amigo_input::InputState;
-    pub use amigo_render::{Camera, CameraMode, Easing, FontId, FontManager, ArtStyle, SamplerMode};
-    pub use amigo_render::particles::{ParticleSystem, EmitterConfig, EmitterShape};
-    pub use amigo_render::lighting::{LightingState, PointLight, AmbientLight};
-    pub use amigo_render::post_process::{PostProcessPipeline, PostEffect};
-    pub use amigo_tilemap::*;
+    pub use crate::{
+        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, Plugin, PluginContext,
+    };
     pub use amigo_animation::*;
-    pub use amigo_net::{PlayerId, Transport, LocalTransport};
-    pub use amigo_net::checksum::StateHasher;
-    pub use amigo_net::lobby::{LobbyManager, Room, RoomId, RoomConfig, RoomPhase};
-    pub use amigo_net::stats::{NetStats, ConnectionQuality};
-    pub use amigo_ui::{UiContext, UiDrawCommand};
-    pub use amigo_debug::DebugOverlay;
     pub use amigo_assets::{AssetError, AssetHandle, AssetState, HandleAllocator};
-    pub use winit::keyboard::KeyCode;
+    pub use amigo_core::ecs::{self, join, join3, join4, join_mut, Component, SparseSet};
+    pub use amigo_core::events::EventHub;
+    pub use amigo_core::math::{vec2, IVec2};
+    pub use amigo_core::resources::Resources;
+    pub use amigo_core::save::{SaveConfig, SaveError, SaveManager, SlotInfo};
+    pub use amigo_core::scheduler::{CallbackId, TickScheduler};
+    pub use amigo_core::{
+        find_path, CollisionShape, CollisionWorld, FlowField, PathFollower, PathRequest,
+        SpatialHash, Walkable, WaypointPath,
+    };
+    pub use amigo_core::{Color, EntityId, Fix, Rect, RenderVec2, SimVec2, TimeInfo, World};
+    pub use amigo_debug::DebugOverlay;
+    pub use amigo_input::InputState;
+    pub use amigo_net::checksum::StateHasher;
+    pub use amigo_net::lobby::{LobbyManager, Room, RoomConfig, RoomId, RoomPhase};
+    pub use amigo_net::stats::{ConnectionQuality, NetStats};
+    pub use amigo_net::{LocalTransport, PlayerId, Transport};
+    pub use amigo_render::lighting::{AmbientLight, LightingState, PointLight};
+    pub use amigo_render::particles::{EmitterConfig, EmitterShape, ParticleSystem};
+    pub use amigo_render::post_process::{PostEffect, PostProcessPipeline};
+    pub use amigo_render::{
+        ArtStyle, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
+    };
+    pub use amigo_scene::SceneAction;
+    pub use amigo_tilemap::*;
+    pub use amigo_ui::{UiContext, UiDrawCommand};
     pub use winit::event::MouseButton;
+    pub use winit::keyboard::KeyCode;
 
     #[cfg(feature = "audio")]
     pub use amigo_audio::AudioManager;
