@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_net
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # Command System & Networking
 
-> Status: draft
-> Crate: amigo_net
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Provides the command-based input system, transport abstraction (local and networked), fully serializable game state, multiplayer protocol, and replay system. All player input becomes serializable commands -- no direct state mutation. This separation enables multiplayer, replays, save/load, and AI control through the same interface.
 
@@ -57,7 +59,7 @@ pub struct GameState {
 }
 ```
 
-## Verhalten
+## Behavior
 
 ### Multiplayer (Phase 2+)
 

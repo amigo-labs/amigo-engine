@@ -1,11 +1,12 @@
+---
+status: draft
+depends_on: []
+last_updated: 2026-03-16
+---
+
 # Configuration: amigo.toml
 
-> Status: draft
-> Crate: --
-> Depends on: --
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Defines the engine configuration file `amigo.toml` and the three-layer configuration system used across the Amigo Engine.
 
@@ -29,7 +30,7 @@ amigo run --fullscreen
 
 Saved when player changes settings.
 
-## Verhalten
+## Behavior
 
 ### Three Configuration Layers
 
@@ -104,7 +105,7 @@ AMIGO_LOG=debug amigo run              # all debug and above
 AMIGO_LOG=amigo_render=trace amigo run # only renderer trace
 ```
 
-## Internes Design
+## Internal Design
 
 The TOML configuration is parsed at startup into strongly-typed Rust structs using `serde`. Values not present in the file use sensible defaults. CLI flags override file values.
 
@@ -112,13 +113,13 @@ The engine config is intentionally not hot-reloadable -- changes require a resta
 
 Input and game data configs use RON and are hot-reloadable via file watchers (see [assets/pipeline](../assets/pipeline.md)).
 
-## Nicht-Ziele
+## Non-Goals
 
 - GUI config editor (use text editor or in-game settings menu)
 - Environment variable overrides for all settings (only logging uses env vars)
 - Config file versioning or migration
 
-## Offene Fragen
+## Open Questions
 
 - Whether to support multiple config profiles (e.g., `amigo.dev.toml`, `amigo.release.toml`)
 - User preferences storage path (platform-aware: AppData on Windows, ~/.local/share on Linux)

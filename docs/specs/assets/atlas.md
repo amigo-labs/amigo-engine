@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_assets
+depends_on: ["assets/format"]
+last_updated: 2026-03-16
+---
+
 # Atlas Pipeline
 
-> Status: draft
-> Crate: amigo_assets
-> Depends on: [assets/format](../assets/format.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Handles texture atlas packing and spritesheet generation. In dev mode, sprites are individual textures for instant hot reload. In release mode, sprites are bin-packed into atlases for minimal draw calls.
 
@@ -27,7 +29,7 @@ ctx.draw_sprite_handle(assets::sprites::CAPTAIN, pos);
 ctx.draw_sprite_ex("x", pos, |s| s.flip_x().tint(RED));
 ```
 
-## Verhalten
+## Behavior
 
 ### Dev Mode
 
@@ -110,17 +112,17 @@ Raw AI Output (may have anti-aliasing, wrong colors, soft edges)
   Clean pixel art asset -> saved to assets/ -> engine hot reload
 ```
 
-## Internes Design
+## Internal Design
 
 The atlas packer uses bin-packing algorithms (e.g., rectangle packing) to fit all sprites into power-of-2 texture sizes. Each atlas stores a mapping of sprite names to UV rectangles. The `SpriteHandle` type is resolved at load time to either a direct texture reference (dev) or an atlas index + UV rect (release).
 
-## Nicht-Ziele
+## Non-Goals
 
 - Runtime atlas repacking
 - GPU-side atlas management
 - Mipmapping (pixel art uses nearest-neighbor filtering only)
 
-## Offene Fragen
+## Open Questions
 
 - Maximum atlas texture size (2048x2048 vs 4096x4096)
 - Whether to support multiple atlas pages per category (sprites, tiles, UI)

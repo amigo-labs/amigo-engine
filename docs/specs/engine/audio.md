@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_audio
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # Audio System
 
-> Status: draft
-> Crate: amigo_audio
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Wrapper around `kira`. Three subsystems: SFX playback, Adaptive Music Engine, and Ambient layers.
 

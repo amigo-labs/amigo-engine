@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_render
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # Rendering Pipeline
 
-> Status: draft
-> Crate: amigo_render
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Provides the GPU rendering pipeline for pixel art games: sprite batching, virtual resolution scaling, layered rendering with parallax, tilemap chunk caching, and optional modern effects (lighting, particles, post-processing). All rendering goes through wgpu for cross-platform GPU support.
 
@@ -16,7 +18,7 @@ Provides the GPU rendering pipeline for pixel art games: sprite batching, virtua
 - **Virtual Resolution:** Configurable (e.g., 480x270), pixel-perfect scaling via nearest-neighbor to window size.
 - **No artificial limits:** Unlimited colors, alpha, blend modes, shaders.
 
-## Verhalten
+## Behavior
 
 ### Layer Model (SNES-inspired)
 

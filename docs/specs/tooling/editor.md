@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_editor
+depends_on: ["engine/core", "engine/ui"]
+last_updated: 2026-03-16
+---
+
 # Integrated Level Editor
 
-> Status: draft
-> Crate: amigo_editor
-> Depends on: [engine/core](../engine/core.md), [engine/ui](../engine/ui.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 In-engine level editor using the engine's own Pixel UI system. Enabled via `--features editor` feature flag. Zero overhead in release builds. Toggle with `Tab` between Play and Edit mode.
 
@@ -36,7 +38,7 @@ Builds on Tier 1 Game HUD. Added: text input, sliders, dropdowns, color pickers,
 }
 ```
 
-## Verhalten
+## Behavior
 
 ### Phase 1: Core Features
 
@@ -128,20 +130,20 @@ Claude Code calls MCP tools natively:
 9. amigo_editor_save(path="levels/dune/level_02.amigo")
 ```
 
-## Internes Design
+## Internal Design
 
 The editor is a Plugin with its own update/draw cycle. It renders using the same Pixel UI system as the game HUD (Tier 1), extended with Tier 2 editor widgets. The editor's command pattern (undo/redo) is separate from the game's command system.
 
 The editor uses the `.amigo` format (RON-based) for level serialization, which includes tilemap data, entity placements, path definitions, and metadata.
 
-## Nicht-Ziele
+## Non-Goals
 
 - Standalone editor application (always in-engine)
 - Desktop UI toolkit (uses own Pixel UI, not egui or similar)
 - 3D editing capabilities
 - Runtime editor in release builds
 
-## Offene Fragen
+## Open Questions
 
 - Exact `.amigo` format specification
 - Maximum undo history depth

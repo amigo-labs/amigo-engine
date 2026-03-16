@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_core
+depends_on: []
+last_updated: 2026-03-16
+---
+
 # Core Types, Math & ECS
 
-> Status: draft
-> Crate: amigo_core
-> Depends on: --
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Provides the foundational types, fixed-point math, Entity Component System (ECS), tick scheduling, determinism guarantees, and the public API surface (Game trait, Builder pattern, design principles) that all other engine modules build upon.
 
@@ -131,7 +133,7 @@ scheduler.every(3, |world| tower_targeting(world));       // every 3 ticks
 scheduler.every(60, |world| cleanup_system(world));       // once per second
 ```
 
-## Verhalten
+## Behavior
 
 ### Determinism Rules
 

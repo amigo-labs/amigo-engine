@@ -1,13 +1,15 @@
-# Amigo TD -- Game Design (Placeholder)
+---
+status: "draft (placeholder -- full game mechanics spec needs to be written)"
+crate: amigo_td
+depends_on: ["engine/core", "engine/tilemap", "engine/pathfinding"]
+last_updated: 2026-03-16
+---
 
-> Status: draft (placeholder -- full game mechanics spec needs to be written)
-> Crate: amigo_td
-> Depends on: [engine/core](../../engine/core.md), [engine/tilemap](../../engine/tilemap.md), [engine/pathfinding](../../engine/pathfinding.md)
-> Last updated: 2026-03-16
+# Amigo TD -- Game Design (Placeholder)
 
 **NOTE:** This is a placeholder spec. A full game mechanics specification covering tower types, enemy types, upgrade trees, wave design, balancing, and per-world mechanics needs to be written. The content below is extracted from the engine specification to preserve context.
 
-## Zweck
+## Purpose
 
 Define the game mechanics, content, and balancing for Amigo TD -- the first game built on the Amigo Engine.
 
@@ -15,20 +17,20 @@ Define the game mechanics, content, and balancing for Amigo TD -- the first game
 
 Game-level logic -- no public API. Consumes engine systems (ECS, tilemap, pathfinding, audio, UI).
 
-## Verhalten
+## Behavior
 
 Tower Defense with 6 thematic worlds. Each world has unique pixel art tilesets, tower types, enemy types, and atmospheric effects. See [UI spec](ui.md) for the full user interface design.
 
-## Internes Design
+## Internal Design
 
 To be defined. Will use the engine's command system, ECS, and data-driven RON configuration for tower stats, wave configs, and enemy definitions.
 
-## Nicht-Ziele
+## Non-Goals
 
 - Engine-level systems (those belong in engine specs)
 - Art/audio generation (see [artgen](../../ai-pipelines/artgen.md) and [audiogen](../../ai-pipelines/audiogen.md))
 
-## Offene Fragen
+## Open Questions
 
 - Exact tower types and stats per world
 - Enemy types, abilities, and resistances per world

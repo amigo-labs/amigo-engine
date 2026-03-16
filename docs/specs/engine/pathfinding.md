@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_pathfinding
+depends_on: ["engine/tilemap"]
+last_updated: 2026-03-16
+---
+
 # Pathfinding
 
-> Status: draft
-> Crate: amigo_pathfinding
-> Depends on: [engine/tilemap](../engine/tilemap.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Engine-level pathfinding for any genre that needs it. Provides A* search on tile grids, predefined waypoint paths for Tower Defense, and optional flow fields for large-scale navigation scenarios.
 

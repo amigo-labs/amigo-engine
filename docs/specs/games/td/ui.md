@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_td
+depends_on: ["engine/ui", "games/td/design"]
+last_updated: 2026-03-16
+---
+
 # Amigo TD -- UI/UX Design Specification
 
-> Status: draft
-> Crate: amigo_td
-> Depends on: [engine/ui](../../engine/ui.md), [games/td/design](../td/design.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Complete UI/UX design for the Amigo TD tower defense game. All UI renders through the engine's sprite batcher at virtual resolution (640x360 base). No egui, no HTML overlays. Every button, panel, and icon is pixel art that matches the current world's aesthetic.
 
@@ -13,22 +15,22 @@ Complete UI/UX design for the Amigo TD tower defense game. All UI renders throug
 
 Game-level UI -- no public API. Consumes [engine/ui](../../engine/ui.md) Pixel UI system.
 
-## Verhalten
+## Behavior
 
 See the full specification below covering all 21 sections: screen flow, HUD, radial menus, world-themed frames, gamepad/keyboard controls, accessibility, animations, and asset requirements.
 
-## Internes Design
+## Internal Design
 
 Immediate-mode Pixel UI (Tier 1) from the engine, with world-themed 9-slice sprite frames swapped per world. Radial menus for contextual tower interactions. All UI elements are sprite-based.
 
-## Nicht-Ziele
+## Non-Goals
 
 - HTML/CSS overlays
 - egui integration
 - Complex layout engine (CSS-like)
 - Drag-and-drop tower placement (radial menu is the pattern)
 
-## Offene Fragen
+## Open Questions
 
 - Exact tower count per world (affects radial menu layout if >4)
 - Tutorial/onboarding UI screens

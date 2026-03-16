@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_tilemap
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # Tilemap System
 
-> Status: draft
-> Crate: amigo_tilemap
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 First-class engine feature for tile-based worlds. Provides multiple layers, auto-tiling (bitmask-based), animated tiles, collision layer with solid/one-way/slope/trigger types, orthogonal and isometric grid modes, and chunk streaming for large worlds.
 
@@ -47,7 +49,7 @@ tilemap.set_terrain(x, y, TerrainType::Water);
 // Engine auto-selects correct variant based on neighbors
 ```
 
-## Internes Design
+## Internal Design
 
 ### Chunk Streaming
 

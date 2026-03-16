@@ -1,15 +1,17 @@
+---
+status: draft
+crate: amigo_core
+depends_on: []
+last_updated: 2026-03-16
+---
+
 # Memory & Performance
 
-> Status: draft
-> Crate: amigo_core
-> Depends on: --
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Defines the data-oriented design principles, memory allocation strategies, the fixed timestep game loop, collision detection approaches, threading model, and profiling infrastructure that ensure the engine runs efficiently and deterministically.
 
-## Internes Design
+## Internal Design
 
 ### Data-Oriented Design (SoA)
 

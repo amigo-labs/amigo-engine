@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_assets
+depends_on: []
+last_updated: 2026-03-16
+---
+
 # Asset Formats
 
-> Status: draft
-> Crate: amigo_assets
-> Depends on: --
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Defines all data formats used for assets in the Amigo Engine, including art style definitions for AI generation, audio style definitions, adaptive music configuration formats, and SFX definition formats.
 
@@ -21,7 +23,7 @@ let style = styles.load("caribbean"); // -> loads styles/caribbean.style.ron
 let audio_style = audio_styles.load("caribbean"); // -> loads styles/audio/caribbean.audio_style.ron
 ```
 
-## Verhalten
+## Behavior
 
 ### Art Style Definitions
 
@@ -403,17 +405,17 @@ assets/audio/music/caribbean/
 +-- caribbean.sequence.ron             <- horizontal transitions
 ```
 
-## Internes Design
+## Internal Design
 
 All format definitions use RON (Rusty Object Notation) for game data and TOML for engine configuration. See [config/data-formats](../config/data-formats.md) for the rationale on when to use which format.
 
-## Nicht-Ziele
+## Non-Goals
 
 - Binary format specifications (handled by the packing step in [assets/pipeline](../assets/pipeline.md))
 - Runtime format conversion
 - Supporting non-RON game data formats
 
-## Offene Fragen
+## Open Questions
 
 - Whether to add a schema validation step for RON files at build time
 - Versioning strategy for format changes across engine updates

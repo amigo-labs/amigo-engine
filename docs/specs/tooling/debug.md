@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_debug
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # Debug & Profiling
 
-> Status: draft
-> Crate: amigo_debug
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Provides in-game debug overlays, visual debug tools, profiling integration, and dev mode features for rapid iteration during development.
 
@@ -24,7 +26,7 @@ Provides in-game debug overlays, visual debug tools, profiling integration, and 
 | F7 | Entity list |
 | F8 | Network stats |
 
-## Verhalten
+## Behavior
 
 ### In-Game Debug Overlay (Pixel UI)
 
@@ -89,7 +91,7 @@ AMIGO_LOG=amigo_render=trace amigo run # only renderer trace
 
 Integrates with Tracy for performance profiling. In-game debug overlay logs FPS, frame time, draw calls, entity count.
 
-## Internes Design
+## Internal Design
 
 The debug overlay renders on Layer 7 (highest Z-order), above all game content and UI. It uses the same sprite batcher and Pixel UI system as the rest of the engine.
 
@@ -97,13 +99,13 @@ Debug visualizations are rendered as transparent overlays on top of the game wor
 
 Profiling spans are inserted via the `tracing` crate macros, which Tracy picks up for visualization in its external profiler UI.
 
-## Nicht-Ziele
+## Non-Goals
 
 - External debugger tool (all debugging is in-engine or via Tracy)
 - Breakpoint-style debugging (use Rust's native debugger for that)
 - Production telemetry or crash reporting
 
-## Offene Fragen
+## Open Questions
 
 - Whether to add a debug console (text input for commands) in addition to F-key toggles
 - Memory profiling granularity (per-system vs per-component)

@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_cli
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # CLI Tool
 
-> Status: draft
-> Crate: amigo_cli
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 The `amigo` CLI is the primary developer-facing tool for creating, running, building, and distributing Amigo Engine games.
 
@@ -33,7 +35,7 @@ amigo run --api --headless               # no window, max speed simulation
 amigo run --api --headless --level dune_01  # headless with specific level
 ```
 
-## Verhalten
+## Behavior
 
 ### `amigo new` -- Starter Template
 
@@ -88,7 +90,7 @@ Compiles with the release profile for maximum performance.
 
 Runs the full pipeline: pack assets, build release binary, bundle for distribution.
 
-## Internes Design
+## Internal Design
 
 ### Release Profile
 
@@ -117,13 +119,13 @@ networking = ["dep:laminar"]
 gamepad = ["dep:gilrs"]
 ```
 
-## Nicht-Ziele
+## Non-Goals
 
 - GUI-based project management (CLI only)
 - Package registry / crate publishing
 - macOS / iOS / Android / console builds (Phase 1)
 
-## Offene Fragen
+## Open Questions
 
 - Whether `amigo pack` should run as part of `amigo build --release` automatically
 - Steam/itch.io integration details for `amigo release`

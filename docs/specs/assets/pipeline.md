@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_assets
+depends_on: ["assets/format"]
+last_updated: 2026-03-16
+---
+
 # Asset Pipeline
 
-> Status: draft
-> Crate: amigo_assets
-> Depends on: [assets/format](../assets/format.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 The asset pipeline handles loading, caching, hot-reloading, and packing of all game assets. In development, assets are loose files with instant hot reload. In release, everything is packed into a single `game.pak` for optimal performance.
 
@@ -22,7 +24,7 @@ ctx.draw_sprite_handle(assets::sprites::CAPTAIN, pos);
 ctx.draw_sprite_animated("player", "walk_right", pos);
 ```
 
-## Verhalten
+## Behavior
 
 ### Philosophy
 
@@ -55,7 +57,7 @@ File watcher on assets directory. Sprites, configs, levels, audio, shaders all h
 
 `amigo pack`: sprites into texture atlases, audio compressed, data validated, all into `game.pak` (memory-mappable).
 
-## Internes Design
+## Internal Design
 
 ### Atlas Pipeline (Dev vs Release)
 
@@ -135,13 +137,13 @@ amigo-engine/
         +-- ambient/                   # environmental loops
 ```
 
-## Nicht-Ziele
+## Non-Goals
 
 - No runtime AI model inference for assets
 - No dynamic plugin loading for asset types
 - No streaming of individual assets during gameplay (cartridge-style loading)
 
-## Offene Fragen
+## Open Questions
 
 - Exact `game.pak` binary format specification
 - Memory budget thresholds for asset preloading warnings

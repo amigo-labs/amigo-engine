@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_ui
+depends_on: ["engine/core", "engine/rendering"]
+last_updated: 2026-03-16
+---
+
 # UI System (Pixel-Native, Two Tiers)
 
-> Status: draft
-> Crate: amigo_ui
-> Depends on: [engine/core](../engine/core.md), [engine/rendering](../engine/rendering.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 One UI system, two complexity levels. All rendering through the engine's sprite batcher -- bitmap fonts, sprite-based widgets, pixel-perfect at virtual resolution.
 

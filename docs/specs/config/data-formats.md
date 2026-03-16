@@ -1,11 +1,12 @@
+---
+status: draft
+depends_on: []
+last_updated: 2026-03-16
+---
+
 # Data Formats: RON & TOML
 
-> Status: draft
-> Crate: --
-> Depends on: --
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Documents the conventions for RON and TOML usage across the Amigo Engine, when to use which format, and the serialization patterns employed throughout the codebase.
 
@@ -19,7 +20,7 @@ let tower: TowerDef = ron::from_str(&std::fs::read_to_string("assets/data/towers
 let config: EngineConfig = toml::from_str(&std::fs::read_to_string("amigo.toml")?)?;
 ```
 
-## Verhalten
+## Behavior
 
 ### Format Selection Rules
 
@@ -180,7 +181,7 @@ All generated audio is royalty-free and commercially usable:
 
 Generated output is original -- not copies of training data. Standard disclaimer: verify uniqueness of generated tracks before commercial release.
 
-## Internes Design
+## Internal Design
 
 Both RON and TOML parsing use serde for deserialization into strongly-typed Rust structs. Hot-reloadable files are watched via the `notify` crate (see [assets/pipeline](../assets/pipeline.md)). When a watched file changes, it is re-parsed and the corresponding in-memory representation is updated.
 
@@ -198,13 +199,13 @@ pub enum EngineError {
 }
 ```
 
-## Nicht-Ziele
+## Non-Goals
 
 - Supporting YAML, XML, or other data formats
 - Schema generation for external validation tools
 - Binary serialization for data files (only for `game.pak` packing)
 
-## Offene Fragen
+## Open Questions
 
 - Whether to add RON schema validation at build time via a custom derive macro
 - Whether to support RON `#[serde(default)]` consistently across all data types

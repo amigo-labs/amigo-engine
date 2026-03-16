@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_plugin
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # Plugin System
 
-> Status: draft
-> Crate: amigo_plugin
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Compile-time plugin architecture for composing engine features. No dynamic plugin loading, no runtime discovery. Compile-time decides what's included, Plugin Trait provides clean initialization order and update lifecycle.
 

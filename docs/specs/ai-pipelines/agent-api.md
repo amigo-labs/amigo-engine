@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_api, amigo_mcp
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # AI Agent Interface (amigo_api + amigo_mcp)
 
-> Status: draft
-> Crate: amigo_api, amigo_mcp
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Amigo is designed to be developed *with* AI agents, not just *by* humans. The AI API provides a persistent IPC interface that allows Claude Code (or any AI agent) to observe, control, and debug the running engine as a first-class development workflow.
 
@@ -13,21 +15,21 @@ Amigo is designed to be developed *with* AI agents, not just *by* humans. The AI
 
 See [MCP Tools](#mcp-tools-exposed-to-claude-code) for the full tool interface and [Command Categories](#command-categories) for the underlying JSON-RPC protocol.
 
-## Verhalten
+## Behavior
 
 See [Example Workflows](#example-claude-code-workflow-via-mcp) for concrete usage patterns including level building, balancing, and debugging.
 
-## Internes Design
+## Internal Design
 
 See [Architecture (Two Layers)](#architecture-two-layers) for the separation between amigo_api (JSON-RPC) and amigo_mcp (MCP wrapper).
 
-## Nicht-Ziele
+## Non-Goals
 
 - Art/audio asset generation (see [artgen](artgen.md) and [audiogen](audiogen.md))
 - Remote access over the internet (localhost only by default)
 - Replacing manual development workflows
 
-## Offene Fragen
+## Open Questions
 
 - Authentication for non-localhost access
 - Rate limiting for event streaming

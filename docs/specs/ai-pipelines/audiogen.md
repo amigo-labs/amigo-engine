@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_audiogen
+depends_on: ["engine/audio"]
+last_updated: 2026-03-16
+---
+
 # Audio Generation Pipeline (amigo_audiogen)
 
-> Status: draft
-> Crate: amigo_audiogen
-> Depends on: [engine/audio](../engine/audio.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 amigo_audiogen is an MCP server that runs ACE-Step and AudioGen locally on GPU to produce music tracks, adaptive stems, sound effects, and ambient audio -- all royalty-free and commercially usable. For engine-side audio playback at runtime, see [engine/audio](../engine/audio.md).
 
@@ -13,21 +15,21 @@ amigo_audiogen is an MCP server that runs ACE-Step and AudioGen locally on GPU t
 
 See [Audio MCP Tools](#11-audio-mcp-tools) for the full tool interface exposed to Claude Code.
 
-## Verhalten
+## Behavior
 
 See [Stem Strategy](#10-stem-strategy) for the two-phase generation workflow (Quick Mode vs. Clean Mode) and [Adaptive Music System](#12-adaptive-music-system-engine-side) for runtime behavior.
 
-## Internes Design
+## Internal Design
 
 See [Audio Architecture](#8-audio-architecture), [AI Models](#9-ai-models), and [Audio Post-Processing Pipeline](#15-audio-post-processing-pipeline).
 
-## Nicht-Ziele
+## Non-Goals
 
 - Runtime audio generation (all generation is dev-time)
 - Art/visual asset generation (see [artgen](artgen.md))
 - Replacing hand-composed music (AI generation is a starting point)
 
-## Offene Fragen
+## Open Questions
 
 - ACE-Step LoRA fine-tuning workflow for custom world styles
 - Demucs vs. ACE-Step built-in stem separation quality comparison

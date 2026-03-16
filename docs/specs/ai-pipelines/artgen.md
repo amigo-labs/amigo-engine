@@ -1,11 +1,13 @@
+---
+status: draft
+crate: amigo_artgen
+depends_on: ["assets/format"]
+last_updated: 2026-03-16
+---
+
 # Art Generation Pipeline (amigo_artgen)
 
-> Status: draft
-> Crate: amigo_artgen
-> Depends on: [assets/format](../assets/format.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 amigo_artgen is an MCP server that connects to external ComfyUI instances for pixel art sprite, tileset, and animation generation with a full post-processing pipeline enforcing visual consistency. It never runs AI models itself -- it builds ComfyUI workflow JSONs, sends them to the ComfyUI HTTP API, receives generated images, runs post-processing in Rust, and saves to the assets folder.
 
@@ -13,21 +15,21 @@ amigo_artgen is an MCP server that connects to external ComfyUI instances for pi
 
 See [Art MCP Tools](#5-art-mcp-tools) for the full tool interface exposed to Claude Code.
 
-## Verhalten
+## Behavior
 
 See [Connection](#3-connection) for server modes and [Workflow Builder](#7-workflow-builder) for the generation pipeline.
 
-## Internes Design
+## Internal Design
 
 See [Art Architecture](#2-art-architecture) and [Art Post-Processing Pipeline](#6-art-post-processing-pipeline).
 
-## Nicht-Ziele
+## Non-Goals
 
 - Running AI inference directly (ComfyUI handles this)
 - Runtime asset manipulation (this is a dev-time tool only)
 - Audio generation (see [audiogen](audiogen.md))
 
-## Offene Fragen
+## Open Questions
 
 - Which ComfyUI custom nodes are required vs. optional?
 - Should the post-processing pipeline support user-defined steps?

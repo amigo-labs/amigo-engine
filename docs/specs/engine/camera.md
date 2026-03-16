@@ -1,15 +1,17 @@
+---
+status: draft
+crate: amigo_camera
+depends_on: ["engine/core"]
+last_updated: 2026-03-16
+---
+
 # Camera System
 
-> Status: draft
-> Crate: amigo_camera
-> Depends on: [engine/core](../engine/core.md)
-> Last updated: 2026-03-16
-
-## Zweck
+## Purpose
 
 Camera management with pre-built patterns and effects for 2D games.
 
-## Verhalten
+## Behavior
 
 Pre-built patterns: Fixed, Follow (with deadzone + lookahead), FollowSmooth, ScreenLock (Zelda), RoomTransition (Metroidvania), BossArena, CinematicPan.
 

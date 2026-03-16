@@ -1,11 +1,13 @@
-# Amigo Engine -- Konventionen
+---
+status: draft
+last_updated: 2026-03-16
+---
 
-> Status: draft
-> Last updated: 2026-03-16
+# Amigo Engine -- Conventions
 
-## Zweck
+## Purpose
 
-Cross-cutting Konventionen die fuer alle Module gelten.
+Cross-cutting conventions that apply to all modules.
 
 ## Rust Patterns
 
@@ -42,18 +44,18 @@ AMIGO_LOG=amigo_render=trace amigo run # only renderer trace
 
 Integrates with Tracy for performance profiling.
 
-## Spec-Konventionen
+## Spec Conventions
 
-- Jede Spec nutzt das Template aus diesem Dokument
-- Status-Flow: draft -> ready -> implementing -> stable
-- Eine Spec ist "ready" wenn alle Dependencies mindestens "ready" sind
-- Public API Section ist der Vertrag: implementiere genau das, nicht mehr
+- Each spec uses the template from this document
+- Status flow: draft -> ready -> implementing -> stable
+- A spec is "ready" when all dependencies are at least "ready"
+- The Public API section is the contract: implement exactly that, nothing more
 
 ## Naming
 
-- Crates: snake_case mit amigo_ Prefix
-- Traits: PascalCase, beschreibend (AudioMixer, TileRenderer)
-- Config-Dateien: kebab-case.toml / kebab-case.ron
+- Crates: snake_case with amigo_ prefix
+- Traits: PascalCase, descriptive (AudioMixer, TileRenderer)
+- Config files: kebab-case.toml / kebab-case.ron
 
 ## Design Decisions (Appendix)
 
