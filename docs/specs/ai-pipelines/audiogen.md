@@ -1,347 +1,39 @@
-# Amigo Engine - AI Asset Generation Pipeline Specification
-
-## amigo_artgen + amigo_audiogen v1.0
-
+---
+status: draft
+crate: amigo_audiogen
+depends_on: ["engine/audio"]
+last_updated: 2026-03-16
 ---
 
-## 1. Overview
+# Audio Generation Pipeline (amigo_audiogen)
 
-The Amigo Engine uses two dedicated MCP servers for AI-powered asset generation. **amigo_artgen** connects to external ComfyUI instances for pixel art sprite, tileset, and animation generation with a full post-processing pipeline enforcing visual consistency. **amigo_audiogen** runs ACE-Step and AudioGen locally on GPU to produce music tracks, adaptive stems, sound effects, and ambient audio -- all royalty-free and commercially usable.
+## Purpose
 
----
+amigo_audiogen is an MCP server that runs ACE-Step and AudioGen locally on GPU to produce music tracks, adaptive stems, sound effects, and ambient audio -- all royalty-free and commercially usable. For engine-side audio playback at runtime, see [engine/audio](../engine/audio.md).
 
-# Part I: Art Pipeline (amigo_artgen)
+## Public API
 
----
+See [Audio MCP Tools](#11-audio-mcp-tools) for the full tool interface exposed to Claude Code.
 
-## 2. Art Architecture
+## Behavior
 
-```
-+-------------------------------------------------+
-|              Claude Code (MCP)                   |
-|                                                  |
-|  amigo_artgen_generate_sprite(...)               |
-|  amigo_artgen_generate_tileset(...)              |
-|  amigo_artgen_inpaint(...)                       |
-|  amigo_artgen_palette_swap(...)                  |
-|                                                  |
-+--------------------------------------------------+
-|              amigo_artgen (MCP Server)            |
-|                                                  |
-|  +------------+  +------------+  +------------+  |
-|  | Workflow    |  | ComfyUI    |  | Post-      |  |
-|  | Builder    |->| Client     |->| Processing |  |
-|  |            |  | (HTTP)     |  | Pipeline   |  |
-|  +------------+  +------------+  +------------+  |
-|                                        |         |
-|                                        v         |
-|                                  assets/ folder   |
-|                                  (hot reload)     |
-+--------------------------------------------------+
-|              ComfyUI (external)                   |
-|                                                  |
-|  - Local (localhost:8188)                        |
-|  - Remote (LAN / Cloud)                          |
-|  - Pixel Art Checkpoint + LoRA                   |
-|  - ControlNet models                             |
-|  - Custom nodes as needed                        |
-+--------------------------------------------------+
-```
+See [Stem Strategy](#10-stem-strategy) for the two-phase generation workflow (Quick Mode vs. Clean Mode) and [Adaptive Music System](#12-adaptive-music-system-engine-side) for runtime behavior.
 
-amigo_artgen never runs AI models itself. It builds ComfyUI workflow JSONs, sends them to the ComfyUI HTTP API, receives generated images, runs post-processing in Rust, and saves to the assets folder.
+## Internal Design
 
----
+See [Audio Architecture](#8-audio-architecture), [AI Models](#9-ai-models), and [Audio Post-Processing Pipeline](#15-audio-post-processing-pipeline).
 
-## 3. Connection
+## Non-Goals
 
-Three modes, like Krita AI Diffusion:
+- Runtime audio generation (all generation is dev-time)
+- Art/visual asset generation (see [artgen](artgen.md))
+- Replacing hand-composed music (AI generation is a starting point)
 
-| Mode   | Server URL                         | Use Case                           |
-| ------ | ---------------------------------- | ---------------------------------- |
-| Local  | `http://localhost:8188`            | ComfyUI on same machine (default)  |
-| Remote | `http://192.168.x.x:8188`          | ComfyUI on another PC / GPU server |
-| Cloud  | `https://api.rundiffusion.com/...` | Hosted ComfyUI service             |
+## Open Questions
 
-Configuration in `amigo.toml`:
-
-```toml
-[artgen]
-server = "http://localhost:8188"
-timeout = 120                        # seconds per generation
-output_dir = "assets/generated"      # where results land
-```
-
-On startup, amigo_artgen queries the ComfyUI server for available models, LoRAs, and custom nodes. Missing requirements are reported as warnings.
-
----
-
-## 4. Style Definitions
-
-Each world has a style file that constrains AI generation for visual consistency:
-
-```ron
-// styles/caribbean.style.ron
-(
-    name: "Caribbean",
-
-    // Model selection
-    checkpoint: "pixel_art_xl_v1.safetensors",
-    lora: Some(("pixel_art_16bit.safetensors", 0.7)),
-
-    // Color palette (enforced in post-processing)
-    palette: [
-        "#1a1a2e",  // outline/dark
-        "#e8c170",  // sand
-        "#8b5e3c",  // wood
-        "#3b7dd8",  // water
-        "#4caf50",  // leaf
-        "#f5f5dc",  // bone/sail
-        "#c0392b",  // red accent
-        "#f39c12",  // gold
-        "#2c3e50",  // shadow
-        "#ecf0f1",  // highlight
-    ],
-
-    // Prompt engineering
-    prompt_prefix: "pixel art, 16-bit style, tropical pirate theme,",
-    negative_prompt: "realistic, 3d, smooth, anti-aliased, gradient, blurry, modern, photo",
-
-    // Generation defaults
-    default_size: (32, 32),
-    steps: 20,
-    cfg_scale: 7.0,
-
-    // Post-processing flags
-    post_processing: (
-        palette_clamp: true,
-        remove_anti_aliasing: true,
-        add_outline: true,
-        outline_color: "#1a1a2e",
-        cleanup_transparency: true,
-    ),
-
-    // Reference images for img2img consistency
-    reference_images: [
-        "styles/ref/caribbean_tower.png",
-        "styles/ref/caribbean_enemy.png",
-        "styles/ref/caribbean_tiles.png",
-    ],
-)
-```
-
----
-
-## 5. Art MCP Tools
-
-### Generation
-
-```
-amigo_artgen_generate_sprite(
-    prompt: string,          # "pirate archer tower with skull flag"
-    style: string,           # "caribbean" -> loads style file
-    size: [u32, u32]?,       # default from style (e.g., [32, 32])
-    variants: u32?,          # number of variations (default: 3)
-    output: string?,         # output filename (auto-generated if omitted)
-) -> { paths: [string], preview: string }
-
-amigo_artgen_generate_tileset(
-    theme: string,           # "caribbean_ground"
-    style: string,           # "caribbean"
-    tile_size: u32?,         # default from style
-    tiles: [string],         # ["grass", "dirt", "water", "sand", "path"]
-    seamless: bool?,         # ensure edges tile correctly (default: true)
-) -> { path: string, tiles: [string] }
-
-amigo_artgen_generate_spritesheet(
-    base: string,            # path to base sprite
-    animation: string,       # "walk", "attack", "death", "idle"
-    frames: u32,             # number of animation frames
-    directions: u32?,        # 1, 4, or 8 (default: 1)
-) -> { path: string, frames: u32 }
-```
-
-### Modification
-
-```
-amigo_artgen_variation(
-    input: string,           # path to existing sprite
-    prompt: string,          # "smaller flag, more wood texture"
-    strength: f32?,          # 0.0 = identical, 1.0 = completely new (default: 0.4)
-    style: string?,          # style for post-processing
-) -> { path: string }
-
-amigo_artgen_inpaint(
-    input: string,           # path to sprite
-    mask: string,            # path to mask (white = replace, black = keep)
-    prompt: string,          # what to fill in
-    style: string?,
-) -> { path: string }
-```
-
-### Post-Processing Only (no AI)
-
-```
-amigo_artgen_palette_swap(
-    input: string,           # path to sprite
-    palette: string,         # palette name or style name
-) -> { path: string }
-
-amigo_artgen_upscale(
-    input: string,           # path to sprite
-    factor: u32,             # 2 or 4
-) -> { path: string }
-
-amigo_artgen_post_process(
-    input: string,           # path to any image
-    style: string,           # apply style's post-processing
-) -> { path: string }
-```
-
-### Utility
-
-```
-amigo_artgen_list_styles() -> { styles: [string] }
-amigo_artgen_list_checkpoints() -> { checkpoints: [string] }
-amigo_artgen_list_loras() -> { loras: [string] }
-amigo_artgen_server_status() -> { connected: bool, gpu: string, vram: string }
-```
-
----
-
-## 6. Art Post-Processing Pipeline
-
-Runs in Rust after ComfyUI returns a raw image. No AI involved -- pure image manipulation. Ensures every generated asset matches the pixel art style.
-
-### Pipeline Steps
-
-```
-Raw AI Output (may have anti-aliasing, wrong colors, soft edges)
-    |
-    v
-+- 1. Downscale ------------------------------------------+
-|  If generated at higher resolution (e.g., 128x128       |
-|  for a 32x32 sprite), downscale with nearest-           |
-|  neighbor to target size.                                |
-+---------------------------------------------------------+
-    |
-    v
-+- 2. Palette Clamping -----------------------------------+
-|  For each pixel: find nearest color in the style's      |
-|  palette (Euclidean distance in RGB space).              |
-|  Result: image uses only defined palette colors.         |
-+---------------------------------------------------------+
-    |
-    v
-+- 3. Anti-Aliasing Removal ------------------------------+
-|  Detect pixels that are blends between two palette       |
-|  colors (intermediate values). Snap to the nearest       |
-|  palette color. Eliminates soft edges.                   |
-+---------------------------------------------------------+
-    |
-    v
-+- 4. Transparency Cleanup -------------------------------+
-|  Pixels with alpha < 128 -> fully transparent (0).       |
-|  Pixels with alpha >= 128 -> fully opaque (255).         |
-|  No semi-transparent pixels in pixel art.                |
-+---------------------------------------------------------+
-    |
-    v
-+- 5. Outline Addition -----------------------------------+
-|  For each opaque pixel adjacent to a transparent         |
-|  pixel: add 1px outline in outline_color.                |
-|  Configurable: inner outline, outer outline, or off.     |
-+---------------------------------------------------------+
-    |
-    v
-+- 6. Tile Edge Check (tilesets only) --------------------+
-|  Verify that tile edges match for seamless tiling.       |
-|  Left edge pixels must match right edge of neighbor.     |
-|  If mismatch > threshold: flag for manual review         |
-|  or re-run with inpainting on edges.                     |
-+---------------------------------------------------------+
-    |
-    v
-  Clean pixel art asset -> saved to assets/ -> engine hot reload
-```
-
-### Configuration
-
-Each step is toggleable per style:
-
-```ron
-post_processing: (
-    palette_clamp: true,
-    remove_anti_aliasing: true,
-    add_outline: true,
-    outline_color: "#1a1a2e",
-    outline_mode: "outer",       // "outer", "inner", or "both"
-    cleanup_transparency: true,
-    tile_edge_check: false,      // only for tilesets
-)
-```
-
----
-
-## 7. Workflow Builder
-
-amigo_artgen builds ComfyUI workflow JSONs programmatically. No need for Claude Code or the user to understand ComfyUI node graphs.
-
-### How It Works
-
-1. Tool call comes in (e.g., `generate_sprite`)
-2. Workflow Builder selects a template based on the operation
-3. Fills in parameters from the tool call + style definition
-4. Sends completed workflow JSON to ComfyUI HTTP API (`/prompt`)
-5. Polls for completion (`/history`)
-6. Downloads result image
-7. Runs post-processing pipeline
-8. Saves to output directory
-
-### Template Workflows
-
-Stored as JSON templates with placeholder values:
-
-```
-tools/amigo_artgen/workflows/
-+-- txt2img_sprite.json          # text -> new sprite
-+-- img2img_variation.json       # existing sprite -> variation
-+-- inpaint.json                 # sprite + mask -> modified sprite
-+-- spritesheet.json             # base sprite -> animation frames
-+-- tileset.json                 # theme -> tileset grid
-+-- upscale.json                 # small -> larger with detail
-+-- custom/                      # user-provided workflows
-```
-
-### ComfyUI API Integration
-
-```rust
-pub struct ComfyUIClient {
-    base_url: String,
-    client: reqwest::Client,
-}
-
-impl ComfyUIClient {
-    // Queue a workflow for execution
-    pub async fn queue_prompt(&self, workflow: Value) -> Result<String>;
-
-    // Poll for completion
-    pub async fn get_history(&self, prompt_id: &str) -> Result<PromptResult>;
-
-    // Download generated image
-    pub async fn get_image(&self, filename: &str) -> Result<Vec<u8>>;
-
-    // Query available models
-    pub async fn get_checkpoints(&self) -> Result<Vec<String>>;
-    pub async fn get_loras(&self) -> Result<Vec<String>>;
-
-    // Server health
-    pub async fn system_stats(&self) -> Result<SystemStats>;
-}
-```
-
----
-
-# Part II: Audio Pipeline (amigo_audiogen)
+- ACE-Step LoRA fine-tuning workflow for custom world styles
+- Demucs vs. ACE-Step built-in stem separation quality comparison
+- Multi-GPU scheduling coordination with artgen
 
 ---
 
@@ -827,14 +519,14 @@ Each world has a distinct sonic identity: different musical genre, different ins
 
 ### Per-World Audio Profiles
 
-| World             | Music Genre                      | Key Instruments                                      | SFX Style                                             |
-| ----------------- | -------------------------------- | ---------------------------------------------------- | ----------------------------------------------------- |
-| Caribbean         | Orchestral sea shanty            | Fiddle, accordion, war drums, brass, harpsichord     | Wooden, explosive, wet (splashes, creaking)           |
-| Lord of the Rings | Epic orchestral / Howard Shore   | French horn, cello, choir, harp, bodhran             | Metallic, reverberant, stone (clang, echo)            |
-| Dune              | Ambient electronic / Hans Zimmer | Duduk, throat singing, deep synth pads, tabla        | Sandy, dry, resonant (wind, rumble, vibration)        |
-| Matrix            | Dark synthwave / industrial      | Analog synth, drum machine, distorted bass, glitch   | Digital, crisp, processed (beeps, whooshes, electric) |
-| Game of Thrones   | Dark medieval orchestral         | Cello, war drums, raven calls, low brass             | Cold, metallic, heavy (ice crack, fire roar, steel)   |
-| Stranger Things   | 80s retro synth / John Carpenter | Moog synth, Juno pads, gated reverb drums, arpeggios | Eerie, analog, distorted (static, warble, flicker)    |
+| World | Music Genre | Key Instruments | SFX Style |
+|-------|-------------|-----------------|-----------|
+| Caribbean | Orchestral sea shanty | Fiddle, accordion, war drums, brass, harpsichord | Wooden, explosive, wet (splashes, creaking) |
+| Lord of the Rings | Epic orchestral / Howard Shore | French horn, cello, choir, harp, bodhran | Metallic, reverberant, stone (clang, echo) |
+| Dune | Ambient electronic / Hans Zimmer | Duduk, throat singing, deep synth pads, tabla | Sandy, dry, resonant (wind, rumble, vibration) |
+| Matrix | Dark synthwave / industrial | Analog synth, drum machine, distorted bass, glitch | Digital, crisp, processed (beeps, whooshes, electric) |
+| Game of Thrones | Dark medieval orchestral | Cello, war drums, raven calls, low brass | Cold, metallic, heavy (ice crack, fire roar, steel) |
+| Stranger Things | 80s retro synth / John Carpenter | Moog synth, Juno pads, gated reverb drums, arpeggios | Eerie, analog, distorted (static, warble, flicker) |
 
 ### Style Definition Files
 
@@ -1028,10 +720,6 @@ Raw AI Audio
 
 ---
 
-# Part III: Shared Infrastructure
-
----
-
 ## 16. GPU Scheduling
 
 ACE-Step and ComfyUI (artgen) both need the GPU. On a single RTX 3060/3080, they cannot run simultaneously.
@@ -1052,69 +740,6 @@ timeout = 300                          # seconds before lock is considered stale
 ```
 
 If running on a multi-GPU setup (e.g., RTX 3060 for audio, RTX 3080 for art), each server can be pinned to a specific GPU via CUDA_VISIBLE_DEVICES in its config.
-
----
-
-## 17. Workspace Structure
-
-```
-amigo-engine/
-+-- tools/
-|   +-- amigo_artgen/
-|   |   +-- Cargo.toml
-|   |   +-- src/
-|   |   |   +-- main.rs               # MCP server entry point
-|   |   |   +-- comfyui_client.rs      # HTTP client for ComfyUI API
-|   |   |   +-- workflow_builder.rs    # Builds workflow JSONs from templates
-|   |   |   +-- post_processing.rs     # Palette clamp, outline, AA removal
-|   |   |   +-- style.rs              # Style definition loader
-|   |   |   +-- tools.rs              # MCP tool definitions
-|   |   +-- workflows/
-|   |       +-- txt2img_sprite.json
-|   |       +-- img2img_variation.json
-|   |       +-- inpaint.json
-|   |       +-- spritesheet.json
-|   |       +-- tileset.json
-|   |       +-- upscale.json
-|   +-- amigo_audiogen/
-|       +-- Cargo.toml
-|       +-- src/
-|       |   +-- main.rs               # MCP server entry point
-|       |   +-- acestep_client.rs      # HTTP client for ACE-Step Gradio API
-|       |   +-- audiogen_client.rs     # Python bridge for AudioCraft/AudioGen
-|       |   +-- stem_splitter.rs       # Stem separation orchestration
-|       |   +-- post_processing.rs     # Loop trim, normalize, convert
-|       |   +-- style.rs              # Audio style definition loader
-|       |   +-- tools.rs              # MCP tool definitions
-|       +-- scripts/
-|           +-- audiogen_server.py     # AudioGen FastAPI wrapper
-+-- styles/
-|   +-- caribbean.style.ron            # Art style (visual)
-|   +-- lotr.style.ron
-|   +-- dune.style.ron
-|   +-- matrix.style.ron
-|   +-- got.style.ron
-|   +-- stranger_things.style.ron
-|   +-- audio/
-|       +-- caribbean.audio_style.ron  # Audio style (sonic)
-|       +-- lotr.audio_style.ron
-|       +-- dune.audio_style.ron
-|       +-- matrix.audio_style.ron
-|       +-- got.audio_style.ron
-|       +-- stranger_things.audio_style.ron
-+-- assets/
-    +-- generated/                     # artgen output lands here
-    |   +-- sprites/
-    |   +-- tilesets/
-    |   +-- spritesheets/
-    +-- audio/
-        +-- music/                     # adaptive tracks + stems
-        |   +-- caribbean/
-        |   +-- lotr/
-        |   +-- ...
-        +-- sfx/                       # sound effects
-        +-- ambient/                   # environmental loops
-```
 
 ---
 
@@ -1148,54 +773,17 @@ Three MCP servers side by side: `amigo` for engine control, `amigo-artgen` for p
 
 All generated audio is royalty-free and commercially usable:
 
-| Model                 | License    | Training Data          | Commercial Use         |
-| --------------------- | ---------- | ---------------------- | ---------------------- |
-| ACE-Step 1.5          | Apache 2.0 | Original training data | Yes                    |
-| AudioGen (AudioCraft) | MIT (code) | Public sound effects   | Yes (verify per-model) |
-| Demucs (stem split)   | MIT        | N/A (inference only)   | Yes                    |
+| Model | License | Training Data | Commercial Use |
+|-------|---------|--------------|----------------|
+| ACE-Step 1.5 | Apache 2.0 | Original training data | Yes |
+| AudioGen (AudioCraft) | MIT (code) | Public sound effects | Yes (verify per-model) |
+| Demucs (stem split) | MIT | N/A (inference only) | Yes |
 
 Generated output is original -- not copies of training data. Standard disclaimer: verify uniqueness of generated tracks before commercial release.
 
 ---
 
 ## 20. Example Workflows
-
-### Art Pipeline: Creating a Tower Sprite
-
-```
-Claude Code: "Create a cannon tower for the Caribbean world"
-
-1. amigo_artgen_generate_sprite(
-     prompt="pirate cannon tower, wooden platform, black cannon, skull decoration",
-     style="caribbean",
-     size=[32, 32],
-     variants=3
-   )
-   -> Generates 3 variants, post-processed with Caribbean palette
-
-2. Claude sees the 3 PNGs, picks the best one
-
-3. amigo_artgen_variation(
-     input="assets/generated/sprites/cannon_tower_v2.png",
-     prompt="add small pirate flag on top",
-     strength=0.3
-   )
-   -> Refined version with flag
-
-4. amigo_artgen_generate_spritesheet(
-     base="assets/generated/sprites/cannon_tower_v2_refined.png",
-     animation="idle",
-     frames=4
-   )
-   -> 4-frame idle animation (flag waving, cannon rotating slightly)
-
-5. // Asset is now in assets/generated/sprites/
-   // Engine hot-reloads it automatically
-   // Claude can immediately test it in the running game:
-   amigo_place_tower(x=5, y=3, tower_type="cannon")
-   amigo_screenshot(path="/tmp/tower_placed.png")
-   -> Claude sees the tower in-game, evaluates the look
-```
 
 ### Audio Pipeline: Creating a Complete World Soundtrack
 
@@ -1299,7 +887,3 @@ Claude Code: "Create Caribbean world's release soundtrack"
 
 Total time: ~30 minutes. Quality: release-grade, zero stem bleed.
 ```
-
----
-
-_For the engine specification, see 01-engine-spec.md._
