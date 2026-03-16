@@ -35,17 +35,42 @@ pub struct ActionResult {
 /// An effect that happened during battle (for animation/UI).
 #[derive(Clone, Debug)]
 pub enum BattleEffect {
-    Damage { target: usize, amount: i32, is_critical: bool, element: Element },
-    Heal { target: usize, amount: i32 },
-    StatusApplied { target: usize, status: StatusEffect },
-    StatusRemoved { target: usize, status: StatusType },
-    Fainted { target: usize },
-    Miss { target: usize },
+    Damage {
+        target: usize,
+        amount: i32,
+        is_critical: bool,
+        element: Element,
+    },
+    Heal {
+        target: usize,
+        amount: i32,
+    },
+    StatusApplied {
+        target: usize,
+        status: StatusEffect,
+    },
+    StatusRemoved {
+        target: usize,
+        status: StatusType,
+    },
+    Fainted {
+        target: usize,
+    },
+    Miss {
+        target: usize,
+    },
     Fled,
     FleeBlocked,
-    Switched { slot: usize },
-    LevelUp { combatant: usize, new_level: u32 },
-    ExpGained { amount: u32 },
+    Switched {
+        slot: usize,
+    },
+    LevelUp {
+        combatant: usize,
+        new_level: u32,
+    },
+    ExpGained {
+        amount: u32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -153,15 +178,25 @@ pub struct StatusEffect {
 
 impl StatusEffect {
     pub fn new(status_type: StatusType, turns: u32, magnitude: i32) -> Self {
-        Self { status_type, turns_remaining: turns, magnitude }
+        Self {
+            status_type,
+            turns_remaining: turns,
+            magnitude,
+        }
     }
 
     pub fn is_debuff(&self) -> bool {
         matches!(
             self.status_type,
-            StatusType::Poison | StatusType::Burn | StatusType::Freeze |
-            StatusType::Paralyze | StatusType::Sleep | StatusType::Confused |
-            StatusType::AttackDown | StatusType::DefenseDown | StatusType::SpeedDown
+            StatusType::Poison
+                | StatusType::Burn
+                | StatusType::Freeze
+                | StatusType::Paralyze
+                | StatusType::Sleep
+                | StatusType::Confused
+                | StatusType::AttackDown
+                | StatusType::DefenseDown
+                | StatusType::SpeedDown
         )
     }
 
@@ -229,7 +264,11 @@ impl CombatantStats {
     }
 
     pub fn hp_fraction(&self) -> f32 {
-        if self.max_hp <= 0 { 0.0 } else { self.hp as f32 / self.max_hp as f32 }
+        if self.max_hp <= 0 {
+            0.0
+        } else {
+            self.hp as f32 / self.max_hp as f32
+        }
     }
 }
 
@@ -442,14 +481,14 @@ impl Battle {
             }
 
             BattlePhase::CheckResult => {
-                let players_alive = self.combatants.iter()
-                    .any(|c| c.team == 0 && c.is_alive());
-                let enemies_alive = self.combatants.iter()
-                    .any(|c| c.team == 1 && c.is_alive());
+                let players_alive = self.combatants.iter().any(|c| c.team == 0 && c.is_alive());
+                let enemies_alive = self.combatants.iter().any(|c| c.team == 1 && c.is_alive());
 
                 if !enemies_alive {
                     self.phase = BattlePhase::Victory;
-                    let exp: u32 = self.combatants.iter()
+                    let exp: u32 = self
+                        .combatants
+                        .iter()
                         .filter(|c| c.team == 1)
                         .map(|c| c.stats.level * 10 + 5)
                         .sum();
@@ -488,7 +527,10 @@ impl Battle {
     }
 
     fn calculate_turn_order(&mut self) {
-        let mut order: Vec<(usize, i32)> = self.combatants.iter().enumerate()
+        let mut order: Vec<(usize, i32)> = self
+            .combatants
+            .iter()
+            .enumerate()
             .filter(|(_, c)| c.is_alive())
             .map(|(i, c)| (i, c.effective_speed()))
             .collect();
@@ -537,14 +579,20 @@ impl Battle {
             }
 
             TurnAction::Flee => {
-                let player_speed: i32 = self.combatants.iter()
+                let player_speed: i32 = self
+                    .combatants
+                    .iter()
                     .filter(|c| c.team == 0 && c.is_alive())
                     .map(|c| c.effective_speed())
-                    .max().unwrap_or(0);
-                let enemy_speed: i32 = self.combatants.iter()
+                    .max()
+                    .unwrap_or(0);
+                let enemy_speed: i32 = self
+                    .combatants
+                    .iter()
                     .filter(|c| c.team == 1 && c.is_alive())
                     .map(|c| c.effective_speed())
-                    .max().unwrap_or(0);
+                    .max()
+                    .unwrap_or(0);
 
                 let flee_chance = 0.5 + (player_speed - enemy_speed) as f32 * 0.05;
                 if self.next_rng() < flee_chance.clamp(0.1, 0.95) {
@@ -559,7 +607,10 @@ impl Battle {
                 effects.push(BattleEffect::Switched { slot: *slot });
             }
 
-            TurnAction::Skill { skill_id: _, target } => {
+            TurnAction::Skill {
+                skill_id: _,
+                target,
+            } => {
                 // Placeholder: games implement skill lookup + execution
                 // For now treat as a basic attack
                 let target = *target;
@@ -586,9 +637,12 @@ impl Battle {
                 let target = *target;
                 if target < self.combatants.len() {
                     let heal = 30;
-                    self.combatants[target].stats.hp =
-                        (self.combatants[target].stats.hp + heal).min(self.combatants[target].stats.max_hp);
-                    effects.push(BattleEffect::Heal { target, amount: heal });
+                    self.combatants[target].stats.hp = (self.combatants[target].stats.hp + heal)
+                        .min(self.combatants[target].stats.max_hp);
+                    effects.push(BattleEffect::Heal {
+                        target,
+                        amount: heal,
+                    });
                 }
             }
 
@@ -675,7 +729,9 @@ impl Battle {
 
     /// Get all alive combatants on a team.
     pub fn alive_on_team(&self, team: u8) -> Vec<usize> {
-        self.combatants.iter().enumerate()
+        self.combatants
+            .iter()
+            .enumerate()
             .filter(|(_, c)| c.team == team && c.is_alive())
             .map(|(i, _)| i)
             .collect()
@@ -683,7 +739,10 @@ impl Battle {
 
     /// Check if battle is over.
     pub fn is_over(&self) -> bool {
-        matches!(self.phase, BattlePhase::Victory | BattlePhase::Defeat | BattlePhase::Fled)
+        matches!(
+            self.phase,
+            BattlePhase::Victory | BattlePhase::Defeat | BattlePhase::Fled
+        )
     }
 
     /// Get the index of the combatant whose turn it is.
@@ -737,8 +796,19 @@ impl EncounterTable {
         }
     }
 
-    pub fn with_entry(mut self, group_id: u32, weight: f32, min_level: u32, max_level: u32) -> Self {
-        self.entries.push(EncounterEntry { enemy_group_id: group_id, weight, min_level, max_level });
+    pub fn with_entry(
+        mut self,
+        group_id: u32,
+        weight: f32,
+        min_level: u32,
+        max_level: u32,
+    ) -> Self {
+        self.entries.push(EncounterEntry {
+            enemy_group_id: group_id,
+            weight,
+            min_level,
+            max_level,
+        });
         self
     }
 
@@ -762,7 +832,9 @@ impl EncounterTable {
         self.steps = 0;
 
         // Select encounter
-        let eligible: Vec<&EncounterEntry> = self.entries.iter()
+        let eligible: Vec<&EncounterEntry> = self
+            .entries
+            .iter()
             .filter(|e| player_level >= e.min_level && player_level <= e.max_level)
             .collect();
 
@@ -792,11 +864,22 @@ mod tests {
     use super::*;
 
     fn make_combatant(name: &str, hp: i32, atk: i32, def: i32, spd: i32, team: u8) -> Combatant {
-        Combatant::new(name, CombatantStats {
-            hp, max_hp: hp, mp: 10, max_mp: 10,
-            attack: atk, defense: def, speed: spd,
-            level: 5, exp: 0, element: Element::Normal,
-        }, team)
+        Combatant::new(
+            name,
+            CombatantStats {
+                hp,
+                max_hp: hp,
+                mp: 10,
+                max_mp: 10,
+                attack: atk,
+                defense: def,
+                speed: spd,
+                level: 5,
+                exp: 0,
+                element: Element::Normal,
+            },
+            team,
+        )
     }
 
     #[test]
@@ -817,7 +900,9 @@ mod tests {
         // Attack the enemy
         battle.submit_action(TurnAction::Attack { target: 1 });
         let effects = battle.step();
-        assert!(effects.iter().any(|e| matches!(e, BattleEffect::Damage { target: 1, .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, BattleEffect::Damage { target: 1, .. })));
 
         // Process end of turn, then slime's turn or check result
         loop {
@@ -851,7 +936,9 @@ mod tests {
     #[test]
     fn status_effects_tick() {
         let mut player = make_combatant("Hero", 100, 20, 10, 15, 0);
-        player.statuses.push(StatusEffect::new(StatusType::Poison, 2, 5));
+        player
+            .statuses
+            .push(StatusEffect::new(StatusType::Poison, 2, 5));
 
         let enemy = make_combatant("Slime", 999, 1, 1, 1, 1);
         let mut battle = Battle::new(vec![player], vec![enemy]);
@@ -864,7 +951,9 @@ mod tests {
 
         // End of turn → poison ticks
         let effects = battle.step();
-        let poison_dmg = effects.iter().any(|e| matches!(e, BattleEffect::Damage { amount: 5, .. }));
+        let poison_dmg = effects
+            .iter()
+            .any(|e| matches!(e, BattleEffect::Damage { amount: 5, .. }));
         assert!(poison_dmg);
     }
 

@@ -3,6 +3,10 @@ name = "amigo_render"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+editor = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit"]
+
 [dependencies]
 amigo_core = { workspace = true }
 wgpu = { workspace = true }
@@ -12,4 +16,8 @@ glam = { workspace = true }
 tracing = { workspace = true }
 image = { workspace = true }
 rustc-hash = { workspace = true }
+fontdue = { workspace = true }
 serde = { workspace = true }
+egui = { workspace = true, optional = true }
+egui-wgpu = { workspace = true, optional = true }
+egui-winit = { workspace = true, optional = true }

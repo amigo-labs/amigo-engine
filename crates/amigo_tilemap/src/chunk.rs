@@ -138,9 +138,7 @@ impl ChunkMap {
     /// loaded.
     pub fn get_tile(&self, world_x: i32, world_y: i32) -> u32 {
         let (coord, lx, ly) = Self::world_to_chunk(world_x, world_y);
-        self.chunks
-            .get(&coord)
-            .map_or(0, |c| c.get_tile(lx, ly))
+        self.chunks.get(&coord).map_or(0, |c| c.get_tile(lx, ly))
     }
 
     /// Write a tile at world tile coordinates. No-op if the chunk is not

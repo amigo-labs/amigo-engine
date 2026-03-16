@@ -50,11 +50,7 @@ impl AudioBuffer {
 
     /// Normalize peak amplitude to target dB.
     pub fn normalize(&mut self, target_db: f32) {
-        let peak = self
-            .samples
-            .iter()
-            .map(|s| s.abs())
-            .fold(0.0f32, f32::max);
+        let peak = self.samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
 
         if peak < 1e-10 {
             return; // silence
@@ -163,7 +159,9 @@ impl AudioBuffer {
             return;
         }
 
-        let fade_len = crossfade_samples.min(loop_point).min(self.samples.len() - loop_point);
+        let fade_len = crossfade_samples
+            .min(loop_point)
+            .min(self.samples.len() - loop_point);
 
         for i in 0..fade_len {
             let t = i as f32 / fade_len as f32;
@@ -213,8 +211,16 @@ pub struct LayerConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum LayerRule {
     AlwaysOn,
-    Threshold { param: String, above: f32, fade_secs: f32 },
-    Lerp { param: String, from: f32, to: f32 },
+    Threshold {
+        param: String,
+        above: f32,
+        fade_secs: f32,
+    },
+    Lerp {
+        param: String,
+        from: f32,
+        to: f32,
+    },
 }
 
 // ---------------------------------------------------------------------------

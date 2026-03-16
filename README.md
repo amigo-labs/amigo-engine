@@ -46,31 +46,61 @@ cargo run
 
 ## Architecture
 
-| Crate             | Description                                      |
-|-------------------|--------------------------------------------------|
-| `amigo_core`      | Fixed-point math, ECS, save system, scheduling   |
-| `amigo_render`    | wgpu renderer, camera, particles, lighting       |
-| `amigo_input`     | Keyboard, mouse, and gamepad input               |
-| `amigo_assets`    | Asset loading, Aseprite import, hot-reloading    |
-| `amigo_tilemap`   | Tilemap data structures and utilities            |
-| `amigo_animation` | Sprite animation state machine                   |
-| `amigo_scene`     | Scene stack and transitions                      |
-| `amigo_ui`        | Immediate-mode pixel UI                          |
-| `amigo_net`       | Networking / multiplayer transport               |
-| `amigo_debug`     | Debug overlay and system profiling               |
-| `amigo_audio`     | Audio playback (feature-gated)                   |
-| `amigo_editor`    | Editor integration                               |
-| `amigo_api`       | Public API surface for plugins                   |
-| `amigo_engine`    | Top-level crate that re-exports everything       |
+| Crate             | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `amigo_core`      | Fixed-point math, ECS, save system, scheduling |
+| `amigo_render`    | wgpu renderer, camera, particles, lighting     |
+| `amigo_input`     | Keyboard, mouse, and gamepad input             |
+| `amigo_assets`    | Asset loading, Aseprite import, hot-reloading  |
+| `amigo_tilemap`   | Tilemap data structures and utilities          |
+| `amigo_animation` | Sprite animation state machine                 |
+| `amigo_scene`     | Scene stack and transitions                    |
+| `amigo_ui`        | Immediate-mode pixel UI                        |
+| `amigo_net`       | Networking / multiplayer transport             |
+| `amigo_debug`     | Debug overlay and system profiling             |
+| `amigo_audio`     | Audio playback (feature-gated)                 |
+| `amigo_editor`    | Editor integration                             |
+| `amigo_api`       | Public API surface for plugins                 |
+| `amigo_engine`    | Top-level crate that re-exports everything     |
 
 ### Tools
 
-| Crate            | Description                    |
-|------------------|--------------------------------|
-| `amigo_cli`      | CLI for project scaffolding    |
-| `amigo_mcp`      | MCP integration tool           |
-| `amigo_artgen`   | Art generation utilities       |
-| `amigo_audiogen` | Audio generation utilities     |
+| Crate            | Description                 |
+| ---------------- | --------------------------- |
+| `amigo_cli`      | CLI for project scaffolding |
+| `amigo_mcp`      | MCP integration tool        |
+| `amigo_artgen`   | Art generation utilities    |
+| `amigo_audiogen` | Audio generation utilities  |
+
+## Documentation
+
+### Guides
+
+| Guide                                        | Description                          |
+| -------------------------------------------- | ------------------------------------ |
+| [Getting Started](docs/getting-started.md)   | First game in 15 minutes             |
+| [Architecture](docs/architecture.md)         | Service diagrams, crate dependencies |
+| [AI Integration](docs/ai-integration.md)     | MCP tools, ComfyUI, ACE-Step         |
+| [Genre Modules](docs/genre-modules.md)       | 18 ready-to-use game systems         |
+| [Plugin Guide](docs/plugin-guide.md)         | Extending the engine with plugins    |
+| [Tricks & Patterns](docs/tricks-patterns.md) | 44 internal techniques               |
+
+### Specifications
+
+| Spec                                                   | Description                  | Status |
+| ------------------------------------------------------ | ---------------------------- | ------ |
+| [Engine Spec](docs/specs/01-engine-spec.md)            | Core engine architecture     | Active |
+| [Asset Pipeline](docs/specs/02-asset-pipeline-spec.md) | AI asset generation          | Active |
+| [Asset Format](docs/specs/03-asset-format-spec.md)     | File formats & import/export | Draft  |
+
+See [Spec Status](docs/specs/STATUS.md) for per-feature implementation tracking.
+
+### Plans
+
+| Plan                                                      | Description              |
+| --------------------------------------------------------- | ------------------------ |
+| [Engine Docs Review](docs/plans/01-review-engine-docs.md) | Spec completeness audit  |
+| [Engine Setup](docs/plans/02-review-engine-setup.md)      | DX improvement proposals |
 
 ## Minimal example
 

@@ -45,9 +45,16 @@ impl BulletPool {
         let mut bullets = Vec::with_capacity(capacity);
         for _ in 0..capacity {
             bullets.push(Bullet {
-                x: 0.0, y: 0.0, vx: 0.0, vy: 0.0,
-                lifetime: 0, max_lifetime: 0, radius: 2.0,
-                damage: 1.0, active: false, kind: 0,
+                x: 0.0,
+                y: 0.0,
+                vx: 0.0,
+                vy: 0.0,
+                lifetime: 0,
+                max_lifetime: 0,
+                radius: 2.0,
+                damage: 1.0,
+                active: false,
+                kind: 0,
             });
         }
         Self {
@@ -69,7 +76,17 @@ impl BulletPool {
     }
 
     /// Spawn a bullet. Returns the index, or None if pool is full.
-    pub fn spawn(&mut self, x: f32, y: f32, vx: f32, vy: f32, lifetime: u32, radius: f32, damage: f32, kind: u32) -> Option<usize> {
+    pub fn spawn(
+        &mut self,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        lifetime: u32,
+        radius: f32,
+        damage: f32,
+        kind: u32,
+    ) -> Option<usize> {
         for (i, b) in self.bullets.iter_mut().enumerate() {
             if !b.active {
                 b.x = x;
@@ -176,10 +193,7 @@ impl BulletPool {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PatternShape {
     /// Evenly distributed bullets in a circle.
-    Radial {
-        count: u32,
-        speed: f32,
-    },
+    Radial { count: u32, speed: f32 },
     /// Spiral pattern that rotates over time.
     Spiral {
         count: u32,
@@ -229,7 +243,11 @@ pub fn compute_pattern(
                 })
                 .collect()
         }
-        PatternShape::Spiral { count, speed, rotation_speed: _ } => {
+        PatternShape::Spiral {
+            count,
+            speed,
+            rotation_speed: _,
+        } => {
             // rotation already includes accumulated rotation_speed
             let step = std::f32::consts::TAU / *count as f32;
             (0..*count)
@@ -239,7 +257,11 @@ pub fn compute_pattern(
                 })
                 .collect()
         }
-        PatternShape::Aimed { count, speed, spread_angle } => {
+        PatternShape::Aimed {
+            count,
+            speed,
+            spread_angle,
+        } => {
             if *count == 1 {
                 return vec![(target_angle.cos() * speed, target_angle.sin() * speed)];
             }
@@ -252,7 +274,12 @@ pub fn compute_pattern(
                 })
                 .collect()
         }
-        PatternShape::Wave { count, speed, amplitude, frequency } => {
+        PatternShape::Wave {
+            count,
+            speed,
+            amplitude,
+            frequency,
+        } => {
             let step = std::f32::consts::TAU / *count as f32;
             (0..*count)
                 .map(|i| {
@@ -263,15 +290,17 @@ pub fn compute_pattern(
                 })
                 .collect()
         }
-        PatternShape::Random { count, min_speed, max_speed } => {
-            (0..*count)
-                .map(|_| {
-                    let angle = xorshift_f32(rng_state) * std::f32::consts::TAU;
-                    let speed = min_speed + xorshift_f32(rng_state) * (max_speed - min_speed);
-                    (angle.cos() * speed, angle.sin() * speed)
-                })
-                .collect()
-        }
+        PatternShape::Random {
+            count,
+            min_speed,
+            max_speed,
+        } => (0..*count)
+            .map(|_| {
+                let angle = xorshift_f32(rng_state) * std::f32::consts::TAU;
+                let speed = min_speed + xorshift_f32(rng_state) * (max_speed - min_speed);
+                (angle.cos() * speed, angle.sin() * speed)
+            })
+            .collect(),
     }
 }
 
@@ -370,7 +399,12 @@ impl BulletEmitter {
         self.timer = 0;
 
         let target_angle = (self.target_y - self.y).atan2(self.target_x - self.x);
-        let velocities = compute_pattern(&self.pattern, self.rotation, target_angle, &mut self.rng_state);
+        let velocities = compute_pattern(
+            &self.pattern,
+            self.rotation,
+            target_angle,
+            &mut self.rng_state,
+        );
 
         // Advance rotation for spiral patterns
         if let PatternShape::Spiral { rotation_speed, .. } = &self.pattern {
@@ -379,11 +413,19 @@ impl BulletEmitter {
 
         let mut count = 0;
         for (vx, vy) in velocities {
-            if pool.spawn(
-                self.x, self.y, vx, vy,
-                self.bullet_lifetime, self.bullet_radius,
-                self.bullet_damage, self.bullet_kind,
-            ).is_some() {
+            if pool
+                .spawn(
+                    self.x,
+                    self.y,
+                    vx,
+                    vy,
+                    self.bullet_lifetime,
+                    self.bullet_radius,
+                    self.bullet_damage,
+                    self.bullet_kind,
+                )
+                .is_some()
+            {
                 count += 1;
             }
         }
@@ -541,7 +583,9 @@ mod tests {
         pool.spawn(50.0, 50.0, 200.0, 0.0, 1000, 2.0, 1.0, 0);
 
         let events = pool.tick();
-        assert!(events.iter().any(|e| matches!(e, BulletEvent::OutOfBounds { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, BulletEvent::OutOfBounds { .. })));
         assert_eq!(pool.active_count, 0);
     }
 
@@ -560,7 +604,10 @@ mod tests {
     fn pattern_radial() {
         let mut rng = 1u64;
         let vels = compute_pattern(
-            &PatternShape::Radial { count: 4, speed: 1.0 },
+            &PatternShape::Radial {
+                count: 4,
+                speed: 1.0,
+            },
             0.0,
             0.0,
             &mut rng,
@@ -575,7 +622,11 @@ mod tests {
     fn pattern_aimed() {
         let mut rng = 1u64;
         let vels = compute_pattern(
-            &PatternShape::Aimed { count: 1, speed: 2.0, spread_angle: 0.0 },
+            &PatternShape::Aimed {
+                count: 1,
+                speed: 2.0,
+                spread_angle: 0.0,
+            },
             0.0,
             0.0, // target to the right
             &mut rng,
@@ -588,7 +639,11 @@ mod tests {
     fn pattern_aimed_spread() {
         let mut rng = 1u64;
         let vels = compute_pattern(
-            &PatternShape::Aimed { count: 3, speed: 1.0, spread_angle: std::f32::consts::PI },
+            &PatternShape::Aimed {
+                count: 3,
+                speed: 1.0,
+                spread_angle: std::f32::consts::PI,
+            },
             0.0,
             0.0,
             &mut rng,
@@ -603,8 +658,12 @@ mod tests {
     fn emitter_fires_at_interval() {
         let mut pool = BulletPool::new(100);
         let mut emitter = BulletEmitter::new(
-            0.0, 0.0,
-            PatternShape::Radial { count: 4, speed: 1.0 },
+            0.0,
+            0.0,
+            PatternShape::Radial {
+                count: 4,
+                speed: 1.0,
+            },
             5,
         );
 
@@ -624,8 +683,13 @@ mod tests {
     fn emitter_spiral_rotates() {
         let mut pool = BulletPool::new(1000);
         let mut emitter = BulletEmitter::new(
-            0.0, 0.0,
-            PatternShape::Spiral { count: 1, speed: 1.0, rotation_speed: 0.5 },
+            0.0,
+            0.0,
+            PatternShape::Spiral {
+                count: 1,
+                speed: 1.0,
+                rotation_speed: 0.5,
+            },
             1,
         );
 
@@ -644,11 +708,27 @@ mod tests {
         let mut pool = BulletPool::new(100);
 
         let phase1 = PatternPhase::new(
-            vec![BulletEmitter::new(0.0, 0.0, PatternShape::Radial { count: 2, speed: 1.0 }, 1)],
+            vec![BulletEmitter::new(
+                0.0,
+                0.0,
+                PatternShape::Radial {
+                    count: 2,
+                    speed: 1.0,
+                },
+                1,
+            )],
             5,
         );
         let phase2 = PatternPhase::new(
-            vec![BulletEmitter::new(0.0, 0.0, PatternShape::Radial { count: 4, speed: 1.0 }, 1)],
+            vec![BulletEmitter::new(
+                0.0,
+                0.0,
+                PatternShape::Radial {
+                    count: 4,
+                    speed: 1.0,
+                },
+                1,
+            )],
             5,
         );
 
@@ -672,7 +752,15 @@ mod tests {
         let mut pool = BulletPool::new(1000);
 
         let phase = PatternPhase::new(
-            vec![BulletEmitter::new(0.0, 0.0, PatternShape::Radial { count: 1, speed: 1.0 }, 1)],
+            vec![BulletEmitter::new(
+                0.0,
+                0.0,
+                PatternShape::Radial {
+                    count: 1,
+                    speed: 1.0,
+                },
+                1,
+            )],
             3,
         );
 

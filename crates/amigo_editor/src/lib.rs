@@ -1,8 +1,19 @@
+pub mod auto_path;
+pub mod collision_editor;
+pub mod heatmap;
+pub mod play_state;
+pub mod playtest;
+pub mod plugin;
 pub mod ui;
+pub mod visual_script;
 pub mod wizard;
 pub mod wizard_ui;
-pub mod visual_script;
-pub mod collision_editor;
+
+#[cfg(feature = "td")]
+pub mod wave_editor;
+
+#[cfg(feature = "egui")]
+pub mod egui_ui;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

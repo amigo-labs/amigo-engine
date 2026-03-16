@@ -1,4 +1,4 @@
-use amigo_core::{RenderVec2, Rect};
+use amigo_core::{Rect, RenderVec2};
 
 /// Camera mode presets.
 #[derive(Clone, Debug)]
@@ -15,14 +15,9 @@ pub enum CameraMode {
         smoothing: f32,
     },
     /// Smooth follow with damping (simple mode without deadzone).
-    FollowSmooth {
-        speed: f32,
-    },
+    FollowSmooth { speed: f32 },
     /// Screen-locked (Zelda-style). Camera snaps to room grid.
-    ScreenLock {
-        room_width: f32,
-        room_height: f32,
-    },
+    ScreenLock { room_width: f32, room_height: f32 },
     /// Smooth room transitions (Metroidvania-style).
     RoomTransition {
         room_width: f32,
@@ -101,6 +96,9 @@ pub struct Camera {
     pub virtual_width: f32,
     pub virtual_height: f32,
     pub mode: CameraMode,
+    /// When true, camera position is snapped to integer pixels in the projection.
+    /// Enabled by default for pixel-art games; disable for raster-art or hybrid.
+    pub pixel_snap: bool,
 
     // Bounds clamping
     pub bounds: Option<Rect>,
@@ -136,6 +134,7 @@ impl Camera {
             virtual_width,
             virtual_height,
             mode: CameraMode::Fixed,
+            pixel_snap: true,
             bounds: None,
             shake_intensity: 0.0,
             shake_decay: 8.0,
@@ -211,7 +210,11 @@ impl Camera {
         match &self.mode {
             CameraMode::Fixed => {}
 
-            CameraMode::Follow { deadzone, lookahead, smoothing } => {
+            CameraMode::Follow {
+                deadzone,
+                lookahead,
+                smoothing,
+            } => {
                 let deadzone = deadzone.clone();
                 let lookahead = *lookahead;
                 let smoothing = *smoothing;
@@ -262,7 +265,10 @@ impl Camera {
                 self.position = self.position.lerp(self.target, speed * dt);
             }
 
-            CameraMode::ScreenLock { room_width, room_height } => {
+            CameraMode::ScreenLock {
+                room_width,
+                room_height,
+            } => {
                 let rw = *room_width;
                 let rh = *room_height;
                 self.position.x = (self.target.x / rw).floor() * rw + rw * 0.5;
@@ -270,7 +276,11 @@ impl Camera {
                 self.transitioning = false;
             }
 
-            CameraMode::RoomTransition { room_width, room_height, transition_speed } => {
+            CameraMode::RoomTransition {
+                room_width,
+                room_height,
+                transition_speed,
+            } => {
                 let rw = *room_width;
                 let rh = *room_height;
                 let speed = *transition_speed;
@@ -296,7 +306,11 @@ impl Camera {
                 }
             }
 
-            CameraMode::BossArena { center, arena_width, arena_height } => {
+            CameraMode::BossArena {
+                center,
+                arena_width,
+                arena_height,
+            } => {
                 let center = *center;
                 let aw = *arena_width;
                 let ah = *arena_height;
@@ -308,7 +322,12 @@ impl Camera {
                 self.position = self.position.lerp(center, 3.0 * dt);
             }
 
-            CameraMode::EdgePan { follow_speed, edge_zone, edge_speed, max_drift } => {
+            CameraMode::EdgePan {
+                follow_speed,
+                edge_zone,
+                edge_speed,
+                max_drift,
+            } => {
                 let follow_speed = *follow_speed;
                 let edge_zone = *edge_zone;
                 let edge_speed = *edge_speed;
@@ -334,7 +353,9 @@ impl Camera {
                 self.edge_drift.y += pan.y * dt;
 
                 // Clamp drift distance
-                let drift_dist = (self.edge_drift.x * self.edge_drift.x + self.edge_drift.y * self.edge_drift.y).sqrt();
+                let drift_dist = (self.edge_drift.x * self.edge_drift.x
+                    + self.edge_drift.y * self.edge_drift.y)
+                    .sqrt();
                 if drift_dist > max_drift {
                     let scale = max_drift / drift_dist;
                     self.edge_drift.x *= scale;
@@ -353,7 +374,10 @@ impl Camera {
                 self.position.y += self.edge_drift.y;
             }
 
-            CameraMode::FreePan { edge_zone, pan_speed } => {
+            CameraMode::FreePan {
+                edge_zone,
+                pan_speed,
+            } => {
                 let edge_zone = *edge_zone;
                 let pan_speed = *pan_speed;
 
@@ -373,14 +397,24 @@ impl Camera {
                 self.position.y += pan.y * dt;
             }
 
-            CameraMode::CinematicPan { from, to, duration, elapsed, easing } => {
+            CameraMode::CinematicPan {
+                from,
+                to,
+                duration,
+                elapsed,
+                easing,
+            } => {
                 let from = *from;
                 let to = *to;
                 let duration = *duration;
                 let mut elapsed = *elapsed + dt;
                 let easing = *easing;
 
-                let t = if duration > 0.0 { (elapsed / duration).min(1.0) } else { 1.0 };
+                let t = if duration > 0.0 {
+                    (elapsed / duration).min(1.0)
+                } else {
+                    1.0
+                };
                 let eased = easing.apply(t);
 
                 self.position = RenderVec2::new(
@@ -415,14 +449,14 @@ impl Camera {
             let half_w = (self.virtual_width / self.zoom) * 0.5;
             let half_h = (self.virtual_height / self.zoom) * 0.5;
 
-            self.position.x = self.position.x.clamp(
-                bounds.x + half_w,
-                bounds.x + bounds.w - half_w,
-            );
-            self.position.y = self.position.y.clamp(
-                bounds.y + half_h,
-                bounds.y + bounds.h - half_h,
-            );
+            self.position.x = self
+                .position
+                .x
+                .clamp(bounds.x + half_w, bounds.x + bounds.w - half_w);
+            self.position.y = self
+                .position
+                .y
+                .clamp(bounds.y + half_h, bounds.y + bounds.h - half_h);
         }
 
         // Update shake
@@ -459,7 +493,13 @@ impl Camera {
     }
 
     /// Convert screen coordinates to world coordinates.
-    pub fn screen_to_world(&self, screen_x: f32, screen_y: f32, window_width: f32, window_height: f32) -> RenderVec2 {
+    pub fn screen_to_world(
+        &self,
+        screen_x: f32,
+        screen_y: f32,
+        window_width: f32,
+        window_height: f32,
+    ) -> RenderVec2 {
         let eff = self.effective_position();
         let norm_x = screen_x / window_width;
         let norm_y = screen_y / window_height;
@@ -471,9 +511,15 @@ impl Camera {
 
     /// Build the orthographic projection matrix.
     pub fn projection_matrix(&self) -> [[f32; 4]; 4] {
-        let eff = self.effective_position();
+        let mut eff = self.effective_position();
         let half_w = (self.virtual_width / self.zoom) * 0.5;
         let half_h = (self.virtual_height / self.zoom) * 0.5;
+
+        // Snap camera to integer pixels to avoid sub-pixel jitter in pixel-art mode.
+        if self.pixel_snap {
+            eff.x = eff.x.round();
+            eff.y = eff.y.round();
+        }
 
         let left = eff.x - half_w;
         let right = eff.x + half_w;
@@ -492,7 +538,12 @@ fn ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> [
         [2.0 / rml, 0.0, 0.0, 0.0],
         [0.0, 2.0 / tmb, 0.0, 0.0],
         [0.0, 0.0, -2.0 / fmn, 0.0],
-        [-(right + left) / rml, -(top + bottom) / tmb, -(far + near) / fmn, 1.0],
+        [
+            -(right + left) / rml,
+            -(top + bottom) / tmb,
+            -(far + near) / fmn,
+            1.0,
+        ],
     ]
 }
 

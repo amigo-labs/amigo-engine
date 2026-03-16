@@ -56,11 +56,21 @@ impl Transition {
     }
 
     pub fn fade(duration: f32) -> Self {
-        Self::new(TransitionKind::Fade { color: Color::BLACK }, duration)
+        Self::new(
+            TransitionKind::Fade {
+                color: Color::BLACK,
+            },
+            duration,
+        )
     }
 
     pub fn fade_white(duration: f32) -> Self {
-        Self::new(TransitionKind::Fade { color: Color::WHITE }, duration)
+        Self::new(
+            TransitionKind::Fade {
+                color: Color::WHITE,
+            },
+            duration,
+        )
     }
 
     pub fn slide(direction: SlideDirection, duration: f32) -> Self {

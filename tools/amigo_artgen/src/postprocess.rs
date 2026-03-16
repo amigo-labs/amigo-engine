@@ -3,8 +3,8 @@
 //! Transforms raw AI-generated images into clean pixel art by removing
 //! anti-aliasing, clamping palettes, adding outlines, and downscaling.
 
-use crate::PostProcessStep;
 use crate::style::{OutlineMode, StyleDef};
+use crate::PostProcessStep;
 
 /// RGBA pixel buffer for processing.
 #[derive(Clone, Debug)]
@@ -185,8 +185,16 @@ fn force_dimensions(buf: &mut PixelBuffer, target_w: u32, target_h: u32) {
     // Center the content
     let offset_x = (target_w - copy_w) / 2;
     let offset_y = (target_h - copy_h) / 2;
-    let src_offset_x = if buf.width > target_w { (buf.width - target_w) / 2 } else { 0 };
-    let src_offset_y = if buf.height > target_h { (buf.height - target_h) / 2 } else { 0 };
+    let src_offset_x = if buf.width > target_w {
+        (buf.width - target_w) / 2
+    } else {
+        0
+    };
+    let src_offset_y = if buf.height > target_h {
+        (buf.height - target_h) / 2
+    } else {
+        0
+    };
 
     for y in 0..copy_h {
         for x in 0..copy_w {
@@ -370,7 +378,7 @@ mod tests {
         assert_eq!(buf.get(0, 1)[3], 255); // left
         assert_eq!(buf.get(2, 1)[3], 255); // right
         assert_eq!(buf.get(1, 2)[3], 255); // bottom
-        // Diagonal should still be transparent
+                                           // Diagonal should still be transparent
         assert_eq!(buf.get(0, 0)[3], 0);
     }
 
@@ -465,7 +473,7 @@ mod tests {
     #[test]
     fn cleanup_transparency_snaps() {
         let mut buf = PixelBuffer::new(3, 1);
-        buf.data[0] = [255, 0, 0, 50];  // below threshold → transparent
+        buf.data[0] = [255, 0, 0, 50]; // below threshold → transparent
         buf.data[1] = [0, 255, 0, 200]; // above threshold → opaque
         buf.data[2] = [0, 0, 255, 128]; // exactly 128 → opaque
 

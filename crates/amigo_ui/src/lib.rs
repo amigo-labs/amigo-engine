@@ -125,7 +125,15 @@ impl UiContext {
     }
 
     /// A clickable sprite button. Returns true if clicked.
-    pub fn sprite_button(&mut self, name: &str, x: f32, y: f32, w: f32, h: f32, input: &InputState) -> bool {
+    pub fn sprite_button(
+        &mut self,
+        name: &str,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        input: &InputState,
+    ) -> bool {
         let _id = self.gen_id();
         let rect = Rect::new(x, y, w, h);
 
@@ -204,14 +212,7 @@ impl UiContext {
     }
 
     /// A horizontal slider. Returns the new value (0.0 to 1.0).
-    pub fn slider(
-        &mut self,
-        x: f32,
-        y: f32,
-        width: f32,
-        value: f32,
-        input: &InputState,
-    ) -> f32 {
+    pub fn slider(&mut self, x: f32, y: f32, width: f32, value: f32, input: &InputState) -> f32 {
         let _id = self.gen_id();
         let height = 8.0;
         let handle_w = 6.0;
@@ -233,8 +234,7 @@ impl UiContext {
         // Handle drag
         let mouse = input.mouse_pos();
         let interact = Rect::new(x - 4.0, y - 4.0, width + 8.0, height + 8.0);
-        if interact.contains(mouse.x, mouse.y)
-            && input.mouse_held(winit::event::MouseButton::Left)
+        if interact.contains(mouse.x, mouse.y) && input.mouse_held(winit::event::MouseButton::Left)
         {
             let new_val = ((mouse.x - x) / width).clamp(0.0, 1.0);
             return new_val;
@@ -323,13 +323,7 @@ impl UiContext {
     }
 
     /// A text button. Returns true if clicked.
-    pub fn text_button(
-        &mut self,
-        label: &str,
-        x: f32,
-        y: f32,
-        input: &InputState,
-    ) -> bool {
+    pub fn text_button(&mut self, label: &str, x: f32, y: f32, input: &InputState) -> bool {
         let _id = self.gen_id();
         let padding = 6.0;
         let w = label.len() as f32 * 7.0 + padding * 2.0;
@@ -353,9 +347,6 @@ impl UiContext {
 
     /// A separator line.
     pub fn separator(&mut self, x: f32, y: f32, width: f32) {
-        self.filled_rect(
-            Rect::new(x, y, width, 1.0),
-            Color::new(0.5, 0.5, 0.5, 0.5),
-        );
+        self.filled_rect(Rect::new(x, y, width, 1.0), Color::new(0.5, 0.5, 0.5, 0.5));
     }
 }

@@ -1,7 +1,10 @@
-pub mod protocol;
-pub mod server;
+pub mod checksum;
 pub mod client;
+pub mod lobby;
+pub mod protocol;
 pub mod replay;
+pub mod server;
+pub mod stats;
 
 use serde::{Deserialize, Serialize};
 

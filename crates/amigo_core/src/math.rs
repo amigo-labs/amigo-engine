@@ -145,7 +145,9 @@ pub fn vec2(x: f32, y: f32) -> RenderVec2 {
 }
 
 /// Integer vector for tile coordinates.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct IVec2 {
     pub x: i32,
     pub y: i32,

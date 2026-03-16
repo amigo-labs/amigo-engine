@@ -55,7 +55,10 @@ impl AceStepClient {
     pub fn build_params(&self, request: &MusicRequest) -> AceStepParams {
         let style = WorldAudioStyle::find(&request.world);
         let genre = if request.genre.is_empty() {
-            style.as_ref().map(|s| s.genre.as_str()).unwrap_or("instrumental")
+            style
+                .as_ref()
+                .map(|s| s.genre.as_str())
+                .unwrap_or("instrumental")
         } else {
             &request.genre
         };

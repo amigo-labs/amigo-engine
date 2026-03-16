@@ -38,7 +38,13 @@ impl WaveDef {
         }
     }
 
-    pub fn with_group(mut self, enemy_type: u32, count: u32, interval: f32, spawn_point: usize) -> Self {
+    pub fn with_group(
+        mut self,
+        enemy_type: u32,
+        count: u32,
+        interval: f32,
+        spawn_point: usize,
+    ) -> Self {
         self.groups.push(SpawnGroup {
             enemy_type,
             count,
@@ -283,11 +289,7 @@ mod tests {
 
     #[test]
     fn wave_spawner_basic() {
-        let waves = vec![
-            WaveDef::new()
-                .with_delay(0.0)
-                .with_group(1, 3, 0.1, 0),
-        ];
+        let waves = vec![WaveDef::new().with_delay(0.0).with_group(1, 3, 0.1, 0)];
         let spawn_points = vec![RenderVec2::new(100.0, 100.0)];
         let mut spawner = WaveSpawner::new(waves, spawn_points);
         spawner.start_next_wave();
@@ -324,7 +326,9 @@ mod tests {
         for _ in 0..10 {
             let events = spawner.update(0.1);
             wave1_spawns.extend(events);
-            if !wave1_spawns.is_empty() { break; }
+            if !wave1_spawns.is_empty() {
+                break;
+            }
         }
         assert_eq!(wave1_spawns.len(), 1);
         assert_eq!(wave1_spawns[0].enemy_type, 1);
@@ -335,7 +339,9 @@ mod tests {
         for _ in 0..10 {
             let events = spawner.update(0.1);
             wave2_spawns.extend(events);
-            if !wave2_spawns.is_empty() { break; }
+            if !wave2_spawns.is_empty() {
+                break;
+            }
         }
         assert_eq!(wave2_spawns.len(), 1);
         assert_eq!(wave2_spawns[0].enemy_type, 2);

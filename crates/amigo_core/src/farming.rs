@@ -260,7 +260,9 @@ pub fn tick_growth(
                 inst.dry_ticks += 1;
                 if inst.dry_ticks >= inst.wither_threshold {
                     inst.withered = true;
-                    events.push(GrowthEvent::Withered { instance_id: inst.id });
+                    events.push(GrowthEvent::Withered {
+                        instance_id: inst.id,
+                    });
                 }
             }
             continue;
@@ -274,7 +276,9 @@ pub fn tick_growth(
             inst.watered = false;
 
             if inst.current_stage as usize >= def.stages.len() {
-                events.push(GrowthEvent::Completed { instance_id: inst.id });
+                events.push(GrowthEvent::Completed {
+                    instance_id: inst.id,
+                });
             } else {
                 events.push(GrowthEvent::StageAdvanced {
                     instance_id: inst.id,
@@ -440,7 +444,9 @@ mod tests {
         }
 
         assert_eq!(cal.day, 2);
-        assert!(day_events.iter().any(|e| matches!(e, CalendarEvent::DayChanged { day: 2, .. })));
+        assert!(day_events
+            .iter()
+            .any(|e| matches!(e, CalendarEvent::DayChanged { day: 2, .. })));
     }
 
     #[test]
@@ -462,7 +468,10 @@ mod tests {
 
         for _ in 0..8 {
             let events = cal.tick();
-            if events.iter().any(|e| matches!(e, CalendarEvent::YearChanged { .. })) {
+            if events
+                .iter()
+                .any(|e| matches!(e, CalendarEvent::YearChanged { .. }))
+            {
                 year_event = true;
             }
         }
@@ -492,10 +501,7 @@ mod tests {
 
     #[test]
     fn growth_basic() {
-        let def = GrowthDef::new(0, "Wheat", vec![
-            GrowthStage::new(5),
-            GrowthStage::new(5),
-        ]);
+        let def = GrowthDef::new(0, "Wheat", vec![GrowthStage::new(5), GrowthStage::new(5)]);
         let mut inst = vec![GrowthInstance::new(0, 0)];
 
         // Tick 5 times — should advance to stage 1
@@ -508,7 +514,10 @@ mod tests {
         let mut completed = false;
         for _ in 0..5 {
             let events = tick_growth(&mut inst, &[def.clone()], Season::Spring);
-            if events.iter().any(|e| matches!(e, GrowthEvent::Completed { .. })) {
+            if events
+                .iter()
+                .any(|e| matches!(e, GrowthEvent::Completed { .. }))
+            {
                 completed = true;
             }
         }
@@ -517,9 +526,7 @@ mod tests {
 
     #[test]
     fn growth_needs_water() {
-        let def = GrowthDef::new(0, "Tomato", vec![
-            GrowthStage::new(3).with_water(),
-        ]);
+        let def = GrowthDef::new(0, "Tomato", vec![GrowthStage::new(3).with_water()]);
         let mut inst = vec![GrowthInstance::new(0, 0)];
 
         // Tick without watering — should not progress
@@ -538,15 +545,16 @@ mod tests {
 
     #[test]
     fn growth_withers() {
-        let def = GrowthDef::new(0, "Rose", vec![
-            GrowthStage::new(10).with_water(),
-        ]);
+        let def = GrowthDef::new(0, "Rose", vec![GrowthStage::new(10).with_water()]);
         let mut inst = vec![GrowthInstance::new(0, 0).with_wither_threshold(3)];
 
         let mut withered = false;
         for _ in 0..5 {
             let events = tick_growth(&mut inst, &[def.clone()], Season::Spring);
-            if events.iter().any(|e| matches!(e, GrowthEvent::Withered { .. })) {
+            if events
+                .iter()
+                .any(|e| matches!(e, GrowthEvent::Withered { .. }))
+            {
                 withered = true;
             }
         }
@@ -556,9 +564,8 @@ mod tests {
 
     #[test]
     fn growth_season_restriction() {
-        let def = GrowthDef::new(0, "Sunflower", vec![
-            GrowthStage::new(3),
-        ]).with_seasons(vec![Season::Summer]);
+        let def = GrowthDef::new(0, "Sunflower", vec![GrowthStage::new(3)])
+            .with_seasons(vec![Season::Summer]);
         let mut inst = vec![GrowthInstance::new(0, 0)];
 
         // Tick in spring — no progress
@@ -591,14 +598,20 @@ mod tests {
 
         // Plant
         let event = grid.plant(1, 1, 42);
-        assert!(matches!(event, Some(FarmEvent::Planted { growth_id: 42, .. })));
+        assert!(matches!(
+            event,
+            Some(FarmEvent::Planted { growth_id: 42, .. })
+        ));
 
         // Can't plant on unplanted tile
         assert!(grid.plant(0, 0, 1).is_none());
 
         // Harvest
         let event = grid.harvest(1, 1);
-        assert!(matches!(event, Some(FarmEvent::Harvested { growth_id: 42, .. })));
+        assert!(matches!(
+            event,
+            Some(FarmEvent::Harvested { growth_id: 42, .. })
+        ));
 
         // Tile is back to tilled
         assert_eq!(grid.get(1, 1).unwrap().soil, SoilState::Tilled);

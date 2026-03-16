@@ -32,8 +32,14 @@ impl CollisionBrush {
             CollisionBrush::Empty => CollisionType::Empty,
             CollisionBrush::Solid => CollisionType::Solid,
             CollisionBrush::OneWay => CollisionType::OneWay,
-            CollisionBrush::Slope(SlopeDirection::UpRight) => CollisionType::Slope { left_height: 0, right_height: 16 },
-            CollisionBrush::Slope(SlopeDirection::UpLeft) => CollisionType::Slope { left_height: 16, right_height: 0 },
+            CollisionBrush::Slope(SlopeDirection::UpRight) => CollisionType::Slope {
+                left_height: 0,
+                right_height: 16,
+            },
+            CollisionBrush::Slope(SlopeDirection::UpLeft) => CollisionType::Slope {
+                left_height: 16,
+                right_height: 0,
+            },
             CollisionBrush::Trigger => CollisionType::Trigger { id: 0 },
         }
     }
@@ -329,7 +335,10 @@ impl AssetBrowser {
                     return false;
                 }
                 if !self.search_query.is_empty() {
-                    return e.name.to_lowercase().contains(&self.search_query.to_lowercase());
+                    return e
+                        .name
+                        .to_lowercase()
+                        .contains(&self.search_query.to_lowercase());
                 }
                 true
             })

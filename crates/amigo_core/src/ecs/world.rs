@@ -1,10 +1,10 @@
 use super::entity::{EntityId, GenerationalArena};
 use super::sparse_set::SparseSet;
-use crate::math::SimVec2;
 use crate::color::Color;
+use crate::math::SimVec2;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
-use rustc_hash::FxHashMap;
 
 // ── Core Components (statically typed for zero-overhead) ──
 
@@ -75,12 +75,17 @@ trait AnyStorage: Any {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn remove_entity(&mut self, id: EntityId);
     fn flush(&mut self);
+    #[allow(dead_code)]
     fn len(&self) -> usize;
 }
 
 impl<T: 'static> AnyStorage for SparseSet<T> {
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 
     fn remove_entity(&mut self, id: EntityId) {
         self.remove(id);
@@ -246,6 +251,45 @@ impl World {
         for storage in self.dynamic.values_mut() {
             storage.flush();
         }
+    }
+}
+
+impl World {
+    // ── Generic Component Access ──
+
+    /// Add a component to an entity using the `Component` trait for static routing.
+    pub fn add<T: super::query::Component>(&mut self, id: EntityId, data: T) {
+        T::storage_mut(self).insert(id, data);
+    }
+
+    /// Get a component reference via the `Component` trait.
+    pub fn get<T: super::query::Component>(&self, id: EntityId) -> Option<&T> {
+        T::storage(self).get(id)
+    }
+
+    /// Get a mutable component reference via the `Component` trait. Marks as changed.
+    pub fn get_mut_comp<T: super::query::Component>(&mut self, id: EntityId) -> Option<&mut T> {
+        T::storage_mut(self).get_mut(id)
+    }
+
+    /// Remove a component via the `Component` trait.
+    pub fn remove_comp<T: super::query::Component>(&mut self, id: EntityId) -> Option<T> {
+        T::storage_mut(self).remove(id)
+    }
+
+    /// Check if an entity has a component via the `Component` trait.
+    pub fn has<T: super::query::Component>(&self, id: EntityId) -> bool {
+        T::storage(self).contains(id)
+    }
+
+    /// Get the SparseSet for a component type.
+    pub fn storage<T: super::query::Component>(&self) -> &SparseSet<T> {
+        T::storage(self)
+    }
+
+    /// Get the mutable SparseSet for a component type.
+    pub fn storage_mut<T: super::query::Component>(&mut self) -> &mut SparseSet<T> {
+        T::storage_mut(self)
     }
 }
 

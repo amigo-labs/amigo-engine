@@ -8,13 +8,48 @@ use amigo_ui::UiContext;
 // Colors
 // ---------------------------------------------------------------------------
 
-const WIZ_BG: Color = Color { r: 0.10, g: 0.10, b: 0.13, a: 0.97 };
-const WIZ_HEADER: Color = Color { r: 0.85, g: 0.92, b: 1.0, a: 1.0 };
-const WIZ_ACCENT: Color = Color { r: 0.35, g: 0.55, b: 0.85, a: 1.0 };
-const WIZ_DIM: Color = Color { r: 0.50, g: 0.50, b: 0.55, a: 1.0 };
-const WIZ_SELECTED_BG: Color = Color { r: 0.25, g: 0.38, b: 0.60, a: 0.95 };
-const WIZ_ITEM_BG: Color = Color { r: 0.18, g: 0.18, b: 0.22, a: 0.95 };
-const WIZ_ITEM_HOVER: Color = Color { r: 0.25, g: 0.28, b: 0.35, a: 0.95 };
+const WIZ_BG: Color = Color {
+    r: 0.10,
+    g: 0.10,
+    b: 0.13,
+    a: 0.97,
+};
+const WIZ_HEADER: Color = Color {
+    r: 0.85,
+    g: 0.92,
+    b: 1.0,
+    a: 1.0,
+};
+const WIZ_ACCENT: Color = Color {
+    r: 0.35,
+    g: 0.55,
+    b: 0.85,
+    a: 1.0,
+};
+const WIZ_DIM: Color = Color {
+    r: 0.50,
+    g: 0.50,
+    b: 0.55,
+    a: 1.0,
+};
+const WIZ_SELECTED_BG: Color = Color {
+    r: 0.25,
+    g: 0.38,
+    b: 0.60,
+    a: 0.95,
+};
+const WIZ_ITEM_BG: Color = Color {
+    r: 0.18,
+    g: 0.18,
+    b: 0.22,
+    a: 0.95,
+};
+const WIZ_ITEM_HOVER: Color = Color {
+    r: 0.25,
+    g: 0.28,
+    b: 0.35,
+    a: 0.95,
+};
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -142,7 +177,11 @@ fn draw_step_template(
         // Short description on the right
         let desc_x = px + 100.0;
         let desc_w = panel_w - 108.0;
-        let truncated: String = template.description.chars().take((desc_w / 6.0) as usize).collect();
+        let truncated: String = template
+            .description
+            .chars()
+            .take((desc_w / 6.0) as usize)
+            .collect();
         ui.pixel_text(&truncated, desc_x, y + 2.0, WIZ_DIM);
 
         if hovering && clicked {
@@ -188,7 +227,6 @@ fn draw_step_settings(
     // Handle text input via key presses
     handle_text_input(wizard, input);
 
-
     // Resolution
     ui.pixel_text("Resolution:", px + 6.0, y, WIZ_DIM);
     y += 14.0;
@@ -219,7 +257,12 @@ fn draw_step_settings(
         ui.filled_rect(item_rect, bg);
 
         let marker = if is_selected { "> " } else { "  " };
-        ui.pixel_text(&format!("{}{}", marker, label), px + 8.0, y + 2.0, Color::WHITE);
+        ui.pixel_text(
+            &format!("{}{}", marker, label),
+            px + 8.0,
+            y + 2.0,
+            Color::WHITE,
+        );
 
         if hovering && clicked {
             wizard.custom_width = *w;
@@ -418,15 +461,32 @@ fn handle_text_input(wizard: &mut NewProjectWizard, input: &InputState) {
 
     // Letter keys
     let letters = [
-        (KeyCode::KeyA, 'a'), (KeyCode::KeyB, 'b'), (KeyCode::KeyC, 'c'),
-        (KeyCode::KeyD, 'd'), (KeyCode::KeyE, 'e'), (KeyCode::KeyF, 'f'),
-        (KeyCode::KeyG, 'g'), (KeyCode::KeyH, 'h'), (KeyCode::KeyI, 'i'),
-        (KeyCode::KeyJ, 'j'), (KeyCode::KeyK, 'k'), (KeyCode::KeyL, 'l'),
-        (KeyCode::KeyM, 'm'), (KeyCode::KeyN, 'n'), (KeyCode::KeyO, 'o'),
-        (KeyCode::KeyP, 'p'), (KeyCode::KeyQ, 'q'), (KeyCode::KeyR, 'r'),
-        (KeyCode::KeyS, 's'), (KeyCode::KeyT, 't'), (KeyCode::KeyU, 'u'),
-        (KeyCode::KeyV, 'v'), (KeyCode::KeyW, 'w'), (KeyCode::KeyX, 'x'),
-        (KeyCode::KeyY, 'y'), (KeyCode::KeyZ, 'z'),
+        (KeyCode::KeyA, 'a'),
+        (KeyCode::KeyB, 'b'),
+        (KeyCode::KeyC, 'c'),
+        (KeyCode::KeyD, 'd'),
+        (KeyCode::KeyE, 'e'),
+        (KeyCode::KeyF, 'f'),
+        (KeyCode::KeyG, 'g'),
+        (KeyCode::KeyH, 'h'),
+        (KeyCode::KeyI, 'i'),
+        (KeyCode::KeyJ, 'j'),
+        (KeyCode::KeyK, 'k'),
+        (KeyCode::KeyL, 'l'),
+        (KeyCode::KeyM, 'm'),
+        (KeyCode::KeyN, 'n'),
+        (KeyCode::KeyO, 'o'),
+        (KeyCode::KeyP, 'p'),
+        (KeyCode::KeyQ, 'q'),
+        (KeyCode::KeyR, 'r'),
+        (KeyCode::KeyS, 's'),
+        (KeyCode::KeyT, 't'),
+        (KeyCode::KeyU, 'u'),
+        (KeyCode::KeyV, 'v'),
+        (KeyCode::KeyW, 'w'),
+        (KeyCode::KeyX, 'x'),
+        (KeyCode::KeyY, 'y'),
+        (KeyCode::KeyZ, 'z'),
     ];
 
     for (code, ch) in &letters {
@@ -438,9 +498,15 @@ fn handle_text_input(wizard: &mut NewProjectWizard, input: &InputState) {
 
     // Number keys
     let numbers = [
-        (KeyCode::Digit0, '0'), (KeyCode::Digit1, '1'), (KeyCode::Digit2, '2'),
-        (KeyCode::Digit3, '3'), (KeyCode::Digit4, '4'), (KeyCode::Digit5, '5'),
-        (KeyCode::Digit6, '6'), (KeyCode::Digit7, '7'), (KeyCode::Digit8, '8'),
+        (KeyCode::Digit0, '0'),
+        (KeyCode::Digit1, '1'),
+        (KeyCode::Digit2, '2'),
+        (KeyCode::Digit3, '3'),
+        (KeyCode::Digit4, '4'),
+        (KeyCode::Digit5, '5'),
+        (KeyCode::Digit6, '6'),
+        (KeyCode::Digit7, '7'),
+        (KeyCode::Digit8, '8'),
         (KeyCode::Digit9, '9'),
     ];
 

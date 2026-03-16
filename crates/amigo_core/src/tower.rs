@@ -45,25 +45,27 @@ pub fn select_target(
     }
 
     let best = match strategy {
-        TargetingStrategy::Nearest => {
-            candidates.iter().min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap())
-        }
-        TargetingStrategy::First => {
-            candidates.iter().max_by(|a, b| a.path_progress.partial_cmp(&b.path_progress).unwrap())
-        }
-        TargetingStrategy::Strongest => {
-            candidates.iter().max_by(|a, b| a.health.cmp(&b.health))
-        }
-        TargetingStrategy::Weakest => {
-            candidates.iter().min_by(|a, b| a.health.cmp(&b.health))
-        }
-        TargetingStrategy::MostDamaged => {
-            candidates.iter().min_by(|a, b| {
-                let frac_a = if a.max_health > 0 { a.health as f32 / a.max_health as f32 } else { 1.0 };
-                let frac_b = if b.max_health > 0 { b.health as f32 / b.max_health as f32 } else { 1.0 };
-                frac_a.partial_cmp(&frac_b).unwrap()
-            })
-        }
+        TargetingStrategy::Nearest => candidates
+            .iter()
+            .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap()),
+        TargetingStrategy::First => candidates
+            .iter()
+            .max_by(|a, b| a.path_progress.partial_cmp(&b.path_progress).unwrap()),
+        TargetingStrategy::Strongest => candidates.iter().max_by(|a, b| a.health.cmp(&b.health)),
+        TargetingStrategy::Weakest => candidates.iter().min_by(|a, b| a.health.cmp(&b.health)),
+        TargetingStrategy::MostDamaged => candidates.iter().min_by(|a, b| {
+            let frac_a = if a.max_health > 0 {
+                a.health as f32 / a.max_health as f32
+            } else {
+                1.0
+            };
+            let frac_b = if b.max_health > 0 {
+                b.health as f32 / b.max_health as f32
+            } else {
+                1.0
+            };
+            frac_a.partial_cmp(&frac_b).unwrap()
+        }),
         TargetingStrategy::Random => {
             // Simple deterministic "random"
             let idx = (seed as usize) % candidates.len();
@@ -141,7 +143,12 @@ pub struct TowerInstance {
 }
 
 impl TowerInstance {
-    pub fn new(def_id: u32, position: RenderVec2, tier: &TowerTier, targeting: TargetingStrategy) -> Self {
+    pub fn new(
+        def_id: u32,
+        position: RenderVec2,
+        tier: &TowerTier,
+        targeting: TargetingStrategy,
+    ) -> Self {
         Self {
             def_id,
             position,
@@ -348,9 +355,30 @@ mod tests {
             id: 1,
             name: "Arrow Tower".to_string(),
             tiers: vec![
-                TowerTier { damage: 10, range: 100.0, attack_speed: 1.0, cost: 50, attack_type: TowerAttackType::SingleTarget, sprite_name: "tower_1".to_string() },
-                TowerTier { damage: 20, range: 120.0, attack_speed: 1.5, cost: 75, attack_type: TowerAttackType::SingleTarget, sprite_name: "tower_2".to_string() },
-                TowerTier { damage: 35, range: 150.0, attack_speed: 2.0, cost: 100, attack_type: TowerAttackType::Splash { radius: 30.0 }, sprite_name: "tower_3".to_string() },
+                TowerTier {
+                    damage: 10,
+                    range: 100.0,
+                    attack_speed: 1.0,
+                    cost: 50,
+                    attack_type: TowerAttackType::SingleTarget,
+                    sprite_name: "tower_1".to_string(),
+                },
+                TowerTier {
+                    damage: 20,
+                    range: 120.0,
+                    attack_speed: 1.5,
+                    cost: 75,
+                    attack_type: TowerAttackType::SingleTarget,
+                    sprite_name: "tower_2".to_string(),
+                },
+                TowerTier {
+                    damage: 35,
+                    range: 150.0,
+                    attack_speed: 2.0,
+                    cost: 100,
+                    attack_type: TowerAttackType::Splash { radius: 30.0 },
+                    sprite_name: "tower_3".to_string(),
+                },
             ],
             targeting: TargetingStrategy::First,
         };

@@ -96,8 +96,9 @@ fn handle_client(stream: TcpStream, state: SharedState, running: Arc<AtomicBool>
         }
         let line = match line {
             Ok(l) => l,
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock =>
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
             {
                 continue;
             }

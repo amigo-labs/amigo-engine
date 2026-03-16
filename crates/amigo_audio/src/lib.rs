@@ -1,5 +1,7 @@
-use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
+#![warn(missing_docs)]
+
 use kira::manager::backend::DefaultBackend;
+use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -116,7 +118,10 @@ impl SfxManager {
             }
         }
         if !variants.is_empty() {
-            info!("SfxManager: loaded {} variant(s) for '{name}'", variants.len());
+            info!(
+                "SfxManager: loaded {} variant(s) for '{name}'",
+                variants.len()
+            );
         }
         self.loaded_data.insert(name.to_string(), variants);
     }
@@ -141,11 +146,12 @@ impl SfxManager {
         let now = Instant::now();
 
         // -- Look up definition (optional) for cooldown / concurrency / pitch --
-        let (cooldown, max_concurrent, _pitch_variance) = if let Some(def) = self.definitions.get(name) {
-            (def.cooldown, def.max_concurrent, def.pitch_variance)
-        } else {
-            (None, u32::MAX, 0.0)
-        };
+        let (cooldown, max_concurrent, _pitch_variance) =
+            if let Some(def) = self.definitions.get(name) {
+                (def.cooldown, def.max_concurrent, def.pitch_variance)
+            } else {
+                (None, u32::MAX, 0.0)
+            };
 
         let rt = self.runtime.entry(name.to_string()).or_default();
 
@@ -158,7 +164,8 @@ impl SfxManager {
         }
 
         // Prune finished handles
-        rt.active_handles.retain(|h| h.state() != kira::sound::PlaybackState::Stopped);
+        rt.active_handles
+            .retain(|h| h.state() != kira::sound::PlaybackState::Stopped);
 
         // Concurrency check
         if rt.active_handles.len() as u32 >= max_concurrent {
@@ -246,7 +253,9 @@ impl AudioManager {
 
     /// Play a sound effect by name.
     pub fn play_sfx(&mut self, name: &str) {
-        let Some(manager) = &mut self.manager else { return };
+        let Some(manager) = &mut self.manager else {
+            return;
+        };
 
         if let Some(variants) = self.sfx_data.get(name) {
             if variants.is_empty() {
@@ -268,7 +277,9 @@ impl AudioManager {
 
     /// Play music from file.
     pub fn play_music(&mut self, name: &str, path: &Path) {
-        let Some(manager) = &mut self.manager else { return };
+        let Some(manager) = &mut self.manager else {
+            return;
+        };
 
         // Stop current music with same name
         self.music_handles.remove(name);
@@ -456,11 +467,7 @@ impl MusicParameters {
 pub enum LayerRule {
     /// Linearly interpolate the layer volume based on a float parameter.
     /// When the param equals `from`, volume is 0; when it equals `to`, volume is 1.
-    Lerp {
-        param: String,
-        from: f32,
-        to: f32,
-    },
+    Lerp { param: String, from: f32, to: f32 },
     /// Layer is at full volume when the float parameter is above `above`,
     /// otherwise fades to silence over `fade_seconds`.
     Threshold {
@@ -469,10 +476,7 @@ pub enum LayerRule {
         fade_seconds: f32,
     },
     /// Layer is toggled by a boolean parameter, fading over `fade_seconds`.
-    Toggle {
-        param: String,
-        fade_seconds: f32,
-    },
+    Toggle { param: String, fade_seconds: f32 },
 }
 
 impl LayerRule {
@@ -509,8 +513,7 @@ impl LayerRule {
     pub fn fade_speed(&self) -> f32 {
         match self {
             LayerRule::Lerp { .. } => 4.0, // fast follow
-            LayerRule::Threshold { fade_seconds, .. }
-            | LayerRule::Toggle { fade_seconds, .. } => {
+            LayerRule::Threshold { fade_seconds, .. } | LayerRule::Toggle { fade_seconds, .. } => {
                 if *fade_seconds > 0.0 {
                     1.0 / fade_seconds
                 } else {
@@ -574,11 +577,11 @@ impl MusicLayer {
         if (self.current_volume - self.target_volume).abs() < 0.001 {
             self.current_volume = self.target_volume;
         } else if self.current_volume < self.target_volume {
-            self.current_volume = (self.current_volume + self.fade_speed * dt)
-                .min(self.target_volume);
+            self.current_volume =
+                (self.current_volume + self.fade_speed * dt).min(self.target_volume);
         } else {
-            self.current_volume = (self.current_volume - self.fade_speed * dt)
-                .max(self.target_volume);
+            self.current_volume =
+                (self.current_volume - self.fade_speed * dt).max(self.target_volume);
         }
     }
 
@@ -756,7 +759,10 @@ impl AdaptiveMusicEngine {
     /// Register a section. Returns its index.
     pub fn add_section(&mut self, section: MusicSection) -> usize {
         let idx = self.sections.len();
-        info!("AdaptiveMusic: registered section '{}' (idx={idx})", section.name);
+        info!(
+            "AdaptiveMusic: registered section '{}' (idx={idx})",
+            section.name
+        );
         self.sections.push(section);
         idx
     }
@@ -963,7 +969,10 @@ impl AdaptiveMusicEngine {
         }
 
         // During crossfade the new section also needs rule evaluation.
-        if let TransitionState::Crossfading { new_section_idx, .. } = &self.transition {
+        if let TransitionState::Crossfading {
+            new_section_idx, ..
+        } = &self.transition
+        {
             let ni = *new_section_idx;
             self.sections[ni].evaluate_rules(&params);
         }
@@ -994,7 +1003,10 @@ impl AdaptiveMusicEngine {
                 if *remaining <= 0.0 {
                     self.stop_section_layers(old_idx);
                     self.active_section = Some(new_idx);
-                    info!("AdaptiveMusic: crossfade complete -> '{}'", self.sections[new_idx].name);
+                    info!(
+                        "AdaptiveMusic: crossfade complete -> '{}'",
+                        self.sections[new_idx].name
+                    );
                     // transition stays None (already replaced)
                     return;
                 }
@@ -1020,7 +1032,10 @@ impl AdaptiveMusicEngine {
                     for layer in &mut self.sections[new_idx].layers {
                         layer.current_volume = layer.target_volume;
                     }
-                    info!("AdaptiveMusic: fade-out-then-play complete -> '{}'", self.sections[new_idx].name);
+                    info!(
+                        "AdaptiveMusic: fade-out-then-play complete -> '{}'",
+                        self.sections[new_idx].name
+                    );
                     return; // transition stays None
                 }
             }
@@ -1038,7 +1053,10 @@ impl AdaptiveMusicEngine {
                     for layer in &mut self.sections[ni].layers {
                         layer.current_volume = layer.target_volume;
                     }
-                    info!("AdaptiveMusic: cut-on-bar complete -> '{}'", self.sections[ni].name);
+                    info!(
+                        "AdaptiveMusic: cut-on-bar complete -> '{}'",
+                        self.sections[ni].name
+                    );
                     return; // transition stays None
                 }
             }
@@ -1056,12 +1074,8 @@ impl AdaptiveMusicEngine {
         self.pending_stingers.retain(|ps| {
             let should_fire = match ps.quantize {
                 StingerQuantize::Immediate => true,
-                StingerQuantize::Beat => {
-                    ps.fire_at_beat.map_or(true, |target| beat >= target)
-                }
-                StingerQuantize::Bar => {
-                    ps.fire_at_bar.map_or(true, |target| bar >= target)
-                }
+                StingerQuantize::Beat => ps.fire_at_beat.map_or(true, |target| beat >= target),
+                StingerQuantize::Bar => ps.fire_at_bar.map_or(true, |target| bar >= target),
             };
             if should_fire {
                 to_fire.push(ps.data.clone());

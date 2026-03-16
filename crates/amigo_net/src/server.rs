@@ -95,12 +95,15 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkServer<C> {
                 let pid = PlayerId(self.next_player_id);
                 self.next_player_id += 1;
                 debug!("Client connected from {}: assigned {:?}", src, pid);
-                self.clients.insert(src, ClientSlot {
-                    addr: src,
-                    player_id: pid,
-                    last_seen: Instant::now(),
-                    last_ack: 0,
-                });
+                self.clients.insert(
+                    src,
+                    ClientSlot {
+                        addr: src,
+                        player_id: pid,
+                        last_seen: Instant::now(),
+                        last_ack: 0,
+                    },
+                );
                 self.send_accept(src, pid);
             }
             PacketKind::Disconnect => {

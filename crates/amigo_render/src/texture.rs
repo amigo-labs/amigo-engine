@@ -1,3 +1,5 @@
+use crate::SamplerMode;
+
 /// Unique ID for a loaded texture.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TextureId(pub u32);
@@ -11,9 +13,11 @@ pub struct Texture {
     pub bind_group: wgpu::BindGroup,
     pub width: u32,
     pub height: u32,
+    pub sampler_mode: SamplerMode,
 }
 
 impl Texture {
+    /// Create a texture with the default pixel-art (nearest-neighbor) sampler.
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -21,6 +25,27 @@ impl Texture {
         image: &image::RgbaImage,
         id: TextureId,
         label: &str,
+    ) -> Self {
+        Self::from_image_with_mode(
+            device,
+            queue,
+            bind_group_layout,
+            image,
+            id,
+            label,
+            SamplerMode::Nearest,
+        )
+    }
+
+    /// Create a texture with a specific sampler mode.
+    pub fn from_image_with_mode(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
+        image: &image::RgbaImage,
+        id: TextureId,
+        label: &str,
+        mode: SamplerMode,
     ) -> Self {
         let size = wgpu::Extent3d {
             width: image.width(),
@@ -57,11 +82,13 @@ impl Texture {
 
         let view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let filter = mode.to_wgpu();
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: filter,
+            min_filter: filter,
+            mipmap_filter: filter,
             ..Default::default()
         });
 
@@ -88,6 +115,7 @@ impl Texture {
             bind_group,
             width: image.width(),
             height: image.height(),
+            sampler_mode: mode,
         }
     }
 
@@ -98,6 +126,13 @@ impl Texture {
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
-        Self::from_image(device, queue, bind_group_layout, &img, TextureId(0), "white_pixel")
+        Self::from_image(
+            device,
+            queue,
+            bind_group_layout,
+            &img,
+            TextureId(0),
+            "white_pixel",
+        )
     }
 }

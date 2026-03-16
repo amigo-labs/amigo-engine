@@ -91,7 +91,10 @@ impl LoadedLevel {
 
     /// Find all entities of a given type.
     pub fn find_entities(&self, entity_type: &str) -> Vec<&EntityDef> {
-        self.entities.iter().filter(|e| e.entity_type == entity_type).collect()
+        self.entities
+            .iter()
+            .filter(|e| e.entity_type == entity_type)
+            .collect()
     }
 
     /// Find a path by name.
@@ -210,24 +213,14 @@ mod tests {
             layers: vec![
                 TileLayerData {
                     name: "ground".to_string(),
-                    tiles: vec![
-                        1, 1, 1, 1,
-                        1, 0, 0, 1,
-                        1, 0, 0, 1,
-                        1, 1, 1, 1,
-                    ],
+                    tiles: vec![1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1],
                     width: 4,
                     height: 4,
                     visible: true,
                 },
                 TileLayerData {
                     name: "collision".to_string(),
-                    tiles: vec![
-                        1, 1, 1, 1,
-                        1, 0, 0, 1,
-                        1, 0, 0, 1,
-                        1, 1, 1, 1,
-                    ],
+                    tiles: vec![1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1],
                     width: 4,
                     height: 4,
                     visible: false,

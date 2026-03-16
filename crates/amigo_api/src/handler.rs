@@ -171,7 +171,8 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         // ── Observation ──
         "engine.status" | "get_state" => handle_status(req, state),
         "perf" => handle_perf(req, state),
-        "screenshot" => handle_screenshot(req, state),
+        "screenshot" | "amigo_screenshot" => handle_screenshot(req, state),
+        "screenshot.results" => handle_screenshot_results(req, state),
         "list_entities" => handle_list_entities(req, state),
         "inspect_entity" => handle_inspect_entity(req, state),
 
@@ -181,7 +182,7 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         "engine.step" | "debug.step" => handle_step(req, state),
         "engine.command" => handle_command(req, state),
         "set_speed" => handle_set_speed(req, state),
-        "tick" => handle_tick(req, state),
+        "tick" | "amigo_tick" => handle_tick(req, state),
 
         // ── Simulation ──
         "place_tower" => handle_place_tower(req, state),
@@ -272,7 +273,11 @@ fn handle_perf(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 }
 
 fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let path = req.params.get("path").and_then(|v| v.as_str()).unwrap_or("/tmp/screenshot.png");
+    let path = req
+        .params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/tmp/screenshot.png");
     let overlays: Vec<String> = req
         .params
         .get("overlays")
@@ -282,8 +287,17 @@ fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         .params
         .get("area")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
-    let mode = req.params.get("mode").and_then(|v| v.as_str()).unwrap_or("normal").to_string();
-    let heatmap_type = req.params.get("heatmap_type").and_then(|v| v.as_str()).map(String::from);
+    let mode = req
+        .params
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("normal")
+        .to_string();
+    let heatmap_type = req
+        .params
+        .get("heatmap_type")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     let mut s = state.lock().unwrap();
     s.screenshot_queue.push(ScreenshotRequest {
@@ -296,6 +310,12 @@ fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     RpcResponse::success(req.id, json!({"queued": true, "path": path}))
 }
 
+fn handle_screenshot_results(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let mut s = state.lock().unwrap();
+    let results = std::mem::take(&mut s.screenshot_results);
+    RpcResponse::success(req.id, json!({"results": results}))
+}
+
 fn handle_list_entities(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let s = state.lock().unwrap();
     let filter = req.params.get("filter").and_then(|v| v.as_str());
@@ -303,7 +323,11 @@ fn handle_list_entities(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         .params
         .get("near")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
-    let radius = req.params.get("radius").and_then(|v| v.as_f64()).unwrap_or(f64::MAX);
+    let radius = req
+        .params
+        .get("radius")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(f64::MAX);
 
     let entities: Vec<Value> = s
         .entities
@@ -353,7 +377,12 @@ fn handle_inspect_entity(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_step(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let ticks = req.params.get("ticks").or(req.params.get("count")).and_then(|v| v.as_u64()).unwrap_or(1);
+    let ticks = req
+        .params
+        .get("ticks")
+        .or(req.params.get("count"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1);
     queue_cmd(req, state, "step", json!({"ticks": ticks}))
 }
 
@@ -365,7 +394,11 @@ fn handle_set_speed(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 }
 
 fn handle_tick(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let count = req.params.get("count").and_then(|v| v.as_u64()).unwrap_or(1);
+    let count = req
+        .params
+        .get("count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1);
     queue_cmd(req, state, "tick", json!({"count": count}))
 }
 
@@ -385,7 +418,11 @@ fn handle_command(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 
 fn handle_place_tower(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
-    match (require_i64(p, "x"), require_i64(p, "y"), require_str(p, "tower_type")) {
+    match (
+        require_i64(p, "x"),
+        require_i64(p, "y"),
+        require_str(p, "tower_type"),
+    ) {
         (Ok(x), Ok(y), Ok(tt)) => queue_cmd(
             req,
             state,
@@ -405,7 +442,10 @@ fn handle_sell_tower(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 
 fn handle_upgrade_tower(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
-    match (p.get("tower_id").and_then(|v| v.as_u64()), require_str(p, "path")) {
+    match (
+        p.get("tower_id").and_then(|v| v.as_u64()),
+        require_str(p, "path"),
+    ) {
         (Some(id), Ok(path)) => queue_cmd(
             req,
             state,
@@ -448,7 +488,12 @@ fn handle_editor_new_level(req: &RpcRequest, state: &SharedState) -> RpcResponse
 
 fn handle_editor_paint_tile(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
-    match (require_str(p, "layer"), require_i64(p, "x"), require_i64(p, "y"), require_i64(p, "tile")) {
+    match (
+        require_str(p, "layer"),
+        require_i64(p, "x"),
+        require_i64(p, "y"),
+        require_i64(p, "tile"),
+    ) {
         (Ok(layer), Ok(x), Ok(y), Ok(tile)) => queue_cmd(
             req,
             state,
@@ -481,7 +526,11 @@ fn handle_editor_fill_rect(req: &RpcRequest, state: &SharedState) -> RpcResponse
 
 fn handle_editor_place_entity(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
-    match (require_str(p, "type"), require_f64(p, "x"), require_f64(p, "y")) {
+    match (
+        require_str(p, "type"),
+        require_f64(p, "x"),
+        require_f64(p, "y"),
+    ) {
         (Ok(t), Ok(x), Ok(y)) => queue_cmd(
             req,
             state,
@@ -517,7 +566,11 @@ fn handle_editor_move_path_point(req: &RpcRequest, state: &SharedState) -> RpcRe
 }
 
 fn handle_editor_auto_decorate(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let world = req.params.get("world").and_then(|v| v.as_str()).unwrap_or("default");
+    let world = req
+        .params
+        .get("world")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
     queue_cmd(req, state, "editor.auto_decorate", json!({"world": world}))
 }
 
@@ -584,7 +637,11 @@ fn handle_audio_set_volume(req: &RpcRequest, state: &SharedState) -> RpcResponse
 // ---------------------------------------------------------------------------
 
 fn handle_save(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let path = req.params.get("path").and_then(|v| v.as_str()).unwrap_or("saves/quicksave.ron");
+    let path = req
+        .params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("saves/quicksave.ron");
     let slot = req.params.get("slot").and_then(|v| v.as_str());
     queue_cmd(req, state, "save", json!({"path": path, "slot": slot}))
 }
@@ -606,7 +663,12 @@ fn handle_replay_play(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     match require_str(&req.params, "path") {
         Ok(path) => {
             let from_tick = req.params.get("from_tick").and_then(|v| v.as_u64());
-            queue_cmd(req, state, "replay.play", json!({"path": path, "from_tick": from_tick}))
+            queue_cmd(
+                req,
+                state,
+                "replay.play",
+                json!({"path": path, "from_tick": from_tick}),
+            )
         }
         Err(e) => RpcResponse::error(req.id, INVALID_PARAMS, e),
     }
@@ -617,7 +679,11 @@ fn handle_replay_play(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_debug_dump_state(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let path = req.params.get("path").and_then(|v| v.as_str()).unwrap_or("/tmp/state.ron");
+    let path = req
+        .params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/tmp/state.ron");
     queue_cmd(req, state, "debug.dump_state", json!({"path": path}))
 }
 
@@ -649,7 +715,11 @@ fn handle_subscribe(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 }
 
 fn handle_poll_events(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let limit = req.params.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+    let limit = req
+        .params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100) as usize;
     let mut s = state.lock().unwrap();
     let count = s.event_buffer.len().min(limit);
     let drained: Vec<GameEvent> = s.event_buffer.drain(..count).collect();
@@ -666,7 +736,11 @@ fn handle_poll_events(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_get_log(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let limit = req.params.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+    let limit = req
+        .params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100) as usize;
     let s = state.lock().unwrap();
     let start = s.log_buffer.len().saturating_sub(limit);
     let lines: Vec<_> = s.log_buffer[start..].to_vec();
@@ -741,7 +815,10 @@ mod tests {
     #[test]
     fn command_with_params() {
         let state = new_shared_state();
-        let req = make_request("engine.command", json!({"action": "spawn", "params": {"x": 10}}));
+        let req = make_request(
+            "engine.command",
+            json!({"action": "spawn", "params": {"x": 10}}),
+        );
         let resp = handle_request(&req, &state);
         assert!(resp.error.is_none());
         let s = state.lock().unwrap();
@@ -760,7 +837,10 @@ mod tests {
     fn set_and_get_property() {
         let state = new_shared_state();
         handle_request(
-            &make_request("engine.set_property", json!({"key": "difficulty", "value": 3})),
+            &make_request(
+                "engine.set_property",
+                json!({"key": "difficulty", "value": 3}),
+            ),
             &state,
         );
         let resp = handle_request(
@@ -789,7 +869,10 @@ mod tests {
     fn screenshot_queues_request() {
         let state = new_shared_state();
         let resp = handle_request(
-            &make_request("screenshot", json!({"path": "/tmp/test.png", "overlays": ["grid"]})),
+            &make_request(
+                "screenshot",
+                json!({"path": "/tmp/test.png", "overlays": ["grid"]}),
+            ),
             &state,
         );
         assert!(resp.error.is_none());
@@ -854,7 +937,10 @@ mod tests {
     fn place_tower_queues() {
         let state = new_shared_state();
         let resp = handle_request(
-            &make_request("place_tower", json!({"x": 5, "y": 3, "tower_type": "archer"})),
+            &make_request(
+                "place_tower",
+                json!({"x": 5, "y": 3, "tower_type": "archer"}),
+            ),
             &state,
         );
         assert!(resp.error.is_none());
@@ -888,7 +974,10 @@ mod tests {
     fn subscribe_and_poll() {
         let state = new_shared_state();
         handle_request(
-            &make_request("subscribe", json!({"events": ["enemy_killed", "wave_complete"]})),
+            &make_request(
+                "subscribe",
+                json!({"events": ["enemy_killed", "wave_complete"]}),
+            ),
             &state,
         );
 
@@ -925,7 +1014,10 @@ mod tests {
     fn audio_crossfade_params() {
         let state = new_shared_state();
         let resp = handle_request(
-            &make_request("audio.crossfade", json!({"name": "battle", "duration": 2.0})),
+            &make_request(
+                "audio.crossfade",
+                json!({"name": "battle", "duration": 2.0}),
+            ),
             &state,
         );
         assert!(resp.error.is_none());

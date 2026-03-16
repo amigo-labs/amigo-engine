@@ -103,7 +103,11 @@ impl AtlasBuilder {
 
     /// Register a sprite to be packed.
     pub fn add(&mut self, name: String, width: u32, height: u32) {
-        self.pending.push(Pending { name, width, height });
+        self.pending.push(Pending {
+            name,
+            width,
+            height,
+        });
     }
 
     /// Run the shelf-packing algorithm and return an [`AtlasPack`].
@@ -163,7 +167,12 @@ impl AtlasBuilder {
                     name: sprite.name.clone(),
                     rect,
                     // UV will be filled in once we know the final atlas size.
-                    uv: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+                    uv: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: 0.0,
+                        h: 0.0,
+                    },
                 },
             );
 
@@ -239,7 +248,15 @@ mod tests {
         assert_eq!(pack.height, 64);
 
         let entry = pack.get("hero").unwrap();
-        assert_eq!(entry.rect, AtlasRect { x: 0, y: 0, w: 64, h: 64 });
+        assert_eq!(
+            entry.rect,
+            AtlasRect {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 64
+            }
+        );
     }
 
     #[test]
@@ -275,8 +292,16 @@ mod tests {
         builder.add("a".into(), 33, 17);
         let pack = builder.pack().unwrap();
 
-        assert!(pack.width.is_power_of_two(), "width {} not pow2", pack.width);
-        assert!(pack.height.is_power_of_two(), "height {} not pow2", pack.height);
+        assert!(
+            pack.width.is_power_of_two(),
+            "width {} not pow2",
+            pack.width
+        );
+        assert!(
+            pack.height.is_power_of_two(),
+            "height {} not pow2",
+            pack.height
+        );
         assert!(pack.width >= 33);
         assert!(pack.height >= 17);
     }
@@ -352,7 +377,11 @@ mod tests {
             for b in rects.iter().skip(i + 1) {
                 // On the same row, there must be at least `padding` pixels gap.
                 if a.y == b.y {
-                    let gap = if b.x >= a.x + a.w { b.x - (a.x + a.w) } else { a.x - (b.x + b.w) };
+                    let gap = if b.x >= a.x + a.w {
+                        b.x - (a.x + a.w)
+                    } else {
+                        a.x - (b.x + b.w)
+                    };
                     assert!(
                         gap >= padding,
                         "horizontal gap {} < padding {} between {:?} and {:?}",

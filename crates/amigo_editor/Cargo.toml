@@ -3,6 +3,11 @@ name = "amigo_editor"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+td = ["amigo_core/td"]
+egui = ["dep:egui"]
+
 [dependencies]
 amigo_core = { workspace = true }
 amigo_render = { workspace = true }
@@ -14,3 +19,4 @@ serde = { workspace = true }
 ron = { workspace = true }
 serde_json = { workspace = true }
 winit = { workspace = true }
+egui = { workspace = true, optional = true }

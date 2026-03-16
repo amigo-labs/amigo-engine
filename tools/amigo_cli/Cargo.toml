@@ -9,8 +9,11 @@ path = "src/main.rs"
 
 [dependencies]
 amigo_core = { workspace = true }
+amigo_assets = { workspace = true }
 amigo_editor = { workspace = true }
+amigo_render = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }
 toml = { workspace = true }
+image = { workspace = true }

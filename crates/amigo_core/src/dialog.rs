@@ -323,25 +323,31 @@ impl DialogRunner {
     fn emit_game_effect(&mut self, effect: &DialogEffect) {
         match effect {
             DialogEffect::GiveItem(id, count) => {
-                self.pending_effects.push(DialogGameEffect::GiveItem(*id, *count));
+                self.pending_effects
+                    .push(DialogGameEffect::GiveItem(*id, *count));
             }
             DialogEffect::TakeItem(id, count) => {
-                self.pending_effects.push(DialogGameEffect::TakeItem(*id, *count));
+                self.pending_effects
+                    .push(DialogGameEffect::TakeItem(*id, *count));
             }
             DialogEffect::GiveExp(amount) => {
-                self.pending_effects.push(DialogGameEffect::GiveExp(*amount));
+                self.pending_effects
+                    .push(DialogGameEffect::GiveExp(*amount));
             }
             DialogEffect::Heal => {
                 self.pending_effects.push(DialogGameEffect::Heal);
             }
             DialogEffect::StartBattle(id) => {
-                self.pending_effects.push(DialogGameEffect::StartBattle(*id));
+                self.pending_effects
+                    .push(DialogGameEffect::StartBattle(*id));
             }
             DialogEffect::PlaySound(name) => {
-                self.pending_effects.push(DialogGameEffect::PlaySound(name.clone()));
+                self.pending_effects
+                    .push(DialogGameEffect::PlaySound(name.clone()));
             }
             DialogEffect::Custom(data) => {
-                self.pending_effects.push(DialogGameEffect::Custom(data.clone()));
+                self.pending_effects
+                    .push(DialogGameEffect::Custom(data.clone()));
             }
             _ => {}
         }
@@ -352,7 +358,9 @@ impl DialogRunner {
         if !self.active {
             return;
         }
-        let Some(current_id) = self.current_node else { return };
+        let Some(current_id) = self.current_node else {
+            return;
+        };
         let Some(node) = tree.get_node(current_id) else {
             self.active = false;
             return;
@@ -375,10 +383,16 @@ impl DialogRunner {
         if !self.active {
             return;
         }
-        let Some(current_id) = self.current_node else { return };
-        let Some(node) = tree.get_node(current_id) else { return };
+        let Some(current_id) = self.current_node else {
+            return;
+        };
+        let Some(node) = tree.get_node(current_id) else {
+            return;
+        };
 
-        let Some(&original_index) = self.available_choices.get(choice_index) else { return };
+        let Some(&original_index) = self.available_choices.get(choice_index) else {
+            return;
+        };
         let choice = &node.choices[original_index];
 
         // Apply choice effects
@@ -452,7 +466,9 @@ pub struct DialogRegistry {
 
 impl DialogRegistry {
     pub fn new() -> Self {
-        Self { trees: FxHashMap::default() }
+        Self {
+            trees: FxHashMap::default(),
+        }
     }
 
     pub fn register(&mut self, tree: DialogTree) {
@@ -471,12 +487,16 @@ mod tests {
     fn simple_dialog() -> DialogTree {
         DialogTree::new(1, "Test Dialog", 0)
             .with_node(DialogNode::new(0, "NPC", "Hello traveler!").with_next(1))
-            .with_node(DialogNode::new(1, "NPC", "How can I help you?")
-                .with_choice("Tell me about the quest", 2)
-                .with_choice("Goodbye", 3))
-            .with_node(DialogNode::new(2, "NPC", "There is a dragon...")
-                .with_effect(DialogEffect::SetFlag("quest_started".into(), 1))
-                .with_next(3))
+            .with_node(
+                DialogNode::new(1, "NPC", "How can I help you?")
+                    .with_choice("Tell me about the quest", 2)
+                    .with_choice("Goodbye", 3),
+            )
+            .with_node(
+                DialogNode::new(2, "NPC", "There is a dragon...")
+                    .with_effect(DialogEffect::SetFlag("quest_started".into(), 1))
+                    .with_next(3),
+            )
             .with_node(DialogNode::new(3, "NPC", "Farewell!"))
     }
 
@@ -521,7 +541,10 @@ mod tests {
 
         // Choose "Tell me about the quest"
         runner.choose(0, &tree, &mut state);
-        assert_eq!(runner.current_node(&tree).unwrap().text, "There is a dragon...");
+        assert_eq!(
+            runner.current_node(&tree).unwrap().text,
+            "There is a dragon..."
+        );
         assert_eq!(state.get_flag("quest_started"), 1);
 
         // Continue to farewell
@@ -535,13 +558,15 @@ mod tests {
     #[test]
     fn conditional_choices() {
         let tree = DialogTree::new(1, "Conditional", 0)
-            .with_node(DialogNode::new(0, "NPC", "Want to trade?")
-                .with_choice("Yes", 1)
-                .with_conditional_choice(
-                    "Special offer",
-                    2,
-                    DialogCondition::FlagSet("vip".into()),
-                ))
+            .with_node(
+                DialogNode::new(0, "NPC", "Want to trade?")
+                    .with_choice("Yes", 1)
+                    .with_conditional_choice(
+                        "Special offer",
+                        2,
+                        DialogCondition::FlagSet("vip".into()),
+                    ),
+            )
             .with_node(DialogNode::new(1, "NPC", "Here are my wares."))
             .with_node(DialogNode::new(2, "NPC", "Secret items for VIPs!"));
 
@@ -559,10 +584,11 @@ mod tests {
 
     #[test]
     fn dialog_effects() {
-        let tree = DialogTree::new(1, "Effects", 0)
-            .with_node(DialogNode::new(0, "NPC", "Take this!")
+        let tree = DialogTree::new(1, "Effects", 0).with_node(
+            DialogNode::new(0, "NPC", "Take this!")
                 .with_effect(DialogEffect::SetFlag("got_gift".into(), 1))
-                .with_effect(DialogEffect::GiveItem(42, 3)));
+                .with_effect(DialogEffect::GiveItem(42, 3)),
+        );
 
         let mut state = DialogState::new();
         let mut runner = DialogRunner::new();
@@ -615,7 +641,8 @@ mod tests {
         ]);
         assert!(state.check_condition(&or_cond));
 
-        let not_cond = DialogCondition::Not(Box::new(DialogCondition::FlagSet("nonexistent".into())));
+        let not_cond =
+            DialogCondition::Not(Box::new(DialogCondition::FlagSet("nonexistent".into())));
         assert!(state.check_condition(&not_cond));
     }
 }
