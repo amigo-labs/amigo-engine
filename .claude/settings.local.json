@@ -5,7 +5,11 @@
       "Bash(git checkout:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(rustc --version 2>/dev/null && cargo --version 2>/dev/null)",
+      "Bash(which rustc:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)"
     ]
   }
 }

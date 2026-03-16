@@ -16,6 +16,20 @@ simulation, pixel-art rendering, and fast iteration.
 - **UI** -- immediate-mode pixel UI for HUD and menus (`amigo_ui`)
 - **Debug** -- FPS overlay, system profiling, visual debug toggles (`amigo_debug`)
 
+## Prerequisites
+
+- **Rust toolchain** -- install via [rustup](https://rustup.rs/):
+  ```sh
+  # Linux / macOS
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+  # Windows
+  # Download and run rustup-init.exe from https://rustup.rs/
+  ```
+  After installation, make sure `cargo` is on your PATH (restart your terminal or run `source $HOME/.cargo/env`).
+
+- **GPU drivers** -- a Vulkan, Metal, or DX12 capable GPU is required for the wgpu renderer.
+
 ## Quick start
 
 ```sh
