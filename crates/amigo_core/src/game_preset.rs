@@ -25,6 +25,8 @@ pub enum ScenePreset {
     TowerDefense,
     /// Bullet hell / shmup.
     BulletHell,
+    /// Arcade shooter with scrolling, power-ups, and waves. Contra, Gradius, Space Invaders.
+    ArcadeShooter,
     /// Grid-based puzzle (Match-3, Tetris, Sokoban).
     Puzzle,
     /// Farming / life sim (Stardew Valley).
@@ -52,6 +54,7 @@ impl ScenePreset {
             Self::Roguelike => "Roguelike",
             Self::TowerDefense => "Tower Defense",
             Self::BulletHell => "Bullet Hell",
+            Self::ArcadeShooter => "Arcade Shooter",
             Self::Puzzle => "Puzzle",
             Self::FarmingSim => "Farming Sim",
             Self::Fighting => "Fighting",
@@ -72,6 +75,7 @@ impl ScenePreset {
             Self::Roguelike => "Procedural dungeons, permadeath. Spelunky, Isaac.",
             Self::TowerDefense => "Place towers, survive waves. Bloons, Kingdom Rush.",
             Self::BulletHell => "Dodge bullets, shoot patterns. Touhou, Ikaruga.",
+            Self::ArcadeShooter => "Scrolling shooter with power-ups and waves. Contra, Gradius, Space Invaders.",
             Self::Puzzle => "Grid-based puzzles. Tetris, Bejeweled, Sokoban.",
             Self::FarmingSim => "Grow crops, manage a farm. Stardew Valley.",
             Self::Fighting => "Frame-based combat, combos. Street Fighter.",
@@ -100,6 +104,15 @@ impl ScenePreset {
             Self::Roguelike => vec!["roguelike", "combat", "loot", "inventory", "procgen"],
             Self::TowerDefense => vec!["tower", "waves", "navigation", "combat"],
             Self::BulletHell => vec!["bullet_pattern", "collision"],
+            Self::ArcadeShooter => vec![
+                "bullet_pattern",
+                "projectile",
+                "collision",
+                "physics",
+                "economy",
+                "waves",
+                "combat",
+            ],
             Self::Puzzle => vec!["puzzle"],
             Self::FarmingSim => vec!["farming", "inventory", "crafting", "dialog"],
             Self::Fighting => vec!["fighting"],
@@ -120,6 +133,7 @@ impl ScenePreset {
             Self::Roguelike,
             Self::TowerDefense,
             Self::BulletHell,
+            Self::ArcadeShooter,
             Self::Puzzle,
             Self::FarmingSim,
             Self::Fighting,
@@ -140,6 +154,7 @@ impl ScenePreset {
             Self::Roguelike,
             Self::TowerDefense,
             Self::BulletHell,
+            Self::ArcadeShooter,
             Self::Puzzle,
             Self::FarmingSim,
             Self::Fighting,
@@ -427,6 +442,12 @@ pub fn project_templates() -> Vec<ProjectTemplate> {
             description: "Dodge and shoot, boss patterns.",
             primary_preset: ScenePreset::BulletHell,
             resolution: (240, 320),
+        },
+        ProjectTemplate {
+            name: "Arcade Shooter",
+            description: "Scrolling shooter with power-ups, waves, and high scores.",
+            primary_preset: ScenePreset::ArcadeShooter,
+            resolution: (320, 240),
         },
         ProjectTemplate {
             name: "Visual Novel",
