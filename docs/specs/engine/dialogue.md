@@ -56,6 +56,15 @@ pub enum DialogEffect {
     Heal,
     StartBattle(u32),           // battle_id
     PlaySound(String),
+    /// Game-specific effect not covered by built-in variants.
+    /// Convention: use a namespaced prefix to avoid collisions between game types.
+    /// Format: "namespace:command:arg1:arg2:..."
+    /// Examples:
+    ///   "vn:bg:forest_night:fade:0.5"     — Visual Novel: set background with fade
+    ///   "vn:char:enter:left:sakura:neutral" — Visual Novel: enter character
+    ///   "quest:advance:main_quest:step_3"   — Quest system: advance quest state
+    /// The dialogue system passes Custom effects unchanged to the game layer.
+    /// Parsing and execution is the game code's responsibility.
     Custom(String),
 }
 ```

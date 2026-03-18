@@ -262,7 +262,40 @@ impl BossRoomSystem {
 - `FogOfWarGrid` is shared between `MapRevealer` and the main render pipeline. Room reveal sets tile visibility for the room's bounding rect in a single batch operation.
 - `Minimap` uses `PinType::Sprite` for save room icons, boss icons, and shop icons. `PinType::Dot` for the player position. `BacktrackMarker` custom pins use `PinType::Arrow` with ability-specific colors.
 - Gate collision shapes are stored as regular ECS entities with a `GateTag` component. When `AbilitySet` changes, a system iterates all `GateTag` entities and removes those whose `AbilityGate` is now satisfied.
-- Boss AI uses `BehaviorTree` with `Blackboard` storing health phase thresholds. Phase transitions trigger `AnimPlayer` tag switches and `BulletEmitter` pattern changes.
+- Boss AI uses `BehaviorTree` (from [engine/behavior-tree](../engine/behavior-tree.md), status: spec) with `Blackboard` for state. Since behavior-tree.md is not yet implemented, bosses can alternatively use a lightweight FSM (same pattern as [gametypes/roguelike](roguelike.md) boss enemies):
+
+```rust
+/// Metroidvania boss phase FSM (alternative to BehaviorTree until it's implemented).
+pub struct BossPhase {
+    pub phases: Vec<PhaseConfig>,
+    pub current: usize,
+}
+
+pub struct PhaseConfig {
+    /// HP threshold to enter this phase (1.0 = full HP, 0.0 = dead).
+    pub hp_threshold: f32,
+    /// Movement pattern during this phase.
+    pub movement: BossMovement,
+    /// Attack patterns (BulletEmitter configs or melee patterns).
+    pub attacks: Vec<PatternSequence>,
+    /// Animation tag to switch to.
+    pub anim_tag: String,
+}
+
+pub enum BossMovement {
+    /// Stay at center of arena.
+    Stationary,
+    /// Move between predefined positions.
+    Patrol { positions: Vec<SimVec2>, speed: I16F16 },
+    /// Chase the player.
+    Chase { speed: I16F16, min_distance: I16F16 },
+    /// Jump to random positions in arena.
+    Teleport { cooldown: u32 },
+}
+```
+
+Phase transitions are checked per tick: `if boss_hp / boss_max_hp <= phase.hp_threshold { advance_phase() }`.
+- **Checkpoint → SaveManager integration**: `CheckpointSystem::rest()` calls `SaveManager::save(slot, label, &game_state, play_time)` where `game_state` includes: `ExplorationGraph` (discovered rooms, defeated bosses), `AbilitySet`, player stats, and `last_checkpoint: RoomId`. The slot is the active manual save slot (not autosave). Loading restores the player to `last_checkpoint` room with full HP.
 
 ## Non-Goals
 

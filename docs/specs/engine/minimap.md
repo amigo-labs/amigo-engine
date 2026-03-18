@@ -135,6 +135,55 @@ impl Minimap {
 - Tilemap-Farben werden einmalig aus dem Tileset abgeleitet (Durchschnittsfarbe pro Tile-Typ) und gecacht.
 - Pin-Positionen werden von SimVec2 (Simulation) nach Minimap-Pixel konvertiert via linearer Transformation: `minimap_px = (world_pos - world_bounds.origin) / world_bounds.size * minimap_size`.
 
+## RTS / Strategy Extensions
+
+Für RTS- und Strategie-Spiele bietet die Minimap zusätzliche Features:
+
+### Team-basierte Pin-Farben
+
+```rust
+/// Erweiterter Pin-Typ mit Team-Zugehörigkeit.
+impl MinimapPin {
+    /// Erstellt einen Unit-Pin mit Team-Farbe.
+    pub fn unit(entity: EntityId, team: u8) -> Self;
+}
+
+/// Standard Team-Farben (überschreibbar via Config):
+/// Team 0 (Player) = Grün, Team 1 (Enemy) = Rot, Team 2 = Blau, Team 3 = Gelb
+pub const TEAM_COLORS: [Color; 4] = [GREEN, RED, BLUE, YELLOW];
+```
+
+### Ping-System
+
+```rust
+/// Temporärer Marker auf der Minimap (Alert, Hilferuf, Zielmarkierung).
+pub struct MinimapPing {
+    pub position: SimVec2,
+    pub color: Color,
+    /// Verbleibende Ticks bis der Ping verschwindet.
+    pub remaining_ticks: u16,
+    /// Pulsier-Animation (Radius wächst und schrumpft).
+    pub pulse: bool,
+}
+
+impl Minimap {
+    /// Ping an Position setzen (z.B. Alt+Klick auf Minimap).
+    pub fn add_ping(&mut self, ping: MinimapPing);
+    /// Alle abgelaufenen Pings entfernen. Aufgerufen pro Tick.
+    pub fn tick_pings(&mut self);
+}
+```
+
+### Fog-of-War Interaktion
+
+Pins auf `Hidden` Tiles (unerkundeter Bereich) werden **nicht** gerendert, außer `always_visible = true`. Pins auf `Explored` Tiles (erkundert aber aktuell nicht sichtbar) werden mit 50% Opacity gerendert — zeigt "letzte bekannte Position". Nur Pins auf `Visible` Tiles werden voll gerendert.
+
+Enemy-Unit-Pins werden nur angezeigt wenn die Unit in einem `Visible` Tile steht. Das verhindert Information Leaks durch die Minimap im RTS.
+
+### Viewport-Box
+
+Der Kamera-Viewport wird als weißer Rahmen auf der Minimap dargestellt. Die Box skaliert korrekt mit Kamera-Zoom. Bei `FreePan` + `EdgePan` (RTS-Kamera) zeigt die Box den sichtbaren Weltbereich.
+
 ## Non-Goals
 
 - **3D-Minimap / Rotation.** Immer achsenparallele Top-Down-Ansicht.

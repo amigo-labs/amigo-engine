@@ -50,6 +50,11 @@ pub enum SteeringBehavior {
     Cohesion,                         // Gruppe zusammenhalten
     Alignment,                        // Geschwindigkeit angleichen
     PathFollow { waypoints: Vec<SimVec2>, look_ahead: Fix },
+    /// Follow a FlowField direction instead of waypoints.
+    /// Reads direction_at(agent_tile) each tick and steers toward that heading.
+    /// Used by RTS (mass unit movement) and City Builder (citizen navigation).
+    /// Defined here but the FlowField itself lives in [engine/pathfinding].
+    FlowFieldFollow { field_id: u32, arrival_radius: Fix },
 }
 
 /// Compute combined steering force this tick.
@@ -126,6 +131,12 @@ Stärkere Kraft je näher der Nachbar. Summiert für alle Nachbarn.
 ### PathFollow
 
 Findet den nächsten Waypoint, seekt einen Waypoint weiter (Look-Ahead von 1).
+
+### FlowFieldFollow
+
+Liest die Richtung aus einem `FlowField` (von [engine/pathfinding](pathfinding.md)) für die aktuelle Tile-Position des Agents. Konvertiert `(i8, i8)` Direction in einen normalisierten `SimVec2` Heading und steuert per `Seek` auf `pos + heading * look_ahead`. Wenn `arrival_radius` vom FlowField-Ziel unterschritten wird, verhält sich das Behavior wie `Arrive`.
+
+Vorteile gegenüber `PathFollow`: Kein Waypoint-Array nötig, shared Field für hunderte Agents, O(1) pro Agent.
 
 ### Priority Steering
 

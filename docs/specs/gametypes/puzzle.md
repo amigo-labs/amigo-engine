@@ -415,7 +415,7 @@ impl LevelProgress {
 - Sokoban: Push mechanics, deadlock detection, par scoring
 - The Witness: Environmental puzzle constraints, non-grid puzzles (out of scope)
 - Tetris: Time-pressured piece placement (uses TurnTick with forced advance)
-- [engine/state-rewind](../engine/state-rewind.md) → Frame-level rewind as alternative to command-based undo
+- [engine/state-rewind](../engine/state-rewind.md) → Frame-level rewind (NOT used by this template). State-rewind captures snapshots per frame, which is wasteful for turn-based puzzles where state only changes on player action. The command-based `UndoStack` is the correct approach: it stores only the delta per turn (~bytes), while state-rewind stores full snapshots per frame (~kilobytes). State-rewind is appropriate for real-time puzzle games (e.g. Braid-style time rewind) but NOT for discrete turn-based puzzles like Sokoban
 - [engine/save-load](../engine/save-load.md) → LevelProgress persistence via SaveManager
 - [engine/tilemap](../engine/tilemap.md) → CollisionLayer types (Solid, OneWay, Trigger) for grid tiles
 - [engine/camera](../engine/camera.md) → ScreenLock mode for fixed puzzle view

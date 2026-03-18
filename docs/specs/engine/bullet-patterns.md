@@ -32,6 +32,9 @@ pub struct Bullet {
     pub active: bool,
     /// User-defined type tag for rendering/effects.
     pub kind: u32,
+    /// Generation counter — incremented each time this slot is reused.
+    /// Used by shmup grazing system to distinguish recycled bullets.
+    pub generation: u32,
 }
 ```
 
@@ -182,7 +185,7 @@ impl PatternSequence {
 
 ### Object Pool Lifecycle
 
-`BulletPool` pre-allocates a fixed number of `Bullet` slots at construction. Spawning scans for the first inactive slot (linear search), and despawning simply marks a slot inactive. This avoids per-frame heap allocations during gameplay.
+`BulletPool` pre-allocates a fixed number of `Bullet` slots at construction. Spawning scans for the first inactive slot (linear search), increments its `generation` counter, and activates it. Despawning marks a slot inactive (generation is NOT incremented on despawn — only on spawn). The generation counter allows external systems (e.g. shmup grazing) to distinguish newly spawned bullets from previous occupants of the same slot. This avoids per-frame heap allocations during gameplay.
 
 On each `tick()`:
 

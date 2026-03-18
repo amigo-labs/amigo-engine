@@ -128,7 +128,9 @@ pub enum WfcError {
 }
 ```
 
-### Proposed: Room-and-Corridor Dungeon Generator
+### Room-and-Corridor Dungeon Generator
+
+Used by [gametypes/roguelike](../gametypes/roguelike.md). The `DungeonConfig` here is the engine primitive; the roguelike gametype wraps it with additional fields (special room chances, boss floors).
 
 ```rust
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -141,17 +143,22 @@ pub struct DungeonConfig {
     pub max_rooms: u32,         // default 30
     pub corridor_width: u32,    // default 1
     pub room_padding: u32,      // min gap between rooms, default 2
+    /// Percentage of non-MST edges to re-add for loops (0.0-1.0). Default: 0.15.
+    pub loop_chance: f32,
 }
 
+/// Result of dungeon generation. This is the engine's canonical type.
+/// [gametypes/roguelike] `DungeonFloor` wraps this with gameplay-layer fields
+/// (room types, start/boss room IDs, corridor pairs).
 pub struct DungeonResult {
     /// Tile grid: 0 = wall, 1 = floor, 2 = corridor, 3 = door.
     pub tiles: Vec<u32>,
     pub width: u32,
     pub height: u32,
     pub rooms: Vec<DungeonRoom>,
-    /// Index of the starting room.
+    /// Index of the starting room (most central).
     pub start_room: usize,
-    /// Index of the boss/exit room (farthest from start).
+    /// Index of the end room (farthest from start by graph distance).
     pub end_room: usize,
 }
 
@@ -164,6 +171,13 @@ pub struct DungeonRoom {
 }
 
 pub fn generate_dungeon(config: &DungeonConfig) -> DungeonResult;
+
+/// Tile semantics mapping (shared convention with [gametypes/roguelike]):
+/// 0 = wall (→ CollisionType::Solid)
+/// 1 = floor (→ CollisionType::Empty)
+/// 2 = corridor (→ CollisionType::Empty)
+/// 3 = door (→ CollisionType::Solid initially, Empty when opened)
+pub fn tiles_to_collision_layer(tiles: &[u32], width: u32, height: u32) -> CollisionLayer;
 ```
 
 ### Proposed: 3D Noise Variants

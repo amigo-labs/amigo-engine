@@ -13,9 +13,79 @@ Camera management with pre-built patterns and effects for 2D games.
 
 ## Behavior
 
-Pre-built patterns: Fixed, Follow (with deadzone + lookahead), FollowSmooth, ScreenLock (Zelda), RoomTransition (Metroidvania), BossArena, CinematicPan.
+### Camera Modes
 
-Effects: shake (configurable decay), zoom (with easing).
+```rust
+pub enum CameraMode {
+    /// Camera is at a fixed position, does not move.
+    Fixed { position: RenderVec2 },
+
+    /// Camera follows a target entity with deadzone and look-ahead.
+    /// Used by: platformer, roguelike, metroidvania (default in-room).
+    Follow {
+        target: EntityId,
+        deadzone: Rect,          // target can move this much before camera follows
+        look_ahead: f32,         // pixels to shift in facing direction
+        vertical_snap: bool,     // false = smooth vertical catch-up (platformer)
+    },
+
+    /// Camera follows target with configurable smoothing (lerp factor).
+    FollowSmooth {
+        target: EntityId,
+        smoothing: f32,          // 0.0 = no follow, 1.0 = instant snap
+    },
+
+    /// Camera locked to a fixed rectangle (one screen = one room).
+    /// Used by: puzzle, shmup (fixed arena), Zelda-style rooms.
+    ScreenLock { bounds: Rect },
+
+    /// Camera slides from one room to another over a duration.
+    /// Used by: metroidvania room transitions.
+    /// During transition, player input is suppressed.
+    RoomTransition {
+        from_bounds: Rect,
+        to_bounds: Rect,
+        progress: f32,           // 0.0 = at from, 1.0 = at to
+        duration_secs: f32,      // default: 0.5
+        easing: EasingType,      // default: EaseInOut
+    },
+
+    /// Camera locked to a boss arena rectangle.
+    /// Used by: metroidvania boss fights, shmup boss phases.
+    /// Similar to ScreenLock but with entrance/exit transitions.
+    BossArena {
+        arena_bounds: Rect,
+        /// If true, smoothly transition from current pos to arena center on enter.
+        enter_transition: bool,
+    },
+
+    /// Free pan via input (WASD/middle-mouse drag). Used by: RTS, city builder.
+    FreePan {
+        speed: f32,              // pixels per second
+        bounds: Option<Rect>,    // clamp to world bounds
+    },
+
+    /// Camera pans when cursor is near screen edges. Used by: RTS.
+    /// Typically combined with FreePan.
+    EdgePan {
+        edge_width: f32,         // pixels from screen edge to trigger
+        speed: f32,              // pan speed
+    },
+
+    /// Cinematic camera pan to a target position over a duration.
+    /// Used by: visual novel dramatic scenes, ability unlock showcases.
+    CinematicPan {
+        target: RenderVec2,
+        duration_secs: f32,
+        easing: EasingType,
+        hold_secs: f32,          // hold at target before returning
+    },
+}
+```
+
+### Camera Effects
+
+Effects: shake (configurable decay + intensity), zoom (with easing).
 
 Parallax: each tile layer has independent scroll factor.
 
