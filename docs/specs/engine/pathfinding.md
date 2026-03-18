@@ -1,6 +1,6 @@
 ---
-status: spec
-crate: amigo_pathfinding
+status: done
+crate: amigo_core
 depends_on: ["engine/tilemap"]
 last_updated: 2026-03-18
 ---
@@ -10,6 +10,19 @@ last_updated: 2026-03-18
 ## Purpose
 
 Engine-level pathfinding for any genre that needs it. Provides A* search on tile grids, predefined waypoint paths for Tower Defense, and optional flow fields for large-scale navigation scenarios.
+
+## Implementation
+
+| File | Content |
+|------|---------|
+| `crates/amigo_core/src/pathfinding.rs` | A* search, `WaypointPath`, `PathFollower`, `FlowField`, `Walkable` trait |
+| `crates/amigo_core/src/navigation.rs` | `NavAgent` (click-to-move), `Direction` enum, `update_nav_agents()` system |
+| `crates/amigo_editor/src/auto_path.rs` | Editor auto-path generation using A* with path simplification |
+| `examples/pathfinding_demo/src/main.rs` | Interactive pathfinding demo |
+
+All types are re-exported from `amigo_core::pathfinding` and `amigo_core::navigation`.
+
+**Tests:** 21 total (11 pathfinding, 2 navigation, 8 auto_path).
 
 ## Public API
 

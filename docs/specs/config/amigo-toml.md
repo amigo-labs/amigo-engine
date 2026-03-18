@@ -1,7 +1,7 @@
 ---
-status: spec
+status: done
 depends_on: []
-last_updated: 2026-03-16
+last_updated: 2026-03-18
 ---
 
 # Configuration: amigo.toml
@@ -105,9 +105,35 @@ AMIGO_LOG=debug amigo run              # all debug and above
 AMIGO_LOG=amigo_render=trace amigo run # only renderer trace
 ```
 
+## Implementation
+
+All config structs live in `crates/amigo_engine/src/config.rs`:
+
+| Struct | Fields |
+|--------|--------|
+| `EngineConfig` | `window`, `render`, `audio`, `dev`, `splash` |
+| `WindowConfig` | `title`, `width`, `height`, `fullscreen`, `vsync` |
+| `RenderConfig` | `virtual_width`, `virtual_height`, `scale_mode`, `art_style` |
+| `AudioConfig` | `master_volume`, `sfx_volume`, `music_volume` |
+| `DevConfig` | `hot_reload`, `debug_overlay`, `api_server`, `api_port`, `headless` |
+| `SplashConfig` | `enabled` (default: `true`) |
+
+`EngineConfig::load()` reads `amigo.toml`, falls back to `Default` if missing or invalid.
+
+### Environment Variable Overrides
+
+| Env Var | Effect |
+|---------|--------|
+| `AMIGO_HEADLESS=1` | Sets `dev.headless = true` and `dev.api_server = true` |
+| `AMIGO_API=1` | Sets `dev.api_server = true` |
+
+### Engine Builder Integration
+
+`EngineBuilder::new()` calls `EngineConfig::load()` automatically. Builder methods (`.title()`, `.virtual_resolution()`, `.window_size()`, `.headless()`, etc.) override loaded values. See `crates/amigo_engine/src/engine.rs`.
+
 ## Internal Design
 
-The TOML configuration is parsed at startup into strongly-typed Rust structs using `serde`. Values not present in the file use sensible defaults. CLI flags override file values.
+The TOML configuration is parsed at startup into strongly-typed Rust structs using `serde`. Values not present in the file use sensible defaults. Builder methods override file values.
 
 The engine config is intentionally not hot-reloadable -- changes require a restart. This avoids complexity around reinitializing the window, GPU context, or audio hardware at runtime.
 
@@ -124,3 +150,4 @@ Input and game data configs use RON and are hot-reloadable via file watchers (se
 - Whether to support multiple config profiles (e.g., `amigo.dev.toml`, `amigo.release.toml`)
 - User preferences storage path (platform-aware: AppData on Windows, ~/.local/share on Linux)
 - Whether `[dev]` section should be stripped from release builds' config
+- Whether CLI flag parsing (e.g., `amigo run --fullscreen`) should use `clap` or remain manual

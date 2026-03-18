@@ -2,6 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
+<!-- Status: 29 done · 0 spec · 20 draft -->
 
 # Amigo Engine -- Spec Overview
 
@@ -228,7 +229,7 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [engine/audio](engine/audio.md)                           | done   | amigo_audio       | engine/core                   |
 | [engine/input](engine/input.md)                           | done   | amigo_input       | engine/core                   |
 | [engine/tilemap](engine/tilemap.md)                       | done   | amigo_tilemap     | engine/core                   |
-| [engine/pathfinding](engine/pathfinding.md)               | spec   | amigo_pathfinding | engine/tilemap                |
+| [engine/pathfinding](engine/pathfinding.md)               | done   | amigo_core        | engine/tilemap                |
 | [engine/animation](engine/animation.md)                   | done   | amigo_animation   | engine/core                   |
 | [engine/camera](engine/camera.md)                         | done   | amigo_camera      | engine/core                   |
 | [engine/ui](engine/ui.md)                                 | done   | amigo_ui          | engine/core, engine/rendering |
@@ -255,8 +256,8 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | draft  | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | draft  | amigo_audiogen    | engine/audio                  |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
-| [config/amigo-toml](config/amigo-toml.md)                 | spec   | --                | --                            |
-| [config/data-formats](config/data-formats.md)             | spec   | --                | --                            |
+| [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
+| [config/data-formats](config/data-formats.md)             | done   | --                | --                            |
 | [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/steering](engine/steering.md)                     | done   | amigo_steering    | engine/core                   |
 | [engine/spline](engine/spline.md)                         | done   | amigo_core        | engine/core                   |
