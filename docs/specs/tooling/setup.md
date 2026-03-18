@@ -12,9 +12,187 @@ author: Daniel
 
 `amigo setup` installiert und verwaltet die gesamte Python-Toolchain der Amigo Engine — ohne dass der User Python, pip, conda oder Docker manuell installieren muss. Ein einziger Befehl richtet alles ein: `uv` als Python-Manager, ein isoliertes venv, und alle Python-Dependencies (Demucs, Basic Pitch, ComfyUI, ACE-Step, etc.).
 
-**Designprinzip:** Zero-Friction. Wer `cargo install amigo-cli` ausführen kann, kann auch `amigo setup` ausführen. Keine Vorkenntnisse in Python nötig.
+**Designprinzip:** Zero-Friction. Ein Befehl installiert alles. Weder Rust noch Python müssen vorher installiert sein.
 
-## Überblick
+## 0. Amigo CLI installieren (One-Liner)
+
+Die CLI selbst wird als vorkompiliertes Binary von GitHub Releases heruntergeladen. Kein Rust/Cargo nötig.
+
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.ps1 | iex
+```
+
+### install.sh
+
+```bash
+#!/bin/sh
+set -e
+
+REPO="amigo-labs/amigo-engine"
+INSTALL_DIR="$HOME/.amigo/bin"
+
+# Plattform erkennen
+OS=$(uname -s)    # Linux, Darwin
+ARCH=$(uname -m)  # x86_64, aarch64, arm64
+
+# arm64 → aarch64 normalisieren (macOS meldet arm64)
+[ "$ARCH" = "arm64" ] && ARCH="aarch64"
+
+PLATFORM="${OS}-${ARCH}"
+
+# Neueste Version von GitHub API
+VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
+
+if [ -z "$VERSION" ]; then
+    echo "Error: Could not fetch latest version from GitHub"
+    exit 1
+fi
+
+echo "Installing amigo $VERSION for $PLATFORM..."
+
+# Binary herunterladen
+URL="https://github.com/$REPO/releases/download/$VERSION/amigo-$PLATFORM"
+mkdir -p "$INSTALL_DIR"
+curl -fSL --progress-bar -o "$INSTALL_DIR/amigo" "$URL"
+chmod +x "$INSTALL_DIR/amigo"
+
+# PATH konfigurieren
+SHELL_NAME=$(basename "$SHELL")
+case "$SHELL_NAME" in
+    zsh)  RC="$HOME/.zshrc" ;;
+    bash) RC="$HOME/.bashrc" ;;
+    fish) RC="$HOME/.config/fish/config.fish" ;;
+    *)    RC="$HOME/.profile" ;;
+esac
+
+if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+    if [ "$SHELL_NAME" = "fish" ]; then
+        echo "set -gx PATH $INSTALL_DIR \$PATH" >> "$RC"
+    else
+        echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$RC"
+    fi
+    echo "Added $INSTALL_DIR to PATH in $RC"
+fi
+
+echo ""
+echo "✓ amigo $VERSION installed to $INSTALL_DIR/amigo"
+echo ""
+echo "Next steps:"
+echo "  source $RC        # Reload PATH (or open new terminal)"
+echo "  amigo setup       # Install Python tools (Demucs, ComfyUI, etc.)"
+echo "  amigo new my-game # Create your first game"
+```
+
+### install.ps1 (Windows)
+
+```powershell
+$repo = "amigo-labs/amigo-engine"
+$installDir = "$env:USERPROFILE\.amigo\bin"
+
+$release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
+$version = $release.tag_name
+$url = "https://github.com/$repo/releases/download/$version/amigo-Windows-x86_64.exe"
+
+Write-Host "Installing amigo $version..."
+New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+Invoke-WebRequest -Uri $url -OutFile "$installDir\amigo.exe"
+
+# PATH setzen (User-Level, persistent)
+$currentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if ($currentPath -notlike "*$installDir*") {
+    [Environment]::SetEnvironmentVariable("PATH", "$installDir;$currentPath", "User")
+    Write-Host "Added $installDir to PATH"
+}
+
+Write-Host ""
+Write-Host "amigo $version installed to $installDir\amigo.exe"
+Write-Host ""
+Write-Host "Next steps:"
+Write-Host "  amigo setup       # Install Python tools"
+Write-Host "  amigo new my-game # Create your first game"
+```
+
+### GitHub Actions: Release-Binary bauen
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: amigo-Linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: amigo-Linux-aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: amigo-Darwin-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: amigo-Darwin-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: amigo-Windows-x86_64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }} -p amigo_cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/amigo${{ contains(matrix.os, 'windows') && '.exe' || '' }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            amigo-Linux-x86_64/amigo
+            amigo-Linux-aarch64/amigo
+            amigo-Darwin-x86_64/amigo
+            amigo-Darwin-aarch64/amigo
+            amigo-Windows-x86_64.exe/amigo.exe
+```
+
+### Gesamter Onboarding-Flow
+
+```bash
+# 1. CLI installieren (one-liner, kein Rust nötig)
+curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.sh | sh
+source ~/.bashrc
+
+# 2. Python-Tools installieren (kein Python nötig)
+amigo setup
+
+# 3. Spiel erstellen (kein Cargo nötig — Template wird heruntergeladen)
+amigo new my-game
+cd my-game
+amigo run
+```
+
+## Überblick (amigo setup)
 
 ```
 amigo setup
