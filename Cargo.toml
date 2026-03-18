@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/amigo_core",
+    "crates/amigo_steering",
     "crates/amigo_render",
     "crates/amigo_ui",
     "crates/amigo_audio",
@@ -38,6 +39,7 @@ repository = "https://github.com/amigo-labs/amigo-engine"
 [workspace.dependencies]
 # Internal crates
 amigo_core = { path = "crates/amigo_core" }
+amigo_steering = { path = "crates/amigo_steering" }
 amigo_render = { path = "crates/amigo_render" }
 amigo_ui = { path = "crates/amigo_ui" }
 amigo_audio = { path = "crates/amigo_audio" }

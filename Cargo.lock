@@ -359,6 +359,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_steering"
+version = "0.1.0"
+dependencies = [
+ "amigo_core",
+ "fixed",
+ "ron",
+ "serde",
+]
+
+[[package]]
 name = "amigo_tilemap"
 version = "0.1.0"
 dependencies = [

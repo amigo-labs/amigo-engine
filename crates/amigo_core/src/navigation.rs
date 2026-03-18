@@ -209,12 +209,9 @@ impl NavAgent {
                 self.moving = false;
             }
         } else {
-            // Move toward waypoint
-            // Normalize direction
-            let dist: Fix = {
-                let approx = Fix::from_num(dist_sq.to_num::<f32>().sqrt());
-                approx
-            };
+            // Move toward waypoint using deterministic Fix sqrt (no f32)
+            let delta = crate::math::SimVec2::new(dx, dy);
+            let dist = delta.length();
             if dist > Fix::ZERO {
                 let move_x = dx * self.speed / dist;
                 let move_y = dy * self.speed / dist;
