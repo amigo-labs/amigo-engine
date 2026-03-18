@@ -2,7 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
-<!-- Status: 29 done · 0 spec · 20 draft -->
+<!-- Status: 30 done · 3 spec · 16 draft -->
 
 # Amigo Engine -- Spec Overview
 
@@ -261,18 +261,18 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/steering](engine/steering.md)                     | done   | amigo_steering    | engine/core                   |
 | [engine/spline](engine/spline.md)                         | done   | amigo_core        | engine/core                   |
-| [engine/tween](engine/tween.md)                           | draft  | amigo_core        | engine/core                   |
+| [engine/tween](engine/tween.md)                           | spec   | amigo_core        | engine/core                   |
 | [engine/positional-audio](engine/positional-audio.md)     | draft  | amigo_audio       | engine/audio, engine/camera   |
 | [engine/bullet-patterns](engine/bullet-patterns.md)       | draft  | amigo_core        | engine/core, engine/particles |
 | [engine/procedural](engine/procedural.md)                 | draft  | amigo_core        | engine/core, engine/dynamic-tilemap |
 | [engine/dialogue](engine/dialogue.md)                     | draft  | amigo_core        | engine/core, engine/ui        |
 | [engine/localization](engine/localization.md)             | draft  | amigo_assets      | engine/assets                 |
 | [engine/timeline](engine/timeline.md)                     | draft  | amigo_core        | engine/tween, engine/camera   |
-| [engine/behavior-tree](engine/behavior-tree.md)           | draft  | amigo_core        | engine/core, engine/agents    |
-| [engine/minimap](engine/minimap.md)                       | draft  | amigo_render      | engine/camera, engine/fog-of-war |
+| [engine/behavior-tree](engine/behavior-tree.md)           | spec   | amigo_core        | engine/core, engine/agents    |
+| [engine/minimap](engine/minimap.md)                       | spec   | amigo_render      | engine/camera, engine/fog-of-war |
 | [engine/state-rewind](engine/state-rewind.md)             | draft  | amigo_core        | engine/save-load, engine/simulation |
 | [engine/achievements](engine/achievements.md)             | draft  | amigo_core        | engine/save-load, engine/ui   |
-| [engine/physics](engine/physics.md)                       | draft  | amigo_physics     | engine/core                   |
+| [engine/physics](engine/physics.md)                       | done   | amigo_core        | engine/core                   |
 | [engine/font-rendering](engine/font-rendering.md)         | draft  | amigo_render      | engine/assets, engine/ui      |
 | [engine/gpu-instancing](engine/gpu-instancing.md)         | draft  | amigo_render      | engine/rendering              |
 | [engine/modding](engine/modding.md)                       | draft  | amigo_assets      | engine/assets                 |
