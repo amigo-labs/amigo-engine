@@ -68,7 +68,7 @@ impl Tweenable for SimVec2 {
 // ---------------------------------------------------------------------------
 
 /// Complete easing function library (Robert Penner curves).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EasingFn {
     Linear,
     // Quadratic

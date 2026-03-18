@@ -41,6 +41,7 @@ pub mod spline;
 pub mod state_rewind;
 pub mod status_effect;
 pub mod time;
+pub mod timeline;
 pub mod turn_combat;
 pub mod tween;
 
