@@ -1,4 +1,4 @@
-use amigo_core::{Rect, RenderVec2};
+use amigo_core::{EasingFn, Rect, RenderVec2};
 
 /// Camera mode presets.
 #[derive(Clone, Debug)]
@@ -59,32 +59,9 @@ pub enum CameraMode {
     },
 }
 
-/// Easing functions for camera transitions.
-#[derive(Clone, Copy, Debug)]
-pub enum Easing {
-    Linear,
-    EaseIn,
-    EaseOut,
-    EaseInOut,
-}
-
-impl Easing {
-    pub fn apply(self, t: f32) -> f32 {
-        let t = t.clamp(0.0, 1.0);
-        match self {
-            Easing::Linear => t,
-            Easing::EaseIn => t * t,
-            Easing::EaseOut => 1.0 - (1.0 - t) * (1.0 - t),
-            Easing::EaseInOut => {
-                if t < 0.5 {
-                    2.0 * t * t
-                } else {
-                    1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
-                }
-            }
-        }
-    }
-}
+/// Re-export of EasingFn from amigo_core::tween.
+/// Legacy alias — use `EasingFn` directly for new code.
+pub type Easing = EasingFn;
 
 /// Camera system managing view position, zoom, and effects.
 pub struct Camera {

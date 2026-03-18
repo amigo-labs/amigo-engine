@@ -39,6 +39,7 @@ pub mod spline;
 pub mod status_effect;
 pub mod time;
 pub mod turn_combat;
+pub mod tween;
 
 // -- Tower Defense genre modules (feature-gated) ----------------------------
 #[cfg(feature = "td")]
@@ -75,6 +76,7 @@ pub use time::TimeInfo;
 pub use fog_of_war::{FogOfWarGrid, TileVisibility, update_visibility};
 pub use frame_arena::FrameArena;
 pub use spline::{CatmullRomSpline, CubicBezier};
+pub use tween::{EasingFn, RepeatCount, Tween, TweenHandle, TweenManager, TweenSequence, Tweenable};
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------
 #[cfg(feature = "td")]
