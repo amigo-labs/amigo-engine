@@ -1,0 +1,24 @@
+(
+    name: "matrix",
+    checkpoint: "pixel_art_xl_v1.safetensors",
+    lora: None,
+    palette: [
+        "#000000", "#001a00", "#003300", "#006600", "#00cc00",
+        "#00ff00", "#0a0a0a", "#1a1a1a", "#2a2a2a", "#00ff41",
+    ],
+    prompt_prefix: "pixel art, 16-bit style, cyberpunk dark, green on black, neon,",
+    negative_prompt: "realistic, 3d, smooth, anti-aliased, gradient, blurry, colorful, bright",
+    default_size: (32, 32),
+    steps: 20,
+    cfg_scale: 7.0,
+    post_processing: (
+        palette_clamp: true,
+        remove_anti_aliasing: true,
+        add_outline: true,
+        outline_color: "#001a00",
+        outline_mode: Outer,
+        cleanup_transparency: true,
+        tile_edge_check: false,
+    ),
+    reference_images: [],
+)

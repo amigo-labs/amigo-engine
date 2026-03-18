@@ -131,6 +131,7 @@ impl<'a> DrawContext<'a> {
                 flip_x: false,
                 flip_y: false,
                 z_order: 0,
+                shaders: Vec::new(),
             });
         }
     }
@@ -155,6 +156,7 @@ impl<'a> DrawContext<'a> {
                 flip_x: false,
                 flip_y: false,
                 z_order: 0,
+                shaders: Vec::new(),
             };
             f(&mut instance);
             self.sprites.push(instance);
@@ -177,6 +179,7 @@ impl<'a> DrawContext<'a> {
             flip_x: false,
             flip_y: false,
             z_order: 0,
+            shaders: Vec::new(),
         });
     }
 
@@ -215,6 +218,7 @@ impl<'a> DrawContext<'a> {
                         flip_x: false,
                         flip_y: false,
                         z_order: 100,
+                        shaders: Vec::new(),
                     });
                 }
                 cx += glyph.advance;
@@ -250,6 +254,7 @@ impl<'a> DrawContext<'a> {
                         flip_x: false,
                         flip_y: false,
                         z_order: 100,
+                        shaders: Vec::new(),
                     });
                 }
                 cx += glyph.advance;
@@ -350,6 +355,7 @@ impl<'a> DrawContext<'a> {
                     flip_x: false,
                     flip_y: false,
                     z_order: 0,
+                    shaders: Vec::new(),
                 });
             }
         }

@@ -349,4 +349,294 @@ impl UiContext {
     pub fn separator(&mut self, x: f32, y: f32, width: f32) {
         self.filled_rect(Rect::new(x, y, width, 1.0), Color::new(0.5, 0.5, 0.5, 0.5));
     }
+
+    // -----------------------------------------------------------------------
+    // Tier 2 Widgets
+    // -----------------------------------------------------------------------
+
+    /// A single-line text input field with cursor.
+    ///
+    /// `buffer` is the current text. The method mutates it based on key input
+    /// and returns whether the field is currently focused.
+    pub fn text_input(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        buffer: &mut String,
+        cursor: &mut usize,
+        focused: &mut bool,
+        input: &InputState,
+    ) {
+        let _id = self.gen_id();
+        let height = 16.0;
+        let rect = Rect::new(x, y, width, height);
+
+        // Background
+        let bg = if *focused {
+            Color::new(0.15, 0.15, 0.2, 0.95)
+        } else {
+            Color::new(0.2, 0.2, 0.2, 0.9)
+        };
+        self.filled_rect(rect, bg);
+
+        let border_color = if *focused {
+            Color::new(0.4, 0.6, 1.0, 1.0)
+        } else {
+            Color::new(0.5, 0.5, 0.5, 1.0)
+        };
+        self.rect_outline(rect, border_color);
+
+        // Click to focus
+        let mouse = input.mouse_pos();
+        if input.mouse_pressed(winit::event::MouseButton::Left) {
+            *focused = rect.contains(mouse.x, mouse.y);
+        }
+
+        if *focused {
+            // Process typed characters
+            for ch in input.text_input() {
+                if ch == '\x08' {
+                    // Backspace
+                    if *cursor > 0 {
+                        *cursor -= 1;
+                        buffer.remove(*cursor);
+                    }
+                } else if ch == '\x7f' {
+                    // Delete
+                    if *cursor < buffer.len() {
+                        buffer.remove(*cursor);
+                    }
+                } else if !ch.is_control() {
+                    buffer.insert(*cursor, ch);
+                    *cursor += 1;
+                }
+            }
+            *cursor = (*cursor).min(buffer.len());
+        }
+
+        // Draw text
+        let display = if buffer.is_empty() && !*focused {
+            "..."
+        } else {
+            buffer.as_str()
+        };
+        let text_color = if buffer.is_empty() && !*focused {
+            Color::new(0.5, 0.5, 0.5, 0.7)
+        } else {
+            Color::WHITE
+        };
+        self.pixel_text(display, x + 4.0, y + 4.0, text_color);
+
+        // Draw cursor
+        if *focused {
+            let cursor_x = x + 4.0 + *cursor as f32 * 7.0;
+            self.filled_rect(
+                Rect::new(cursor_x, y + 2.0, 1.0, height - 4.0),
+                Color::WHITE,
+            );
+        }
+    }
+
+    /// A palette-based color picker.
+    ///
+    /// Displays a grid of colors from the given palette and returns the index
+    /// of the clicked color (or `selected` if nothing was clicked).
+    pub fn color_picker(
+        &mut self,
+        x: f32,
+        y: f32,
+        palette: &[Color],
+        selected: usize,
+        cols: usize,
+        input: &InputState,
+    ) -> usize {
+        let _id = self.gen_id();
+        let swatch = 12.0;
+        let gap = 2.0;
+        let mouse = input.mouse_pos();
+        let clicked = input.mouse_pressed(winit::event::MouseButton::Left);
+
+        for (i, &color) in palette.iter().enumerate() {
+            let col = i % cols;
+            let row = i / cols;
+            let sx = x + col as f32 * (swatch + gap);
+            let sy = y + row as f32 * (swatch + gap);
+            let rect = Rect::new(sx, sy, swatch, swatch);
+
+            self.filled_rect(rect, color);
+
+            // Highlight selected
+            if i == selected {
+                self.rect_outline(rect, Color::WHITE);
+            }
+
+            if rect.contains(mouse.x, mouse.y) && clicked {
+                return i;
+            }
+        }
+
+        selected
+    }
+
+    /// A scrollable list. Returns `(new_scroll_offset, clicked_index)`.
+    ///
+    /// - `items`: list of item labels
+    /// - `scroll_offset`: current scroll position (in items)
+    /// - `visible_count`: how many items are visible at once
+    /// - `selected`: currently selected index (or `None`)
+    pub fn scrollable_list(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        items: &[&str],
+        scroll_offset: usize,
+        visible_count: usize,
+        selected: Option<usize>,
+        input: &InputState,
+    ) -> (usize, Option<usize>) {
+        let _id = self.gen_id();
+        let item_h = 16.0;
+        let total_h = visible_count as f32 * item_h;
+
+        // Background
+        self.filled_rect(
+            Rect::new(x, y, width, total_h),
+            Color::new(0.15, 0.15, 0.15, 0.9),
+        );
+
+        let mouse = input.mouse_pos();
+        let clicked = input.mouse_pressed(winit::event::MouseButton::Left);
+        let mut clicked_index = None;
+        let scroll = scroll_offset.min(items.len().saturating_sub(visible_count));
+
+        for i in 0..visible_count {
+            let item_idx = scroll + i;
+            if item_idx >= items.len() {
+                break;
+            }
+
+            let iy = y + i as f32 * item_h;
+            let rect = Rect::new(x, iy, width, item_h);
+
+            let bg = if Some(item_idx) == selected {
+                Color::new(0.3, 0.4, 0.6, 0.9)
+            } else if rect.contains(mouse.x, mouse.y) {
+                Color::new(0.25, 0.3, 0.4, 0.8)
+            } else if i % 2 == 0 {
+                Color::new(0.17, 0.17, 0.17, 0.9)
+            } else {
+                Color::new(0.15, 0.15, 0.15, 0.9)
+            };
+
+            self.filled_rect(rect, bg);
+            self.pixel_text(items[item_idx], x + 4.0, iy + 4.0, Color::WHITE);
+
+            if rect.contains(mouse.x, mouse.y) && clicked {
+                clicked_index = Some(item_idx);
+            }
+        }
+
+        // Scrollbar
+        if items.len() > visible_count {
+            let bar_x = x + width - 4.0;
+            let bar_h = total_h * (visible_count as f32 / items.len() as f32);
+            let bar_y = y + total_h * (scroll as f32 / items.len() as f32);
+            self.filled_rect(
+                Rect::new(bar_x, bar_y, 4.0, bar_h),
+                Color::new(0.5, 0.5, 0.5, 0.7),
+            );
+        }
+
+        // Scroll via mouse wheel
+        let scroll_delta = input.scroll_delta();
+        let new_scroll = if scroll_delta < 0.0 {
+            scroll.saturating_add(1).min(items.len().saturating_sub(visible_count))
+        } else if scroll_delta > 0.0 {
+            scroll.saturating_sub(1)
+        } else {
+            scroll
+        };
+
+        (new_scroll, clicked_index)
+    }
+
+    /// A hierarchical tree view. Returns the index of the clicked node (if any).
+    ///
+    /// Each node is `(label, depth, expanded)`. The caller manages expansion state.
+    pub fn tree_view(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        nodes: &mut [(String, u32, bool)],
+        selected: Option<usize>,
+        input: &InputState,
+    ) -> Option<usize> {
+        let _id = self.gen_id();
+        let item_h = 16.0;
+        let indent = 16.0;
+        let mouse = input.mouse_pos();
+        let clicked = input.mouse_pressed(winit::event::MouseButton::Left);
+        let mut clicked_index = None;
+        let mut cy = y;
+
+        // Determine which nodes are visible based on parent expansion state
+        let mut visible_nodes: Vec<(usize, &str, u32, bool)> = Vec::new();
+        let mut skip_below_depth: Option<u32> = None;
+
+        for (i, (label, depth, expanded)) in nodes.iter().enumerate() {
+            if let Some(skip_d) = skip_below_depth {
+                if *depth > skip_d {
+                    continue;
+                } else {
+                    skip_below_depth = None;
+                }
+            }
+            visible_nodes.push((i, label.as_str(), *depth, *expanded));
+            if !expanded {
+                skip_below_depth = Some(*depth);
+            }
+        }
+
+        for &(i, label, depth, expanded) in &visible_nodes {
+            let nx = x + depth as f32 * indent;
+            let rect = Rect::new(x, cy, width, item_h);
+
+            let bg = if Some(i) == selected {
+                Color::new(0.3, 0.4, 0.6, 0.9)
+            } else if rect.contains(mouse.x, mouse.y) {
+                Color::new(0.25, 0.25, 0.3, 0.8)
+            } else {
+                Color::new(0.0, 0.0, 0.0, 0.0)
+            };
+            self.filled_rect(rect, bg);
+
+            // Has children? (next visible or raw node at depth+1)
+            let has_children = nodes
+                .get(i + 1)
+                .map(|(_, d, _)| *d > depth)
+                .unwrap_or(false);
+
+            if has_children {
+                let arrow = if expanded { "v" } else { ">" };
+                self.pixel_text(arrow, nx, cy + 4.0, Color::new(0.7, 0.7, 0.7, 1.0));
+            }
+
+            self.pixel_text(label, nx + 12.0, cy + 4.0, Color::WHITE);
+
+            if rect.contains(mouse.x, mouse.y) && clicked {
+                // Toggle expand if has children, otherwise select
+                if has_children {
+                    nodes[i].2 = !nodes[i].2;
+                }
+                clicked_index = Some(i);
+            }
+
+            cy += item_h;
+        }
+
+        clicked_index
+    }
 }

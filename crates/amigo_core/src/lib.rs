@@ -15,6 +15,7 @@ pub mod ecs;
 pub mod events;
 pub mod farming;
 pub mod fighting;
+pub mod frame_arena;
 pub mod game_preset;
 pub mod inventory;
 pub mod level_loader;
@@ -69,6 +70,7 @@ pub use save::{SaveConfig, SaveError, SaveManager, SlotInfo};
 pub use scheduler::{CallbackId, TickScheduler};
 pub use status_effect::{EffectType, StatusEffect, StatusEffects};
 pub use time::TimeInfo;
+pub use frame_arena::FrameArena;
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------
 #[cfg(feature = "td")]

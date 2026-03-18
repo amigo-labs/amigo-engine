@@ -86,6 +86,7 @@ pub fn render_splash(
         flip_x: false,
         flip_y: false,
         z_order: 1000,
+        shaders: Vec::new(),
     });
 
     // Render "POWERED BY" as small text indicator (simple bar)
@@ -107,6 +108,7 @@ pub fn render_splash(
         flip_x: false,
         flip_y: false,
         z_order: 1001,
+        shaders: Vec::new(),
     });
 
     // Render "AMIGO" as block letters (pixel-style)
@@ -183,6 +185,7 @@ pub fn render_splash(
                         flip_x: false,
                         flip_y: false,
                         z_order: 1001,
+        shaders: Vec::new(),
                     });
                 }
             }
@@ -204,5 +207,6 @@ pub fn render_splash(
         flip_x: false,
         flip_y: false,
         z_order: 1001,
+        shaders: Vec::new(),
     });
 }

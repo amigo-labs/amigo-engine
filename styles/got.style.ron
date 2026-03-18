@@ -1,0 +1,24 @@
+(
+    name: "got",
+    checkpoint: "pixel_art_xl_v1.safetensors",
+    lora: Some(("pixel_art_16bit.safetensors", 0.7)),
+    palette: [
+        "#1a1a2e", "#2c2c3e", "#4a4a5e", "#8b8b8b", "#c0c0c0",
+        "#8b0000", "#b22222", "#f5f5dc", "#2f4f4f", "#696969",
+    ],
+    prompt_prefix: "pixel art, 16-bit style, dark medieval, grim, muted colors,",
+    negative_prompt: "realistic, 3d, smooth, anti-aliased, gradient, blurry, bright, colorful",
+    default_size: (32, 32),
+    steps: 20,
+    cfg_scale: 7.0,
+    post_processing: (
+        palette_clamp: true,
+        remove_anti_aliasing: true,
+        add_outline: true,
+        outline_color: "#1a1a2e",
+        outline_mode: Outer,
+        cleanup_transparency: true,
+        tile_edge_check: false,
+    ),
+    reference_images: [],
+)

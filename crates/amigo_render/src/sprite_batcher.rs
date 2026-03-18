@@ -2,6 +2,50 @@ use crate::texture::TextureId;
 use crate::vertex::Vertex;
 use amigo_core::Color;
 
+// ---------------------------------------------------------------------------
+// Per-Sprite Shaders (RS-03)
+// ---------------------------------------------------------------------------
+
+/// Visual shader effects that can be applied to individual sprites.
+///
+/// Multiple shaders can be stacked on a single sprite. The renderer
+/// applies them in the order given.
+#[derive(Clone, Debug)]
+pub enum SpriteShader {
+    /// Flash the sprite a solid color (hit feedback).
+    Flash {
+        color: Color,
+        /// Progress 0.0 (full flash) to 1.0 (normal).
+        progress: f32,
+    },
+    /// Draw a colored pixel outline around the sprite.
+    Outline {
+        color: Color,
+        width: u8,
+    },
+    /// Dissolve the sprite into pixels.
+    Dissolve {
+        /// 0.0 = fully visible, 1.0 = fully dissolved.
+        progress: f32,
+        seed: u32,
+    },
+    /// Swap the sprite's color palette.
+    PaletteSwap {
+        source_palette: Vec<Color>,
+        target_palette: Vec<Color>,
+    },
+    /// Render the sprite as a solid-color silhouette.
+    Silhouette {
+        color: Color,
+    },
+    /// Apply a sine-wave distortion.
+    Wave {
+        amplitude: f32,
+        frequency: f32,
+        speed: f32,
+    },
+}
+
 /// A single sprite to be rendered.
 #[derive(Clone, Debug)]
 pub struct SpriteInstance {
@@ -18,6 +62,8 @@ pub struct SpriteInstance {
     pub flip_x: bool,
     pub flip_y: bool,
     pub z_order: i32,
+    /// Optional per-sprite shader effects (applied in order).
+    pub shaders: Vec<SpriteShader>,
 }
 
 /// Collects sprites per frame, sorts by texture, and generates vertex data.
