@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: --
 depends_on: ["engine/procedural", "engine/save-load"]
 last_updated: 2026-03-18
