@@ -29,6 +29,7 @@ pub mod platformer;
 pub mod procgen;
 pub mod projectile;
 pub mod puzzle;
+pub mod raycast;
 pub mod rect;
 pub mod resources;
 pub mod roguelike;
@@ -55,7 +56,8 @@ pub mod waves;
 
 // -- Core re-exports (always available) -------------------------------------
 pub use collision::{
-    CollisionShape, CollisionWorld, ContactInfo, SpatialHash, TriggerEvent, TriggerZone,
+    CapsuleShape, CollisionShape, CollisionWorld, ContactInfo, SpatialHash, SweptContact,
+    TriggerEvent, TriggerZone,
 };
 pub use collision_events::{CollisionEvent, CollisionPhase, ContactTracker};
 pub use color::Color;
@@ -65,7 +67,7 @@ pub use ecs::{EntityId, SparseSet, World};
 pub use events::EventHub;
 pub use math::{Fix, RenderVec2, SimVec2};
 pub use pathfinding::{find_path, FlowField, PathFollower, PathRequest, Walkable, WaypointPath};
-pub use physics::{BodyType, PhysicsContact, PhysicsWorld, RigidBody};
+pub use physics::{sync_ecs_to_physics, sync_physics_to_ecs, BodyType, PhysicsContact, PhysicsWorld, RigidBody};
 pub use projectile::ProjectileManager;
 pub use rect::Rect;
 pub use resources::Resources;
@@ -77,6 +79,7 @@ pub use fog_of_war::{FogOfWarGrid, TileVisibility, update_visibility};
 pub use frame_arena::FrameArena;
 pub use spline::{CatmullRomSpline, CubicBezier};
 pub use tween::{EasingFn, RepeatCount, Tween, TweenHandle, TweenManager, TweenSequence, Tweenable};
+pub use raycast::{raycast, raycast_bodies, raycast_tiles, sensor, RayHit, TileBlock, TileQuery};
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------
 #[cfg(feature = "td")]

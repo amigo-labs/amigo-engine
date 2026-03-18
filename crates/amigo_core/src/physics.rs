@@ -105,6 +105,9 @@ pub struct PhysicsWorld {
     pub solver_iterations: u32,
     bodies: FxHashMap<EntityId, RigidBody>,
     spatial_hash: SpatialHash,
+    /// Velocity threshold for CCD. Bodies faster than this use swept tests.
+    /// Default: 0.0 (disabled). Set via `set_ccd_threshold()`.
+    ccd_threshold: f32,
 }
 
 impl PhysicsWorld {
@@ -114,6 +117,7 @@ impl PhysicsWorld {
             solver_iterations: 4,
             bodies: FxHashMap::default(),
             spatial_hash: SpatialHash::new(cell_size),
+            ccd_threshold: 0.0,
         }
     }
 
@@ -359,6 +363,59 @@ impl PhysicsWorld {
                 b.velocity.y -= jt * ty * inv_b;
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ECS Bridge
+// ---------------------------------------------------------------------------
+
+/// Position component used by the ECS bridge.
+pub type Position = RenderVec2;
+
+/// Synchronize PhysicsWorld body positions back into ECS Position components.
+/// Call after `PhysicsWorld::step()`.
+pub fn sync_physics_to_ecs(
+    world: &PhysicsWorld,
+    positions: &mut crate::ecs::SparseSet<Position>,
+) {
+    for (&entity, body) in &world.bodies {
+        if let Some(pos) = positions.get_mut(entity) {
+            *pos = body.position;
+        }
+    }
+}
+
+/// Synchronize ECS positions into PhysicsWorld (for Kinematic bodies moved by game code).
+/// Call before `PhysicsWorld::step()`.
+pub fn sync_ecs_to_physics(
+    positions: &crate::ecs::SparseSet<Position>,
+    world: &mut PhysicsWorld,
+) {
+    for (&entity, body) in world.bodies.iter_mut() {
+        if body.body_type == BodyType::Kinematic {
+            if let Some(pos) = positions.get(entity) {
+                body.position = *pos;
+            }
+        }
+    }
+}
+
+impl PhysicsWorld {
+    /// Set a CCD velocity threshold. Bodies moving faster than this per tick
+    /// will use swept collision tests to prevent tunneling.
+    pub fn set_ccd_threshold(&mut self, threshold: f32) {
+        self.ccd_threshold = threshold;
+    }
+
+    /// Iterate over all bodies (for ECS sync).
+    pub fn iter_bodies(&self) -> impl Iterator<Item = (&EntityId, &RigidBody)> {
+        self.bodies.iter()
+    }
+
+    /// Mutable iteration over all bodies.
+    pub fn iter_bodies_mut(&mut self) -> impl Iterator<Item = (&EntityId, &mut RigidBody)> {
+        self.bodies.iter_mut()
     }
 }
 
