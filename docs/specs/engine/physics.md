@@ -1,5 +1,5 @@
 ---
-status: done
+status: spec
 crate: amigo_core
 depends_on: ["engine/core"]
 last_updated: 2026-03-18
@@ -12,6 +12,10 @@ last_updated: 2026-03-18
 2D rigid body physics with gravity, impulse-based collision resolution, and spatial hashing for broad-phase acceleration. Custom implementation (no external physics engine) — consistent with the engine's Fixed-Point ecosystem, tile-based collision layer, and minimal-dependency philosophy.
 
 Existing implementation in `crates/amigo_core/src/physics.rs` and `crates/amigo_core/src/collision.rs`.
+
+## Existierende Bausteine
+
+Kernphysik ist bereits implementiert (RigidBody, PhysicsWorld, SpatialHash, CollisionWorld, TriggerZone). Fehlende Features: Capsule Collider, Joints, CCD, Convex Polygon, ECS-Bridge.
 
 ## Public API
 
@@ -192,6 +196,101 @@ impl CollisionLayer {
 }
 ```
 
+### Capsule Collider (nicht implementiert)
+
+```rust
+/// Capsule = Liniensegment + Radius. Ideal für längliche Entities (Enemies in TD).
+/// Gleitet an Ecken ab wie ein Circle, aber deckt längliche Formen ab.
+#[derive(Clone, Copy, Debug)]
+pub struct CapsuleShape {
+    /// Halbe Länge des Liniensegments (Gesamtlänge = 2 * half_length).
+    pub half_length: f32,
+    /// Radius an beiden Enden.
+    pub radius: f32,
+    /// Rotation in Radians (0 = horizontal).
+    pub angle: f32,
+}
+
+// CollisionShape erweitert um:
+pub enum CollisionShape {
+    Aabb(Rect),
+    Circle { cx: f32, cy: f32, radius: f32 },
+    Capsule(CapsuleShape),  // NEU
+}
+
+// Neue Narrow-Phase Funktionen:
+pub fn capsule_vs_aabb(capsule_pos: RenderVec2, capsule: &CapsuleShape, rect: &Rect) -> Option<ContactInfo>;
+pub fn capsule_vs_circle(capsule_pos: RenderVec2, capsule: &CapsuleShape, cx: f32, cy: f32, r: f32) -> Option<ContactInfo>;
+pub fn capsule_vs_capsule(pos_a: RenderVec2, a: &CapsuleShape, pos_b: RenderVec2, b: &CapsuleShape) -> Option<ContactInfo>;
+```
+
+Implementierung: Punkt-zu-Liniensegment Distanz, dann wie Circle-Kollision behandeln. ~100 Zeilen.
+
+### Joint Constraints (nicht implementiert)
+
+```rust
+/// Joint-Typen für Verbindungen zwischen zwei Bodies.
+pub enum JointType {
+    /// Drehgelenk: Bodies verbunden an einem Punkt, frei rotierbar.
+    Revolute { anchor_a: RenderVec2, anchor_b: RenderVec2 },
+    /// Schiene: Body B kann nur entlang einer Achse relativ zu A gleiten.
+    Prismatic { axis: RenderVec2, anchor_a: RenderVec2, anchor_b: RenderVec2 },
+    /// Fest verbunden: Bodies bewegen sich als Einheit.
+    Fixed { anchor_a: RenderVec2, anchor_b: RenderVec2 },
+    /// Distanz-Joint: hält Bodies in festem Abstand.
+    Distance { anchor_a: RenderVec2, anchor_b: RenderVec2, length: f32 },
+}
+
+pub struct Joint {
+    pub joint_type: JointType,
+    pub entity_a: EntityId,
+    pub entity_b: EntityId,
+    pub stiffness: f32,  // 0.0 = weich, 1.0 = starr
+}
+
+impl PhysicsWorld {
+    pub fn add_joint(&mut self, joint: Joint) -> JointId;
+    pub fn remove_joint(&mut self, id: JointId);
+}
+```
+
+Implementierung: Positional Correction pro Constraint-Typ im Solver-Loop. ~200-300 Zeilen pro Joint-Typ.
+
+### CCD — Continuous Collision Detection (nicht implementiert)
+
+```rust
+/// Swept collision test für schnelle Objekte.
+/// Verhindert Tunneling durch dünne Wände.
+pub fn swept_aabb(
+    pos: RenderVec2,
+    velocity: RenderVec2,
+    shape: &CollisionShape,
+    obstacle: &Rect,
+) -> Option<SweptContact>;
+
+pub struct SweptContact {
+    pub time: f32,       // 0.0..1.0, wann im Tick die Kollision auftritt
+    pub normal: RenderVec2,
+    pub contact: ContactInfo,
+}
+
+impl PhysicsWorld {
+    /// Aktiviert CCD für Bodies mit Geschwindigkeit > threshold.
+    pub fn set_ccd_threshold(&mut self, threshold: f32);
+}
+```
+
+Implementierung: Swept AABB via Minkowski-Differenz oder Raycasting. ~150 Zeilen.
+
+### ECS-Bridge (nicht implementiert)
+
+```rust
+/// Synchronisiert PhysicsWorld-Positionen zurück ins ECS.
+pub fn sync_physics_to_ecs(world: &PhysicsWorld, positions: &mut SparseSet<Position>);
+/// Synchronisiert ECS-Positionen in die PhysicsWorld (für Kinematic bodies).
+pub fn sync_ecs_to_physics(positions: &SparseSet<Position>, world: &mut PhysicsWorld);
+```
+
 ## Behavior
 
 - **Physics step** runs per fixed tick: (1) integrate gravity + velocity on Dynamic bodies, (2) rebuild spatial hash, (3) iterative collision detection + resolution (up to `solver_iterations` passes), (4) final spatial hash update. Returns all contacts from the first collision pass.
@@ -211,17 +310,15 @@ impl CollisionLayer {
 
 ## Non-Goals
 
-- **Rapier2D integration.** The custom implementation covers all current use cases. Rapier2D would add nalgebra, parry2d, simba dependencies for features (CCD, complex joints) that tile-based 2D games rarely need. Can be revisited as optional feature flag if complex physics becomes necessary.
-- **Joints/Constraints.** Revolute, prismatic, fixed joints are not implemented. Can be added incrementally (~200-300 lines per joint type) if specific games need them.
-- **Capsule collider.** Not yet implemented. Useful for elongated enemies in Tower Defense (prevents getting stuck on tile corners). Implementation: line-segment + radius, collision reduces to point-to-segment distance check. ~100 lines.
-- **CCD (Continuous Collision Detection).** Fast-moving objects could tunnel through thin walls. Not needed at pixel-art speeds, but can be added via swept AABB if required.
-- **Convex polygon collider.** SAT-based. Not needed for current tile-based genres.
+- **Rapier2D integration.** Custom-Implementierung deckt alle Anwendungsfälle ab. Rapier2D würde nalgebra, parry2d, simba als Dependencies hinzufügen. Kann als optionales Feature-Flag revisited werden.
+- **Convex polygon collider.** SAT-basierte Polygon-Kollision. Für Tile-basierte Genres nicht nötig.
+- **3D physics.** Die Engine ist 2D-only.
 
 ## Open Questions
 
-- Should capsule collider be promoted from non-goal to implemented feature for TD enemy pathfinding?
-- Should physics bodies optionally sync back to ECS `Position(SimVec2)` via a bridge system?
-- Is the current 4-iteration solver sufficient, or should `solver_iterations` be configurable per-scene?
+- Soll `solver_iterations` per-Szene konfigurierbar sein, oder reichen 4 Iterationen global?
+- Soll CCD automatisch für Bodies über einer Geschwindigkeitsschwelle aktiviert werden, oder explizit per Body?
+- Braucht es einen `ConvexHull` Collider zusätzlich zu Capsule, oder reicht Capsule + Circle + AABB?
 
 ## Referenzen
 
