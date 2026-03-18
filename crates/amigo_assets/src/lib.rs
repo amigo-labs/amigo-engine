@@ -1,7 +1,9 @@
 pub mod aseprite;
 pub mod asset_manager;
 pub mod descriptors;
+pub mod formats;
 pub mod handle;
+pub mod import;
 pub mod hot_reload;
 pub mod pak;
 

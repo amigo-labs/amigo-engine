@@ -1,5 +1,6 @@
 pub mod handler;
 pub mod server;
+pub mod websocket;
 
 use serde::{Deserialize, Serialize};
 

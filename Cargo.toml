@@ -67,7 +67,7 @@ ron = "0.8"
 toml = "0.8"
 notify = "7"
 bumpalo = { version = "3", features = ["collections"] }
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "webp"] }
 rustc-hash = "2"
 bytemuck = { version = "1", features = ["derive"] }
 bitflags = "2"
