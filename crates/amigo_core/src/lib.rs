@@ -38,6 +38,7 @@ pub mod save;
 pub mod scheduler;
 pub mod simulation;
 pub mod spline;
+pub mod state_rewind;
 pub mod status_effect;
 pub mod time;
 pub mod turn_combat;
