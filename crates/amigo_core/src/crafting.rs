@@ -443,6 +443,8 @@ mod tests {
         (recipes, items)
     }
 
+    // ── Craft eligibility ───────────────────────────────────
+
     #[test]
     fn can_craft_checks_materials() {
         let (recipes, items) = test_registry();
@@ -484,6 +486,8 @@ mod tests {
         assert_eq!(inv.count(1), 2); // unchanged
     }
 
+    // ── Recipe filtering and discovery ──────────────────────
+
     #[test]
     fn available_recipes_filters_by_station() {
         let (recipes, items) = test_registry();
@@ -519,6 +523,8 @@ mod tests {
         let found = auto_discover(&recipes, &inv);
         assert_eq!(found.len(), 3);
     }
+
+    // ── Crafting jobs and state ──────────────────────────────
 
     #[test]
     fn crafting_job_timer() {
@@ -561,6 +567,8 @@ mod tests {
         assert!(state.update(3.0).is_some()); // completed
         assert_eq!(state.total_crafted, 1);
     }
+
+    // ── Recipe categories ───────────────────────────────────
 
     #[test]
     fn recipe_categories() {

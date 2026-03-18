@@ -371,6 +371,8 @@ impl PixelBuffer {
 mod tests {
     use super::*;
 
+    // ── Remove anti-aliasing ───────────────────────────────────
+
     #[test]
     fn remove_aa_snaps_alpha() {
         let mut buf = PixelBuffer::new(2, 1);
@@ -382,6 +384,8 @@ mod tests {
         assert_eq!(buf.data[0][3], 255);
         assert_eq!(buf.data[1][3], 0);
     }
+
+    // ── Outer outline ───────────────────────────────────────────
 
     #[test]
     fn add_outline_around_pixel() {
@@ -399,6 +403,8 @@ mod tests {
         assert_eq!(buf.get(0, 0)[3], 0);
     }
 
+    // ── Downscale ───────────────────────────────────────────────
+
     #[test]
     fn downscale_halves() {
         let mut buf = PixelBuffer::new(4, 4);
@@ -413,6 +419,8 @@ mod tests {
         assert_eq!(buf.get(1, 0), [0, 255, 0, 255]);
     }
 
+    // ── Force dimensions ────────────────────────────────────────
+
     #[test]
     fn force_dimensions_pads() {
         let mut buf = PixelBuffer::new(2, 2);
@@ -426,6 +434,8 @@ mod tests {
         assert_eq!(buf.get(1, 1), [255, 0, 0, 255]);
     }
 
+    // ── Pipeline ────────────────────────────────────────────────
+
     #[test]
     fn pipeline_applies_steps() {
         let mut buf = PixelBuffer::new(2, 1);
@@ -437,6 +447,8 @@ mod tests {
         assert_eq!(buf.data[0][3], 0); // was below threshold
         assert_eq!(buf.data[1][3], 255); // was above threshold
     }
+
+    // ── Palette clamping ─────────────────────────────────────────
 
     #[test]
     fn palette_clamp_under_budget_noop() {
@@ -487,6 +499,8 @@ mod tests {
         assert_eq!(buf.data, original);
     }
 
+    // ── Cleanup transparency ─────────────────────────────────────
+
     #[test]
     fn cleanup_transparency_snaps() {
         let mut buf = PixelBuffer::new(3, 1);
@@ -500,6 +514,8 @@ mod tests {
         assert_eq!(buf.data[1][3], 255);
         assert_eq!(buf.data[2][3], 255);
     }
+
+    // ── Inner outline ──────────────────────────────────────────
 
     #[test]
     fn add_outline_inner_marks_edge_pixels() {
@@ -543,6 +559,8 @@ mod tests {
         assert_eq!(buf.get(1, 2), outline); // below center
     }
 
+    // ── Tile edge check ─────────────────────────────────────────
+
     #[test]
     fn tile_edge_check_uniform() {
         // All same color → 0 mismatches
@@ -574,6 +592,8 @@ mod tests {
         assert!(h > 0, "expected horizontal mismatches");
         assert!(v > 0, "expected vertical mismatches");
     }
+
+    // ── Style pipeline ──────────────────────────────────────────
 
     #[test]
     fn apply_style_pipeline_runs() {

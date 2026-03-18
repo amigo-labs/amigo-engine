@@ -219,6 +219,8 @@ pub enum ConnectionQuality {
 mod tests {
     use super::*;
 
+    // ── RTT statistics ──────────────────────────────────────────
+
     #[test]
     fn rtt_stats() {
         let mut stats = NetStats::new();
@@ -247,6 +249,8 @@ mod tests {
         assert!(stats2.jitter() > 30.0);
     }
 
+    // ── Packet loss ─────────────────────────────────────────────
+
     #[test]
     fn packet_loss_ratio() {
         let mut stats = NetStats::new();
@@ -259,6 +263,8 @@ mod tests {
         let loss = stats.packet_loss();
         assert!((loss - 0.05).abs() < 0.001);
     }
+
+    // ── Bandwidth ───────────────────────────────────────────────
 
     #[test]
     fn bandwidth_tracking() {
@@ -275,6 +281,8 @@ mod tests {
         assert_eq!(stats.bandwidth_recv(), 350.0);
     }
 
+    // ── Connection quality ──────────────────────────────────────
+
     #[test]
     fn connection_quality() {
         let mut stats = NetStats::new();
@@ -289,6 +297,8 @@ mod tests {
         stats3.record_rtt(300.0);
         assert_eq!(stats3.quality(), ConnectionQuality::Poor);
     }
+
+    // ── Edge cases & reset ──────────────────────────────────────
 
     #[test]
     fn empty_stats() {

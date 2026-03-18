@@ -604,6 +604,8 @@ pub fn write_map_toml(map: &MapDescriptor, path: &Path) -> Result<(), ImportErro
 mod tests {
     use super::*;
 
+    // ── Tiled import ────────────────────────────────────────────
+
     #[test]
     fn parse_tiled_json() {
         let json = r#"{
@@ -665,6 +667,8 @@ mod tests {
 
         let _ = std::fs::remove_file(&tmp);
     }
+
+    // ── LDTK import ─────────────────────────────────────────────
 
     #[test]
     fn parse_ldtk_json() {
@@ -728,6 +732,8 @@ mod tests {
 
         let _ = std::fs::remove_file(&tmp);
     }
+
+    // ── MML import ──────────────────────────────────────────────
 
     #[test]
     fn parse_mml_basic() {
@@ -793,6 +799,8 @@ mod tests {
         // c (default l4) = quarter = 96 ticks
         assert_eq!(notes[2].duration_ticks, 96);
     }
+
+    // ── Error handling ──────────────────────────────────────────
 
     #[test]
     fn tiled_unsupported_image_layer() {

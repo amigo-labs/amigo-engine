@@ -391,6 +391,8 @@ mod tests {
     use super::*;
     use crate::ecs::EntityId;
 
+    // ── AABB collision tests ───────────────────────────────────
+
     #[test]
     fn aabb_overlap() {
         let a = Rect::new(0.0, 0.0, 10.0, 10.0);
@@ -405,6 +407,8 @@ mod tests {
         assert!(aabb_vs_aabb(&a, &b).is_none());
     }
 
+    // ── Circle collision tests ─────────────────────────────────
+
     #[test]
     fn circle_overlap() {
         assert!(circle_vs_circle(0.0, 0.0, 5.0, 3.0, 0.0, 5.0).is_some());
@@ -414,6 +418,8 @@ mod tests {
     fn circle_no_overlap() {
         assert!(circle_vs_circle(0.0, 0.0, 5.0, 20.0, 0.0, 5.0).is_none());
     }
+
+    // ── SpatialHash tests ───────────────────────────────────────
 
     #[test]
     fn spatial_hash_insert_and_query() {
@@ -511,6 +517,8 @@ mod tests {
         assert!(near_new.contains(&e1));
     }
 
+    // ── CollisionWorld tests ────────────────────────────────────
+
     #[test]
     fn collision_world_check_pair() {
         let mut world = CollisionWorld::new(32.0);
@@ -530,6 +538,8 @@ mod tests {
 
         assert!(world.check_pair(e1, e2).is_some());
     }
+
+    // ── TriggerZone tests ───────────────────────────────────────
 
     #[test]
     fn trigger_zone_enter_exit() {

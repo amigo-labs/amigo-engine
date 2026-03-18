@@ -444,6 +444,8 @@ impl PakReader {
 mod tests {
     use super::*;
 
+    // ── Pak read/write roundtrip ─────────────────────────────────
+
     #[test]
     fn roundtrip_pak_v2() {
         let mut writer = PakWriter::new();
@@ -494,6 +496,8 @@ mod tests {
         std::fs::remove_file(&tmp).ok();
     }
 
+    // ── SHA-256 integrity ───────────────────────────────────────
+
     #[test]
     fn sha256_integrity() {
         let mut writer = PakWriter::new();
@@ -515,6 +519,8 @@ mod tests {
 
         std::fs::remove_file(&tmp).ok();
     }
+
+    // ── Asset flags ─────────────────────────────────────────────
 
     #[test]
     fn asset_flags_bitmask() {

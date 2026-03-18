@@ -222,6 +222,8 @@ impl Default for DesyncDetector {
 mod tests {
     use super::*;
 
+    // ── Recording & playback ─────────────────────────────────
+
     #[test]
     fn record_and_playback() {
         let mut recorder = ReplayRecorder::new();
@@ -268,6 +270,8 @@ mod tests {
         assert_eq!(player.current_tick(), None);
     }
 
+    // ── Serialization ──────────────────────────────────────────
+
     #[test]
     fn serialization_roundtrip() {
         let mut recorder = ReplayRecorder::new();
@@ -305,6 +309,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // ── Seek ────────────────────────────────────────────────────
+
     #[test]
     fn seek_to_specific_tick() {
         let mut recorder = ReplayRecorder::new();
@@ -339,6 +345,8 @@ mod tests {
         assert_eq!(player.current_tick(), Some(3));
         assert!(!player.is_finished());
     }
+
+    // ── Desync detection ────────────────────────────────────────
 
     #[test]
     fn desync_detector_finds_mismatch() {
@@ -379,6 +387,8 @@ mod tests {
         // No shared ticks, so no desync detected
         assert_eq!(detector_a.compare(&detector_b), None);
     }
+
+    // ── Player speed ────────────────────────────────────────────
 
     #[test]
     fn replay_player_speed() {

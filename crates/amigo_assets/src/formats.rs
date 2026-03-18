@@ -292,6 +292,8 @@ pub fn convert_image(png_data: &[u8]) -> Result<ConversionResult, FormatError> {
 mod tests {
     use super::*;
 
+    // ── AIT format ──────────────────────────────────────────────
+
     #[test]
     fn ait_roundtrip() {
         let pixels = vec![0u8; 16 * 16 * 4]; // 16x16 RGBA
@@ -336,6 +338,8 @@ mod tests {
         assert!(AitFile::from_atlas(&pixels, 16, 16, 8, 8).is_err());
     }
 
+    // ── Format detection ─────────────────────────────────────────
+
     #[test]
     fn detect_png() {
         let png_header = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
@@ -362,6 +366,8 @@ mod tests {
         assert!(is_webp(webp_header));
         assert!(!is_webp(b"RIFF\x00\x00\x00\x00WAVEfmt "));
     }
+
+    // ── Conversion pipeline ──────────────────────────────────────
 
     #[test]
     fn savings_calculation() {

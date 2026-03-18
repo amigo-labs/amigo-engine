@@ -181,6 +181,8 @@ pub struct LevelAsset;
 mod tests {
     use super::*;
 
+    // ── Alloc & state tracking ──────────────────────────────────
+
     #[test]
     fn alloc_and_state() {
         let mut alloc = HandleAllocator::new();
@@ -191,6 +193,8 @@ mod tests {
         alloc.mark_loaded(h);
         assert_eq!(alloc.state(h), AssetState::Loaded);
     }
+
+    // ── Free & reuse ────────────────────────────────────────────
 
     #[test]
     fn free_and_reuse() {

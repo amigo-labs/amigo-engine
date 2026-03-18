@@ -433,6 +433,8 @@ pub fn point_in_aoe(
 mod tests {
     use super::*;
 
+    // ── Damage calculation tests ───────────────────────────────
+
     #[test]
     fn damage_calculation() {
         let attacker = CombatStats {
@@ -450,6 +452,8 @@ mod tests {
         assert!(!result.is_critical);
     }
 
+    // ── Cooldown tests ──────────────────────────────────────────
+
     #[test]
     fn cooldown_works() {
         let mut cd = Cooldown::new(2.0);
@@ -461,6 +465,8 @@ mod tests {
         cd.update(1.5);
         assert!(cd.is_ready());
     }
+
+    // ── AoE shape tests ─────────────────────────────────────────
 
     #[test]
     fn aoe_circle() {
@@ -478,6 +484,8 @@ mod tests {
             &shape,
         ));
     }
+
+    // ── Projectile tests ────────────────────────────────────────
 
     #[test]
     fn projectile_travels_and_expires() {

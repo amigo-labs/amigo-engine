@@ -521,6 +521,8 @@ pub fn build_upscale_workflow(input_path: &str, factor: u32) -> ComfyPrompt {
 mod tests {
     use super::*;
 
+    // ── txt2img workflows ──────────────────────────────────────
+
     #[test]
     fn sprite_workflow_has_all_nodes() {
         let req = ArtRequest {
@@ -578,6 +580,8 @@ mod tests {
         assert_eq!(latent["inputs"]["width"], 480);
         assert_eq!(latent["inputs"]["height"], 270);
     }
+
+    // ── img2img workflows ─────────────────────────────────────────
 
     #[test]
     fn img2img_workflow_has_load_image_and_denoise() {
