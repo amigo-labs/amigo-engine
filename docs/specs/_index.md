@@ -1,6 +1,6 @@
 ---
 status: draft
-last_updated: 2026-03-16
+last_updated: 2026-03-18
 ---
 
 # Amigo Engine -- Spec Overview
@@ -155,6 +155,16 @@ graph TD
     networking[engine/networking]
     memperf[engine/memory-performance]
     plugin[engine/plugin-system]
+    dyntile[engine/dynamic-tilemap]
+    chunks[engine/chunks]
+    lighting[engine/lighting]
+    liquids[engine/liquids]
+    particles[engine/particles]
+    inventory[engine/inventory]
+    crafting[engine/crafting]
+    agents[engine/agents]
+    simulation[engine/simulation]
+    saveload[engine/save-load]
     fmt[assets/format]
     pipeline[assets/pipeline]
     atlas[assets/atlas]
@@ -180,6 +190,26 @@ graph TD
     ui --> rendering
     networking --> core
     plugin --> core
+    dyntile --> core
+    dyntile --> tilemap
+    chunks --> core
+    chunks --> tilemap
+    lighting --> core
+    lighting --> rendering
+    lighting --> tilemap
+    liquids --> core
+    liquids --> dyntile
+    liquids --> chunks
+    particles --> core
+    particles --> rendering
+    inventory --> core
+    crafting --> core
+    crafting --> inventory
+    agents --> core
+    agents --> pathfinding
+    simulation --> core
+    saveload --> core
+    saveload --> chunks
     pipeline --> fmt
     atlas --> fmt
     cli --> core
@@ -211,6 +241,16 @@ graph TD
 | [engine/networking](engine/networking.md)                 | draft  | amigo_net         | engine/core                   |
 | [engine/memory-performance](engine/memory-performance.md) | draft  | amigo_core        | --                            |
 | [engine/plugin-system](engine/plugin-system.md)           | draft  | amigo_plugin      | engine/core                   |
+| [engine/dynamic-tilemap](engine/dynamic-tilemap.md)       | draft  | amigo_tilemap     | engine/core, engine/tilemap   |
+| [engine/chunks](engine/chunks.md)                         | draft  | amigo_tilemap     | engine/core, engine/tilemap   |
+| [engine/lighting](engine/lighting.md)                     | draft  | amigo_tilemap     | engine/core, engine/tilemap, engine/rendering |
+| [engine/liquids](engine/liquids.md)                       | draft  | amigo_tilemap     | engine/core, engine/dynamic-tilemap, engine/chunks |
+| [engine/particles](engine/particles.md)                   | draft  | amigo_core        | engine/core, engine/rendering |
+| [engine/inventory](engine/inventory.md)                   | draft  | amigo_core        | engine/core                   |
+| [engine/crafting](engine/crafting.md)                     | draft  | amigo_core        | engine/core, engine/inventory |
+| [engine/agents](engine/agents.md)                         | draft  | amigo_core        | engine/core, engine/pathfinding |
+| [engine/simulation](engine/simulation.md)                 | draft  | amigo_core        | engine/core                   |
+| [engine/save-load](engine/save-load.md)                   | draft  | amigo_core        | engine/core, engine/chunks    |
 | [assets/format](assets/format.md)                         | draft  | amigo_assets      | --                            |
 | [assets/pipeline](assets/pipeline.md)                     | draft  | amigo_assets      | assets/format                 |
 | [assets/atlas](assets/atlas.md)                           | draft  | amigo_assets      | assets/format                 |
