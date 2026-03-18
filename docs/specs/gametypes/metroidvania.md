@@ -1,6 +1,6 @@
 ---
 status: done
-crate: --
+crate: amigo_core
 depends_on: ["engine/minimap", "engine/fog-of-war"]
 last_updated: 2026-03-18
 ---

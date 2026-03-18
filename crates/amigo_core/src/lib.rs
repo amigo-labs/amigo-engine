@@ -3,6 +3,7 @@
 pub mod accessibility;
 pub mod achievements;
 pub mod agents;
+pub mod city_builder;
 pub mod ai;
 pub mod behavior_tree;
 pub mod fog_of_war;
@@ -38,6 +39,7 @@ pub mod raycast;
 pub mod rect;
 pub mod resources;
 pub mod roguelike;
+pub mod rts;
 pub mod save;
 pub mod scheduler;
 pub mod shmup;
@@ -49,6 +51,7 @@ pub mod time;
 pub mod timeline;
 pub mod turn_combat;
 pub mod tween;
+pub mod visual_novel;
 
 // -- Tower Defense genre modules (feature-gated) ----------------------------
 #[cfg(feature = "td")]
@@ -98,6 +101,11 @@ pub use metroidvania::{
     ZoneId,
 };
 pub use raycast::{raycast, raycast_bodies, raycast_tiles, sensor, RayHit, TileBlock, TileQuery};
+pub use visual_novel::{
+    AutoRead, BacklogEntry, BacklogSystem, BgTransition, BranchingSystem, CharacterDisplay,
+    ChoiceMenu, ChoiceOption, ChoiceRecord, Emotion, NameLabelConfig, SlideDir, SlotPosition,
+    TextboxBackground, TextboxConfig, TextboxMode, TextboxState, TypewriterEffect, VnScene,
+};
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------
 #[cfg(feature = "td")]

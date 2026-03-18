@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: --
 depends_on: ["engine/pathfinding", "engine/fog-of-war"]
 last_updated: 2026-03-18
