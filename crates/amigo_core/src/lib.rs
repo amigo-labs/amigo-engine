@@ -2,6 +2,7 @@
 
 pub mod agents;
 pub mod ai;
+pub mod behavior_tree;
 pub mod fog_of_war;
 pub mod bullet_pattern;
 pub mod collision;
