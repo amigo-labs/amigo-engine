@@ -2,7 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
-<!-- Status: 37 done · 23 spec · 2 draft -->
+<!-- Status: 37 done · 23 spec · 3 draft -->
 
 # Amigo Engine -- Spec Overview
 
@@ -251,6 +251,7 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [assets/pipeline](assets/pipeline.md)                     | done   | amigo_assets      | assets/format                 |
 | [assets/atlas](assets/atlas.md)                           | done   | amigo_assets      | assets/format                 |
 | [tooling/cli](tooling/cli.md)                             | done   | amigo_cli         | engine/core                   |
+| [tooling/setup](tooling/setup.md)                         | draft  | amigo_cli         | tooling/cli                   |
 | [tooling/editor](tooling/editor.md)                       | done   | amigo_editor      | engine/core, engine/ui        |
 | [tooling/debug](tooling/debug.md)                         | done   | amigo_debug       | engine/core                   |
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | done   | amigo_artgen      | assets/format                 |
