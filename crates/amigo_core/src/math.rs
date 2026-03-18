@@ -80,6 +80,81 @@ impl std::ops::Mul<Fix> for SimVec2 {
     }
 }
 
+impl std::ops::Neg for SimVec2 {
+    type Output = Self;
+    fn neg(self) -> Self {
+        Self {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+}
+
+impl std::ops::Div<Fix> for SimVec2 {
+    type Output = Self;
+    fn div(self, rhs: Fix) -> Self {
+        Self {
+            x: self.x / rhs,
+            y: self.y / rhs,
+        }
+    }
+}
+
+impl SimVec2 {
+    /// Deterministic fixed-point length. Safe for any I16F16 value.
+    /// Pre-scales large vectors to avoid x*x overflow (I16F16 max ~32767; sqrt(32767) ≈ 181).
+    pub fn length(self) -> Fix {
+        let ax = if self.x >= Fix::ZERO { self.x } else { -self.x };
+        let ay = if self.y >= Fix::ZERO { self.y } else { -self.y };
+        let max_abs = if ax > ay { ax } else { ay };
+        if max_abs == Fix::ZERO {
+            return Fix::ZERO;
+        }
+        // Scale down when max component > 100 to keep x*x within I16F16 range.
+        let threshold = Fix::from_num(100_i32);
+        if max_abs > threshold {
+            // length(v) = max_abs * length(v / max_abs)
+            // v/max_abs has components in [-1, 1], so (v/max_abs)^2 ≤ 2
+            let sx = self.x / max_abs;
+            let sy = self.y / max_abs;
+            max_abs * sqrt_fix(sx * sx + sy * sy)
+        } else {
+            sqrt_fix(self.x * self.x + self.y * self.y)
+        }
+    }
+
+    /// Unit vector. Returns ZERO if length is zero (no panic).
+    pub fn normalize(self) -> Self {
+        let len = self.length();
+        if len <= Fix::ZERO {
+            return SimVec2::ZERO;
+        }
+        Self {
+            x: self.x / len,
+            y: self.y / len,
+        }
+    }
+}
+
+/// Fixed-point square root via Newton-Raphson.
+/// Initial estimate from f32 (IEEE 754 sqrt is correctly rounded — deterministic).
+/// Subsequent iterations are pure Fix arithmetic.
+pub fn sqrt_fix(x: Fix) -> Fix {
+    if x <= Fix::ZERO {
+        return Fix::ZERO;
+    }
+    let approx: f32 = x.to_num::<f32>().sqrt();
+    let mut g = Fix::from_num(approx.max(f32::MIN_POSITIVE));
+    for _ in 0..8 {
+        let g_next = (g + x / g) / Fix::from_num(2_i32);
+        if g_next == g {
+            break;
+        }
+        g = g_next;
+    }
+    g
+}
+
 /// Rendering vector using f32. Used only for rendering: screen positions,
 /// particles, camera, screen shake, UI.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

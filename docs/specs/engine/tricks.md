@@ -132,3 +132,26 @@ Zentrale Übersicht aller Optimierungen und Tricks der Engine. Kein doppelter Co
 | --- | --- |
 | Tracy Integration ab Tag 1 | [memory-performance](memory-performance.md) → "Profiling" |
 | In-Game Debug Overlay (FPS, Entities, Draw Calls, Memory) | [memory-performance](memory-performance.md) → "Profiling" |
+
+## Advanced Scheduling
+
+| Trick | Spec |
+| --- | --- |
+| Time Slicing: teure Systeme über mehrere Frames verteilen (je 1/N Entities pro Frame) | [simulation](simulation.md) → "SimSystem / Tick Intervals" |
+| Off-Screen AI LOD: Entities außerhalb des Viewports mit niedrigerer Frequenz updaten | [camera](camera.md) → "LOD Hint" |
+| Predictive Streaming: Kamera-Velocity nutzen um nächste Chunks voraus zu laden | [chunks](chunks.md) → "Chunk Streaming" |
+
+## State & Compression
+
+| Trick | Spec |
+| --- | --- |
+| State Compression: Delta-Encoding zwischen Frames für Rewind-Ring-Buffer | [state-rewind](state-rewind.md) → "Ring-Buffer" |
+| Palette Animation: Farb-Lookup-Tabelle pro Frame shiften statt Sprites neu zeichnen | [rendering](rendering.md) → "Sprite Batcher" |
+| Marching Squares: Smooth Terrain-Contouring aus binärem Tilemap-Grid | [dynamic-tilemap](dynamic-tilemap.md) → "Tile Registry" |
+
+## GPU Instancing
+
+| Trick | Spec |
+| --- | --- |
+| GPU Instancing Breakeven: Ab ~100 gleichen Sprites rentiert sich Instanced Rendering | [gpu-instancing](gpu-instancing.md) → "Breakeven-Analyse" |
+| Instance Buffer Double-Buffering: CPU schreibt in Buffer A, GPU liest Buffer B | [gpu-instancing](gpu-instancing.md) → "Instance Buffer" |
