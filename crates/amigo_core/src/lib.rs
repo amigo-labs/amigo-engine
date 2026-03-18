@@ -26,6 +26,7 @@ pub mod level_loader;
 pub mod localization;
 pub mod loot;
 pub mod math;
+pub mod metroidvania;
 pub mod navigation;
 pub mod pathfinding;
 pub mod physics;
@@ -39,6 +40,7 @@ pub mod resources;
 pub mod roguelike;
 pub mod save;
 pub mod scheduler;
+pub mod shmup;
 pub mod simulation;
 pub mod spline;
 pub mod state_rewind;
@@ -90,6 +92,11 @@ pub use frame_arena::FrameArena;
 pub use spline::{CatmullRomSpline, CubicBezier};
 pub use tween::{EasingFn, RepeatCount, Tween, TweenHandle, TweenManager, TweenSequence, Tweenable};
 pub use localization::{LocaleId, LocaleManager, LocaleError, PluralCategory, PluralRuleFn, StringEntry};
+pub use metroidvania::{
+    Ability, AbilityGate, AbilitySet, BacktrackMarker, BossData, BossId, CheckpointData,
+    CheckpointSystem, ExplorationGraph, RoomConnection, RoomId, RoomNode, SkillUnlockSystem,
+    ZoneId,
+};
 pub use raycast::{raycast, raycast_bodies, raycast_tiles, sensor, RayHit, TileBlock, TileQuery};
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------
