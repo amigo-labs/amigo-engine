@@ -231,42 +231,42 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 
 | Spec                                                      | Status | Crate             | Depends on                    |
 | --------------------------------------------------------- | ------ | ----------------- | ----------------------------- |
-| [engine/core](engine/core.md)                             | draft  | amigo_core        | --                            |
-| [engine/rendering](engine/rendering.md)                   | draft  | amigo_render      | engine/core                   |
-| [engine/audio](engine/audio.md)                           | draft  | amigo_audio       | engine/core                   |
-| [engine/input](engine/input.md)                           | draft  | amigo_input       | engine/core                   |
-| [engine/tilemap](engine/tilemap.md)                       | draft  | amigo_tilemap     | engine/core                   |
-| [engine/pathfinding](engine/pathfinding.md)               | draft  | amigo_pathfinding | engine/tilemap                |
-| [engine/animation](engine/animation.md)                   | draft  | amigo_animation   | engine/core                   |
-| [engine/camera](engine/camera.md)                         | draft  | amigo_camera      | engine/core                   |
-| [engine/ui](engine/ui.md)                                 | draft  | amigo_ui          | engine/core, engine/rendering |
-| [engine/networking](engine/networking.md)                 | draft  | amigo_net         | engine/core                   |
-| [engine/memory-performance](engine/memory-performance.md) | draft  | amigo_core        | --                            |
-| [engine/plugin-system](engine/plugin-system.md)           | draft  | amigo_plugin      | engine/core                   |
-| [engine/dynamic-tilemap](engine/dynamic-tilemap.md)       | draft  | amigo_tilemap     | engine/core, engine/tilemap   |
-| [engine/chunks](engine/chunks.md)                         | draft  | amigo_tilemap     | engine/core, engine/tilemap   |
-| [engine/lighting](engine/lighting.md)                     | draft  | amigo_tilemap     | engine/core, engine/tilemap, engine/rendering |
-| [engine/liquids](engine/liquids.md)                       | draft  | amigo_tilemap     | engine/core, engine/dynamic-tilemap, engine/chunks |
-| [engine/particles](engine/particles.md)                   | draft  | amigo_core        | engine/core, engine/rendering |
-| [engine/inventory](engine/inventory.md)                   | draft  | amigo_core        | engine/core                   |
-| [engine/crafting](engine/crafting.md)                     | draft  | amigo_core        | engine/core, engine/inventory |
-| [engine/agents](engine/agents.md)                         | draft  | amigo_core        | engine/core, engine/pathfinding |
-| [engine/simulation](engine/simulation.md)                 | draft  | amigo_core        | engine/core                   |
-| [engine/save-load](engine/save-load.md)                   | draft  | amigo_core        | engine/core, engine/chunks    |
+| [engine/core](engine/core.md)                             | done   | amigo_core        | --                            |
+| [engine/rendering](engine/rendering.md)                   | done   | amigo_render      | engine/core                   |
+| [engine/audio](engine/audio.md)                           | done   | amigo_audio       | engine/core                   |
+| [engine/input](engine/input.md)                           | done   | amigo_input       | engine/core                   |
+| [engine/tilemap](engine/tilemap.md)                       | done   | amigo_tilemap     | engine/core                   |
+| [engine/pathfinding](engine/pathfinding.md)               | spec   | amigo_pathfinding | engine/tilemap                |
+| [engine/animation](engine/animation.md)                   | done   | amigo_animation   | engine/core                   |
+| [engine/camera](engine/camera.md)                         | done   | amigo_camera      | engine/core                   |
+| [engine/ui](engine/ui.md)                                 | done   | amigo_ui          | engine/core, engine/rendering |
+| [engine/networking](engine/networking.md)                 | done   | amigo_net         | engine/core                   |
+| [engine/memory-performance](engine/memory-performance.md) | done   | amigo_core        | --                            |
+| [engine/plugin-system](engine/plugin-system.md)           | done   | amigo_plugin      | engine/core                   |
+| [engine/dynamic-tilemap](engine/dynamic-tilemap.md)       | done   | amigo_tilemap     | engine/core, engine/tilemap   |
+| [engine/chunks](engine/chunks.md)                         | done   | amigo_tilemap     | engine/core, engine/tilemap   |
+| [engine/lighting](engine/lighting.md)                     | done   | amigo_tilemap     | engine/core, engine/tilemap, engine/rendering |
+| [engine/liquids](engine/liquids.md)                       | done   | amigo_tilemap     | engine/core, engine/dynamic-tilemap, engine/chunks |
+| [engine/particles](engine/particles.md)                   | done   | amigo_core        | engine/core, engine/rendering |
+| [engine/inventory](engine/inventory.md)                   | done   | amigo_core        | engine/core                   |
+| [engine/crafting](engine/crafting.md)                     | done   | amigo_core        | engine/core, engine/inventory |
+| [engine/agents](engine/agents.md)                         | done   | amigo_core        | engine/core, engine/pathfinding |
+| [engine/simulation](engine/simulation.md)                 | done   | amigo_core        | engine/core                   |
+| [engine/save-load](engine/save-load.md)                   | done   | amigo_core        | engine/core, engine/chunks    |
 | [engine/tricks](engine/tricks.md)                         | draft  | --                | (Verweise auf alle Engine-Specs) |
 | [assets/format](assets/format.md)                         | draft  | amigo_assets      | --                            |
-| [assets/pipeline](assets/pipeline.md)                     | draft  | amigo_assets      | assets/format                 |
-| [assets/atlas](assets/atlas.md)                           | draft  | amigo_assets      | assets/format                 |
+| [assets/pipeline](assets/pipeline.md)                     | done   | amigo_assets      | assets/format                 |
+| [assets/atlas](assets/atlas.md)                           | done   | amigo_assets      | assets/format                 |
 | [tooling/cli](tooling/cli.md)                             | draft  | amigo_cli         | engine/core                   |
-| [tooling/editor](tooling/editor.md)                       | draft  | amigo_editor      | engine/core, engine/ui        |
-| [tooling/debug](tooling/debug.md)                         | draft  | amigo_debug       | engine/core                   |
+| [tooling/editor](tooling/editor.md)                       | done   | amigo_editor      | engine/core, engine/ui        |
+| [tooling/debug](tooling/debug.md)                         | done   | amigo_debug       | engine/core                   |
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | draft  | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | draft  | amigo_audiogen    | engine/audio                  |
-| [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | draft  | amigo_api         | engine/core                   |
+| [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
 | [games/td/design](games/td/design.md)                     | draft  | amigo_td          | engine/core, engine/tilemap   |
 | [games/td/ui](games/td/ui.md)                             | draft  | amigo_td          | engine/ui, games/td/design    |
-| [config/amigo-toml](config/amigo-toml.md)                 | draft  | --                | --                            |
-| [config/data-formats](config/data-formats.md)             | draft  | --                | --                            |
+| [config/amigo-toml](config/amigo-toml.md)                 | spec   | --                | --                            |
+| [config/data-formats](config/data-formats.md)             | spec   | --                | --                            |
 
 ## Game-Specific Design
 

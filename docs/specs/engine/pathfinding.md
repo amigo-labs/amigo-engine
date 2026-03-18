@@ -1,5 +1,5 @@
 ---
-status: draft
+status: spec
 crate: amigo_pathfinding
 depends_on: ["engine/tilemap"]
 last_updated: 2026-03-18

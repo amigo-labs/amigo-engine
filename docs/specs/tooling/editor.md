@@ -1,5 +1,5 @@
 ---
-status: draft
+status: done
 crate: amigo_editor
 depends_on: ["engine/core", "engine/ui"]
 last_updated: 2026-03-16

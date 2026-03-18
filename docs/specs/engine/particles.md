@@ -1,5 +1,5 @@
 ---
-status: draft
+status: done
 crate: amigo_render
 depends_on: ["engine/core", "engine/rendering"]
 last_updated: 2026-03-18

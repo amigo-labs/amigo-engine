@@ -1,5 +1,5 @@
 ---
-status: draft
+status: done
 crate: amigo_tilemap
 depends_on: ["engine/core", "engine/dynamic-tilemap", "engine/chunks"]
 last_updated: 2026-03-18

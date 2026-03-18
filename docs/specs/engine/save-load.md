@@ -1,5 +1,5 @@
 ---
-status: draft
+status: done
 crate: amigo_core
 depends_on: ["engine/core"]
 last_updated: 2026-03-18
