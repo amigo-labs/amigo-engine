@@ -1,5 +1,6 @@
 #![warn(missing_docs)]
 
+pub mod achievements;
 pub mod agents;
 pub mod ai;
 pub mod behavior_tree;

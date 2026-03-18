@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: amigo_core
 depends_on: ["engine/save-load", "engine/ui"]
 last_updated: 2026-03-18
