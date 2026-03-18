@@ -1,5 +1,5 @@
 ---
-status: draft
+status: spec
 crate: amigo_cli
 depends_on: ["tooling/cli"]
 last_updated: 2026-03-18
