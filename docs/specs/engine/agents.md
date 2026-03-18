@@ -150,7 +150,7 @@ pub struct AgentWorldContext {
 
 ## Non-Goals
 
-- **Behavior trees.** The current system is utility-based only. Full behavior tree support is out of scope.
+- **Behavior trees in diesem Crate.** Utility AI bleibt eigenständig. BTs sind in [engine/behavior-tree](behavior-tree.md) als Ergänzung spezifiziert — Utility AI entscheidet *was*, BT steuert *wie*.
 - **Action execution.** The agent system decides *what* to do; the game layer implements *how* (animation, movement, resource consumption).
 - **Group AI / settlements.** Agent grouping, shared resource pools, and settlement management are game-layer concerns.
 

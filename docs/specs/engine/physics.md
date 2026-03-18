@@ -303,7 +303,9 @@ pub fn sync_ecs_to_physics(positions: &SparseSet<Position>, world: &mut PhysicsW
 
 ## Internal Design
 
-- All physics uses `f32` (RenderVec2), not Fixed-Point. Physics is a visual-layer system — deterministic simulation uses tile-based collision in SimVec2 space.
+- **f32 vs Fixed-Point (bewusste Entscheidung):** Physics nutzt `f32` (RenderVec2), nicht Fixed-Point. Das ist kein Widerspruch zum Fixed-Point-Prinzip der Engine — es gibt zwei Kollisions-Ebenen:
+  1. **Simulation (deterministisch):** Tile-basierte Kollision in `SimVec2` (Fixed-Point). Für Gameplay-Logik: Enemies bewegen sich auf Tile-Grid, Tower-Ranges, Pathfinding. Identisch auf allen Plattformen.
+  2. **Physik (visuell):** RigidBody-Physik in `RenderVec2` (f32). Für visuelle Effekte: Bouncing, Ragdolls, Partikel-Interaktion. Nicht multiplayer-relevant, daher kein Determinismus nötig.
 - `FxHashMap<EntityId, RigidBody>` for O(1) body lookup.
 - `FxHashSet` for duplicate pair elimination during broad phase.
 - Spatial hash cell size should match typical entity size (64px recommended for most games).

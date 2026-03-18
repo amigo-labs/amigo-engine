@@ -1,7 +1,7 @@
 ---
 status: spec
 crate: amigo_assets
-depends_on: ["engine/assets"]
+depends_on: ["assets/format"]
 last_updated: 2026-03-18
 ---
 

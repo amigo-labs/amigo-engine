@@ -2,7 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
-<!-- Status: 37 done · 25 spec · 1 draft -->
+<!-- Status: 37 done · 25 spec · 0 draft -->
 
 # Amigo Engine -- Spec Overview
 
@@ -246,7 +246,6 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [engine/agents](engine/agents.md)                         | done   | amigo_core        | engine/core, engine/pathfinding |
 | [engine/simulation](engine/simulation.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/save-load](engine/save-load.md)                   | done   | amigo_core        | engine/core, engine/chunks    |
-| [engine/tricks](engine/tricks.md)                         | draft  | --                | (Verweise auf alle Engine-Specs) |
 | [assets/format](assets/format.md)                         | spec   | amigo_assets      | --                            |
 | [assets/pipeline](assets/pipeline.md)                     | done   | amigo_assets      | assets/format                 |
 | [assets/atlas](assets/atlas.md)                           | done   | amigo_assets      | assets/format                 |
@@ -268,7 +267,7 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [engine/bullet-patterns](engine/bullet-patterns.md)       | done   | amigo_core        | engine/core, engine/particles |
 | [engine/procedural](engine/procedural.md)                 | spec   | amigo_core        | engine/core, engine/dynamic-tilemap |
 | [engine/dialogue](engine/dialogue.md)                     | done   | amigo_core        | engine/core, engine/ui        |
-| [engine/localization](engine/localization.md)             | spec   | amigo_assets      | engine/assets                 |
+| [engine/localization](engine/localization.md)             | spec   | amigo_assets      | assets/format                 |
 | [engine/timeline](engine/timeline.md)                     | spec   | amigo_core        | engine/tween, engine/camera   |
 | [engine/behavior-tree](engine/behavior-tree.md)           | spec   | amigo_core        | engine/core, engine/agents    |
 | [engine/minimap](engine/minimap.md)                       | spec   | amigo_render      | engine/camera, engine/fog-of-war |
@@ -277,7 +276,7 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [engine/physics](engine/physics.md)                       | spec   | amigo_core        | engine/core                   |
 | [engine/font-rendering](engine/font-rendering.md)         | spec   | amigo_render      | engine/assets, engine/ui      |
 | [engine/gpu-instancing](engine/gpu-instancing.md)         | spec   | amigo_render      | engine/rendering              |
-| [engine/modding](engine/modding.md)                       | spec   | amigo_assets      | engine/assets                 |
+| [engine/modding](engine/modding.md)                       | spec   | amigo_assets      | assets/format                 |
 | [engine/accessibility](engine/accessibility.md)           | spec   | amigo_render      | engine/rendering, engine/input, engine/ui |
 | [gametypes/platformer](gametypes/platformer.md)           | spec   | --                | engine/physics, engine/tween  |
 | [gametypes/roguelike](gametypes/roguelike.md)             | spec   | --                | engine/procedural, engine/save-load |

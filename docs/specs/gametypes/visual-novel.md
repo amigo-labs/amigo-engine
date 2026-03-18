@@ -223,11 +223,13 @@ pub enum TextboxBackground {
 
 ```rust
 /// Tracks story flags and route state for branching narrative.
+/// Wraps [DialogState](../../engine/dialogue.md) from the dialogue system
+/// and adds VN-specific state (choice history, route tracking).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BranchingSystem {
-    /// Named boolean flags set by choices and events.
-    flags: FxHashMap<String, bool>,
-    /// Named integer counters (e.g. affection points per character).
+    /// Delegates to DialogState for flag/condition evaluation.
+    pub dialog_state: DialogState,
+    /// Named integer counters beyond DialogState flags (e.g. affection points).
     counters: FxHashMap<String, i32>,
     /// History of choices made (for backlog and route tracking).
     choice_history: Vec<ChoiceRecord>,
