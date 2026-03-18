@@ -434,7 +434,196 @@ music:
     harmony: pulse_25          # 25% Duty Cycle Pulse
 ```
 
-## 9. Testplan
+## 9. Interactive Preview & Playground
+
+### 9.1 CLI-Preview
+
+```bash
+# Datei abspielen (Loop)
+amigo-pipeline play overworld.amigo.tidal
+
+# Abspielen mit anderem BPM
+amigo-pipeline play overworld.amigo.tidal --bpm 180
+
+# Nur bestimmte Stems abspielen
+amigo-pipeline play overworld.amigo.tidal --stems melody,bass
+
+# Stem solo/mute toggeln
+amigo-pipeline play overworld.amigo.tidal --solo melody
+amigo-pipeline play overworld.amigo.tidal --mute percussion
+
+# Instrument-Mapping überschreiben
+amigo-pipeline play overworld.amigo.tidal --instrument melody=sawtooth
+
+# Transformation live anwenden
+amigo-pipeline play overworld.amigo.tidal --transform "slow 2"
+amigo-pipeline play overworld.amigo.tidal --transform "fast 1.5"
+amigo-pipeline play overworld.amigo.tidal --transform rev
+```
+
+### 9.2 Interaktiver Playground-Modus
+
+```bash
+amigo-pipeline playground overworld.amigo.tidal
+```
+
+Startet einen interaktiven TUI-Modus (Terminal UI) mit:
+
+```
+┌─ Amigo Tidal Playground ──────────────────────────────────┐
+│ ▶ Playing: overworld_theme  [03:42 / ∞ loop]  BPM: 140   │
+│                                                            │
+│ Stems:              Instrument:       Volume:              │
+│ [■] melody          square_wave       ████████░░ 80%       │
+│ [■] bass            triangle_wave     █████████░ 90%       │
+│ [■] percussion      noise_channel     ███████░░░ 70%       │
+│ [ ] harmony         pulse_25          ██████░░░░ 60%       │
+│                                                            │
+│ Transform: none                                            │
+│ BPM: 140  ◄────────●──────────────►  Range: 60-300        │
+│                                                            │
+│ Keys: [Space] Play/Pause  [1-4] Toggle Stems  [↑↓] BPM   │
+│       [I] Cycle Instrument  [T] Add Transform  [R] Reset  │
+│       [S] Save Preset  [L] Load Preset  [Q] Quit          │
+│       [E] Export WAV  [W] Write .amigo.tidal               │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Keyboard Controls:**
+
+| Taste | Funktion |
+|-------|----------|
+| `Space` | Play / Pause |
+| `1`-`9` | Stem ein/aus toggeln |
+| `↑` / `↓` | BPM +/- 5 |
+| `Shift+↑/↓` | BPM +/- 1 (Feineinstellung) |
+| `I` + Stem-Nr | Instrument für Stem durchschalten (square → triangle → saw → pulse25 → pulse12 → noise) |
+| `V` + Stem-Nr | Volume für Stem ändern (10% Schritte) |
+| `T` | Transform-Menü (slow, fast, rev, none) |
+| `S` | Aktuelles Setup als Preset speichern (.preset.yaml) |
+| `L` | Preset laden |
+| `E` | Aktuelle Wiedergabe als WAV exportieren (1 Zyklus) |
+| `W` | Modifiziertes .amigo.tidal zurückschreiben |
+| `R` | Alles auf Originalwerte zurücksetzen |
+| `Q` | Beenden |
+
+### 9.3 Playground API (Rust)
+
+```rust
+/// Playground-State für interaktives Tweaking.
+pub struct TidalPlayground {
+    pub composition: Composition,
+    pub playback: PlaybackState,
+    pub stem_settings: Vec<StemSettings>,
+    pub global_bpm: f64,
+    pub transform: Option<Transform>,
+}
+
+pub struct PlaybackState {
+    pub playing: bool,
+    pub current_cycle: u64,
+    pub cycle_position: f64,  // 0.0–1.0 innerhalb des Zyklus
+    pub looping: bool,
+}
+
+pub struct StemSettings {
+    pub name: String,
+    pub enabled: bool,           // Mute/Unmute
+    pub solo: bool,
+    pub instrument: Instrument,
+    pub volume: f64,             // 0.0–1.0
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Instrument {
+    SquareWave,      // 50% Duty Cycle — klassischer NES-Lead
+    Pulse25,         // 25% Duty Cycle — dünner, nasaler Klang
+    Pulse12,         // 12.5% Duty Cycle — sehr dünn, metallisch
+    TriangleWave,    // Weicher Bass-Sound (NES-Style)
+    SawtoothWave,    // Harscher, voller Klang
+    NoiseChannel,    // Percussion / Hi-Hats / Snare
+    SineWave,        // Reiner Ton (Sub-Bass, Testton)
+}
+
+impl TidalPlayground {
+    pub fn new(composition: Composition) -> Self;
+
+    /// Nächsten Audio-Buffer mit aktuellen Settings generieren.
+    pub fn render_audio(&mut self, buffer: &mut [f32], sample_rate: u32);
+
+    /// Stem toggeln (Mute/Unmute).
+    pub fn toggle_stem(&mut self, index: usize);
+
+    /// Solo-Modus für einen Stem (alle anderen muten).
+    pub fn solo_stem(&mut self, index: usize);
+
+    /// Instrument für einen Stem ändern.
+    pub fn set_instrument(&mut self, stem_index: usize, instrument: Instrument);
+
+    /// BPM live ändern (sofort wirksam, kein Glitch).
+    pub fn set_bpm(&mut self, bpm: f64);
+
+    /// Transformation anwenden/entfernen.
+    pub fn set_transform(&mut self, transform: Option<Transform>);
+
+    /// Aktuelles Setup als Preset exportieren.
+    pub fn save_preset(&self, path: &str) -> Result<(), std::io::Error>;
+
+    /// Preset laden und anwenden.
+    pub fn load_preset(&mut self, path: &str) -> Result<(), std::io::Error>;
+
+    /// Einen Zyklus als WAV-Datei exportieren.
+    pub fn export_wav(&self, path: &str, sample_rate: u32) -> Result<(), std::io::Error>;
+}
+```
+
+### 9.4 Preset-Format (.preset.yaml)
+
+```yaml
+# overworld_boss.preset.yaml
+name: "Boss Fight Version"
+base_file: "overworld.amigo.tidal"
+bpm: 180
+transform: "fast 1.5"
+stems:
+  melody:
+    instrument: sawtooth
+    volume: 1.0
+  bass:
+    instrument: square_wave
+    volume: 0.9
+  percussion:
+    instrument: noise_channel
+    volume: 0.85
+  harmony:
+    enabled: false
+```
+
+Presets ermöglichen schnelles Wechseln zwischen Varianten (z.B. `calm` → `battle` → `boss`) ohne die .amigo.tidal-Datei zu ändern.
+
+### 9.5 Engine-Integration (Live-Switching)
+
+```rust
+// Im Spiel: Preset wechseln basierend auf Game-State
+let playground = TidalPlayground::new(composition);
+
+// Calm → Battle Transition
+if entering_combat {
+    playground.set_bpm(180.0);
+    playground.set_instrument(0, Instrument::SawtoothWave);
+    playground.set_transform(Some(Transform::Fast(1.5)));
+    playground.toggle_stem(3); // Harmony aus
+}
+
+// Boss → extra Intensität
+if boss_phase_2 {
+    playground.set_bpm(200.0);
+    playground.solo_stem(0); // Nur Melodie
+    playground.set_transform(Some(Transform::Fast(2.0)));
+}
+```
+
+## 10. Testplan
 
 | Test                              | Typ         | Beschreibung                                                    |
 |-----------------------------------|-------------|-----------------------------------------------------------------|
@@ -453,9 +642,9 @@ music:
 | Pipeline: Batch                   | Integration | Ordner mit 10 Tracks korrekt verarbeitet                        |
 | Pipeline: Mono-Skip               | Integration | Mono-Track überspringt Separation                               |
 
-## 10. Offene Fragen / Spätere Phasen
+## 11. Offene Fragen / Spätere Phasen
 
-- **Live-Transformation:** TidalCycles-Patterns zur Laufzeit manipulieren (z.B. Boss-Kampf → `$ fast 2`, leiser Bereich → Stems entfernen)
+- ~~**Live-Transformation:** TidalCycles-Patterns zur Laufzeit manipulieren~~ → Abgedeckt durch Playground (Abschnitt 9)
 - **Generative Patterns:** Zufall/Algorithmus-basierte Pattern-Modifikation (`?`, `choose`, `degrade`)
 - **ACE-Step Integration:** Pipeline rückwärts — aus TidalCycles-Notation Audio generieren lassen für Preview/Prototyping
 - **Strudel-Export:** Web-basierter Preview via Strudel (JavaScript TidalCycles-Port)
