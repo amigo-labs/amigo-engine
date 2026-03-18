@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: amigo_render
 depends_on: ["engine/assets", "engine/ui"]
 last_updated: 2026-03-18

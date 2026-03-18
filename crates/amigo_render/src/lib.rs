@@ -4,6 +4,7 @@ pub mod atlas;
 pub mod atmosphere;
 pub mod camera;
 pub mod font;
+pub mod instancing;
 pub mod lighting;
 pub mod minimap;
 pub mod particles;
