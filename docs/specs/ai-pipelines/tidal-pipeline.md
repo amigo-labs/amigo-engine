@@ -461,53 +461,62 @@ amigo-pipeline play overworld.amigo.tidal --transform "fast 1.5"
 amigo-pipeline play overworld.amigo.tidal --transform rev
 ```
 
-### 9.2 Interaktiver Playground-Modus
+### 9.2 Editor-Widget: Tidal Playground
 
-```bash
-amigo-pipeline playground overworld.amigo.tidal
-```
+Der Playground ist ein Panel im Amigo Editor (`amigo_editor`, Feature-Flag `"editor"`). Öffnet sich beim Doppelklick auf eine `.amigo.tidal`-Datei im Asset-Browser oder über das Menü `Audio → Tidal Playground`.
 
-Startet einen interaktiven TUI-Modus (Terminal UI) mit:
+**Layout im Editor:**
 
 ```
-┌─ Amigo Tidal Playground ──────────────────────────────────┐
-│ ▶ Playing: overworld_theme  [03:42 / ∞ loop]  BPM: 140   │
-│                                                            │
-│ Stems:              Instrument:       Volume:              │
-│ [■] melody          square_wave       ████████░░ 80%       │
-│ [■] bass            triangle_wave     █████████░ 90%       │
-│ [■] percussion      noise_channel     ███████░░░ 70%       │
-│ [ ] harmony         pulse_25          ██████░░░░ 60%       │
-│                                                            │
-│ Transform: none                                            │
-│ BPM: 140  ◄────────●──────────────►  Range: 60-300        │
-│                                                            │
-│ Keys: [Space] Play/Pause  [1-4] Toggle Stems  [↑↓] BPM   │
-│       [I] Cycle Instrument  [T] Add Transform  [R] Reset  │
-│       [S] Save Preset  [L] Load Preset  [Q] Quit          │
-│       [E] Export WAV  [W] Write .amigo.tidal               │
-└────────────────────────────────────────────────────────────┘
+┌─ Level Editor ─────────────────────────┬─ Tidal Playground ─────────────────────┐
+│                                        │ ▶ overworld_theme      BPM: [140]  ⟳   │
+│                                        │                                         │
+│         (Level-Viewport)               │ ┌─ Stems ──────────────────────────────┐│
+│                                        │ │ [■] melody    [square ▼]  ████████░░ ││
+│                                        │ │ [■] bass      [triangle▼] █████████░ ││
+│                                        │ │ [■] percussn  [noise   ▼] ███████░░░ ││
+│                                        │ │ [ ] harmony   [pulse25 ▼] ██████░░░░ ││
+│                                        │ └──────────────────────────────────────┘│
+│                                        │                                         │
+│                                        │ ┌─ Pattern ────────────────────────────┐│
+│                                        │ │ melody: c5 d5 e5 ~ g5 a5 g5 e5      ││
+│                                        │ │ bass:   c3 ~ c3 ~ g2 ~ g2 ~         ││
+│                                        │ │ ▌ (Playhead)                          ││
+│                                        │ └──────────────────────────────────────┘│
+│                                        │                                         │
+│                                        │ Transform: [none      ▼]               │
+│                                        │                                         │
+│                                        │ [▶ Play] [■ Stop] [Save Preset] [Export]│
+├─ Properties ───────────────────────────┤─ Presets ──────────────────────────────┤
+│ Selected: Tower_01                     │ ● calm (active)                         │
+│ Position: (12, 8)                      │ ○ battle                                │
+│ ...                                    │ ○ boss                                  │
+│                                        │ [+ New Preset] [Delete]                 │
+└────────────────────────────────────────┴─────────────────────────────────────────┘
 ```
 
-**Keyboard Controls:**
+**Editor-Widget Features:**
 
-| Taste | Funktion |
-|-------|----------|
-| `Space` | Play / Pause |
-| `1`-`9` | Stem ein/aus toggeln |
-| `↑` / `↓` | BPM +/- 5 |
-| `Shift+↑/↓` | BPM +/- 1 (Feineinstellung) |
-| `I` + Stem-Nr | Instrument für Stem durchschalten (square → triangle → saw → pulse25 → pulse12 → noise) |
-| `V` + Stem-Nr | Volume für Stem ändern (10% Schritte) |
-| `T` | Transform-Menü (slow, fast, rev, none) |
-| `S` | Aktuelles Setup als Preset speichern (.preset.yaml) |
-| `L` | Preset laden |
-| `E` | Aktuelle Wiedergabe als WAV exportieren (1 Zyklus) |
-| `W` | Modifiziertes .amigo.tidal zurückschreiben |
-| `R` | Alles auf Originalwerte zurücksetzen |
-| `Q` | Beenden |
+| Element | Interaktion |
+|---------|-------------|
+| **Play/Stop** | Klick-Button oder `Space` wenn Playground fokussiert |
+| **BPM-Feld** | Klick → Wert eintippen, oder Mausrad zum Scrollen |
+| **Stem-Checkboxen** | Klick = Mute/Unmute, Rechtsklick = Solo |
+| **Instrument-Dropdown** | Pro Stem: square, triangle, saw, pulse25, pulse12, noise, sine |
+| **Volume-Slider** | Drag oder Klick auf den Balken (0–100%) |
+| **Pattern-Ansicht** | Zeigt aktuelle Mini-Notation pro Stem, Playhead animiert mit |
+| **Transform-Dropdown** | none, slow 2, fast 1.5, fast 2, rev — oder Custom-Eingabe |
+| **Preset-Liste** | Radio-Buttons zum Umschalten, aktives Preset hervorgehoben |
+| **Save Preset** | Speichert aktuelles Setup als `.preset.yaml` |
+| **Export** | WAV-Export (1 Zyklus) oder .amigo.tidal zurückschreiben |
 
-### 9.3 Playground API (Rust)
+**Live-Preview mit Level:**
+- Wenn Play aktiv, hört man die Musik während man am Level arbeitet
+- Preset-Wechsel = sofortige Hörprobe (kein Neustart nötig)
+- Pattern-Ansicht scrollt mit dem Playhead — man sieht welche Note gerade spielt
+- Beim Testen des Levels (Play-Mode) wechselt die Musik automatisch zum Level-Preset
+
+### 9.3 Playground API (Rust / Editor-Integration)
 
 ```rust
 /// Playground-State für interaktives Tweaking.
@@ -574,6 +583,12 @@ impl TidalPlayground {
 
     /// Einen Zyklus als WAV-Datei exportieren.
     pub fn export_wav(&self, path: &str, sample_rate: u32) -> Result<(), std::io::Error>;
+
+    /// Editor-Widget zeichnen (Pixel UI). Gibt true zurück wenn sich Settings geändert haben.
+    pub fn draw_editor_panel(&mut self, ui: &mut UiContext, rect: Rect) -> bool;
+
+    /// Pattern-Visualisierung: gibt pro Stem die aktuelle Note-Position zurück.
+    pub fn playhead_positions(&self) -> Vec<(String, f64)>;
 }
 ```
 
