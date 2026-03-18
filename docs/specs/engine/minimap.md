@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: amigo_render
 depends_on: ["engine/camera", "engine/fog-of-war"]
 last_updated: 2026-03-18
