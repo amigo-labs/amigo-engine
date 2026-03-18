@@ -76,16 +76,17 @@ cargo run
 
 ## Documentation
 
-| Guide                                      | Description              |
-| ------------------------------------------ | ------------------------ |
-| [Getting Started](docs/getting-started.md) | First game in 15 minutes |
-| [Spec Overview](docs/specs/_index.md)      | All engine modules       |
+| Guide                                                  | Description                        |
+| ------------------------------------------------------ | ---------------------------------- |
+| [Getting Started](docs/getting-started.md)             | First game in 15 minutes           |
+| [Spec Overview](docs/specs/_index.md)                  | All engine modules                 |
+| [Engine Tricks](docs/specs/engine/tricks.md)           | Optimization techniques reference  |
 
 ### Specifications
 
 | Area | Specs |
 | ---- | ----- |
-| Engine | [Core](docs/specs/engine/core.md), [Rendering](docs/specs/engine/rendering.md), [Audio](docs/specs/engine/audio.md), [Input](docs/specs/engine/input.md), [Tilemap](docs/specs/engine/tilemap.md), [Pathfinding](docs/specs/engine/pathfinding.md), [Animation](docs/specs/engine/animation.md), [Camera](docs/specs/engine/camera.md), [UI](docs/specs/engine/ui.md), [Networking](docs/specs/engine/networking.md), [Memory](docs/specs/engine/memory-performance.md), [Plugins](docs/specs/engine/plugin-system.md) |
+| Engine | [Core](docs/specs/engine/core.md), [Rendering](docs/specs/engine/rendering.md), [Audio](docs/specs/engine/audio.md), [Input](docs/specs/engine/input.md), [Tilemap](docs/specs/engine/tilemap.md), [Pathfinding](docs/specs/engine/pathfinding.md), [Animation](docs/specs/engine/animation.md), [Camera](docs/specs/engine/camera.md), [UI](docs/specs/engine/ui.md), [Networking](docs/specs/engine/networking.md), [Memory](docs/specs/engine/memory-performance.md), [Plugins](docs/specs/engine/plugin-system.md), [Tricks](docs/specs/engine/tricks.md) |
 | Assets | [Format](docs/specs/assets/format.md), [Pipeline](docs/specs/assets/pipeline.md), [Atlas](docs/specs/assets/atlas.md) |
 | Tooling | [CLI](docs/specs/tooling/cli.md), [Editor](docs/specs/tooling/editor.md), [Debug](docs/specs/tooling/debug.md) |
 | AI Pipelines | [Art Gen](docs/specs/ai-pipelines/artgen.md), [Audio Gen](docs/specs/ai-pipelines/audiogen.md), [Agent API](docs/specs/ai-pipelines/agent-api.md) |
