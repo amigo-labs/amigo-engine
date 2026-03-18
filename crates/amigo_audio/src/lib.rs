@@ -539,6 +539,17 @@ pub enum MusicTransition {
     FadeOutThenPlay { fade_bars: u32 },
     /// Hard cut to the new section on the next bar boundary.
     CutOnBar,
+    /// Play a stinger (one-shot cue), then apply a follow-up transition to
+    /// the new section. The stinger fires at the next bar boundary; once it
+    /// starts, the inner transition kicks in.
+    StingerThen {
+        stinger_name: String,
+        then: Box<MusicTransition>,
+    },
+    /// Swap individual layer stems between the old and new section without
+    /// interrupting playback. Layers with matching names in both sections are
+    /// cross-faded over `fade_bars` bars; unmatched layers fade out/in.
+    LayerSwap { fade_bars: u32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -712,6 +723,22 @@ enum TransitionState {
         new_section_idx: usize,
         target_bar: u64,
     },
+    /// Waiting for the next bar to fire a stinger, then apply follow-up transition.
+    StingerThenWait {
+        old_section_idx: usize,
+        new_section_idx: usize,
+        stinger_data: StaticSoundData,
+        then: Box<MusicTransition>,
+        target_bar: u64,
+        stinger_fired: bool,
+    },
+    /// Layer-swap: cross-fading individual layers between old and new sections.
+    LayerSwapping {
+        old_section_idx: usize,
+        new_section_idx: usize,
+        remaining: f64,
+        total: f64,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -881,6 +908,36 @@ impl AdaptiveMusicEngine {
                 self.transition = TransitionState::WaitingForBar {
                     new_section_idx: new_idx,
                     target_bar,
+                };
+            }
+            MusicTransition::StingerThen { stinger_name, then } => {
+                let stinger = self
+                    .stinger_library
+                    .get(&stinger_name)
+                    .ok_or_else(|| AudioError::StingerNotFound(stinger_name.clone()))?;
+                let stinger_data = stinger.data.clone();
+                let target_bar = self.clock.bar_number() + 1;
+                self.transition = TransitionState::StingerThenWait {
+                    old_section_idx: old_idx,
+                    new_section_idx: new_idx,
+                    stinger_data,
+                    then,
+                    target_bar,
+                    stinger_fired: false,
+                };
+            }
+            MusicTransition::LayerSwap { fade_bars } => {
+                let total = self.clock.bar_duration() * fade_bars.max(1) as f64;
+                // Prepare new section layers at zero volume
+                self.sections[new_idx].evaluate_rules(&self.params);
+                for layer in &mut self.sections[new_idx].layers {
+                    layer.current_volume = 0.0;
+                }
+                self.transition = TransitionState::LayerSwapping {
+                    old_section_idx: old_idx,
+                    new_section_idx: new_idx,
+                    remaining: total,
+                    total,
                 };
             }
         }
@@ -1056,6 +1113,65 @@ impl AdaptiveMusicEngine {
                     info!(
                         "AdaptiveMusic: cut-on-bar complete -> '{}'",
                         self.sections[ni].name
+                    );
+                    return; // transition stays None
+                }
+            }
+            TransitionState::StingerThenWait {
+                old_section_idx,
+                new_section_idx,
+                stinger_data,
+                then,
+                target_bar,
+                stinger_fired,
+            } => {
+                if !*stinger_fired && self.clock.bar_number() >= *target_bar {
+                    // Fire the stinger
+                    match _kira.play(stinger_data.clone()) {
+                        Ok(_) => debug!("StingerThen: stinger fired"),
+                        Err(e) => warn!("StingerThen: failed to play stinger: {e}"),
+                    }
+                    *stinger_fired = true;
+                    // Now apply the follow-up transition by re-entering transition_to
+                    let ni = *new_section_idx;
+                    let oi = *old_section_idx;
+                    let follow_up = *then.clone();
+                    self.active_section = Some(oi); // ensure old is still active
+                    // Don't put transition back — we'll set a new one via transition_to
+                    let _ = self.transition_to(ni, follow_up);
+                    return;
+                }
+            }
+            TransitionState::LayerSwapping {
+                old_section_idx,
+                new_section_idx,
+                remaining,
+                total,
+            } => {
+                *remaining -= dt;
+                let progress = (1.0 - (*remaining / *total)).clamp(0.0, 1.0) as f32;
+
+                let old_idx = *old_section_idx;
+                let new_idx = *new_section_idx;
+
+                // Fade old layers out, new layers in
+                for layer in &mut self.sections[old_idx].layers {
+                    layer.target_volume = (1.0 - progress) * layer.base_volume;
+                }
+                for layer in &mut self.sections[new_idx].layers {
+                    layer.target_volume = progress * layer.base_volume;
+                }
+
+                if *remaining <= 0.0 {
+                    self.stop_section_layers(old_idx);
+                    self.active_section = Some(new_idx);
+                    self.sections[new_idx].evaluate_rules(&self.params);
+                    for layer in &mut self.sections[new_idx].layers {
+                        layer.current_volume = layer.target_volume;
+                    }
+                    info!(
+                        "AdaptiveMusic: layer-swap complete -> '{}'",
+                        self.sections[new_idx].name
                     );
                     return; // transition stays None
                 }

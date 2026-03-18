@@ -1,5 +1,8 @@
 pub mod auto_tile;
 pub mod chunk;
+pub mod dynamic;
+pub mod lighting;
+pub mod liquid;
 
 pub use auto_tile::{AutoTileResolver, AutoTileRule, AutoTileSet};
 

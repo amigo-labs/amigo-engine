@@ -1,5 +1,6 @@
 #![warn(missing_docs)]
 
+pub mod agents;
 pub mod ai;
 pub mod bullet_pattern;
 pub mod collision;
@@ -31,6 +32,7 @@ pub mod resources;
 pub mod roguelike;
 pub mod save;
 pub mod scheduler;
+pub mod simulation;
 pub mod status_effect;
 pub mod time;
 pub mod turn_combat;

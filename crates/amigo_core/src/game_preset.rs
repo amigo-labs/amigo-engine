@@ -39,6 +39,10 @@ pub enum ScenePreset {
     Menu,
     /// World map / level select.
     WorldMap,
+    /// Sandbox / survival with dynamic world. Terraria, Starbound.
+    Sandbox,
+    /// God sim / city builder with autonomous agents. WorldBox, Dwarf Fortress, RimWorld.
+    GodSim,
     /// Custom — game defines its own systems.
     Custom,
 }
@@ -61,6 +65,8 @@ impl ScenePreset {
             Self::VisualNovel => "Visual Novel",
             Self::Menu => "Menu",
             Self::WorldMap => "World Map",
+            Self::Sandbox => "Sandbox / Survival",
+            Self::GodSim => "God Sim",
             Self::Custom => "Custom",
         }
     }
@@ -82,6 +88,8 @@ impl ScenePreset {
             Self::VisualNovel => "Story-driven, dialog choices. Ace Attorney.",
             Self::Menu => "Title screen, settings, credits.",
             Self::WorldMap => "Level select, overworld navigation.",
+            Self::Sandbox => "Dynamic world, mining, building, crafting. Terraria, Starbound.",
+            Self::GodSim => "Autonomous agents, simulation, world management. WorldBox, RimWorld.",
             Self::Custom => "Start from scratch, pick your own systems.",
         }
     }
@@ -119,6 +127,25 @@ impl ScenePreset {
             Self::VisualNovel => vec!["dialog"],
             Self::Menu => vec![],
             Self::WorldMap => vec!["navigation"],
+            Self::Sandbox => vec![
+                "inventory",
+                "crafting",
+                "physics",
+                "collision",
+                "procgen",
+                "navigation",
+                "combat",
+                "projectile",
+                "loot",
+            ],
+            Self::GodSim => vec![
+                "ai",
+                "navigation",
+                "procgen",
+                "economy",
+                "combat",
+                "collision",
+            ],
             Self::Custom => vec![],
         }
     }
@@ -140,6 +167,8 @@ impl ScenePreset {
             Self::VisualNovel,
             Self::Menu,
             Self::WorldMap,
+            Self::Sandbox,
+            Self::GodSim,
             Self::Custom,
         ]
     }
@@ -159,6 +188,8 @@ impl ScenePreset {
             Self::FarmingSim,
             Self::Fighting,
             Self::VisualNovel,
+            Self::Sandbox,
+            Self::GodSim,
         ]
     }
 }
@@ -453,6 +484,18 @@ pub fn project_templates() -> Vec<ProjectTemplate> {
             name: "Visual Novel",
             description: "Story-driven with dialog choices.",
             primary_preset: ScenePreset::VisualNovel,
+            resolution: (480, 270),
+        },
+        ProjectTemplate {
+            name: "Sandbox / Survival",
+            description: "Dynamic world with mining, building, crafting, and exploration.",
+            primary_preset: ScenePreset::Sandbox,
+            resolution: (480, 270),
+        },
+        ProjectTemplate {
+            name: "God Sim",
+            description: "Autonomous agents, settlements, simulation speed control.",
+            primary_preset: ScenePreset::GodSim,
             resolution: (480, 270),
         },
         ProjectTemplate {

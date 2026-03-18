@@ -15,6 +15,11 @@ pub struct DebugOverlay {
     pub show_collision: bool,
     pub show_paths: bool,
     pub show_spawn_zones: bool,
+    // F5–F8 debug overlays
+    pub show_entity_ids: bool,
+    pub show_tile_ids: bool,
+    pub show_audio_debug: bool,
+    pub show_network_debug: bool,
 
     // Stats
     fps: f64,
@@ -78,6 +83,10 @@ impl DebugOverlay {
             show_collision: false,
             show_paths: false,
             show_spawn_zones: false,
+            show_entity_ids: false,
+            show_tile_ids: false,
+            show_audio_debug: false,
+            show_network_debug: false,
             fps: 0.0,
             frame_time_ms: 0.0,
             entity_count: 0,
