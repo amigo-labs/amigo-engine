@@ -2,6 +2,7 @@
 
 pub mod agents;
 pub mod ai;
+pub mod fog_of_war;
 pub mod bullet_pattern;
 pub mod collision;
 pub mod collision_events;
@@ -34,6 +35,7 @@ pub mod roguelike;
 pub mod save;
 pub mod scheduler;
 pub mod simulation;
+pub mod spline;
 pub mod status_effect;
 pub mod time;
 pub mod turn_combat;
@@ -70,7 +72,9 @@ pub use save::{SaveConfig, SaveError, SaveManager, SlotInfo};
 pub use scheduler::{CallbackId, TickScheduler};
 pub use status_effect::{EffectType, StatusEffect, StatusEffects};
 pub use time::TimeInfo;
+pub use fog_of_war::{FogOfWarGrid, TileVisibility, update_visibility};
 pub use frame_arena::FrameArena;
+pub use spline::{CatmullRomSpline, CubicBezier};
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------
 #[cfg(feature = "td")]

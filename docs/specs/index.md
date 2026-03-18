@@ -257,9 +257,9 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
 | [config/amigo-toml](config/amigo-toml.md)                 | spec   | --                | --                            |
 | [config/data-formats](config/data-formats.md)             | spec   | --                | --                            |
-| [engine/fog-of-war](engine/fog-of-war.md)                 | draft  | amigo_tilemap     | engine/lighting, engine/chunks |
+| [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/steering](engine/steering.md)                     | done   | amigo_steering    | engine/core                   |
-| [engine/spline](engine/spline.md)                         | draft  | amigo_core        | engine/core                   |
+| [engine/spline](engine/spline.md)                         | done   | amigo_core        | engine/core                   |
 | [engine/tween](engine/tween.md)                           | draft  | amigo_core        | engine/core                   |
 | [engine/positional-audio](engine/positional-audio.md)     | draft  | amigo_audio       | engine/audio, engine/camera   |
 | [engine/bullet-patterns](engine/bullet-patterns.md)       | draft  | amigo_core        | engine/core, engine/particles |

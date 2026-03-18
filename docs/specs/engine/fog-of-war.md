@@ -1,7 +1,7 @@
 # Fog of War
 
-> **Status:** draft
-> **Crate:** `amigo_tilemap` (tbd)
+> **Status:** done
+> **Crate:** `amigo_core`
 > **Priorität:** unbedingt
 
 ## Überblick
