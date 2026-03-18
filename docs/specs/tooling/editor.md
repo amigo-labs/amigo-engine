@@ -54,6 +54,13 @@ Builds on Tier 1 Game HUD. Added: text input, sliders, dropdowns, color pickers,
 - Changes take effect immediately
 - Tower ranges, enemy paths, spawn points visualized
 
+### Phase 2.5: Data & Visual Editors
+
+- **Property Inspector**: Edit arbitrary component data (tower stats, enemy HP, speed, etc.) via reflection. Any `Serialize + Deserialize` component can be inspected and modified.
+- **Light Placement Tool**: Place point/area lights on the tilemap, adjust radius, color, intensity. Preview light propagation in real-time.
+- **Particle Emitter Editor**: Select emitter shape, configure rate, lifetime, speed, gravity, color gradient. Live preview on the tilemap. Save as `.emitter.ron`.
+- **Sprite Import**: Drag-and-drop artgen output → auto-register in atlas manifest, generate `.sprite.ron`, preview in editor viewport.
+
 ### Phase 3: AI-Assisted Features
 
 - Auto-pathing (algorithmic path generation from start/end)

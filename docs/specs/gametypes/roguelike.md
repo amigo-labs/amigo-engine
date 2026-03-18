@@ -421,7 +421,21 @@ Synergies are recalculated whenever an item is added or removed. The cost is O(s
 4. Carve corridors between connected rooms using L-shaped paths.
 5. Assign room types: start room is the one closest to center, boss room is furthest from start. Special rooms (shop, treasure) are assigned randomly with `special_room_chance`.
 
-The resulting `DungeonFloor` contains a tilemap (`tile_data`) ready for the tilemap system and a graph of rooms for gameplay logic.
+The resulting `DungeonFloor` contains a tilemap (`tile_data`) and a graph of rooms for gameplay logic.
+
+**Tile Mapping to Tilemap CollisionLayer:** `DungeonFloor.tile_data` uses semantic indices that map to `CollisionType`:
+
+| tile_data value | Semantic | CollisionType |
+|----------------|----------|---------------|
+| 0 | Wall | `Solid` |
+| 1 | Floor | `Empty` |
+| 2 | Corridor | `Empty` |
+| 3 | Door (closed) | `Solid` → `Empty` on interaction |
+| 4 | Door (open) | `Empty` |
+| 5 | Trap | `Trigger { id }` |
+| 6 | Pit | `Empty` (visual hazard, damage via TriggerZone) |
+
+`DungeonFloor::to_collision_layer()` converts `tile_data` to a `CollisionLayer` for the tilemap system. The visual tileset (which sprite per tile) is resolved separately by the renderer using tile_data + world theme.
 
 ### Floor Escalation
 
@@ -431,7 +445,27 @@ Enemy stats on floor N are: `base_stat * multiplier^(N-1)`. Boss floors (defined
 
 ### RNG Architecture
 
-All randomness flows from a single `XorShift64` seed. The RNG uses the same XorShift64 implementation as the bullet pattern system (shifts: 13, 7, 17). Sub-RNGs for specific purposes (floor gen, item rolls, enemy spawns) are forked from the main RNG to prevent ordering dependencies.
+All randomness flows from a single `XorShift64` seed. The RNG uses the same XorShift64 implementation as the bullet pattern system (shifts: 13, 7, 17).
+
+**Fork Semantics:** Sub-RNGs for specific purposes (floor gen, item rolls, enemy spawns) are created by seeding a new `XorShift64` with a derived seed — NOT by splitting the parent's state:
+
+```rust
+impl XorShift64 {
+    /// Create a child RNG with a deterministic seed derived from the parent.
+    /// Uses the parent's current state XORed with a domain tag to ensure
+    /// different sub-systems get different sequences.
+    pub fn fork(&self, domain: u64) -> XorShift64 {
+        XorShift64::new(self.state ^ domain)
+    }
+}
+
+// Usage:
+let floor_rng = run_rng.fork(floor_number as u64);           // floor generation
+let item_rng = run_rng.fork(0xITEM_0000 | floor as u64);     // item drops
+let spawn_rng = run_rng.fork(0xSPAWN_000 | floor as u64);    // enemy spawns
+```
+
+Forking does NOT advance the parent RNG's state. This means floor N's generation is always deterministic regardless of how many items were rolled on floor N-1. The `domain` tag prevents collisions between sub-systems.
 
 ### Save Integration
 
@@ -439,7 +473,17 @@ Meta-progression is saved via `SaveManager` in a dedicated slot (slot ID = `max_
 
 ### AI Integration
 
-Enemy AI in combat rooms uses the Utility AI system (`Needs`, `Actions`, `Memory` from the agents module). Elite enemies use more complex utility functions with additional needs (e.g., "retreat when low HP", "use special attack at range"). Boss enemies use `StateMachine` (FSM) for phase-based behavior.
+Enemy AI uses a unified architecture with complexity tiers:
+
+| Enemy Type | AI System | Details |
+|-----------|-----------|---------|
+| **Normal** | Utility AI (from [engine/agents](../engine/agents.md)) | 2-3 needs: aggression (chase player), self-preservation (flee at low HP), patrol (wander in room). Simple scoring. |
+| **Elite** | Utility AI + extended needs | Additional needs: "use special attack at range", "dodge projectiles", "retreat and heal". Higher-weight scoring functions. |
+| **Boss** | FSM (from [engine/agents](../engine/agents.md) StateMachine) | Phase-based: each HP threshold triggers a state transition. States: `Idle`, `Attack(pattern_id)`, `Enrage`, `Summon`, `Vulnerable`. Transitions defined in boss RON data. |
+
+All enemy types use A* pathfinding (from [engine/pathfinding](../engine/pathfinding.md)) for navigation within dungeon rooms. Pathfinding is re-requested when the player moves >3 tiles from the enemy's last-known player position (stored in `Memory` from agents module).
+
+There is no mixing of architectures within a single enemy — an enemy is either Utility AI OR FSM, never both.
 
 ## Non-Goals
 

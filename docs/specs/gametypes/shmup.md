@@ -309,7 +309,15 @@ The graze radius is typically 10-20 pixels, creating a risk-reward zone. Bullets
 
 ### Grazing Mechanics
 
-Each active bullet is tested against the graze radius every frame. To prevent counting the same bullet multiple times as it passes through the graze zone, `GrazingSystem` maintains a set of already-grazed bullet indices. When a bullet leaves the graze radius or is despawned, its index is eligible for reuse by the pool; the grazed set is cleared on death.
+Each active bullet is tested against the graze radius every frame. To prevent counting the same bullet multiple times as it passes through the graze zone, `GrazingSystem` maintains a set of already-grazed bullet indices.
+
+**Index Recycling Safety:** Since `BulletPool` recycles indices when bullets expire or are despawned, stale entries in `grazed_bullets` could prevent newly-spawned bullets from being counted. Solution: `grazed_bullets` stores `(usize, u32)` tuples — the pool index AND the bullet's generation counter. `BulletPool` increments a per-slot generation counter on each spawn. Graze lookup checks both index and generation, so recycled indices are treated as new bullets.
+
+```rust
+grazed_bullets: FxHashSet<(usize, u32)>,  // (pool_index, generation)
+```
+
+The grazed set is cleared on death (resetting graze tracking for the new life).
 
 Graze rewards:
 - Score: `graze_score` per new graze (feeds into extend thresholds).
@@ -384,9 +392,41 @@ emitter.pattern = match &base_pattern {
 };
 ```
 
+### Enemy Movement Patterns
+
+Enemies follow scripted movement paths, not AI navigation. Each enemy has an `EnemyPath` component:
+
+```rust
+#[derive(Clone, Debug)]
+pub enum EnemyPath {
+    /// Move in a straight line at constant speed (basic fodder).
+    Linear { velocity: RenderVec2 },
+    /// Follow a predefined spline path (from engine/spline).
+    Spline { path: CatmullRom, speed: f32, progress: f32 },
+    /// Sinusoidal wave pattern (horizontal + vertical oscillation).
+    Wave { base_velocity: RenderVec2, amplitude: f32, frequency: f32, phase: f32 },
+    /// Enter screen, stop at a position, fire patterns, then exit.
+    StopAndShoot { enter_pos: RenderVec2, stop_pos: RenderVec2, exit_pos: RenderVec2,
+                   enter_speed: f32, exit_speed: f32, stop_duration: u32 },
+    /// Boss: phase-based movement with position targets per phase.
+    BossPhase { positions: Vec<RenderVec2>, current_phase: usize },
+}
+```
+
+Enemy paths are defined in stage data (RON) and interpreted by the enemy movement system each frame. Enemies use `f32` positions (same as bullets) since they are visual entities, not gameplay-deterministic.
+
 ### Fixed-Point Collision
 
-Player position and movement use `SimVec2` (I16F16 fixed-point) for deterministic replay. Bullet positions are `f32` in the `BulletPool` for throughput (bulk iteration over thousands of bullets). Conversion happens at the collision boundary: player position is cast to `f32` for the hit test.
+Player position and movement use `SimVec2` (I16F16 fixed-point) for deterministic replay. Bullet and enemy positions are `f32` for throughput (bulk iteration over thousands of entities). Conversion happens once per frame at the collision boundary:
+
+```rust
+// Conversion happens ONCE per frame, not per-bullet:
+let player_f32_x = player_pos.x.to_f32();
+let player_f32_y = player_pos.y.to_f32();
+// Then all hit_test() and graze_test() calls use these f32 values.
+```
+
+Precision loss at typical arena sizes (480x270) is negligible — I16F16 has ~0.00002 precision, f32 has ~0.00006 at these magnitudes. Both are sub-pixel.
 
 ### Particle Integration
 

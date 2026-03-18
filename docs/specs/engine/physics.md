@@ -171,6 +171,73 @@ pub fn check_shapes(pos_a: RenderVec2, shape_a: &CollisionShape, pos_b: RenderVe
 pub fn shape_to_aabb(pos: RenderVec2, shape: &CollisionShape) -> Rect;
 ```
 
+### Raycast API
+
+Raycasts are required by platformer controllers (ground/wall detection), shmup line-of-sight, and RTS vision queries. Both tile-based and body-based raycasts are provided.
+
+```rust
+/// Result of a raycast hit.
+#[derive(Clone, Copy, Debug)]
+pub struct RayHit {
+    /// World position where the ray hit.
+    pub point: RenderVec2,
+    /// Surface normal at the hit point.
+    pub normal: RenderVec2,
+    /// Distance from ray origin to hit point.
+    pub distance: f32,
+    /// Entity that was hit (None for tilemap hits).
+    pub entity: Option<EntityId>,
+}
+
+/// Cast a ray against the tilemap collision layer.
+/// Returns the first solid tile hit. `max_distance` limits the ray length.
+/// Uses DDA (Digital Differential Analyzer) for tile traversal — O(tiles traversed).
+pub fn raycast_tiles(
+    origin: RenderVec2,
+    direction: RenderVec2,
+    max_distance: f32,
+    collision_layer: &CollisionLayer,
+    tile_size: f32,
+) -> Option<RayHit>;
+
+/// Cast a ray against all bodies in the CollisionWorld.
+/// Returns the closest hit. Uses SpatialHash for broad-phase acceleration.
+pub fn raycast_bodies(
+    origin: RenderVec2,
+    direction: RenderVec2,
+    max_distance: f32,
+    world: &CollisionWorld,
+    exclude: Option<EntityId>,
+) -> Option<RayHit>;
+
+/// Cast a ray against both tilemap and bodies, returning the closest overall hit.
+pub fn raycast(
+    origin: RenderVec2,
+    direction: RenderVec2,
+    max_distance: f32,
+    collision_layer: &CollisionLayer,
+    tile_size: f32,
+    world: &CollisionWorld,
+    exclude: Option<EntityId>,
+) -> Option<RayHit>;
+
+/// Short-range directional sensor (convenience for platformer controllers).
+/// Equivalent to `raycast_tiles(origin, dir, distance, ...)`.
+pub fn sensor(
+    origin: RenderVec2,
+    direction: RenderVec2,
+    distance: f32,
+    collision_layer: &CollisionLayer,
+    tile_size: f32,
+) -> bool;
+```
+
+**Platformer usage:**
+- Ground detection: `sensor(feet_pos, DOWN, 1.0, ...)` returns `true` if solid tile 1px below.
+- Wall detection: `sensor(side_pos, LEFT/RIGHT, 1.0, ...)` for wall contact.
+- OneWay pass-through: `raycast_tiles` reports `CollisionType::OneWay` in the hit — controller ignores if moving upward.
+- Slope detection: `raycast_tiles` returns the exact hit point on slopes via interpolation of `Slope { left_height, right_height }`.
+
 ### Tilemap Collision Layer
 
 Defined in `crates/amigo_tilemap/src/lib.rs`:
@@ -306,6 +373,12 @@ pub fn sync_ecs_to_physics(positions: &SparseSet<Position>, world: &mut PhysicsW
 - **f32 vs Fixed-Point (bewusste Entscheidung):** Physics nutzt `f32` (RenderVec2), nicht Fixed-Point. Das ist kein Widerspruch zum Fixed-Point-Prinzip der Engine — es gibt zwei Kollisions-Ebenen:
   1. **Simulation (deterministisch):** Tile-basierte Kollision in `SimVec2` (Fixed-Point). Für Gameplay-Logik: Enemies bewegen sich auf Tile-Grid, Tower-Ranges, Pathfinding. Identisch auf allen Plattformen.
   2. **Physik (visuell):** RigidBody-Physik in `RenderVec2` (f32). Für visuelle Effekte: Bouncing, Ragdolls, Partikel-Interaktion. Nicht multiplayer-relevant, daher kein Determinismus nötig.
+- **SimVec2 ↔ RenderVec2 Konvertierungsprotokoll:** Game-Systeme, die beide Welten berühren (z.B. Platformer Controller, Shmup Hitbox), konvertieren an klar definierten Grenzen:
+  - **Simulation → Render:** `SimVec2::to_f32() -> RenderVec2` — verlustfrei bei typischen Spielwelt-Koordinaten (±32768 range).
+  - **Render → Simulation:** `RenderVec2::to_fixed() -> SimVec2` — rundet auf nächsten Fixed-Point-Wert. Nur an Systemgrenzen verwenden, nie pro Frame hin-und-her konvertieren.
+  - **Platformer:** Controller rechnet in SimVec2. Ergebnis-Velocity wird in RenderVec2 umgewandelt und auf RigidBody.velocity geschrieben. Collision-Response (Tilemap-basiert) läuft in SimVec2 über `sensor()` und `raycast_tiles()`.
+  - **Shmup:** Player-Position in SimVec2, Bullet-Positionen in f32. Konvertierung geschieht einmal pro Frame für `hit_test()` und `graze_test()`. Präzisionsverlust ist bei Spielfeld-Größen (<1000px) irrelevant.
+- **Multiplayer-Relevanz:** Physics (`PhysicsWorld::step()`) wird NICHT über das Netzwerk synchronisiert. Nur Tile-basierte Simulation ist deterministisch und replizierbar. Visuelle Physik (Ragdolls, Partikel-Bouncing) darf sich zwischen Clients unterscheiden.
 - `FxHashMap<EntityId, RigidBody>` for O(1) body lookup.
 - `FxHashSet` for duplicate pair elimination during broad phase.
 - Spatial hash cell size should match typical entity size (64px recommended for most games).

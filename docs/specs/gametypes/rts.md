@@ -494,6 +494,12 @@ The player enters build mode by selecting a building from the UI. A ghost of the
 
 On placement confirmation, resources are deducted and a `ConstructionState` component is added to the building entity. A worker is dispatched to the build site. Construction ticks increment while a worker is assigned; it pauses if the worker is pulled away.
 
+**Building Lifecycle (ECS):**
+1. **Placement**: Entity spawned with `BuildingDef`, `ConstructionState { progress: 0, paused: true }`, collision shape matching footprint. Tilemap tiles under footprint marked as `Solid`.
+2. **Construction**: Worker arrives → `paused = false`. Each tick: `progress += 1`. Collision shape active during construction (units path around it).
+3. **Completion**: `progress >= total` → `ConstructionState` removed, `ProductionQueue` added (if applicable), `is_depot` flag activates. Building becomes operational.
+4. **Destruction**: On `health <= 0`, building entity is despawned, tilemap tiles under footprint reset to `Empty`, any active `ProductionQueue` orders are refunded.
+
 ### Production
 
 Buildings with a `ProductionQueue` can train units. Enqueueing deducts the cost immediately. The front order ticks each frame. When progress reaches `total`, the unit spawns at a rally point near the building. If the rally point is set to a position, the new unit auto-moves there.
@@ -502,15 +508,60 @@ Production can be cancelled. Cancelling refunds the full resource cost.
 
 ## Internal Design
 
+### Unit AI (State Machine)
+
+Each unit runs a lightweight FSM for behavior decisions within its current command:
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnitAiState {
+    /// No command, scanning for nearby threats.
+    Idle,
+    /// Moving to a target position.
+    Moving,
+    /// Target acquired, closing to weapon range.
+    Chasing { target: Entity },
+    /// In weapon range, attacking.
+    Attacking { target: Entity, cooldown: u16 },
+    /// Gathering resources from a node.
+    Gathering { node: Entity, progress: u16 },
+    /// Constructing a building.
+    Building { site: Entity, progress: u32 },
+    /// Returning resources to a depot.
+    Returning { depot: Entity },
+    /// Holding position, attacking threats in range.
+    Holding,
+}
+```
+
+**State transitions** are driven by the current `CommandQueue` front and environmental sensors:
+- `Idle` + enemy in vision range → `Chasing` (if not on `Hold` or `Stop`)
+- `Moving` + enemy in weapon range (for `AttackMove`) → `Chasing`
+- `Chasing` + target in weapon range → `Attacking`
+- `Attacking` + target dead → back to previous command (`Moving`, `Idle`, or `Patrolling`)
+- `Gathering` + carry full → `Returning`
+- `Returning` + at depot → `Gathering` (back to same node)
+
+The FSM is evaluated per tick per unit. With 500 units, this is ~500 state evaluations per tick — trivial cost.
+
 ### Pathfinding Integration
 
-Move commands for groups of 4+ units use flow fields from the pathfinding system. This avoids the cost of individual A* paths for large groups. Each distinct destination generates one flow field, shared by all units moving there.
+Move commands for groups of 4+ units use flow fields via `FlowFieldCache` from [engine/pathfinding](../engine/pathfinding.md). Each distinct destination gets one cached flow field, shared by all units moving there. The cache automatically invalidates when the tilemap changes (building placed/destroyed).
 
-Single units or small groups (1-3) use A* for more precise paths (flow fields have a tile-resolution cost).
+Single units or small groups (1-3) use A* for more precise paths.
+
+**Selection heuristic:** `if group_size >= 4 { flow_field } else { a_star }`. The threshold is configurable per game.
 
 ### Steering Integration
 
-During movement, units use the steering system's `Separation` behavior to avoid overlapping, combined with `Arrive` at their target position. Formation movement adds a `Cohesion` force toward the formation center and an `Alignment` force to match the formation's facing direction.
+Units use `FlowFieldFollow` (from [engine/pathfinding](../engine/pathfinding.md)) instead of `PathFollow` for flow-field-based movement. This resolves the mismatch between FlowField (returns direction per cell) and Steering::PathFollow (expects waypoints).
+
+During movement, units combine:
+- `FlowFieldFollow` or `Arrive` (for A*) — primary navigation
+- `Separation` — avoid overlapping with nearby units
+- Formation movement additionally adds `Cohesion` and `Alignment`
+
+The steering output is clamped to the unit's `max_speed` and applied as velocity.
 
 ### Fog of War Integration
 

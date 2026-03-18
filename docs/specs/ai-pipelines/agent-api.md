@@ -160,6 +160,40 @@ Claude Code sees these as native tools it can call directly:
 - `amigo_debug_step()` -- advance one tick
 - `amigo_debug_state_crc()` -- checksum for desync detection
 
+**Tilemap Query:**
+- `amigo_tilemap_get_tile(layer, x, y)` -- read tile ID at position
+- `amigo_tilemap_get_region(layer, x, y, w, h)` -- read a rectangular region of tiles
+- `amigo_tilemap_collision_at(x, y)` -- read CollisionType at tile position
+- `amigo_tilemap_dimensions()` -- returns width, height, tile_size
+
+**Camera:**
+- `amigo_camera_get()` -- returns position, zoom, mode, bounds
+- `amigo_camera_set(x, y, zoom?)` -- set camera position and optional zoom
+- `amigo_camera_shake(intensity, duration)` -- trigger camera shake
+- `amigo_camera_follow(entity_id)` -- set camera to follow an entity
+
+**Lighting:**
+- `amigo_lighting_add(x, y, radius, color, intensity)` -- add a light source
+- `amigo_lighting_remove(id)` -- remove a light source
+- `amigo_lighting_list()` -- list all active lights
+
+**Particles:**
+- `amigo_particles_spawn(emitter_type, x, y, params?)` -- spawn a particle emitter
+- `amigo_particles_stop(id)` -- stop an emitter
+
+**Inventory/Crafting:**
+- `amigo_inventory_list(entity_id?)` -- list inventory contents
+- `amigo_inventory_add(entity_id, item, count)` -- add items
+- `amigo_inventory_remove(entity_id, item, count)` -- remove items
+- `amigo_crafting_list_recipes()` -- list available recipes
+- `amigo_crafting_craft(recipe_id)` -- execute a crafting recipe
+
+**Dialogue:**
+- `amigo_dialogue_start(tree_id)` -- start a dialogue tree
+- `amigo_dialogue_choose(choice_index)` -- select a dialogue choice
+- `amigo_dialogue_get_state()` -- get current dialogue node, flags, and active choices
+- `amigo_dialogue_set_flag(name, value)` -- set a dialogue flag
+
 ## Engine Startup (amigo_api)
 
 ```bash
@@ -320,6 +354,100 @@ Request/response pattern with optional event streaming.
 
 // Play replay from specific tick
 {"method": "replay.play", "params": {"path": "replays/test_run.ron", "from_tick": 500}}
+```
+
+### Tilemap Query
+
+```jsonc
+// Read tile at position
+{"method": "tilemap.get_tile", "params": {"layer": "terrain", "x": 5, "y": 3}}
+// -> {"result": {"tile_id": 42, "collision": "Solid"}}
+
+// Read a rectangular region
+{"method": "tilemap.get_region", "params": {"layer": "terrain", "x": 0, "y": 0, "w": 10, "h": 5}}
+// -> {"result": {"tiles": [1, 1, 0, 42, ...], "width": 10, "height": 5}}
+
+// Get tilemap dimensions
+{"method": "tilemap.dimensions"}
+// -> {"result": {"width": 30, "height": 20, "tile_size": 16}}
+```
+
+### Camera Control
+
+```jsonc
+// Get camera state
+{"method": "camera.get"}
+// -> {"result": {"x": 240.0, "y": 135.0, "zoom": 1.0, "mode": "Follow", "target": 42}}
+
+// Set camera position
+{"method": "camera.set", "params": {"x": 100, "y": 50, "zoom": 2.0}}
+
+// Trigger camera shake
+{"method": "camera.shake", "params": {"intensity": 5.0, "duration": 0.3}}
+
+// Set camera to follow entity
+{"method": "camera.follow", "params": {"entity_id": 42}}
+```
+
+### Lighting
+
+```jsonc
+// Add a light source
+{"method": "lighting.add", "params": {"x": 10, "y": 5, "radius": 8, "color": [255, 200, 100], "intensity": 1.0}}
+// -> {"result": {"light_id": 7}}
+
+// Remove a light
+{"method": "lighting.remove", "params": {"id": 7}}
+
+// List all lights
+{"method": "lighting.list"}
+// -> {"result": [{"id": 7, "x": 10, "y": 5, "radius": 8, ...}]}
+```
+
+### Particles
+
+```jsonc
+// Spawn particle emitter
+{"method": "particles.spawn", "params": {"emitter": "fire", "x": 10, "y": 5}}
+// -> {"result": {"emitter_id": 12}}
+
+// Stop emitter
+{"method": "particles.stop", "params": {"id": 12}}
+```
+
+### Inventory & Crafting
+
+```jsonc
+// List inventory
+{"method": "inventory.list", "params": {"entity_id": 1}}
+// -> {"result": {"items": [{"id": "sword", "count": 1}, {"id": "potion", "count": 3}]}}
+
+// Add item
+{"method": "inventory.add", "params": {"entity_id": 1, "item": "potion", "count": 5}}
+
+// List recipes
+{"method": "crafting.list_recipes"}
+// -> {"result": [{"id": "iron_sword", "inputs": [["iron", 3]], "output": "iron_sword"}]}
+
+// Craft
+{"method": "crafting.craft", "params": {"recipe": "iron_sword"}}
+```
+
+### Dialogue
+
+```jsonc
+// Start dialogue
+{"method": "dialogue.start", "params": {"tree": "npc_merchant"}}
+
+// Choose option
+{"method": "dialogue.choose", "params": {"index": 1}}
+
+// Get current state
+{"method": "dialogue.get_state"}
+// -> {"result": {"node_id": 5, "speaker": "Merchant", "text": "What do you need?", "choices": ["Buy", "Sell", "Leave"], "flags": {"met_merchant": true}}}
+
+// Set flag
+{"method": "dialogue.set_flag", "params": {"name": "quest_accepted", "value": 1}}
 ```
 
 ### Debug

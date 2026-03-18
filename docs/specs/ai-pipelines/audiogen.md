@@ -232,10 +232,12 @@ pub struct LayerConfig {
     pub rule: LayerRule,
 }
 
+/// Must match `LayerRule` in `engine/audio.md` exactly.
 pub enum LayerRule {
     AlwaysOn,
     Threshold { param: String, above: f32, fade_secs: f32 },
     Lerp { param: String, from: f32, to: f32 },
+    Toggle { param: String, fade_secs: f32 },
 }
 ```
 
@@ -466,6 +468,79 @@ Normalizes to ratios summing to 1.0, then applies style-specific thresholds.
 4. PostProcess runs after mix.
 
 `next_step()` returns `None` when all steps are done (triggering `PipelineState::Completed`) or when the pipeline has failed. `progress()` computes `completed_steps / (stems.len() + 2)` where +2 accounts for the mix and postprocess steps.
+
+### Engine Config Generation (`.music.ron` / `.sfx.ron`)
+
+The audiogen pipeline generates raw audio files (WAV/OGG) and stem splits, but the engine's adaptive music system requires structured configuration files. These bridge tools close the gap:
+
+```rust
+/// Generate a `.music.ron` file from an AdaptiveMusicConfig.
+/// The output file is ready for the engine's AdaptiveMusicEngine to load.
+pub fn write_music_ron(
+    config: &AdaptiveMusicConfig,
+    output_path: &str,
+) -> Result<(), IoError>;
+
+/// Generate a `.sfx.ron` file from SFX generation results.
+/// Maps generated variants to SfxDefinition fields.
+pub fn write_sfx_ron(
+    sfx_result: &SfxResult,
+    request: &SfxRequest,
+    output_path: &str,
+) -> Result<(), IoError>;
+```
+
+**`.music.ron` Format** (consumed by `AdaptiveMusicEngine`):
+
+```ron
+MusicSection(
+    name: "caribbean_battle",
+    bpm: 130.0,
+    beats_per_bar: 4,
+    layers: [
+        (name: "drums", file: "audio/stems/caribbean_battle_drums.ogg",
+         base_volume: 0.8, rule: Threshold(param: "tension", above: 0.3, fade_secs: 1.0)),
+        (name: "bass", file: "audio/stems/caribbean_battle_bass.ogg",
+         base_volume: 0.7, rule: AlwaysOn),
+        (name: "vocals", file: "audio/stems/caribbean_battle_vocals.ogg",
+         base_volume: 0.6, rule: Toggle(param: "boss", fade_secs: 0.5)),
+        (name: "other", file: "audio/stems/caribbean_battle_other.ogg",
+         base_volume: 0.5, rule: Lerp(param: "tension", from: 0.2, to: 1.0)),
+    ],
+    transitions: [
+        (target: "caribbean_calm", transition: CrossfadeOnBar(bars: 2)),
+    ],
+    stingers: [
+        (name: "wave_start", file: "audio/stingers/wave_horn.ogg", quantize: NextBar),
+    ],
+)
+```
+
+**`.sfx.ron` Format** (consumed by `SfxManager`):
+
+```ron
+SfxDefinition(
+    files: ["audio/sfx/cannon_fire_01.ogg", "audio/sfx/cannon_fire_02.ogg", "audio/sfx/cannon_fire_03.ogg"],
+    volume: 0.8,
+    pitch_variance: 0.1,
+    max_concurrent: 3,
+    cooldown: Some(0.05),
+)
+```
+
+**MCP Tools** (additional):
+
+| Tool | Description |
+|------|-------------|
+| `amigo_audiogen_export_music_ron` | Generate `.music.ron` from stems + config |
+| `amigo_audiogen_export_sfx_ron` | Generate `.sfx.ron` from SFX variants |
+
+**Pipeline integration:**
+1. `amigo_audiogen_generate_music` → produces WAV + stems
+2. `amigo_audiogen_export_music_ron` → produces `.music.ron` referencing those stems
+3. Engine hot-reloads the `.music.ron` and plays the new section
+
+This ensures generated audio is immediately usable by the engine without manual config authoring.
 
 ## Non-Goals
 

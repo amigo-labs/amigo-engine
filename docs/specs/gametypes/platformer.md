@@ -312,7 +312,20 @@ Coyote dash: `coyote_dash_timer` starts counting down when the player leaves the
 
 ### Moving Platforms
 
-Moving platforms interpolate between waypoints at their configured `speed`. When a player stands on a moving platform, the platform's delta position is added to the player's position each tick (carried movement). The player's collision is processed after the carry to prevent clipping. Ping-pong platforms reverse direction at each endpoint; looping platforms wrap from the last waypoint back to the first.
+Moving platforms interpolate between waypoints at their configured `speed`. Ping-pong platforms reverse direction at each endpoint; looping platforms wrap from the last waypoint back to the first.
+
+**Carry Mechanics:** When a player stands on a moving platform (detected by ground sensor hitting the platform's `Kinematic` RigidBody), the carry system applies the platform's delta position to the player before the controller tick:
+
+```
+Tick Order:
+1. Moving platforms update their positions along waypoints → compute delta_pos
+2. For each entity on a platform (ground sensor hit platform):
+   entity.position += platform.delta_pos       // carry
+3. PlatformerController::tick() runs (ground detection, input, velocity)
+4. Tile collision resolution (ensures player doesn't clip into walls after carry)
+```
+
+The `delta_pos` is computed in `SimVec2` for determinism. If the carry would push the player into a wall (detected by `sensor()`), the player is detached from the platform (prevents crushing). An optional `crush_damage` can be configured per `PlatformType::Moving`.
 
 ### Crumbling Platforms
 
@@ -322,11 +335,23 @@ When `player_touching` becomes true, `break_timer` starts counting down from `br
 
 ### Physics Integration
 
-The platformer controller operates on kinematic bodies -- it computes velocity directly rather than applying forces. The physics system (`RigidBody` with `BodyType::Kinematic`) handles collision resolution against the tilemap and other colliders. Ground detection uses a downward raycast (1 pixel below the player's feet). Wall detection uses horizontal raycasts from the player's sides.
+The platformer controller operates on kinematic bodies — it computes velocity directly rather than applying forces. The controller does NOT call `PhysicsWorld::step()`. Instead:
+
+1. **Controller** computes desired velocity in `SimVec2` (Fixed-Point).
+2. **Collision queries** use `sensor()` and `raycast_tiles()` from [engine/physics](../engine/physics.md) for ground/wall detection.
+3. **Velocity** is converted to `RenderVec2` via `SimVec2::to_f32()` and written to `RigidBody.velocity`.
+4. **Position update** is tile-collision-based (not physics-step-based): the controller moves the entity and checks `CollisionLayer` per axis.
+
+Ground detection: `sensor(feet_pos, DOWN, 1.0, collision_layer, tile_size)` — returns `true` if a solid or one-way tile is 1px below.
+Wall detection: `sensor(side_pos, LEFT/RIGHT, 1.0, collision_layer, tile_size)` — returns `true` for wall contact.
+OneWay platforms: `raycast_tiles()` reports `CollisionType::OneWay` — controller ignores if `velocity.y < 0` (moving upward).
+Slopes: `raycast_tiles()` returns exact hit point interpolated from `Slope { left_height, right_height }`. Controller snaps player Y to slope surface while grounded.
 
 ### Fixed-Point Consistency
 
 All velocities, positions, and configuration values use `I16F16` fixed-point arithmetic via `SimVec2`. This ensures deterministic behavior across platforms and enables state rewind / replay.
+
+**SimVec2 ↔ RenderVec2 Boundary:** The controller runs entirely in SimVec2. The single conversion point is writing the result to `RigidBody.velocity` (which is `RenderVec2`). This happens once per tick at the end of the platformer update. No intermediate conversions.
 
 ### ECS Layout
 

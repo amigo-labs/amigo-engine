@@ -364,10 +364,45 @@ impl AutoRead {
 ## Internal Design
 
 - `VnScene` is a render-layer struct, not an ECS entity. It owns `CharacterDisplay` instances and renders them as ordered sprite layers. Background is a fullscreen sprite behind all characters.
-- `DialogRunner` from the dialogue system is the authoritative source of narrative progression. `VnScene` reads `DialogState` each frame and updates visuals accordingly. VN-specific commands (character enter/exit, background change, emotion set) are encoded as `DialogEffect` variants.
+- `DialogRunner` from the dialogue system is the authoritative source of narrative progression. `VnScene` reads `DialogState` each frame and updates visuals accordingly. VN-specific commands are encoded as `DialogEffect::Custom(String)` variants with a structured prefix:
+
+```rust
+// VN-specific DialogEffect extensions (encoded as Custom strings, parsed by VnScene):
+DialogEffect::Custom("vn:bg:forest_night:fade:0.5")       // set background with transition
+DialogEffect::Custom("vn:char:enter:left:sakura:neutral")  // enter character at slot
+DialogEffect::Custom("vn:char:exit:right:fade")             // exit character from slot
+DialogEffect::Custom("vn:char:emotion:center:happy")        // change emotion
+DialogEffect::Custom("vn:mode:nvl")                         // switch to NVL mode
+DialogEffect::Custom("vn:mode:adv")                         // switch to ADV mode
+DialogEffect::Custom("vn:page_break")                       // NVL page break (clear accumulated text)
+DialogEffect::Custom("vn:camera:pan:100:50:2.0")            // cinematic pan to (100,50) over 2s
+```
+
+`VnScene::apply_effect()` parses the `"vn:"` prefix and dispatches to the appropriate handler. This avoids modifying the engine's `DialogEffect` enum for game-type-specific features. The dialogue system's `Custom(String)` variant was designed exactly for this extensibility.
 - `TypewriterEffect` operates on a `String` slice. It does not interact with the font renderer directly — it provides `visible_text()` which the UI layer renders. This keeps text logic separate from rendering.
 - `BranchingSystem` wraps `DialogCondition` and `DialogEffect` from the dialogue system, adding VN-specific tracking (choice history, route divergence, counters).
 - All sprite transitions (character enter/exit, background fade, dimming) are driven by `TweenManager` with `TweenHandle`s stored in `VnScene` for cancellation on interrupts (e.g. player skipping during a transition).
+- **Multi-Tween Coordination**: When multiple characters exit simultaneously (e.g. scene change), `VnScene` uses a `TweenGroup` — a list of `TweenHandle`s that are started, cancelled, or completed together:
+
+```rust
+pub struct TweenGroup {
+    handles: Vec<TweenHandle>,
+}
+
+impl TweenGroup {
+    pub fn new() -> Self;
+    pub fn add(&mut self, handle: TweenHandle);
+    /// Cancel all tweens in the group (e.g. player presses skip).
+    pub fn cancel_all(&mut self, tweens: &mut TweenManager);
+    /// Check if all tweens in the group have completed.
+    pub fn all_complete(&self, tweens: &TweenManager) -> bool;
+    /// Skip all tweens to their end values (instant completion).
+    pub fn skip_all(&mut self, tweens: &mut TweenManager);
+}
+```
+
+Scene transitions create a `TweenGroup` containing all character exits + background fade, then wait for `all_complete()` before advancing to the next scene. Player skip calls `skip_all()` on the active group.
+- **Emotion Sprite Convention**: `CharacterDisplay::set_emotion()` resolves the face sprite path using the pattern `"{character_id}_{emotion_name}"` (e.g. `"sakura_happy"`, `"sakura_sad"`). The asset loader looks up this name in the sprite atlas. If the emotion variant doesn't exist, it falls back to `"{character_id}_neutral"`.
 - `Camera::CinematicPan` is used for special scenes (panning across a CG illustration, slow zoom on a dramatic moment).
 
 ## Non-Goals

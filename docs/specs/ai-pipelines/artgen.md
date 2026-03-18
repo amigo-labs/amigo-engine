@@ -316,6 +316,85 @@ The style pipeline uses reference-based clamping (approach 2) when the style def
 
 `dispatch_tool()` deserializes parameters into typed structs, executes the operation, and returns a `serde_json::Value` result. In the current implementation, ComfyUI integration is placeholder (returns computed output paths); the full pipeline requires a running ComfyUI instance.
 
+### Atlas Integration
+
+Generated sprites must be packed into texture atlases before the engine can render them efficiently. The artgen pipeline integrates with the asset pipeline's atlas packer:
+
+```rust
+/// Register a generated sprite in the project's atlas manifest.
+/// The next `amigo pack` run will include it in the appropriate atlas.
+pub fn register_in_atlas(
+    output_path: &str,
+    asset_type: &AssetType,
+    sprite_name: &str,
+    atlas_manifest_path: &str,
+) -> Result<(), IoError>;
+
+/// Generate an atlas-ready sprite region definition (.sprite.ron) alongside the PNG.
+pub fn write_sprite_ron(
+    output_path: &str,
+    sprite_name: &str,
+    width: u32,
+    height: u32,
+    frames: Option<&AnimationFrames>,
+) -> Result<(), IoError>;
+```
+
+**`.sprite.ron` Format** (consumed by atlas packer):
+
+```ron
+SpriteDef(
+    name: "pirate_captain",
+    source: "sprites/pirate_captain.png",
+    // Optional: animation frames if this is a spritesheet
+    animations: Some([
+        (tag: "idle", frames: [(x: 0, y: 0, w: 32, h: 32, duration_ms: 200),
+                               (x: 32, y: 0, w: 32, h: 32, duration_ms: 200)]),
+        (tag: "walk", frames: [(x: 0, y: 32, w: 32, h: 32, duration_ms: 150),
+                               (x: 32, y: 32, w: 32, h: 32, duration_ms: 150),
+                               (x: 64, y: 32, w: 32, h: 32, duration_ms: 150),
+                               (x: 96, y: 32, w: 32, h: 32, duration_ms: 150)]),
+    ]),
+)
+```
+
+### Spritesheet Animation Metadata
+
+`amigo_artgen_generate_spritesheet` produces a grid of animation frames. The tool now also emits animation metadata:
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnimationFrames {
+    pub tags: Vec<AnimTag>,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub columns: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnimTag {
+    pub name: String,
+    pub start_frame: u32,
+    pub end_frame: u32,
+    pub duration_ms: u32,
+}
+```
+
+The spritesheet tool accepts an `animations` parameter specifying tag names and frame counts. Output includes both the PNG spritesheet and a `.sprite.ron` file that the engine's `AnimPlayer` can load directly — no Aseprite required for AI-generated assets.
+
+**MCP Tools** (additional):
+
+| Tool | Description |
+|------|-------------|
+| `amigo_artgen_export_sprite_ron` | Generate `.sprite.ron` metadata for a sprite/spritesheet |
+| `amigo_artgen_register_atlas` | Register generated sprite in the atlas manifest |
+
+**Pipeline integration:**
+1. `amigo_artgen_generate_spritesheet` → produces PNG + `.sprite.ron`
+2. `amigo_artgen_register_atlas` → registers in atlas manifest
+3. `amigo pack` → packs into texture atlas
+4. Engine hot-reloads atlas, sprite is available via `AnimPlayer`
+
 ## Non-Goals
 
 - Running AI inference directly (ComfyUI handles model execution).

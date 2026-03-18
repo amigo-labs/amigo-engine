@@ -60,8 +60,13 @@ pub struct PlaceCommand {
 }
 
 /// Composite command — multiple sub-commands that execute/undo atomically.
+/// On execute: runs sub-commands in order. If any fails, undoes all previously
+/// executed sub-commands in reverse order and returns the error.
+/// On undo: undoes all sub-commands in reverse order.
 pub struct CompositeCommand {
     pub commands: Vec<Box<dyn PuzzleCommand>>,
+    /// How many sub-commands were successfully executed (for partial rollback).
+    executed_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -382,6 +387,8 @@ impl LevelProgress {
 ## Internal Design
 
 - `PuzzleState` stores tile data as a flat `Vec<TileId>` (row-major, `width * height`). Entity positions are `GridPos` (integer coordinates). This avoids fixed-point math entirely for puzzle logic — `SimVec2` and physics are not used.
+- **Grid ↔ ECS Mapping**: `PuzzleEntity` in `PuzzleState` is the authoritative game state (used by commands, undo, win detection). Each `PuzzleEntity` has a corresponding ECS entity for rendering. The mapping is maintained via a `FxHashMap<EntityId, Entity>` (PuzzleEntityId → ECS Entity). When a command moves a `PuzzleEntity` to a new `GridPos`, the corresponding ECS entity's `RenderVec2` position is updated via Tween for animation. The ECS entity is purely visual — it has no gameplay authority.
+- **Animation Frame Count**: `TurnTick::animation_frames` counts **render frames** (not simulation ticks, since simulation is turn-based). At 60fps, `animation_frames = 12` gives a 200ms slide animation. The animation Tween runs in real-time (per render frame), while the turn counter only advances on player input.
 - `UndoStack` stores trait objects (`Box<dyn PuzzleCommand>`). Each command carries its own undo data (captured during `execute()`), so undo requires no snapshots or diff computation. This is cheaper than the frame-level `StateRewind` system for turn-based games.
 - `TurnTick` replaces the engine's fixed-timestep simulation loop. Physics `tick()` and steering `update()` are not called. Only the animation `Tween` system runs per frame.
 - `ConstraintValidator` is a simple linear scan — puzzle games have few constraints (typically 2-5), so no optimization is needed.
