@@ -120,8 +120,6 @@ amigo-engine/                   # github.com/amigo-labs/amigo-engine
 |   +-- amigo_mcp/               # MCP server wrapping amigo_api for Claude Code
 |   +-- amigo_artgen/            # MCP server for AI art generation (ComfyUI)
 |   +-- amigo_audiogen/          # MCP server for AI audio generation (ACE-Step, AudioGen)
-+-- games/
-|   +-- amigo_td/                # Tower Defense game
 +-- assets/
     +-- ...
 ```
@@ -174,8 +172,6 @@ graph TD
     artgen[ai-pipelines/artgen]
     audiogen[ai-pipelines/audiogen]
     agentapi[ai-pipelines/agent-api]
-    tddesign[games/td/design]
-    tdui[games/td/ui]
     amigotoml[config/amigo-toml]
     datafmt[config/data-formats]
 
@@ -219,10 +215,6 @@ graph TD
     artgen --> fmt
     audiogen --> audio
     agentapi --> core
-    tddesign --> core
-    tddesign --> tilemap
-    tdui --> ui
-    tdui --> tddesign
 ```
 
 ## Status Table
@@ -263,14 +255,12 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | draft  | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | draft  | amigo_audiogen    | engine/audio                  |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
-| [games/td/design](games/td/design.md)                     | draft  | amigo_td          | engine/core, engine/tilemap   |
-| [games/td/ui](games/td/ui.md)                             | draft  | amigo_td          | engine/ui, games/td/design    |
 | [config/amigo-toml](config/amigo-toml.md)                 | spec   | --                | --                            |
 | [config/data-formats](config/data-formats.md)             | spec   | --                | --                            |
 
-## Game-Specific Design
+## AI Pipelines
 
-Asset pipeline decisions are maintained in a separate spec file:
+AI-gestützte Asset-Generierung:
 
 - **Art Generation**: See [ai-pipelines/artgen](ai-pipelines/artgen.md) (ComfyUI integration, post-processing, style definitions)
 - **Audio Generation**: See [ai-pipelines/audiogen](ai-pipelines/audiogen.md) (ACE-Step music gen, AudioGen SFX, adaptive music system, stem-based vertical layering)
