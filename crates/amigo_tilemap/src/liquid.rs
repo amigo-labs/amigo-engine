@@ -417,6 +417,8 @@ impl LiquidMap {
 mod tests {
     use super::*;
 
+    // ── Gravity flow ──────────────────────────────────────────────
+
     #[test]
     fn water_falls_down() {
         let mut map = LiquidMap::new(0, 0, 8, 8);
@@ -443,6 +445,8 @@ mod tests {
         assert!(map.get(4, 2).level > 0);
     }
 
+    // ── Sideways spread ───────────────────────────────────────────
+
     #[test]
     fn sideways_spread() {
         let mut map = LiquidMap::new(0, 0, 16, 8);
@@ -462,6 +466,8 @@ mod tests {
         assert!(left.level > 0 || right.level > 0, "water should spread sideways");
     }
 
+    // ── Liquid interactions ────────────────────────────────────────
+
     #[test]
     fn water_lava_interaction() {
         let mut map = LiquidMap::new(0, 0, 8, 8);
@@ -480,6 +486,8 @@ mod tests {
         assert!(!map.solidified.is_empty());
         assert_eq!(map.solidified[0].2, 42); // obsidian tile
     }
+
+    // ── Settling & edge cases ──────────────────────────────────────
 
     #[test]
     fn settled_cells_skip() {

@@ -255,6 +255,8 @@ fn read_subscription(stream: &TcpStream) -> Vec<EventFilter> {
 mod tests {
     use super::*;
 
+    // ── Event filtering ────────────────────────────────────────────
+
     #[test]
     fn event_filter_all() {
         let f = EventFilter::All;
@@ -276,6 +278,8 @@ mod tests {
         assert!(f.matches("scene.change"));
         assert!(!f.matches("scene.load"));
     }
+
+    // ── Stream state ──────────────────────────────────────────────
 
     #[test]
     fn event_stream_state_push_and_count() {
@@ -300,6 +304,8 @@ mod tests {
         state.flush();
         assert!(state.pending_events.is_empty());
     }
+
+    // ── Server lifecycle ───────────────────────────────────────────
 
     #[test]
     fn server_start_stop() {

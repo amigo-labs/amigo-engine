@@ -352,6 +352,8 @@ mod tests {
         )
     }
 
+    // ── Tower firing ────────────────────────────────────────
+
     #[test]
     fn tower_fires_at_enemy() {
         let (mut gs, mut towers, tower_defs, enemy_defs, mut enemies, mut projectiles, _path) =
@@ -369,6 +371,8 @@ mod tests {
             "tower should have fired a projectile"
         );
     }
+
+    // ── Damage and rewards ──────────────────────────────────
 
     #[test]
     fn enemy_takes_damage_from_hit() {
@@ -413,6 +417,8 @@ mod tests {
 
         assert_eq!(gs.economy.gold, 210); // 200 starting + 10 bounty
     }
+
+    // ── Full tick integration ──────────────────────────────
 
     #[test]
     fn full_td_tick() {

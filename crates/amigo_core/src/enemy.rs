@@ -313,6 +313,8 @@ mod tests {
         WaypointPath::from_f32_pairs(&[(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)])
     }
 
+    // ── Enemy creation and damage ─────────────────────────
+
     #[test]
     fn enemy_from_def() {
         let def = test_def();
@@ -348,6 +350,8 @@ mod tests {
         assert!(enemy.health_fraction() > 0.0);
     }
 
+    // ── Enemy manager ───────────────────────────────────────
+
     #[test]
     fn enemy_manager_spawn_and_cleanup() {
         let mut mgr = EnemyManager::new();
@@ -364,6 +368,8 @@ mod tests {
         assert_eq!(dead[0].id, id1);
         assert_eq!(mgr.alive_count(), 1);
     }
+
+    // ── Path following ──────────────────────────────────────
 
     #[test]
     fn enemy_follows_path() {

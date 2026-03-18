@@ -421,6 +421,8 @@ fn handle_wave_shortcuts(state: &mut WaveEditorState, input: &InputState) {
 mod tests {
     use super::*;
 
+    // ── Add & remove waves ───────────────────────────────────────
+
     #[test]
     fn add_and_remove_wave() {
         let mut state = WaveEditorState::new();
@@ -436,6 +438,8 @@ mod tests {
         assert_eq!(state.waves.len(), 1);
     }
 
+    // ── Undo / redo ──────────────────────────────────────────────
+
     #[test]
     fn undo_redo_add_wave() {
         let mut state = WaveEditorState::new();
@@ -449,6 +453,8 @@ mod tests {
         state.redo();
         assert_eq!(state.waves.len(), 2);
     }
+
+    // ── Spawn groups & totals ────────────────────────────────────
 
     #[test]
     fn add_group() {
@@ -486,6 +492,8 @@ mod tests {
         assert_eq!(state.waves.len(), 2);
         assert_eq!(state.total_enemies(), 35);
     }
+
+    // ── Wave reordering ──────────────────────────────────────────
 
     #[test]
     fn move_wave() {

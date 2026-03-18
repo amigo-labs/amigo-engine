@@ -272,6 +272,8 @@ mod tests {
         }
     }
 
+    // ── Entity queries ──────────────────────────────────────
+
     #[test]
     fn find_entity() {
         let level = sample_level();
@@ -296,6 +298,8 @@ mod tests {
         assert_eq!(enemy.get_i32("hp"), Some(50));
     }
 
+    // ── Paths and zones ─────────────────────────────────────
+
     #[test]
     fn find_path() {
         let level = sample_level();
@@ -311,6 +315,8 @@ mod tests {
         assert_eq!(zone.w, 16.0);
         assert_eq!(zone.properties.get("target_scene").unwrap(), "world_map");
     }
+
+    // ── Tile access and coordinates ──────────────────────────
 
     #[test]
     fn tile_at() {
@@ -346,6 +352,8 @@ mod tests {
         assert_eq!(w, 64.0);
         assert_eq!(h, 64.0);
     }
+
+    // ── Collision, spawns, and serialization ────────────────
 
     #[test]
     fn collision_from_layer() {

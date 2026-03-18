@@ -301,6 +301,8 @@ impl PlacementGrid {
 mod tests {
     use super::*;
 
+    // ── Target selection ─────────────────────────────────────
+
     #[test]
     fn target_selection_nearest() {
         let candidates = vec![
@@ -332,6 +334,8 @@ mod tests {
         assert_eq!(strongest, Some(EntityId::from_raw(1, 0)));
     }
 
+    // ── Placement grid ──────────────────────────────────────
+
     #[test]
     fn placement_grid() {
         let mut grid = PlacementGrid::new(10, 10, 32.0);
@@ -348,6 +352,8 @@ mod tests {
         grid.remove(3, 3);
         assert!(grid.can_place(3, 3));
     }
+
+    // ── Tower upgrades ──────────────────────────────────────
 
     #[test]
     fn tower_upgrade() {

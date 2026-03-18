@@ -221,6 +221,8 @@ mod tests {
         Vec::new()
     }
 
+    // ── Spawn and lifetime ──────────────────────────────────
+
     #[test]
     fn spawn_and_update() {
         let mut mgr = ProjectileManager::new();
@@ -265,6 +267,8 @@ mod tests {
         mgr.cleanup();
         assert_eq!(mgr.count(), 0);
     }
+
+    // ── Hit detection and pierce ─────────────────────────────
 
     #[test]
     fn projectile_hits_enemy() {

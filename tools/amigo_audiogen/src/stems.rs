@@ -198,6 +198,8 @@ pub enum StemError {
 mod tests {
     use super::*;
 
+    // ── Stem splitting ─────────────────────────────────────────
+
     #[test]
     fn split_stems_demucs() {
         let config = StemSplitConfig::default();
@@ -227,6 +229,8 @@ mod tests {
         let config = StemSplitConfig::default();
         assert!(split_stems("", &config).is_err());
     }
+
+    // ── Adaptive config generation ──────────────────────────────
 
     #[test]
     fn generate_config_has_all_layers() {

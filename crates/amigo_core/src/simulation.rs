@@ -233,6 +233,8 @@ mod tests {
         }
     }
 
+    // ── Tick advancement ────────────────────────────────────
+
     #[test]
     fn basic_advance() {
         let mut runner = SimulationRunner::new(10); // 10 ticks/sec
@@ -278,6 +280,8 @@ mod tests {
         runner.advance(1.0); // 10 ticks
         assert_eq!(runner.tick, 10);
     }
+
+    // ── Speed control ───────────────────────────────────────
 
     #[test]
     fn speed_cycle() {

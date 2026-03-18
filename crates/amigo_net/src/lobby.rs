@@ -336,6 +336,8 @@ mod tests {
         PlayerId(id)
     }
 
+    // ── Room creation & membership ─────────────────────────────
+
     #[test]
     fn create_room() {
         let mut lobby = LobbyManager::new();
@@ -394,6 +396,8 @@ mod tests {
         assert!(!lobby.join_room(rid, p(3), "Charlie".into(), None));
     }
 
+    // ── Password & capacity ──────────────────────────────────────
+
     #[test]
     fn password_protection() {
         let mut lobby = LobbyManager::new();
@@ -410,6 +414,8 @@ mod tests {
         // Correct password
         assert!(lobby.join_room(rid, p(4), "Dave".into(), Some("secret")));
     }
+
+    // ── Ready state & game lifecycle ───────────────────────────
 
     #[test]
     fn ready_and_countdown() {
@@ -471,6 +477,8 @@ mod tests {
         room.leave(p(2));
         assert_eq!(room.phase, RoomPhase::Waiting);
     }
+
+    // ── Room listing & teams ─────────────────────────────────────
 
     #[test]
     fn list_rooms_only_waiting() {

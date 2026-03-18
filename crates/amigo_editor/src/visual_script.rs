@@ -629,6 +629,8 @@ impl Default for ScriptDebugger {
 mod tests {
     use super::*;
 
+    // ── Graph construction ───────────────────────────────────────
+
     #[test]
     fn create_graph_and_add_nodes() {
         let mut graph = ScriptGraph::new("test");
@@ -699,6 +701,8 @@ mod tests {
         assert_eq!(graph.connections.len(), 0);
     }
 
+    // ── Debugger ─────────────────────────────────────────────────
+
     #[test]
     fn debugger_step_through() {
         let mut graph = ScriptGraph::new("test");
@@ -733,6 +737,8 @@ mod tests {
         // No OnStart → returns false immediately
         assert!(!debugger.step(&graph));
     }
+
+    // ── Validation & serialization ────────────────────────────
 
     #[test]
     fn validate_detects_orphans() {

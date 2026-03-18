@@ -535,6 +535,8 @@ impl WorldGenerator {
 mod tests {
     use super::*;
 
+    // ── Noise primitives ────────────────────────────────────
+
     #[test]
     fn perlin_noise_range() {
         let perm = permutation_table(42);
@@ -564,6 +566,8 @@ mod tests {
         assert!(v.abs() < 2.0);
     }
 
+    // ── Noise map ───────────────────────────────────────────
+
     #[test]
     fn noise_map_normalize() {
         let mut map = NoiseMap::generate(32, 32, 42, 10.0, 4);
@@ -589,6 +593,8 @@ mod tests {
         let map2 = NoiseMap::generate(16, 16, 99, 10.0, 4);
         assert_ne!(map1.data, map2.data);
     }
+
+    // ── Biomes and world generation ─────────────────────────
 
     #[test]
     fn biome_selection() {

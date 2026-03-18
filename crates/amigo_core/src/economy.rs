@@ -178,6 +178,8 @@ impl Economy {
 mod tests {
     use super::*;
 
+    // ── Gold transactions ───────────────────────────────────
+
     #[test]
     fn basic_economy() {
         let mut eco = Economy::new(100, 20);
@@ -197,6 +199,8 @@ mod tests {
         assert_eq!(eco.gold, 75);
     }
 
+    // ── Lives ───────────────────────────────────────────────
+
     #[test]
     fn lives_system() {
         let mut eco = Economy::new(0, 20);
@@ -212,6 +216,8 @@ mod tests {
         assert_eq!(eco.lives, 0);
     }
 
+    // ── Interest ────────────────────────────────────────────
+
     #[test]
     fn interest() {
         let mut eco = Economy::new(100, 20);
@@ -221,6 +227,8 @@ mod tests {
         eco.apply_interest();
         assert_eq!(eco.gold, 110);
     }
+
+    // ── Transaction history ──────────────────────────────────
 
     #[test]
     fn transaction_history() {

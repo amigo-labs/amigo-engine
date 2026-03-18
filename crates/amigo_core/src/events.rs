@@ -249,6 +249,8 @@ mod tests {
         amount: i32,
     }
 
+    // ── Emit and flush ──────────────────────────────────────
+
     #[test]
     fn register_and_emit() {
         let mut hub = EventHub::new();
@@ -291,6 +293,8 @@ mod tests {
         hub.flush();
         assert_eq!(hub.count::<DamageEvent>(), 0); // cleared
     }
+
+    // ── Multiple types and isolation ───────────────────────
 
     #[test]
     fn multiple_event_types() {

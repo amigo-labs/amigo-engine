@@ -240,6 +240,8 @@ impl Default for NewProjectWizard {
 mod tests {
     use super::*;
 
+    // ── Wizard flow ──────────────────────────────────────────────
+
     #[test]
     fn wizard_basic_flow() {
         let mut wiz = NewProjectWizard::new();
@@ -301,6 +303,8 @@ mod tests {
         assert!(wiz.result.is_none());
     }
 
+    // ── Text input ───────────────────────────────────────────────
+
     #[test]
     fn wizard_text_input() {
         let mut wiz = NewProjectWizard::new();
@@ -311,6 +315,8 @@ mod tests {
         wiz.backspace();
         assert_eq!(wiz.project_name, "H");
     }
+
+    // ── Template-specific behavior ────────────────────────────
 
     #[test]
     fn wizard_turn_based_rpg_adds_battle() {
@@ -338,6 +344,8 @@ mod tests {
             "Gameplay should transition to battle"
         );
     }
+
+    // ── Step numbers & extra scenes ────────────────────────────
 
     #[test]
     fn wizard_step_numbers() {

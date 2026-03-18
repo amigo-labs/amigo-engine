@@ -798,6 +798,8 @@ mod tests {
             .with_recovery(12)
     }
 
+    // ── Frame data and advantage ─────────────────────────────
+
     #[test]
     fn frame_data_counts() {
         let j = jab();
@@ -815,6 +817,8 @@ mod tests {
         // blockstun=5, recovery=6 → -1 on block
         assert_eq!(j.frame_advantage_block(), -1);
     }
+
+    // ── Combo system ────────────────────────────────────────
 
     #[test]
     fn combo_tracker() {
@@ -842,6 +846,8 @@ mod tests {
         assert!(!combo.active);
     }
 
+    // ── Input and motion detection ──────────────────────────
+
     #[test]
     fn input_buffer_motion_detection() {
         let mut buf = InputBuffer::new(30);
@@ -864,6 +870,8 @@ mod tests {
         assert!(buf.check_motion(&motions::qcf(), 10));
         assert!(!buf.check_motion(&motions::dp(), 10));
     }
+
+    // ── Hit detection and fighters ──────────────────────────
 
     #[test]
     fn hitbox_world_rect_facing() {

@@ -372,6 +372,8 @@ mod tests {
         EntityId::from_raw(index, 0)
     }
 
+    // ── Integration and gravity ─────────────────────────────
+
     #[test]
     fn dynamic_body_falls_with_gravity() {
         let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 0.5), 64.0);
@@ -406,6 +408,8 @@ mod tests {
         assert_eq!(body.position.x, 100.0);
         assert_eq!(body.position.y, 100.0);
     }
+
+    // ── Collision response ──────────────────────────────────
 
     #[test]
     fn dynamic_lands_on_static() {
@@ -479,6 +483,8 @@ mod tests {
         }
         assert!(bounced, "Bouncy body should rebound off the floor");
     }
+
+    // ── Body management ─────────────────────────────────────
 
     #[test]
     fn remove_body_works() {

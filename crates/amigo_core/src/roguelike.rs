@@ -614,6 +614,8 @@ impl MetaProgress {
 mod tests {
     use super::*;
 
+    // ── Dungeon generation ──────────────────────────────────
+
     #[test]
     fn dungeon_generates_rooms() {
         let config = DungeonConfig {
@@ -676,6 +678,8 @@ mod tests {
         assert_eq!(d1.tiles, d2.tiles);
     }
 
+    // ── Run progression ─────────────────────────────────────
+
     #[test]
     fn run_floor_progression() {
         let mut run = Run::new(42, 5);
@@ -710,6 +714,8 @@ mod tests {
         }
     }
 
+    // ── Item pool ───────────────────────────────────────────
+
     #[test]
     fn item_pool_pick() {
         let pool = ItemPool::new()
@@ -735,6 +741,8 @@ mod tests {
         let result = pool.pick(42, &counts);
         assert!(result.is_none()); // all at limit
     }
+
+    // ── Meta-progression ────────────────────────────────────
 
     #[test]
     fn meta_progress_tracking() {

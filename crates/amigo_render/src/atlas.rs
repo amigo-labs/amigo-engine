@@ -238,6 +238,8 @@ pub fn next_power_of_two(n: u32) -> u32 {
 mod tests {
     use super::*;
 
+    // ── Packing ──────────────────────────────────────────────────
+
     #[test]
     fn pack_single_sprite() {
         let mut builder = AtlasBuilder::new(1024, 0);
@@ -306,6 +308,8 @@ mod tests {
         assert!(pack.height >= 17);
     }
 
+    // ── Error cases ───────────────────────────────────────────────
+
     #[test]
     fn overflow_too_large() {
         let mut builder = AtlasBuilder::new(64, 0);
@@ -329,6 +333,8 @@ mod tests {
         let builder = AtlasBuilder::new(1024, 0);
         assert_eq!(builder.pack().unwrap_err(), AtlasError::Empty);
     }
+
+    // ── UV coordinates & padding ────────────────────────────────
 
     #[test]
     fn uv_coordinates_normalised() {
@@ -394,6 +400,8 @@ mod tests {
             }
         }
     }
+
+    // ── Utility ──────────────────────────────────────────────────
 
     #[test]
     fn next_power_of_two_cases() {
