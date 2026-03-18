@@ -87,6 +87,8 @@ impl SeqNum {
 mod tests {
     use super::*;
 
+    // ── Packet Encoding ────────────────────────────────────────
+
     #[test]
     fn packet_roundtrip() {
         let pkt = Packet::new(PacketKind::Commands, 42, 41, 1, b"hello".to_vec());
@@ -98,6 +100,8 @@ mod tests {
         assert_eq!(decoded.header.player_id, 1);
         assert_eq!(decoded.payload, b"hello");
     }
+
+    // ── Sequence Numbers ────────────────────────────────────────
 
     #[test]
     fn sequence_wrapping() {

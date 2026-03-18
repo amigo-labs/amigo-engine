@@ -273,6 +273,8 @@ pub enum DescriptorError {
 mod tests {
     use super::*;
 
+    // ── Sprite Descriptor Parsing ──────────────────────────────
+
     #[test]
     fn parse_sprite_descriptor() {
         let toml_str = r#"
@@ -310,6 +312,8 @@ mod tests {
         assert_eq!(desc.origin, (0.5, 1.0)); // default
     }
 
+    // ── Tileset Descriptor Parsing ─────────────────────────────
+
     #[test]
     fn parse_tileset_descriptor() {
         let toml_str = r#"
@@ -336,6 +340,8 @@ mod tests {
         assert_eq!(desc.auto_tile_rules.len(), 1);
         assert_eq!(desc.tile_properties.len(), 1);
     }
+
+    // ── Map Descriptor Parsing ───────────────────────────────────
 
     #[test]
     fn parse_map_descriptor() {
@@ -372,6 +378,8 @@ mod tests {
         assert_eq!(desc.triggers.len(), 1);
         assert_eq!(desc.triggers[0].on_enter, "next_level");
     }
+
+    // ── Entity Descriptor Parsing ─────────────────────────────
 
     #[test]
     fn parse_entity_descriptor() {
