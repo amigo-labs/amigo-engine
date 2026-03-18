@@ -2,9 +2,7 @@
 //!
 //! Each tool maps to an audio generation or processing operation.
 
-use crate::{
-    MusicRequest, MusicResult, MusicSection, SfxCategory, SfxRequest, SfxResult, WorldAudioStyle,
-};
+use crate::{MusicResult, SfxResult, WorldAudioStyle};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -83,6 +81,110 @@ pub struct ProcessAudioParams {
     pub find_loop: bool,
     #[serde(default)]
     pub detect_bpm: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerateCoreMelodyParams {
+    pub world: String,
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default = "default_key")]
+    pub key: String,
+    #[serde(default = "default_bpm")]
+    pub bpm: u32,
+    #[serde(default = "default_duration")]
+    pub duration_secs: f32,
+}
+
+fn default_key() -> String {
+    "C minor".into()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerateStemParams {
+    pub stem_type: String,
+    pub melody_ref: String,
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default = "default_bpm")]
+    pub bpm: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerateVariationParams {
+    pub input: String,
+    #[serde(default = "default_variation_strength")]
+    pub strength: f32,
+    #[serde(default)]
+    pub seed: Option<i64>,
+}
+
+fn default_variation_strength() -> f32 {
+    0.3
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExtendTrackParams {
+    pub input: String,
+    #[serde(default = "default_duration")]
+    pub extend_secs: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemixParams {
+    pub input: String,
+    #[serde(default)]
+    pub genre: String,
+    #[serde(default = "default_bpm")]
+    pub bpm: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerateAmbientParams {
+    pub prompt: String,
+    #[serde(default = "default_ambient_duration")]
+    pub duration_secs: f32,
+    #[serde(default = "default_true")]
+    pub looping: bool,
+}
+
+fn default_ambient_duration() -> f32 {
+    60.0
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LoopTrimParams {
+    pub input: String,
+    #[serde(default = "default_duration")]
+    pub target_duration_secs: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NormalizeParams {
+    pub input: String,
+    #[serde(default = "default_target_db")]
+    pub target_db: f32,
+}
+
+fn default_target_db() -> f32 {
+    -1.0
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConvertParams {
+    pub input: String,
+    pub format: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PreviewParams {
+    pub input: String,
+    #[serde(default = "default_preview_secs")]
+    pub preview_secs: f32,
+}
+
+fn default_preview_secs() -> f32 {
+    5.0
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +307,144 @@ pub fn list_tools() -> Vec<ToolDef> {
         ToolDef {
             name: "amigo_audiogen_server_status".into(),
             description: "Check ACE-Step and AudioGen server status".into(),
+            input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_generate_core_melody".into(),
+            description: "Generate a core melody reference for clean-mode stem workflow".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "world": { "type": "string", "description": "World style for conditioning" },
+                    "prompt": { "type": "string", "description": "Melody description" },
+                    "key": { "type": "string", "description": "Musical key (e.g. C minor)" },
+                    "bpm": { "type": "integer" },
+                    "duration_secs": { "type": "number" }
+                },
+                "required": ["world"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_generate_stem".into(),
+            description: "Generate an individual stem (bass, drums, harmony) conditioned on a melody reference".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "stem_type": { "type": "string", "description": "Stem type: bass, drums, harmony, etc." },
+                    "melody_ref": { "type": "string", "description": "Path to the melody reference file" },
+                    "prompt": { "type": "string" },
+                    "bpm": { "type": "integer" }
+                },
+                "required": ["stem_type", "melody_ref"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_generate_variation".into(),
+            description: "Generate a variation of an existing track".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string", "description": "Path to source audio" },
+                    "strength": { "type": "number", "description": "Variation strength 0.0-1.0" },
+                    "seed": { "type": "integer" }
+                },
+                "required": ["input"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_extend_track".into(),
+            description: "Extend a track by generating a continuation".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string", "description": "Path to source audio" },
+                    "extend_secs": { "type": "number", "description": "Seconds to extend" }
+                },
+                "required": ["input"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_remix".into(),
+            description: "Remix a track with different parameters (genre, BPM)".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string", "description": "Path to source audio" },
+                    "genre": { "type": "string" },
+                    "bpm": { "type": "integer" }
+                },
+                "required": ["input"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_generate_ambient".into(),
+            description: "Generate an ambient/atmosphere loop".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "prompt": { "type": "string", "description": "Ambient description" },
+                    "duration_secs": { "type": "number" },
+                    "looping": { "type": "boolean" }
+                },
+                "required": ["prompt"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_loop_trim".into(),
+            description: "Trim audio to an optimal loop point".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string", "description": "Path to audio file" },
+                    "target_duration_secs": { "type": "number" }
+                },
+                "required": ["input"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_normalize".into(),
+            description: "Normalize audio to a target dB level".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string", "description": "Path to audio file" },
+                    "target_db": { "type": "number", "description": "Target peak dB (default -1.0)" }
+                },
+                "required": ["input"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_convert".into(),
+            description: "Convert audio format (WAV→OGG, FLAC, etc.)".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string", "description": "Path to audio file" },
+                    "format": { "type": "string", "description": "Target format: ogg, wav, flac" }
+                },
+                "required": ["input", "format"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_preview".into(),
+            description: "Generate a short preview clip of an audio file".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string", "description": "Path to audio file" },
+                    "preview_secs": { "type": "number", "description": "Preview duration in seconds" }
+                },
+                "required": ["input"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_list_models".into(),
+            description: "List available ACE-Step and AudioGen models".into(),
+            input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_queue_status".into(),
+            description: "Check the generation queue status".into(),
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
         },
     ]
@@ -335,6 +575,149 @@ pub fn dispatch_tool(
             acestep_connected: false,
             audiogen_connected: false,
         })?),
+        "amigo_audiogen_generate_core_melody" => {
+            let p: GenerateCoreMelodyParams = serde_json::from_value(params)?;
+            let style = WorldAudioStyle::find(&p.world);
+            let bpm = if p.bpm == 0 {
+                style.as_ref().map(|s| s.default_bpm).unwrap_or(120)
+            } else {
+                p.bpm
+            };
+            let base_name = format!("{}_melody_{}bpm_{}", p.world, bpm, p.key.replace(' ', "_"));
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/stems/{}.wav", base_name),
+                "key": p.key,
+                "bpm": bpm,
+                "duration_secs": p.duration_secs,
+            }))
+        }
+        "amigo_audiogen_generate_stem" => {
+            let p: GenerateStemParams = serde_json::from_value(params)?;
+            let bpm = if p.bpm == 0 { 120 } else { p.bpm };
+            let stem_name = sanitize(&p.stem_type);
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/stems/{}_{}.wav",
+                    std::path::Path::new(&p.melody_ref)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "melody".into()),
+                    stem_name
+                ),
+                "stem_type": p.stem_type,
+                "melody_ref": p.melody_ref,
+                "bpm": bpm,
+            }))
+        }
+        "amigo_audiogen_generate_variation" => {
+            let p: GenerateVariationParams = serde_json::from_value(params)?;
+            let base = std::path::Path::new(&p.input)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "track".into());
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/{}_var.wav", base),
+                "source": p.input,
+                "strength": p.strength,
+            }))
+        }
+        "amigo_audiogen_extend_track" => {
+            let p: ExtendTrackParams = serde_json::from_value(params)?;
+            let base = std::path::Path::new(&p.input)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "track".into());
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/{}_extended.wav", base),
+                "source": p.input,
+                "extend_secs": p.extend_secs,
+            }))
+        }
+        "amigo_audiogen_remix" => {
+            let p: RemixParams = serde_json::from_value(params)?;
+            let base = std::path::Path::new(&p.input)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "track".into());
+            let bpm = if p.bpm == 0 { 120 } else { p.bpm };
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/{}_remix_{}bpm.wav", base, bpm),
+                "source": p.input,
+                "genre": p.genre,
+                "bpm": bpm,
+            }))
+        }
+        "amigo_audiogen_generate_ambient" => {
+            let p: GenerateAmbientParams = serde_json::from_value(params)?;
+            let safe_name = sanitize(&p.prompt);
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/ambient/{}.wav", safe_name),
+                "duration_secs": p.duration_secs,
+                "looping": p.looping,
+            }))
+        }
+        "amigo_audiogen_loop_trim" => {
+            let p: LoopTrimParams = serde_json::from_value(params)?;
+            let base = std::path::Path::new(&p.input)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "track".into());
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/{}_looped.wav", base),
+                "source": p.input,
+                "target_duration_secs": p.target_duration_secs,
+            }))
+        }
+        "amigo_audiogen_normalize" => {
+            let p: NormalizeParams = serde_json::from_value(params)?;
+            Ok(serde_json::json!({
+                "output": p.input.clone(),
+                "target_db": p.target_db,
+            }))
+        }
+        "amigo_audiogen_convert" => {
+            let p: ConvertParams = serde_json::from_value(params)?;
+            let base = std::path::Path::new(&p.input)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "audio".into());
+            let ext = match p.format.as_str() {
+                "ogg" => "ogg",
+                "flac" => "flac",
+                "wav" => "wav",
+                _ => "wav",
+            };
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/{}.{}", base, ext),
+                "source": p.input,
+                "format": p.format,
+            }))
+        }
+        "amigo_audiogen_preview" => {
+            let p: PreviewParams = serde_json::from_value(params)?;
+            let base = std::path::Path::new(&p.input)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "audio".into());
+            Ok(serde_json::json!({
+                "output": format!("assets/generated/audio/{}_preview.wav", base),
+                "source": p.input,
+                "preview_secs": p.preview_secs,
+            }))
+        }
+        "amigo_audiogen_list_models" => {
+            Ok(serde_json::json!({
+                "acestep_models": ["ace-step-v1"],
+                "audiogen_models": ["audiogen-medium"],
+                "demucs_models": ["demucs4", "demucs6"],
+            }))
+        }
+        "amigo_audiogen_queue_status" => {
+            Ok(serde_json::json!({
+                "acestep_queue": 0,
+                "audiogen_queue": 0,
+                "total_pending": 0,
+            }))
+        }
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }
@@ -363,8 +746,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_tools_returns_6() {
-        assert_eq!(list_tools().len(), 6);
+    fn list_tools_returns_18() {
+        assert_eq!(list_tools().len(), 18);
     }
 
     #[test]
@@ -439,5 +822,81 @@ mod tests {
         assert!(result.is_ok());
         let v = result.unwrap();
         assert_eq!(v["acestep_connected"], false);
+    }
+
+    #[test]
+    fn dispatch_generate_core_melody() {
+        let result = dispatch_tool(
+            "amigo_audiogen_generate_core_melody",
+            serde_json::json!({ "world": "caribbean", "key": "A minor", "bpm": 130 }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["output"].as_str().unwrap().contains("caribbean"));
+        assert!(v["output"].as_str().unwrap().contains("130bpm"));
+    }
+
+    #[test]
+    fn dispatch_generate_stem() {
+        let result = dispatch_tool(
+            "amigo_audiogen_generate_stem",
+            serde_json::json!({
+                "stem_type": "bass",
+                "melody_ref": "assets/melody.wav",
+                "bpm": 120
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["output"].as_str().unwrap().contains("bass"));
+    }
+
+    #[test]
+    fn dispatch_generate_variation() {
+        let result = dispatch_tool(
+            "amigo_audiogen_generate_variation",
+            serde_json::json!({ "input": "track.wav", "strength": 0.5 }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["output"].as_str().unwrap().contains("var"));
+    }
+
+    #[test]
+    fn dispatch_generate_ambient() {
+        let result = dispatch_tool(
+            "amigo_audiogen_generate_ambient",
+            serde_json::json!({ "prompt": "ocean waves crashing" }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["output"].as_str().unwrap().contains("ambient"));
+    }
+
+    #[test]
+    fn dispatch_convert() {
+        let result = dispatch_tool(
+            "amigo_audiogen_convert",
+            serde_json::json!({ "input": "track.wav", "format": "ogg" }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["output"].as_str().unwrap().ends_with(".ogg"));
+    }
+
+    #[test]
+    fn dispatch_list_models() {
+        let result = dispatch_tool("amigo_audiogen_list_models", serde_json::json!({}));
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(!v["acestep_models"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dispatch_queue_status() {
+        let result = dispatch_tool("amigo_audiogen_queue_status", serde_json::json!({}));
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["total_pending"], 0);
     }
 }

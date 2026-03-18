@@ -25,6 +25,8 @@ pub enum ScenePreset {
     TowerDefense,
     /// Bullet hell / shmup.
     BulletHell,
+    /// Arcade shooter with scrolling, power-ups, and waves. Contra, Gradius, Space Invaders.
+    ArcadeShooter,
     /// Grid-based puzzle (Match-3, Tetris, Sokoban).
     Puzzle,
     /// Farming / life sim (Stardew Valley).
@@ -37,6 +39,10 @@ pub enum ScenePreset {
     Menu,
     /// World map / level select.
     WorldMap,
+    /// Sandbox / survival with dynamic world. Terraria, Starbound.
+    Sandbox,
+    /// God sim / city builder with autonomous agents. WorldBox, Dwarf Fortress, RimWorld.
+    GodSim,
     /// Custom — game defines its own systems.
     Custom,
 }
@@ -52,12 +58,15 @@ impl ScenePreset {
             Self::Roguelike => "Roguelike",
             Self::TowerDefense => "Tower Defense",
             Self::BulletHell => "Bullet Hell",
+            Self::ArcadeShooter => "Arcade Shooter",
             Self::Puzzle => "Puzzle",
             Self::FarmingSim => "Farming Sim",
             Self::Fighting => "Fighting",
             Self::VisualNovel => "Visual Novel",
             Self::Menu => "Menu",
             Self::WorldMap => "World Map",
+            Self::Sandbox => "Sandbox / Survival",
+            Self::GodSim => "God Sim",
             Self::Custom => "Custom",
         }
     }
@@ -72,12 +81,15 @@ impl ScenePreset {
             Self::Roguelike => "Procedural dungeons, permadeath. Spelunky, Isaac.",
             Self::TowerDefense => "Place towers, survive waves. Bloons, Kingdom Rush.",
             Self::BulletHell => "Dodge bullets, shoot patterns. Touhou, Ikaruga.",
+            Self::ArcadeShooter => "Scrolling shooter with power-ups and waves. Contra, Gradius, Space Invaders.",
             Self::Puzzle => "Grid-based puzzles. Tetris, Bejeweled, Sokoban.",
             Self::FarmingSim => "Grow crops, manage a farm. Stardew Valley.",
             Self::Fighting => "Frame-based combat, combos. Street Fighter.",
             Self::VisualNovel => "Story-driven, dialog choices. Ace Attorney.",
             Self::Menu => "Title screen, settings, credits.",
             Self::WorldMap => "Level select, overworld navigation.",
+            Self::Sandbox => "Dynamic world, mining, building, crafting. Terraria, Starbound.",
+            Self::GodSim => "Autonomous agents, simulation, world management. WorldBox, RimWorld.",
             Self::Custom => "Start from scratch, pick your own systems.",
         }
     }
@@ -100,12 +112,40 @@ impl ScenePreset {
             Self::Roguelike => vec!["roguelike", "combat", "loot", "inventory", "procgen"],
             Self::TowerDefense => vec!["tower", "waves", "navigation", "combat"],
             Self::BulletHell => vec!["bullet_pattern", "collision"],
+            Self::ArcadeShooter => vec![
+                "bullet_pattern",
+                "projectile",
+                "collision",
+                "physics",
+                "economy",
+                "waves",
+                "combat",
+            ],
             Self::Puzzle => vec!["puzzle"],
             Self::FarmingSim => vec!["farming", "inventory", "crafting", "dialog"],
             Self::Fighting => vec!["fighting"],
             Self::VisualNovel => vec!["dialog"],
             Self::Menu => vec![],
             Self::WorldMap => vec!["navigation"],
+            Self::Sandbox => vec![
+                "inventory",
+                "crafting",
+                "physics",
+                "collision",
+                "procgen",
+                "navigation",
+                "combat",
+                "projectile",
+                "loot",
+            ],
+            Self::GodSim => vec![
+                "ai",
+                "navigation",
+                "procgen",
+                "economy",
+                "combat",
+                "collision",
+            ],
             Self::Custom => vec![],
         }
     }
@@ -120,12 +160,15 @@ impl ScenePreset {
             Self::Roguelike,
             Self::TowerDefense,
             Self::BulletHell,
+            Self::ArcadeShooter,
             Self::Puzzle,
             Self::FarmingSim,
             Self::Fighting,
             Self::VisualNovel,
             Self::Menu,
             Self::WorldMap,
+            Self::Sandbox,
+            Self::GodSim,
             Self::Custom,
         ]
     }
@@ -140,10 +183,13 @@ impl ScenePreset {
             Self::Roguelike,
             Self::TowerDefense,
             Self::BulletHell,
+            Self::ArcadeShooter,
             Self::Puzzle,
             Self::FarmingSim,
             Self::Fighting,
             Self::VisualNovel,
+            Self::Sandbox,
+            Self::GodSim,
         ]
     }
 }
@@ -429,9 +475,27 @@ pub fn project_templates() -> Vec<ProjectTemplate> {
             resolution: (240, 320),
         },
         ProjectTemplate {
+            name: "Arcade Shooter",
+            description: "Scrolling shooter with power-ups, waves, and high scores.",
+            primary_preset: ScenePreset::ArcadeShooter,
+            resolution: (320, 240),
+        },
+        ProjectTemplate {
             name: "Visual Novel",
             description: "Story-driven with dialog choices.",
             primary_preset: ScenePreset::VisualNovel,
+            resolution: (480, 270),
+        },
+        ProjectTemplate {
+            name: "Sandbox / Survival",
+            description: "Dynamic world with mining, building, crafting, and exploration.",
+            primary_preset: ScenePreset::Sandbox,
+            resolution: (480, 270),
+        },
+        ProjectTemplate {
+            name: "God Sim",
+            description: "Autonomous agents, settlements, simulation speed control.",
+            primary_preset: ScenePreset::GodSim,
             resolution: (480, 270),
         },
         ProjectTemplate {

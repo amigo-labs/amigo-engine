@@ -451,6 +451,7 @@ impl ParticleEmitter {
                 flip_x: false,
                 flip_y: false,
                 z_order: 0,
+                shaders: Vec::new(),
             });
         }
     }

@@ -22,7 +22,7 @@ pub use lighting::{AmbientLight, LightingState, PointLight};
 pub use particles::{BlendMode, EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
 pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
 pub use renderer::Renderer;
-pub use sprite_batcher::{SpriteBatcher, SpriteInstance};
+pub use sprite_batcher::{SpriteBatcher, SpriteInstance, SpriteShader};
 pub use texture::{Texture, TextureId};
 pub use vertex::Vertex;
 
@@ -86,6 +86,61 @@ impl SamplerMode {
         match self {
             SamplerMode::Nearest => wgpu::FilterMode::Nearest,
             SamplerMode::Linear => wgpu::FilterMode::Linear,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 7-Stage Render Pipeline (RS-02)
+// ---------------------------------------------------------------------------
+
+/// Render stages executed in order each frame.
+///
+/// Sprites and draw calls are assigned to a stage; the renderer processes
+/// stages sequentially to guarantee correct layering.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RenderStage {
+    /// Parallax backgrounds, sky.
+    Background = 0,
+    /// Tile layers with Z-sorting.
+    Tilemap = 1,
+    /// Sprites, sorted by Y or custom Z.
+    #[default]
+    Entities = 2,
+    /// Particle effects.
+    Particles = 3,
+    /// Light-map compositing.
+    Lighting = 4,
+    /// Post-processing: bloom, CRT, vignette, chromatic aberration, color grading.
+    PostProcess = 5,
+    /// HUD overlay (always on top).
+    Ui = 6,
+}
+
+impl RenderStage {
+    /// All stages in render order.
+    pub fn all() -> &'static [RenderStage] {
+        &[
+            Self::Background,
+            Self::Tilemap,
+            Self::Entities,
+            Self::Particles,
+            Self::Lighting,
+            Self::PostProcess,
+            Self::Ui,
+        ]
+    }
+
+    /// Human-readable name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Background => "Background",
+            Self::Tilemap => "Tilemap",
+            Self::Entities => "Entities",
+            Self::Particles => "Particles",
+            Self::Lighting => "Lighting",
+            Self::PostProcess => "PostProcess",
+            Self::Ui => "UI",
         }
     }
 }

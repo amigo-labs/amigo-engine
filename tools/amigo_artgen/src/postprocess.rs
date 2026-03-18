@@ -46,6 +46,10 @@ impl PixelBuffer {
                 PostProcessStep::ApplyPalette { .. } => {
                     // Requires loading external palette file — skip in core pipeline
                 }
+                PostProcessStep::CleanupTransparency => cleanup_transparency(self),
+                PostProcessStep::TileEdgeCheck => {
+                    // Informational only — callers use tile_edge_check() directly
+                }
             }
         }
     }
@@ -311,17 +315,20 @@ pub fn tile_edge_check(buf: &PixelBuffer) -> (u32, u32) {
 
 impl PixelBuffer {
     /// Apply post-processing based on a StyleDef's configuration.
+    ///
+    /// Pipeline order (per spec §2.6):
+    ///   1. Downscale (if generated at higher res)
+    ///   2. Palette Clamp (reduce colors to style palette)
+    ///   3. Remove Anti-Aliasing (snap semi-transparent edge pixels)
+    ///   4. Cleanup Transparency (binary alpha)
+    ///   5. Outline (add pixel outline)
+    ///   6. Tile Edge Check (informational, for tilesets)
     pub fn apply_style_pipeline(&mut self, style: &StyleDef) {
         let config = &style.post_processing;
 
-        if config.cleanup_transparency {
-            cleanup_transparency(self);
-        }
+        // 1. Downscale is handled externally (depends on generation resolution)
 
-        if config.remove_anti_aliasing {
-            remove_aa(self);
-        }
-
+        // 2. Palette Clamp
         if config.palette_clamp {
             let palette = style.palette_rgb();
             if !palette.is_empty() {
@@ -329,6 +336,17 @@ impl PixelBuffer {
             }
         }
 
+        // 3. Remove Anti-Aliasing
+        if config.remove_anti_aliasing {
+            remove_aa(self);
+        }
+
+        // 4. Cleanup Transparency
+        if config.cleanup_transparency {
+            cleanup_transparency(self);
+        }
+
+        // 5. Outline
         if config.add_outline {
             let color = style.outline_rgba();
             match config.outline_mode {
@@ -341,8 +359,7 @@ impl PixelBuffer {
             }
         }
 
-        // tile_edge_check is informational only — we don't mutate,
-        // but callers can invoke tile_edge_check() separately.
+        // 6. Tile Edge Check (informational — callers invoke tile_edge_check() separately)
     }
 }
 

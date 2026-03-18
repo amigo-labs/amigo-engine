@@ -5,6 +5,7 @@
 
 use crate::{SfxCategory, SfxRequest, SfxResult};
 use serde::{Deserialize, Serialize};
+use std::io::Read as _;
 
 /// AudioGen server configuration.
 #[derive(Clone, Debug)]
@@ -70,24 +71,75 @@ impl AudioGenClient {
         }
     }
 
-    /// Generate SFX. Returns output file paths.
-    ///
-    /// Placeholder: actual implementation calls the Gradio predict API.
+    /// Generate SFX via AudioGen's Gradio `/api/predict` endpoint.
     pub fn generate(&self, request: &SfxRequest) -> Result<SfxResult, AudioGenError> {
-        let _params = self.build_params(request);
+        if request.duration_secs > 10.0 {
+            return Err(AudioGenError::DurationTooLong);
+        }
 
-        // Placeholder: POST to /api/predict
+        let params = self.build_params(request);
+        let start = std::time::Instant::now();
+
+        let body = serde_json::json!({
+            "data": [
+                params.prompt,
+                params.duration,
+                params.num_samples,
+                params.temperature,
+                params.top_k,
+            ]
+        });
+
+        let resp: serde_json::Value =
+            ureq::post(&format!("{}/api/predict", self.config.base_url()))
+                .send_json(body)
+                .map_err(|e| AudioGenError::Http(e.to_string()))?
+                .into_json()
+                .map_err(|e| AudioGenError::Io(e))?;
+
+        let data = resp["data"]
+            .as_array()
+            .ok_or_else(|| AudioGenError::GenerationFailed("Missing data in response".into()))?;
+
+        let mut output_paths = Vec::new();
+        let mut durations = Vec::new();
+
+        for item in data {
+            if let Some(path) = item.as_str() {
+                output_paths.push(path.to_string());
+                durations.push(params.duration);
+            }
+        }
+
+        let generation_time_ms = start.elapsed().as_millis() as u64;
+
         Ok(SfxResult {
-            output_paths: Vec::new(),
-            durations: Vec::new(),
-            generation_time_ms: 0,
+            output_paths,
+            durations,
+            generation_time_ms,
         })
     }
 
-    /// Check if the AudioGen server is running.
+    /// Download a generated audio file from the Gradio server to a local path.
+    pub fn download(&self, remote_path: &str, local_path: &str) -> Result<(), AudioGenError> {
+        let url = format!("{}/file={}", self.config.base_url(), remote_path);
+        let mut bytes = Vec::new();
+        ureq::get(&url)
+            .call()
+            .map_err(|e| AudioGenError::Http(e.to_string()))?
+            .into_reader()
+            .read_to_end(&mut bytes)
+            .map_err(AudioGenError::Io)?;
+        std::fs::write(local_path, &bytes)?;
+        Ok(())
+    }
+
+    /// Check if the AudioGen server is running via `/api/status`.
     pub fn health_check(&self) -> Result<bool, AudioGenError> {
-        // Placeholder: GET /api/status
-        Ok(false)
+        match ureq::get(&format!("{}/api/status", self.config.base_url())).call() {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
 }
 

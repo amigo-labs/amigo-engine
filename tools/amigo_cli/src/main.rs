@@ -80,17 +80,161 @@ fn main() {
 // ---------------------------------------------------------------------------
 
 /// Minimal project manifest stored as `amigo.toml`.
+///
+/// Schema aligns with engine spec §24:
+/// - `[project]` — name, version, engine_version, start_scene, scenes
+/// - `[window]` — title, width, height, fullscreen, vsync
+/// - `[render]` — virtual resolution, scale_mode
+/// - `[audio]` — volume channels
+/// - `[dev]` — hot_reload, debug_overlay, api_server
+/// - `[distribution]` — Steam / itch.io
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ProjectManifest {
     name: String,
     version: String,
     engine_version: String,
-    virtual_width: u32,
-    virtual_height: u32,
     start_scene: String,
     scenes: Vec<SceneEntry>,
     #[serde(default)]
+    window: WindowConfig,
+    #[serde(default)]
+    render: RenderConfig,
+    #[serde(default)]
+    audio: AudioConfig,
+    #[serde(default)]
+    dev: DevConfig,
+    #[serde(default)]
     distribution: Option<DistributionConfig>,
+}
+
+/// `[window]` section of `amigo.toml`.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct WindowConfig {
+    #[serde(default = "default_window_title")]
+    title: String,
+    #[serde(default = "default_window_width")]
+    width: u32,
+    #[serde(default = "default_window_height")]
+    height: u32,
+    #[serde(default)]
+    fullscreen: bool,
+    #[serde(default = "default_true")]
+    vsync: bool,
+}
+
+fn default_window_title() -> String {
+    "Amigo Game".into()
+}
+fn default_window_width() -> u32 {
+    1280
+}
+fn default_window_height() -> u32 {
+    720
+}
+fn default_true() -> bool {
+    true
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            title: default_window_title(),
+            width: default_window_width(),
+            height: default_window_height(),
+            fullscreen: false,
+            vsync: true,
+        }
+    }
+}
+
+/// `[render]` section of `amigo.toml`.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct RenderConfig {
+    #[serde(default = "default_virtual_width")]
+    virtual_width: u32,
+    #[serde(default = "default_virtual_height")]
+    virtual_height: u32,
+    #[serde(default = "default_scale_mode")]
+    scale_mode: String,
+}
+
+fn default_virtual_width() -> u32 {
+    480
+}
+fn default_virtual_height() -> u32 {
+    270
+}
+fn default_scale_mode() -> String {
+    "pixel_perfect".into()
+}
+
+impl Default for RenderConfig {
+    fn default() -> Self {
+        Self {
+            virtual_width: default_virtual_width(),
+            virtual_height: default_virtual_height(),
+            scale_mode: default_scale_mode(),
+        }
+    }
+}
+
+/// `[audio]` section of `amigo.toml`.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct AudioConfig {
+    #[serde(default = "default_volume")]
+    master_volume: f32,
+    #[serde(default = "default_volume_full")]
+    sfx_volume: f32,
+    #[serde(default = "default_music_volume")]
+    music_volume: f32,
+}
+
+fn default_volume() -> f32 {
+    0.8
+}
+fn default_volume_full() -> f32 {
+    1.0
+}
+fn default_music_volume() -> f32 {
+    0.6
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            master_volume: default_volume(),
+            sfx_volume: default_volume_full(),
+            music_volume: default_music_volume(),
+        }
+    }
+}
+
+/// `[dev]` section of `amigo.toml`.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct DevConfig {
+    #[serde(default = "default_true")]
+    hot_reload: bool,
+    #[serde(default = "default_true")]
+    debug_overlay: bool,
+    #[serde(default)]
+    api_server: bool,
+    #[serde(default = "default_api_port")]
+    api_port: u16,
+}
+
+fn default_api_port() -> u16 {
+    9999
+}
+
+impl Default for DevConfig {
+    fn default() -> Self {
+        Self {
+            hot_reload: true,
+            debug_overlay: true,
+            api_server: false,
+            api_port: default_api_port(),
+        }
+    }
 }
 
 /// Distribution platform configuration stored in `amigo.toml` under `[distribution]`.
@@ -154,8 +298,8 @@ fn save_manifest(manifest: &ProjectManifest) {
 fn project_from_manifest(manifest: &ProjectManifest) -> GameProject {
     let mut project = GameProject::new(&manifest.name);
     project.version = manifest.version.clone();
-    project.virtual_width = manifest.virtual_width;
-    project.virtual_height = manifest.virtual_height;
+    project.virtual_width = manifest.render.virtual_width;
+    project.virtual_height = manifest.render.virtual_height;
     project.start_scene = manifest.start_scene.clone();
     project
 }
@@ -175,10 +319,19 @@ fn manifest_from_project(project: &GameProject) -> ProjectManifest {
         name: project.name.clone(),
         version: project.version.clone(),
         engine_version: env!("CARGO_PKG_VERSION").to_string(),
-        virtual_width: project.virtual_width,
-        virtual_height: project.virtual_height,
         start_scene: project.start_scene.clone(),
         scenes,
+        window: WindowConfig {
+            title: project.name.clone(),
+            ..WindowConfig::default()
+        },
+        render: RenderConfig {
+            virtual_width: project.virtual_width,
+            virtual_height: project.virtual_height,
+            ..RenderConfig::default()
+        },
+        audio: AudioConfig::default(),
+        dev: DevConfig::default(),
         distribution: None,
     }
 }

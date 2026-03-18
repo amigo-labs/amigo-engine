@@ -7,6 +7,7 @@
 use crate::{MusicRequest, MusicResult, MusicSection, WorldAudioStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read as _;
 
 /// ACE-Step server configuration.
 #[derive(Clone, Debug)]
@@ -113,25 +114,76 @@ impl AceStepClient {
         }
     }
 
-    /// Generate music. Returns the output file path.
-    ///
-    /// Placeholder: actual implementation calls the Gradio predict API.
+    /// Generate music via ACE-Step's Gradio `/api/predict` endpoint.
     pub fn generate(&self, request: &MusicRequest) -> Result<MusicResult, AceStepError> {
-        let _params = self.build_params(request);
+        let params = self.build_params(request);
+        let start = std::time::Instant::now();
 
-        // Placeholder: POST to /api/predict
+        let body = serde_json::json!({
+            "data": [
+                params.prompt,
+                params.lyrics,
+                params.duration,
+                params.steps,
+                params.cfg_scale,
+                params.seed,
+            ]
+        });
+
+        let resp: serde_json::Value =
+            ureq::post(&format!("{}/api/predict", self.config.base_url()))
+                .send_json(body)
+                .map_err(|e| AceStepError::Http(e.to_string()))?
+                .into_json()
+                .map_err(|e| AceStepError::Io(e))?;
+
+        let data = resp["data"]
+            .as_array()
+            .ok_or_else(|| AceStepError::GenerationFailed("Missing data in response".into()))?;
+
+        // First element is typically the output audio file path
+        let audio_path = data
+            .first()
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        if audio_path.is_empty() {
+            return Err(AceStepError::GenerationFailed(
+                "No audio path in response".into(),
+            ));
+        }
+
+        let generation_time_ms = start.elapsed().as_millis() as u64;
+
         Ok(MusicResult {
-            full_track_path: String::new(),
+            full_track_path: audio_path,
             stem_paths: HashMap::new(),
             detected_bpm: request.bpm as f32,
-            generation_time_ms: 0,
+            generation_time_ms,
         })
     }
 
-    /// Check if the ACE-Step server is running.
+    /// Download a generated audio file from the Gradio server to a local path.
+    pub fn download(&self, remote_path: &str, local_path: &str) -> Result<(), AceStepError> {
+        let url = format!("{}/file={}", self.config.base_url(), remote_path);
+        let mut bytes = Vec::new();
+        ureq::get(&url)
+            .call()
+            .map_err(|e| AceStepError::Http(e.to_string()))?
+            .into_reader()
+            .read_to_end(&mut bytes)
+            .map_err(AceStepError::Io)?;
+        std::fs::write(local_path, &bytes)?;
+        Ok(())
+    }
+
+    /// Check if the ACE-Step server is running via `/api/status`.
     pub fn health_check(&self) -> Result<bool, AceStepError> {
-        // Placeholder: GET /api/status
-        Ok(false)
+        match ureq::get(&format!("{}/api/status", self.config.base_url())).call() {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
 }
 

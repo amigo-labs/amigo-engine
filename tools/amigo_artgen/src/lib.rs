@@ -85,6 +85,10 @@ pub enum PostProcessStep {
     ForceDimensions { width: u32, height: u32 },
     /// Apply a reference palette from a .png or .pal file.
     ApplyPalette { palette_path: String },
+    /// Snap semi-transparent pixels to fully opaque or fully transparent.
+    CleanupTransparency,
+    /// Check tile edge compatibility (informational, does not mutate).
+    TileEdgeCheck,
 }
 
 /// Result of an art generation job.

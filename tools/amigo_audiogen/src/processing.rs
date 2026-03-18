@@ -191,6 +191,213 @@ pub fn linear_to_db(linear: f32) -> f32 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Audio Post-Processing Pipeline (RS-22)
+// ---------------------------------------------------------------------------
+
+/// Steps in the audio post-processing pipeline.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PostProcessStep {
+    Normalize,
+    BpmDetect,
+    BarSnap,
+    LoopCrossfade,
+    SpectralValidation,
+}
+
+/// Result of spectral validation against a target style.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpectralReport {
+    /// Whether the audio passes validation.
+    pub passed: bool,
+    /// Frequency band energy ratios (low, mid, high).
+    pub band_energies: [f32; 3],
+    /// Diagnostic message.
+    pub message: String,
+}
+
+/// Result of running the full post-processing pipeline.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PostProcessResult {
+    pub detected_bpm: Option<f32>,
+    pub bar_snap_samples: Option<usize>,
+    pub loop_point: Option<usize>,
+    pub spectral_report: Option<SpectralReport>,
+    pub duration_secs: f32,
+}
+
+impl AudioBuffer {
+    /// Snap audio length to the nearest bar boundary based on BPM.
+    /// A bar = `beats_per_bar` beats at the given BPM.
+    pub fn bar_snap(&mut self, bpm: f32, beats_per_bar: u32) {
+        if bpm <= 0.0 || beats_per_bar == 0 {
+            return;
+        }
+        let samples_per_beat = self.sample_rate as f32 * 60.0 / bpm;
+        let samples_per_bar = (samples_per_beat * beats_per_bar as f32) as usize;
+        if samples_per_bar == 0 || self.samples.is_empty() {
+            return;
+        }
+        // Round to nearest complete bar
+        let num_bars = (self.samples.len() as f32 / samples_per_bar as f32).round() as usize;
+        let target_len = (num_bars.max(1) * samples_per_bar).min(self.samples.len());
+        self.samples.truncate(target_len);
+    }
+
+    /// Simple spectral validation: compute energy in low/mid/high bands
+    /// and check against expected ranges for a given style.
+    pub fn spectral_validate(&self, style_hint: &str) -> SpectralReport {
+        if self.samples.is_empty() {
+            return SpectralReport {
+                passed: false,
+                band_energies: [0.0, 0.0, 0.0],
+                message: "Empty audio buffer".into(),
+            };
+        }
+
+        // Compute energy in 3 frequency bands using simple windowed analysis.
+        // Low: 0-300Hz, Mid: 300-3000Hz, High: 3000Hz+
+        // We approximate using sample-domain energy of differently smoothed signals.
+        let total_energy: f32 = self.samples.iter().map(|s| s * s).sum::<f32>()
+            / self.samples.len() as f32;
+
+        if total_energy < 1e-10 {
+            return SpectralReport {
+                passed: false,
+                band_energies: [0.0, 0.0, 0.0],
+                message: "Silent audio".into(),
+            };
+        }
+
+        // Low-pass approximation: running average with large window
+        let low_window = (self.sample_rate as usize / 300).max(1);
+        let low_energy = windowed_energy(&self.samples, low_window);
+
+        // High-pass approximation: difference signal
+        let high_energy = high_pass_energy(&self.samples);
+
+        // Mid = total - low - high (clamped)
+        let mid_energy = (total_energy - low_energy - high_energy).max(0.0);
+
+        let sum = low_energy + mid_energy + high_energy;
+        let band_energies = if sum > 0.0 {
+            [low_energy / sum, mid_energy / sum, high_energy / sum]
+        } else {
+            [0.33, 0.34, 0.33]
+        };
+
+        // Style-specific validation
+        let (passed, message) = match style_hint {
+            "ambient" | "drone" => {
+                if band_energies[0] > 0.15 {
+                    (true, "Ambient profile: good low-end presence".into())
+                } else {
+                    (false, "Ambient expected more low-end energy".into())
+                }
+            }
+            "battle" | "intense" => {
+                if band_energies[2] > 0.1 {
+                    (true, "Battle profile: good high-frequency energy".into())
+                } else {
+                    (false, "Battle expected more high-frequency energy".into())
+                }
+            }
+            _ => (true, format!("Style '{}': generic pass", style_hint)),
+        };
+
+        SpectralReport {
+            passed,
+            band_energies,
+            message,
+        }
+    }
+}
+
+/// Run the full post-processing pipeline on an AudioBuffer.
+/// Order: Normalize → BPM Detect → Bar Snap → Loop Crossfade → Spectral Validate
+pub fn run_pipeline(
+    buf: &mut AudioBuffer,
+    normalize_db: f32,
+    beats_per_bar: u32,
+    target_loop_secs: Option<f32>,
+    style_hint: &str,
+) -> PostProcessResult {
+    // 1. Normalize
+    buf.normalize(normalize_db);
+
+    // 2. BPM Detect
+    let detected_bpm = buf.detect_bpm();
+
+    // 3. Bar Snap
+    let bar_snap_samples = if let Some(bpm) = detected_bpm {
+        let before = buf.samples.len();
+        buf.bar_snap(bpm, beats_per_bar);
+        Some(before - buf.samples.len())
+    } else {
+        None
+    };
+
+    // 4. Loop Crossfade
+    let loop_point = if let Some(target_secs) = target_loop_secs {
+        let lp = buf.find_loop_point(target_secs);
+        if let Some(point) = lp {
+            let crossfade = (buf.sample_rate as usize / 100).max(64); // ~10ms
+            buf.apply_loop_crossfade(point, crossfade);
+        }
+        lp
+    } else {
+        None
+    };
+
+    // 5. Spectral Validation
+    let spectral_report = Some(buf.spectral_validate(style_hint));
+
+    let duration_secs = buf.duration_secs();
+
+    PostProcessResult {
+        detected_bpm,
+        bar_snap_samples,
+        loop_point,
+        spectral_report,
+        duration_secs,
+    }
+}
+
+fn windowed_energy(samples: &[f32], window: usize) -> f32 {
+    if samples.len() < window * 2 {
+        return 0.0;
+    }
+    // Compute smoothed signal then measure energy
+    let mut smoothed = vec![0.0f32; samples.len()];
+    let mut sum = 0.0f32;
+    for i in 0..samples.len() {
+        sum += samples[i];
+        if i >= window {
+            sum -= samples[i - window];
+        }
+        let count = (i + 1).min(window) as f32;
+        smoothed[i] = sum / count;
+    }
+    smoothed.iter().map(|s| s * s).sum::<f32>() / smoothed.len() as f32
+}
+
+fn high_pass_energy(samples: &[f32]) -> f32 {
+    if samples.len() < 2 {
+        return 0.0;
+    }
+    // Simple first-order difference as high-pass
+    let mut energy = 0.0f32;
+    for i in 1..samples.len() {
+        let d = samples[i] - samples[i - 1];
+        energy += d * d;
+    }
+    energy / (samples.len() - 1) as f32
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive music config
+// ---------------------------------------------------------------------------
+
 /// Adaptive music config that can be generated from stem analysis.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdaptiveMusicConfig {
@@ -294,5 +501,59 @@ mod tests {
         assert!(point.is_some());
         let p = point.unwrap();
         assert!(p > 1500 && p < 2500);
+    }
+
+    #[test]
+    fn bar_snap_truncates_to_bar_boundary() {
+        let mut buf = AudioBuffer {
+            // 44100 samples = 1 second. At 120 BPM, 4 beats/bar = 2 seconds/bar = 88200 samples
+            samples: vec![0.5; 100000], // ~2.27 seconds
+            sample_rate: 44100,
+        };
+        buf.bar_snap(120.0, 4);
+        // Should snap to nearest bar: 2 bars = 176400 (too many), 1 bar = 88200
+        assert_eq!(buf.samples.len(), 88200);
+    }
+
+    #[test]
+    fn bar_snap_zero_bpm_noop() {
+        let mut buf = AudioBuffer {
+            samples: vec![0.5; 1000],
+            sample_rate: 44100,
+        };
+        buf.bar_snap(0.0, 4);
+        assert_eq!(buf.samples.len(), 1000);
+    }
+
+    #[test]
+    fn spectral_validate_silent() {
+        let buf = AudioBuffer {
+            samples: vec![0.0; 1000],
+            sample_rate: 44100,
+        };
+        let report = buf.spectral_validate("ambient");
+        assert!(!report.passed);
+        assert!(report.message.contains("Silent"));
+    }
+
+    #[test]
+    fn spectral_validate_generic_passes() {
+        let mut buf = AudioBuffer::new(44100);
+        for i in 0..44100 {
+            buf.samples.push((i as f32 * 0.1).sin() * 0.5);
+        }
+        let report = buf.spectral_validate("custom");
+        assert!(report.passed);
+    }
+
+    #[test]
+    fn run_pipeline_basic() {
+        let mut buf = AudioBuffer::new(1000);
+        for i in 0..5000 {
+            buf.samples.push((i as f32 * 0.05).sin() * 0.3);
+        }
+        let result = run_pipeline(&mut buf, -1.0, 4, None, "custom");
+        assert!(result.duration_secs > 0.0);
+        assert!(result.spectral_report.is_some());
     }
 }

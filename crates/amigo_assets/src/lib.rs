@@ -1,6 +1,9 @@
 pub mod aseprite;
 pub mod asset_manager;
+pub mod descriptors;
+pub mod formats;
 pub mod handle;
+pub mod import;
 pub mod hot_reload;
 pub mod pak;
 
@@ -8,6 +11,9 @@ pub use aseprite::{load_aseprite, AsepriteData};
 pub use asset_manager::{AssetManager, SpriteData};
 pub use handle::{AssetHandle, AssetState, HandleAllocator};
 pub use hot_reload::HotReloader;
+pub use descriptors::{
+    EntityDescriptor, MapDescriptor, SpriteDescriptor, TilesetDescriptor,
+};
 pub use pak::{AssetKind, PakEntry, PakReader, PakWriter};
 
 use thiserror::Error;

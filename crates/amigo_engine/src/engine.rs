@@ -23,6 +23,9 @@ pub trait Plugin: 'static {
     fn build(&self, ctx: &mut PluginContext);
     /// Called once after the window and renderer are initialized.
     fn init(&self, _ctx: &mut GameContext) {}
+    /// Called every tick after engine systems but before rendering.
+    /// Default implementation is a no-op, so existing plugins are unaffected.
+    fn update(&mut self, _ctx: &mut GameContext) {}
 }
 
 /// Context passed to Plugin::build() for registration.
@@ -576,6 +579,10 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                             KeyCode::F2 => state.debug.show_grid = !state.debug.show_grid,
                             KeyCode::F3 => state.debug.show_collision = !state.debug.show_collision,
                             KeyCode::F4 => state.debug.show_paths = !state.debug.show_paths,
+                            KeyCode::F5 => state.debug.show_entity_ids = !state.debug.show_entity_ids,
+                            KeyCode::F6 => state.debug.show_tile_ids = !state.debug.show_tile_ids,
+                            KeyCode::F7 => state.debug.show_audio_debug = !state.debug.show_audio_debug,
+                            KeyCode::F8 => state.debug.show_network_debug = !state.debug.show_network_debug,
                             _ => {}
                         }
                     }
@@ -703,6 +710,14 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                             return;
                         }
                         _ => {}
+                    }
+
+                    // Plugin per-frame update (after game systems, before render)
+                    {
+                        let _plugin_span = info_span!("plugin_update").entered();
+                        for plugin in &mut self.plugins {
+                            plugin.update(&mut state.game_ctx);
+                        }
                     }
 
                     {
