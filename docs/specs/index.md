@@ -251,6 +251,7 @@ graph TD
 | [engine/agents](engine/agents.md)                         | draft  | amigo_core        | engine/core, engine/pathfinding |
 | [engine/simulation](engine/simulation.md)                 | draft  | amigo_core        | engine/core                   |
 | [engine/save-load](engine/save-load.md)                   | draft  | amigo_core        | engine/core, engine/chunks    |
+| [engine/tricks](engine/tricks.md)                         | draft  | --                | (Verweise auf alle Engine-Specs) |
 | [assets/format](assets/format.md)                         | draft  | amigo_assets      | --                            |
 | [assets/pipeline](assets/pipeline.md)                     | draft  | amigo_assets      | assets/format                 |
 | [assets/atlas](assets/atlas.md)                           | draft  | amigo_assets      | assets/format                 |
