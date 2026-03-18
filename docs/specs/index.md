@@ -227,6 +227,8 @@ graph TD
 
 ## Status Table
 
+Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **spec** = vollständig ausgearbeitet, noch nicht umgesetzt · **done** = im Code umgesetzt
+
 | Spec                                                      | Status | Crate             | Depends on                    |
 | --------------------------------------------------------- | ------ | ----------------- | ----------------------------- |
 | [engine/core](engine/core.md)                             | draft  | amigo_core        | --                            |
