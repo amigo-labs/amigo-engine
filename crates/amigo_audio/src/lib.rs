@@ -1,5 +1,7 @@
 #![warn(missing_docs)]
 
+pub mod spatial;
+
 use kira::manager::backend::DefaultBackend;
 use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};

@@ -1,5 +1,6 @@
 #![warn(missing_docs)]
 
+pub mod accessibility;
 pub mod achievements;
 pub mod agents;
 pub mod ai;
@@ -22,6 +23,7 @@ pub mod frame_arena;
 pub mod game_preset;
 pub mod inventory;
 pub mod level_loader;
+pub mod localization;
 pub mod loot;
 pub mod math;
 pub mod navigation;
@@ -59,6 +61,10 @@ pub mod tower;
 pub mod waves;
 
 // -- Core re-exports (always available) -------------------------------------
+pub use accessibility::{
+    AccessibilityConfig, AccessibilityFeature, AccessibilityManager, ColorBlindFilter,
+    ColorBlindMode, SubtitleCategory, SubtitleDirection, SubtitleManager,
+};
 pub use collision::{
     CapsuleShape, CollisionShape, CollisionWorld, ContactInfo, SpatialHash, SweptContact,
     TriggerEvent, TriggerZone,
@@ -83,6 +89,7 @@ pub use fog_of_war::{FogOfWarGrid, TileVisibility, update_visibility};
 pub use frame_arena::FrameArena;
 pub use spline::{CatmullRomSpline, CubicBezier};
 pub use tween::{EasingFn, RepeatCount, Tween, TweenHandle, TweenManager, TweenSequence, Tweenable};
+pub use localization::{LocaleId, LocaleManager, LocaleError, PluralCategory, PluralRuleFn, StringEntry};
 pub use raycast::{raycast, raycast_bodies, raycast_tiles, sensor, RayHit, TileBlock, TileQuery};
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------

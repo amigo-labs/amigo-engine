@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: amigo_audio
 depends_on: ["engine/audio", "engine/camera"]
 last_updated: 2026-03-18

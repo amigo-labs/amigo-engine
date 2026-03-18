@@ -1,4 +1,5 @@
 pub mod aseprite;
+pub mod modding;
 pub mod asset_manager;
 pub mod descriptors;
 pub mod formats;
