@@ -311,6 +311,8 @@ impl Steering {
 mod tests {
     use super::*;
 
+    // ── State machine transitions ────────────────────────────
+
     #[test]
     fn state_machine_transitions() {
         let mut sm = monster_ai(100.0, 20.0, 0.2, 300.0);
@@ -340,6 +342,8 @@ mod tests {
         sm.update(&ctx, 0.016);
         assert_eq!(sm.current_state, states::DEAD);
     }
+
+    // ── Steering behaviors ──────────────────────────────────
 
     #[test]
     fn steering_seek() {

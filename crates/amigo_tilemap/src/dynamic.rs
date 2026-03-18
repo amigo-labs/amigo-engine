@@ -368,6 +368,8 @@ mod tests {
         world
     }
 
+    // ── Place & query ─────────────────────────────────────────────
+
     #[test]
     fn place_and_get() {
         let mut world = setup_world();
@@ -389,6 +391,8 @@ mod tests {
         let events = world.take_events();
         assert!(events.iter().any(|e| matches!(e, TileEvent::Destroyed { x: 3, y: 3, .. })));
     }
+
+    // ── Dirty tracking ────────────────────────────────────────────
 
     #[test]
     fn dirty_tracking() {
@@ -413,6 +417,8 @@ mod tests {
         assert_eq!(world.get_tile(TileLayer::Foreground, 5, 5), 0);
     }
 
+    // ── Gravity & tile properties ──────────────────────────────
+
     #[test]
     fn gravity_step() {
         let mut world = setup_world();
@@ -434,6 +440,8 @@ mod tests {
         assert!(!props.solid);
         assert_eq!(props.light_emission, 200);
     }
+
+    // ── Neighbor events ───────────────────────────────────────────
 
     #[test]
     fn neighbor_events() {

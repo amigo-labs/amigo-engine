@@ -326,6 +326,8 @@ mod tests {
         reg
     }
 
+    // ── Inventory tests ─────────────────────────────────────────
+
     #[test]
     fn inventory_add_and_stack() {
         let reg = test_registry();
@@ -351,6 +353,8 @@ mod tests {
         assert_eq!(removed, 7);
         assert_eq!(inv.count(1), 3);
     }
+
+    // ── Equipment tests ─────────────────────────────────────────
 
     #[test]
     fn equipment_equip_unequip() {

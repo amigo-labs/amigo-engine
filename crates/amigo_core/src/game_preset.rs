@@ -532,6 +532,8 @@ pub fn load_project(path: &std::path::Path) -> Result<GameProject, String> {
 mod tests {
     use super::*;
 
+    // ── Scene presets ───────────────────────────────────────
+
     #[test]
     fn preset_metadata() {
         for preset in ScenePreset::all() {
@@ -551,6 +553,8 @@ mod tests {
         assert!(systems.contains(&"combat"));
         assert!(systems.contains(&"loot"));
     }
+
+    // ── Scene and project definitions ──────────────────────
 
     #[test]
     fn scene_def_builder() {
@@ -576,6 +580,8 @@ mod tests {
         assert!(project.find_scene("game").is_some());
         assert!(project.find_scene("nonexistent").is_none());
     }
+
+    // ── Validation ──────────────────────────────────────────
 
     #[test]
     fn project_validation_ok() {
@@ -608,6 +614,8 @@ mod tests {
         let issues = project.validate();
         assert!(issues.iter().any(|i| i.contains("nowhere")));
     }
+
+    // ── Templates and serialization ────────────────────────
 
     #[test]
     fn template_creates_valid_project() {

@@ -239,6 +239,8 @@ impl TileLightMap {
 mod tests {
     use super::*;
 
+    // ── Basic light map ───────────────────────────────────────────
+
     #[test]
     fn empty_map_is_dark() {
         let map = TileLightMap::new(0, 0, 32, 32);
@@ -271,6 +273,8 @@ mod tests {
         assert_eq!(far, LightColor::ZERO);
     }
 
+    // ── Opaque blocking ───────────────────────────────────────────
+
     #[test]
     fn opaque_tiles_block_light() {
         let mut map = TileLightMap::new(0, 0, 32, 32);
@@ -295,6 +299,8 @@ mod tests {
         assert!(in_front.brightness() > 0);
     }
 
+    // ── Ambient & sky light ────────────────────────────────────────
+
     #[test]
     fn ambient_sky_light() {
         let mut map = TileLightMap::new(0, 0, 32, 32);
@@ -313,6 +319,8 @@ mod tests {
         let below = map.get(5, 15);
         assert_eq!(below, LightColor::ZERO);
     }
+
+    // ── Smooth interpolation & colored light ────────────────────
 
     #[test]
     fn smooth_interpolation() {

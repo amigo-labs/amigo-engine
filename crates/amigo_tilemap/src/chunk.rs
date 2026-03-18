@@ -239,7 +239,7 @@ impl StreamingManager {
 mod tests {
     use super::*;
 
-    // -- world_to_chunk conversion --
+    // ── Coordinate Conversion ────────────────────────────────────
 
     #[test]
     fn world_to_chunk_positive() {
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(ly, 0);
     }
 
-    // -- set/get across chunk boundaries --
+    // ── Cross-Chunk Access ───────────────────────────────────────
 
     #[test]
     fn set_get_tiles_across_chunks() {
@@ -304,7 +304,7 @@ mod tests {
         assert_eq!(map.get_tile(-1, -1), 7);
     }
 
-    // -- StreamingManager --
+    // ── Streaming Manager ────────────────────────────────────────
 
     #[test]
     fn streaming_manager_load_set() {
@@ -356,7 +356,7 @@ mod tests {
         assert_eq!(result.chunks_to_load.len(), 8);
     }
 
-    // -- Chunk serialization roundtrip --
+    // ── Serialization ────────────────────────────────────────────
 
     #[test]
     fn chunk_serialization_roundtrip() {

@@ -349,6 +349,8 @@ mod tests {
         name: String,
     }
 
+    // ── CRC32 checksum ──────────────────────────────────────
+
     #[test]
     fn crc32_basic() {
         let data = b"hello world";
@@ -356,6 +358,8 @@ mod tests {
         // Known CRC32 for "hello world"
         assert_eq!(c, 0x0D4A_1185);
     }
+
+    // ── Save / load round trip ──────────────────────────────
 
     #[test]
     fn save_and_load_round_trip() {
@@ -400,6 +404,8 @@ mod tests {
 
         let _ = fs::remove_dir_all(&tmp);
     }
+
+    // ── Autosave timing ─────────────────────────────────────
 
     #[test]
     fn should_autosave_timing() {

@@ -658,6 +658,8 @@ mod tests {
         }
     }
 
+    // ── Basic jumping ───────────────────────────────────────
+
     #[test]
     fn basic_jump() {
         let config = PlatformerConfig::default();
@@ -678,6 +680,8 @@ mod tests {
         assert!(events.contains(&PlatformerEvent::Jumped));
         assert!(out.velocity_y < 0.0, "Should have upward velocity");
     }
+
+    // ── Coyote time and jump buffer ─────────────────────────
 
     #[test]
     fn coyote_time() {
@@ -785,6 +789,8 @@ mod tests {
         assert!(out.velocity_y < 0.0);
     }
 
+    // ── Variable jump and multi-jump ────────────────────────
+
     #[test]
     fn variable_jump_height() {
         let config = PlatformerConfig::default();
@@ -880,6 +886,8 @@ mod tests {
         assert!(events.contains(&PlatformerEvent::DoubleJumped));
     }
 
+    // ── Wall slide, dash, and movement ─────────────────────
+
     #[test]
     fn wall_slide_and_jump() {
         let config = PlatformerConfig::default().with_wall(WallConfig::default());
@@ -971,6 +979,8 @@ mod tests {
             "Should not exceed move_speed"
         );
     }
+
+    // ── Moving platforms ────────────────────────────────────
 
     #[test]
     fn moving_platform_loop() {

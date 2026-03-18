@@ -226,6 +226,8 @@ impl Default for HeatmapCollection {
 mod tests {
     use super::*;
 
+    // ── Recording & querying ──────────────────────────────────────
+
     #[test]
     fn record_and_get() {
         let mut hm = Heatmap::new(HeatmapType::EnemyDeaths, 10, 10, 16.0);
@@ -246,6 +248,8 @@ mod tests {
         assert_eq!(hm.get_normalized(1, 0), 0.5);
         assert_eq!(hm.get_normalized(2, 0), 0.0);
     }
+
+    // ── Visualization ─────────────────────────────────────────────
 
     #[test]
     fn overlay_tiles() {
@@ -289,6 +293,8 @@ mod tests {
         assert_eq!(hm.max_value(), 0.0);
     }
 
+    // ── HeatmapCollection ─────────────────────────────────────────
+
     #[test]
     fn collection() {
         let mut c = HeatmapCollection::for_level(10, 10, 16.0);
@@ -300,6 +306,8 @@ mod tests {
         c.clear_all();
         assert_eq!(c.get("enemy_deaths").unwrap().get(5, 5), 0.0);
     }
+
+    // ── Edge cases ────────────────────────────────────────────────
 
     #[test]
     fn out_of_bounds() {

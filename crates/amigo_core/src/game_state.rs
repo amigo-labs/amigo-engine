@@ -397,6 +397,8 @@ mod tests {
         }]
     }
 
+    // ── Tower commands ──────────────────────────────────────
+
     #[test]
     fn place_tower_costs_gold() {
         let mut state = TdGameState::new(100, 20, Vec::new(), Vec::new());
@@ -457,6 +459,8 @@ mod tests {
         assert_eq!(state.economy.gold, 235);
     }
 
+    // ── Enemy events ────────────────────────────────────────
+
     #[test]
     fn enemy_killed_awards_bounty() {
         let mut state = TdGameState::new(100, 20, Vec::new(), Vec::new());
@@ -480,6 +484,8 @@ mod tests {
         state.update(0.016);
         assert_eq!(state.phase, GamePhase::Defeat);
     }
+
+    // ── Game phase ──────────────────────────────────────────
 
     #[test]
     fn pause_unpause() {

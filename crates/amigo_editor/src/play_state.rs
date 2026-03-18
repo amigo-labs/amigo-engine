@@ -152,6 +152,8 @@ impl Default for PlayModeManager {
 mod tests {
     use super::*;
 
+    // ── State Transitions ──────────────────────────────────────
+
     #[test]
     fn initial_state_is_editing() {
         let mgr = PlayModeManager::new();
@@ -208,6 +210,8 @@ mod tests {
         assert!(mgr.is_editing());
     }
 
+    // ── Invalid Transitions ──────────────────────────────────────
+
     #[test]
     fn invalid_transitions() {
         let mut mgr = PlayModeManager::new();
@@ -222,6 +226,8 @@ mod tests {
         // Can't start play while already playing
         assert!(!mgr.start_play(b"other".to_vec()));
     }
+
+    // ── Toggle / Tick Counting ───────────────────────────────────
 
     #[test]
     fn toggle_roundtrip() {

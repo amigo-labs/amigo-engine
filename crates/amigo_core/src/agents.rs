@@ -403,6 +403,8 @@ mod tests {
         }
     }
 
+    // ── Action evaluation ───────────────────────────────────
+
     #[test]
     fn hungry_agent_eats() {
         let mut needs = Needs::human();
@@ -439,6 +441,8 @@ mod tests {
         assert_eq!(action, AgentAction::Explore);
     }
 
+    // ── Needs decay ─────────────────────────────────────────
+
     #[test]
     fn needs_decay_over_time() {
         let mut needs = Needs::human();
@@ -448,6 +452,8 @@ mod tests {
         }
         assert!(needs.get(NeedType::Hunger) < initial_hunger);
     }
+
+    // ── Memory ─────────────────────────────────────────────
 
     #[test]
     fn memory_remember_and_find() {
@@ -479,6 +485,8 @@ mod tests {
         assert_eq!(mem.relationship(42), 15.0);
         assert_eq!(mem.relationship(99), 0.0); // Unknown
     }
+
+    // ── Need urgency and agent update ──────────────────────
 
     #[test]
     fn need_urgency() {

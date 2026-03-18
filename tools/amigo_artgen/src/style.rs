@@ -307,6 +307,8 @@ pub enum StyleError {
 mod tests {
     use super::*;
 
+    // ── Hex color parsing ──────────────────────────────────────
+
     #[test]
     fn parse_hex_color_valid() {
         assert_eq!(StyleDef::parse_hex_color("#ff0000"), Some([255, 0, 0]));
@@ -326,6 +328,8 @@ mod tests {
         assert_eq!(StyleDef::parse_hex_color(""), None);
         assert_eq!(StyleDef::parse_hex_color("#zzzzzz"), None);
     }
+
+    // ── Palette and style lookup ──────────────────────────────────
 
     #[test]
     fn palette_rgb_converts() {
@@ -361,6 +365,8 @@ mod tests {
         let style = StyleDef::find("caribbean").unwrap();
         assert_eq!(style.outline_rgba(), [26, 26, 46, 255]);
     }
+
+    // ── PostProcessConfig defaults ────────────────────────────────
 
     #[test]
     fn default_post_process_config() {

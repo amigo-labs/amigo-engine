@@ -500,6 +500,8 @@ mod tests {
             .with_node(DialogNode::new(3, "NPC", "Farewell!"))
     }
 
+    // ── Linear dialog flow ──────────────────────────────────
+
     #[test]
     fn linear_dialog_flow() {
         let tree = DialogTree::new(1, "Linear", 0)
@@ -524,6 +526,8 @@ mod tests {
         runner.advance(&tree, &mut state);
         assert!(!runner.is_active());
     }
+
+    // ── Choices and conditions ──────────────────────────────
 
     #[test]
     fn dialog_with_choices() {
@@ -582,6 +586,8 @@ mod tests {
         assert_eq!(runner.available_choices().len(), 2); // Both choices
     }
 
+    // ── Effects and serialization ────────────────────────────
+
     #[test]
     fn dialog_effects() {
         let tree = DialogTree::new(1, "Effects", 0).with_node(
@@ -613,6 +619,8 @@ mod tests {
         assert_eq!(loaded.get_flag("quest_1"), 1);
         assert_eq!(loaded.get_flag("reputation"), 50);
     }
+
+    // ── Complex conditions ──────────────────────────────────
 
     #[test]
     fn complex_conditions() {

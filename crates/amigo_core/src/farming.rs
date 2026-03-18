@@ -434,6 +434,8 @@ impl FarmGrid {
 mod tests {
     use super::*;
 
+    // ── Calendar ────────────────────────────────────────────
+
     #[test]
     fn calendar_day_advance() {
         let mut cal = Calendar::new(10, 28); // 10 ticks per day
@@ -498,6 +500,8 @@ mod tests {
         }
         assert_eq!(cal.total_days(), 10);
     }
+
+    // ── Growth system ───────────────────────────────────────
 
     #[test]
     fn growth_basic() {
@@ -580,6 +584,8 @@ mod tests {
         }
         assert!(inst[0].is_complete(&def));
     }
+
+    // ── Farm grid ───────────────────────────────────────────
 
     #[test]
     fn farm_grid_workflow() {

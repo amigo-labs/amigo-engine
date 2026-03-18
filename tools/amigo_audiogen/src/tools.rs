@@ -745,10 +745,14 @@ fn sanitize(s: &str) -> String {
 mod tests {
     use super::*;
 
+    // ── Tool listing ───────────────────────────────────────────
+
     #[test]
     fn list_tools_returns_18() {
         assert_eq!(list_tools().len(), 18);
     }
+
+    // ── Music generation dispatch ─────────────────────────────────
 
     #[test]
     fn dispatch_generate_music() {
@@ -777,6 +781,8 @@ mod tests {
         assert!(v["stem_paths"].as_object().unwrap().len() == 4);
     }
 
+    // ── SFX and stems dispatch ──────────────────────────────────
+
     #[test]
     fn dispatch_generate_sfx() {
         let result = dispatch_tool(
@@ -802,6 +808,8 @@ mod tests {
         assert_eq!(v["stems"].as_array().unwrap().len(), 4);
     }
 
+    // ── Query and status dispatch ──────────────────────────────
+
     #[test]
     fn dispatch_list_styles() {
         let result = dispatch_tool("amigo_audiogen_list_styles", serde_json::json!({}));
@@ -823,6 +831,8 @@ mod tests {
         let v = result.unwrap();
         assert_eq!(v["acestep_connected"], false);
     }
+
+    // ── Clean-mode dispatch ─────────────────────────────────────
 
     #[test]
     fn dispatch_generate_core_melody() {
@@ -850,6 +860,8 @@ mod tests {
         let v = result.unwrap();
         assert!(v["output"].as_str().unwrap().contains("bass"));
     }
+
+    // ── Utility dispatch ────────────────────────────────────────
 
     #[test]
     fn dispatch_generate_variation() {

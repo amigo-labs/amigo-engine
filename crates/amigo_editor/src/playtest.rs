@@ -331,6 +331,8 @@ mod tests {
         }
     }
 
+    // ── Per-run metrics ──────────────────────────────────────────
+
     #[test]
     fn kill_ratio() {
         let m = sample_metrics(true, 90, 10);
@@ -342,6 +344,8 @@ mod tests {
         let m = sample_metrics(true, 100, 0);
         assert!((m.gold_efficiency() - 0.8).abs() < 0.001);
     }
+
+    // ── Aggregated results & difficulty ────────────────────────
 
     #[test]
     fn win_rate() {
@@ -382,6 +386,8 @@ mod tests {
         }
         assert_eq!(results.difficulty_assessment(), DifficultyRating::TooHard);
     }
+
+    // ── Balance suggestions ──────────────────────────────────────
 
     #[test]
     fn balance_suggestions_too_easy() {

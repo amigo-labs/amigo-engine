@@ -1182,7 +1182,7 @@ impl Default for AnimStateMachine {
 mod tests {
     use super::*;
 
-    // -- Sprite sheet animation tests --
+    // ── Sprite Sheet Animation ───────────────────────────────────
 
     fn make_sprite_animation(frame_count: usize, duration: u32, looping: bool) -> Animation {
         let frames: Vec<AnimFrame> = (0..frame_count)
@@ -1248,7 +1248,7 @@ mod tests {
         assert!(!player.finished);
     }
 
-    // -- Skeleton & world transform --
+    // ── Skeleton Transforms ──────────────────────────────────────
 
     fn make_test_skeleton() -> (Skeleton, BoneId, BoneId, BoneId) {
         let mut skel = Skeleton::new("test_skel");
@@ -1334,7 +1334,7 @@ mod tests {
         assert_eq!(skel.find_bone("nonexistent"), None);
     }
 
-    // -- BoneAnimation keyframe sampling --
+    // ── Bone Animation ───────────────────────────────────────────
 
     fn make_bone_animation() -> BoneAnimation {
         BoneAnimation {
@@ -1398,7 +1398,7 @@ mod tests {
         assert!((t.position.0 - 20.0).abs() < 1e-5);
     }
 
-    // -- SkeletalPlayer --
+    // ── Skeletal Player ──────────────────────────────────────────
 
     #[test]
     fn skeletal_player_looping() {

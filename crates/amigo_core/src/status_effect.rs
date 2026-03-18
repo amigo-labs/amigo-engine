@@ -194,6 +194,8 @@ impl StatusEffects {
 mod tests {
     use super::*;
 
+    // ── Speed modifiers ─────────────────────────────────────
+
     #[test]
     fn slow_reduces_speed() {
         let mut effects = StatusEffects::new();
@@ -211,6 +213,8 @@ mod tests {
         assert!(effects.is_stunned());
     }
 
+    // ── Damage over time ────────────────────────────────────
+
     #[test]
     fn burn_does_dot() {
         let mut effects = StatusEffects::new();
@@ -226,6 +230,8 @@ mod tests {
         assert!((effects.damage_per_second() - 10.0).abs() < 0.001);
         assert_eq!(effects.count(), 2);
     }
+
+    // ── Expiry and refresh ──────────────────────────────────
 
     #[test]
     fn effects_expire() {
@@ -251,6 +257,8 @@ mod tests {
         assert_eq!(effects.count(), 1);
         assert!((effects.speed_multiplier() - 0.5).abs() < 0.001);
     }
+
+    // ── Defensive debuffs ───────────────────────────────────
 
     #[test]
     fn vulnerable_increases_damage_taken() {

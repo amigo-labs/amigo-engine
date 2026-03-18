@@ -248,7 +248,7 @@ impl TileMap {
 mod tests {
     use super::*;
 
-    // -- Orthogonal tests --
+    // ── Orthogonal Tests ─────────────────────────────────────────
 
     #[test]
     fn ortho_screen_to_tile() {
@@ -277,7 +277,7 @@ mod tests {
         }
     }
 
-    // -- Isometric tests --
+    // ── Isometric Tests ──────────────────────────────────────────
 
     #[test]
     fn iso_screen_to_tile_origin() {
@@ -310,7 +310,7 @@ mod tests {
         }
     }
 
-    // -- Layer tests --
+    // ── Layer Operations ─────────────────────────────────────────
 
     #[test]
     fn tile_layer_set_get() {
@@ -348,6 +348,8 @@ mod tests {
         map.layer_mut("foreground").unwrap().set(0, 0, TileId(99));
         assert_eq!(map.layer("foreground").unwrap().get(0, 0), TileId(99));
     }
+
+    // ── Bounds Checking ──────────────────────────────────────────
 
     #[test]
     fn in_bounds_check() {

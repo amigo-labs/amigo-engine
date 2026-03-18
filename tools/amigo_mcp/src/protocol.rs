@@ -161,6 +161,8 @@ mod tests {
         }
     }
 
+    // ── Initialize and tool listing ──────────────────────────────
+
     #[test]
     fn initialize_returns_capabilities() {
         let resp = handle_mcp_request(&make_req("initialize", json!({})), &mock_api_call);
@@ -177,6 +179,8 @@ mod tests {
         let tools = result["tools"].as_array().unwrap();
         assert!(!tools.is_empty());
     }
+
+    // ── Tool call routing ───────────────────────────────────────
 
     #[test]
     fn tools_call_routes_to_api() {
@@ -205,6 +209,8 @@ mod tests {
         let result = resp.result.unwrap();
         assert_eq!(result["isError"], true);
     }
+
+    // ── Error handling ──────────────────────────────────────────
 
     #[test]
     fn unknown_method_returns_rpc_error() {

@@ -531,6 +531,8 @@ impl PatternSequence {
 mod tests {
     use super::*;
 
+    // ── Pool basics ─────────────────────────────────────────
+
     #[test]
     fn pool_spawn_and_despawn() {
         let mut pool = BulletPool::new(10);
@@ -600,6 +602,8 @@ mod tests {
         assert_eq!(hits[0], 0);
     }
 
+    // ── Pattern computation ─────────────────────────────────
+
     #[test]
     fn pattern_radial() {
         let mut rng = 1u64;
@@ -654,6 +658,8 @@ mod tests {
         assert!(vels[2].1 > 0.1);
     }
 
+    // ── Emitter behavior ────────────────────────────────────
+
     #[test]
     fn emitter_fires_at_interval() {
         let mut pool = BulletPool::new(100);
@@ -702,6 +708,8 @@ mod tests {
         // Rotation should cause different velocity directions
         assert!((first_vx - second_vx).abs() > 0.01, "Spiral should rotate");
     }
+
+    // ── Sequence phases ─────────────────────────────────────
 
     #[test]
     fn sequence_phase_transition() {
@@ -786,6 +794,8 @@ mod tests {
 
         assert!(seq.is_finished());
     }
+
+    // ── Pool clear ──────────────────────────────────────────
 
     #[test]
     fn pool_clear() {

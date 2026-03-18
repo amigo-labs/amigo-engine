@@ -265,6 +265,8 @@ mod tests {
         }
     }
 
+    // ── Pathfinding ───────────────────────────────────────────────
+
     #[test]
     fn basic_path() {
         let config = AutoPathConfig {
@@ -306,6 +308,8 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // ── Path simplification ───────────────────────────────────────
+
     #[test]
     fn simplification() {
         // Straight line should simplify to 2 points
@@ -335,6 +339,8 @@ mod tests {
         assert!(path.closed);
         assert!(path.points.len() > 4);
     }
+
+    // ── TileGrid walkability ──────────────────────────────────────
 
     #[test]
     fn tile_grid_walkability() {

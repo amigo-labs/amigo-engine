@@ -372,6 +372,8 @@ impl Default for AssetBrowser {
 mod tests {
     use super::*;
 
+    // ── Collision brush ───────────────────────────────────────────
+
     #[test]
     fn collision_brush_to_tile() {
         assert_eq!(
@@ -387,6 +389,8 @@ mod tests {
             CollisionType::OneWay
         );
     }
+
+    // ── Collision editor operations ────────────────────────────
 
     #[test]
     fn collision_editor_paint_and_undo() {
@@ -454,6 +458,8 @@ mod tests {
         assert_eq!(data.len(), 9);
         assert_eq!(data[4], CollisionType::Solid); // (1,1) in 3-wide grid
     }
+
+    // ── Asset browser ─────────────────────────────────────────────
 
     #[test]
     fn asset_browser_filter() {

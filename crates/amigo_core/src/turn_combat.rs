@@ -882,6 +882,8 @@ mod tests {
         )
     }
 
+    // ── Battle flow ─────────────────────────────────────────
+
     #[test]
     fn basic_battle_flow() {
         let player = make_combatant("Hero", 100, 20, 10, 15, 0);
@@ -925,6 +927,8 @@ mod tests {
         }
     }
 
+    // ── Type effectiveness ──────────────────────────────────
+
     #[test]
     fn type_effectiveness_basics() {
         assert_eq!(type_effectiveness(Element::Fire, Element::Grass), 2.0);
@@ -932,6 +936,8 @@ mod tests {
         assert_eq!(type_effectiveness(Element::Electric, Element::Earth), 0.0);
         assert_eq!(type_effectiveness(Element::Normal, Element::Normal), 1.0);
     }
+
+    // ── Status effects and defense ──────────────────────────
 
     #[test]
     fn status_effects_tick() {

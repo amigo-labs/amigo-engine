@@ -438,6 +438,8 @@ pub enum LayerRule {
 mod tests {
     use super::*;
 
+    // ── dB conversions ─────────────────────────────────────────
+
     #[test]
     fn db_conversions() {
         let linear = db_to_linear(-6.0);
@@ -448,6 +450,8 @@ mod tests {
 
         assert!(linear_to_db(0.0) < -100.0);
     }
+
+    // ── Trim and normalize ──────────────────────────────────────
 
     #[test]
     fn trim_silence_basic() {
@@ -481,6 +485,8 @@ mod tests {
         assert_eq!(buf.samples, vec![0.0, 0.0, 0.0]);
     }
 
+    // ── Duration and loop points ─────────────────────────────────
+
     #[test]
     fn duration_calculation() {
         let buf = AudioBuffer {
@@ -502,6 +508,8 @@ mod tests {
         let p = point.unwrap();
         assert!(p > 1500 && p < 2500);
     }
+
+    // ── Bar snapping ────────────────────────────────────────────
 
     #[test]
     fn bar_snap_truncates_to_bar_boundary() {
@@ -525,6 +533,8 @@ mod tests {
         assert_eq!(buf.samples.len(), 1000);
     }
 
+    // ── Spectral validation ─────────────────────────────────────
+
     #[test]
     fn spectral_validate_silent() {
         let buf = AudioBuffer {
@@ -545,6 +555,8 @@ mod tests {
         let report = buf.spectral_validate("custom");
         assert!(report.passed);
     }
+
+    // ── Full pipeline ───────────────────────────────────────────
 
     #[test]
     fn run_pipeline_basic() {

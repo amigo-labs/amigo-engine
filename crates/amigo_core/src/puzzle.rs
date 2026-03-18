@@ -544,6 +544,8 @@ impl BlockBag {
 mod tests {
     use super::*;
 
+    // ── Grid operations ─────────────────────────────────────
+
     #[test]
     fn grid_basic_ops() {
         let mut grid: PuzzleGrid<u8> = PuzzleGrid::new(4, 4);
@@ -611,6 +613,8 @@ mod tests {
         assert_eq!(ones.len(), 2);
     }
 
+    // ── Pattern matching ────────────────────────────────────
+
     #[test]
     fn horizontal_match() {
         let mut grid: PuzzleGrid<u8> = PuzzleGrid::new(5, 3);
@@ -677,6 +681,8 @@ mod tests {
         assert!(grid.is_empty(2, 2));
     }
 
+    // ── Move history ────────────────────────────────────────
+
     #[test]
     fn move_history_undo_redo() {
         let mut hist = MoveHistory::new();
@@ -716,6 +722,8 @@ mod tests {
         assert!(!hist.can_redo());
         assert_eq!(hist.move_count(), 1);
     }
+
+    // ── Block shapes ────────────────────────────────────────
 
     #[test]
     fn block_shape_placement() {
@@ -759,6 +767,8 @@ mod tests {
         let wide_grid: PuzzleGrid<u8> = PuzzleGrid::new(5, 3);
         assert!(shape.can_place(&wide_grid, 0, 0));
     }
+
+    // ── Block bag and match-3 workflow ──────────────────────
 
     #[test]
     fn block_bag_fairness() {

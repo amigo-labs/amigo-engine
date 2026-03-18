@@ -1,5 +1,5 @@
 ---
-status: draft
+status: spec
 depends_on: []
 last_updated: 2026-03-16
 ---
