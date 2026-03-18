@@ -2,7 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
-<!-- Status: 37 done · 23 spec · 1 draft -->
+<!-- Status: 37 done · 23 spec · 2 draft -->
 
 # Amigo Engine -- Spec Overview
 
@@ -256,6 +256,7 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | done   | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | done   | amigo_audiogen    | engine/audio                  |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
+| [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | draft | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
 | [config/data-formats](config/data-formats.md)             | done   | --                | --                            |
 | [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |
