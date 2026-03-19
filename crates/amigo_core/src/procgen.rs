@@ -540,9 +540,18 @@ const G2: f64 = 0.21132486540518713; // (3 - sqrt(3)) / 6
 
 // Gradients for simplex 2D (12 directions)
 const SIMPLEX_GRAD2: [(f64, f64); 12] = [
-    (1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0),
-    (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
-    (1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0),
+    (1.0, 1.0),
+    (-1.0, 1.0),
+    (1.0, -1.0),
+    (-1.0, -1.0),
+    (1.0, 0.0),
+    (-1.0, 0.0),
+    (0.0, 1.0),
+    (0.0, -1.0),
+    (1.0, 1.0),
+    (-1.0, 1.0),
+    (1.0, -1.0),
+    (-1.0, -1.0),
 ];
 
 /// 2D Simplex noise. ~40% faster than Perlin for the same quality.
@@ -735,7 +744,10 @@ impl WfcSolver {
             return Err(WfcError::Contradiction { x, y });
         }
         // Weighted random selection
-        let total_weight: f32 = possible.iter().map(|&t| self.rules.weights[t as usize]).sum();
+        let total_weight: f32 = possible
+            .iter()
+            .map(|&t| self.rules.weights[t as usize])
+            .sum();
         let r = (self.xorshift() % 10000) as f32 / 10000.0 * total_weight;
         let mut acc = 0.0;
         let mut chosen = possible[0];
@@ -833,11 +845,7 @@ impl WfcSolver {
     /// Run to completion. Returns Ok(tile grid) or Err if contradiction.
     pub fn solve(&mut self) -> Result<Vec<u32>, WfcError> {
         while self.step()? {}
-        Ok(self
-            .result
-            .iter()
-            .map(|r| r.unwrap_or(0))
-            .collect())
+        Ok(self.result.iter().map(|r| r.unwrap_or(0)).collect())
     }
 }
 
@@ -901,7 +909,11 @@ pub struct DungeonResult {
 
 /// Generate a dungeon from configuration.
 pub fn generate_dungeon(config: &DungeonConfig) -> DungeonResult {
-    let mut rng = if config.seed == 0 { 0xCAFE_BABE } else { config.seed };
+    let mut rng = if config.seed == 0 {
+        0xCAFE_BABE
+    } else {
+        config.seed
+    };
     let mut xorshift = move || -> u64 {
         rng ^= rng << 13;
         rng ^= rng >> 7;
@@ -920,8 +932,10 @@ pub fn generate_dungeon(config: &DungeonConfig) -> DungeonResult {
         if rooms.len() >= config.max_rooms as usize {
             break;
         }
-        let rw = config.min_room_size + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
-        let rh = config.min_room_size + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
+        let rw = config.min_room_size
+            + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
+        let rh = config.min_room_size
+            + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
         let rx = 1 + (xorshift() as u32 % (w.saturating_sub(rw + 2)));
         let ry = 1 + (xorshift() as u32 % (h.saturating_sub(rh + 2)));
 

@@ -63,7 +63,10 @@ pub struct NoteValue {
 
 impl NoteValue {
     pub const fn new(pitch_class: PitchClass, octave: i8) -> Self {
-        Self { pitch_class, octave }
+        Self {
+            pitch_class,
+            octave,
+        }
     }
 
     /// MIDI note number (C4 = 60).

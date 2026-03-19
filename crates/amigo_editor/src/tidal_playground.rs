@@ -61,9 +61,15 @@ pub struct PresetStemConfig {
     pub volume: f64,
 }
 
-fn default_true() -> bool { true }
-fn default_instrument() -> String { "square_wave".into() }
-fn default_volume() -> f64 { 1.0 }
+fn default_true() -> bool {
+    true
+}
+fn default_instrument() -> String {
+    "square_wave".into()
+}
+fn default_volume() -> f64 {
+    1.0
+}
 
 impl TidalPlayground {
     /// Create a new playground from a composition.
@@ -150,15 +156,13 @@ impl TidalPlayground {
         }
 
         let beats_per_second = self.global_bpm / 60.0;
-        let cycle_duration_secs =
-            self.composition.cycle_length.max(1.0) / beats_per_second;
+        let cycle_duration_secs = self.composition.cycle_length.max(1.0) / beats_per_second;
         let samples_per_cycle = (cycle_duration_secs * sample_rate as f64) as usize;
 
         let events = self.current_events();
 
         for (i, sample) in buffer.iter_mut().enumerate() {
-            let sample_pos = self.playback.cycle_position
-                + (i as f64 / samples_per_cycle as f64);
+            let sample_pos = self.playback.cycle_position + (i as f64 / samples_per_cycle as f64);
             let t_seconds = i as f64 / sample_rate as f64;
 
             let mut value = 0.0_f32;
@@ -285,8 +289,7 @@ impl TidalPlayground {
     /// Export one cycle as WAV (mono, 16-bit PCM).
     pub fn export_wav(&mut self, path: &str, sample_rate: u32) -> Result<(), std::io::Error> {
         let beats_per_second = self.global_bpm / 60.0;
-        let cycle_duration_secs =
-            self.composition.cycle_length.max(1.0) / beats_per_second;
+        let cycle_duration_secs = self.composition.cycle_length.max(1.0) / beats_per_second;
         let total_samples = (cycle_duration_secs * sample_rate as f64) as usize;
 
         // Save and restore playback state.
@@ -326,13 +329,25 @@ fn oscillator(instrument: Instrument, phase: f64) -> f32 {
     let p = phase as f32;
     match instrument {
         Instrument::SquareWave => {
-            if p < 0.5 { 1.0 } else { -1.0 }
+            if p < 0.5 {
+                1.0
+            } else {
+                -1.0
+            }
         }
         Instrument::Pulse25 => {
-            if p < 0.25 { 1.0 } else { -1.0 }
+            if p < 0.25 {
+                1.0
+            } else {
+                -1.0
+            }
         }
         Instrument::Pulse12 => {
-            if p < 0.125 { 1.0 } else { -1.0 }
+            if p < 0.125 {
+                1.0
+            } else {
+                -1.0
+            }
         }
         Instrument::TriangleWave => {
             if p < 0.5 {
@@ -575,7 +590,10 @@ mod tests {
 
     #[test]
     fn parse_instrument_names() {
-        assert_eq!(parse_instrument("square_wave"), Some(Instrument::SquareWave));
+        assert_eq!(
+            parse_instrument("square_wave"),
+            Some(Instrument::SquareWave)
+        );
         assert_eq!(parse_instrument("triangle"), Some(Instrument::TriangleWave));
         assert_eq!(parse_instrument("noise"), Some(Instrument::NoiseChannel));
         assert_eq!(parse_instrument("unknown"), None);

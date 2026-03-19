@@ -6,8 +6,8 @@ use amigo_core::game_preset::{
 };
 use amigo_editor::{save_level, AmigoLevel, EntityPlacement, LayerData, PathData};
 
-mod setup;
 mod pipeline_cmd;
+mod setup;
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing (minimal, no external dependency)

@@ -47,7 +47,11 @@ impl ConversionStage {
                  print(result)",
                 midi_path.display().to_string().replace('\\', "\\\\"),
                 self.config.resolution,
-                if self.config.consolidate { "True" } else { "False" },
+                if self.config.consolidate {
+                    "True"
+                } else {
+                    "False"
+                },
             );
 
             let output = Command::new(&self.uv_path)

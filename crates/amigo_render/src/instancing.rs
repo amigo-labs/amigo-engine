@@ -163,7 +163,9 @@ mod tests {
         (
             TextureId(tex),
             has_shader,
-            InstanceData::new(0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 1.0, 1.0, [1.0; 4], false, false, 0.0),
+            InstanceData::new(
+                0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 1.0, 1.0, [1.0; 4], false, false, 0.0,
+            ),
         )
     }
 
@@ -215,19 +217,25 @@ mod tests {
 
     #[test]
     fn flip_flags_pack_correctly() {
-        let inst = InstanceData::new(0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, [1.0; 4], true, true, 0.0);
+        let inst = InstanceData::new(
+            0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, [1.0; 4], true, true, 0.0,
+        );
         assert_eq!(inst.flags, 3); // bit 0 + bit 1
-        let inst2 = InstanceData::new(0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, [1.0; 4], true, false, 0.0);
+        let inst2 = InstanceData::new(
+            0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, [1.0; 4], true, false, 0.0,
+        );
         assert_eq!(inst2.flags, 1); // bit 0 only
     }
 
     #[test]
     fn collect_instance_data_matches_batches() {
-        let sprites: Vec<_> = (0..100).map(|i| {
-            let mut s = make_sprite(1, false);
-            s.2.z_order = i as f32;
-            s
-        }).collect();
+        let sprites: Vec<_> = (0..100)
+            .map(|i| {
+                let mut s = make_sprite(1, false);
+                s.2.z_order = i as f32;
+                s
+            })
+            .collect();
         let (batches, _) = partition_batches(&sprites, 64);
         let data = collect_instance_data(&sprites, &batches);
         assert_eq!(data.len(), 100);

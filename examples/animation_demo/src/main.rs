@@ -90,8 +90,7 @@ impl Game for AnimationDemo {
                 if ctx.input.pressed(KeyCode::Space) {
                     self.set_state(CharState::Jump);
                     self.jump_timer = JUMP_DURATION;
-                } else if ctx.input.held(KeyCode::ArrowLeft)
-                    || ctx.input.held(KeyCode::ArrowRight)
+                } else if ctx.input.held(KeyCode::ArrowLeft) || ctx.input.held(KeyCode::ArrowRight)
                 {
                     if ctx.input.held(KeyCode::ArrowLeft) {
                         self.facing_left = true;
@@ -126,7 +125,11 @@ impl Game for AnimationDemo {
         ctx.draw_rect(Rect::new(x, y, CHAR_W, CHAR_H), self.state.color());
 
         // Direction indicator (small triangle-like bar)
-        let dir_x = if self.facing_left { x - 6.0 } else { x + CHAR_W + 2.0 };
+        let dir_x = if self.facing_left {
+            x - 6.0
+        } else {
+            x + CHAR_W + 2.0
+        };
         ctx.draw_rect(Rect::new(dir_x, cy - 3.0, 4.0, 6.0), Color::WHITE);
 
         // HUD text
@@ -137,7 +140,12 @@ impl Game for AnimationDemo {
             self.state.frame_count(),
         );
         ctx.draw_text(&state_text, 4.0, 4.0, Color::WHITE);
-        ctx.draw_text("Arrows=Walk  Space=Jump", 4.0, 16.0, Color::new(180, 180, 180, 255));
+        ctx.draw_text(
+            "Arrows=Walk  Space=Jump",
+            4.0,
+            16.0,
+            Color::new(180, 180, 180, 255),
+        );
     }
 }
 

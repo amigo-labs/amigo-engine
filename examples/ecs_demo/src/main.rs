@@ -45,7 +45,8 @@ impl EcsDemo {
                     y: angle.sin() * speed,
                 }),
             );
-            self.world.insert(id, Tint(Self::color_for(self.next_color)));
+            self.world
+                .insert(id, Tint(Self::color_for(self.next_color)));
             self.next_color += 1;
         }
     }
@@ -90,12 +91,7 @@ impl Game for EcsDemo {
 
         // D key despawns oldest 50
         if ctx.input.pressed(KeyCode::KeyD) {
-            let ids: Vec<EntityId> = self
-                .world
-                .storage::<Position>()
-                .ids()
-                .take(50)
-                .collect();
+            let ids: Vec<EntityId> = self.world.storage::<Position>().ids().take(50).collect();
             for id in ids {
                 self.world.despawn(id);
             }

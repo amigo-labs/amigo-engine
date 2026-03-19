@@ -704,20 +704,16 @@ pub fn dispatch_tool(
                 "preview_secs": p.preview_secs,
             }))
         }
-        "amigo_audiogen_list_models" => {
-            Ok(serde_json::json!({
-                "acestep_models": ["ace-step-v1"],
-                "audiogen_models": ["audiogen-medium"],
-                "demucs_models": ["demucs4", "demucs6"],
-            }))
-        }
-        "amigo_audiogen_queue_status" => {
-            Ok(serde_json::json!({
-                "acestep_queue": 0,
-                "audiogen_queue": 0,
-                "total_pending": 0,
-            }))
-        }
+        "amigo_audiogen_list_models" => Ok(serde_json::json!({
+            "acestep_models": ["ace-step-v1"],
+            "audiogen_models": ["audiogen-medium"],
+            "demucs_models": ["demucs4", "demucs6"],
+        })),
+        "amigo_audiogen_queue_status" => Ok(serde_json::json!({
+            "acestep_queue": 0,
+            "audiogen_queue": 0,
+            "total_pending": 0,
+        })),
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }

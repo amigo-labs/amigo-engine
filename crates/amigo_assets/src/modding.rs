@@ -45,19 +45,43 @@ pub struct ModInfo {
 #[derive(Debug)]
 pub enum ModError {
     DirectoryNotFound(PathBuf),
-    InvalidManifest { mod_name: String, reason: String },
-    VersionMismatch { mod_name: String, required: String, actual: String },
-    MissingDependency { mod_name: String, dependency: String },
-    CircularDependency { cycle: Vec<String> },
+    InvalidManifest {
+        mod_name: String,
+        reason: String,
+    },
+    VersionMismatch {
+        mod_name: String,
+        required: String,
+        actual: String,
+    },
+    MissingDependency {
+        mod_name: String,
+        dependency: String,
+    },
+    CircularDependency {
+        cycle: Vec<String>,
+    },
 }
 
 impl std::fmt::Display for ModError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::DirectoryNotFound(p) => write!(f, "Mod directory not found: {}", p.display()),
-            Self::InvalidManifest { mod_name, reason } => write!(f, "Invalid mod.toml in {mod_name}: {reason}"),
-            Self::VersionMismatch { mod_name, required, actual } => write!(f, "Engine version mismatch for {mod_name}: requires {required}, got {actual}"),
-            Self::MissingDependency { mod_name, dependency } => write!(f, "Missing dependency: {mod_name} requires {dependency}"),
+            Self::InvalidManifest { mod_name, reason } => {
+                write!(f, "Invalid mod.toml in {mod_name}: {reason}")
+            }
+            Self::VersionMismatch {
+                mod_name,
+                required,
+                actual,
+            } => write!(
+                f,
+                "Engine version mismatch for {mod_name}: requires {required}, got {actual}"
+            ),
+            Self::MissingDependency {
+                mod_name,
+                dependency,
+            } => write!(f, "Missing dependency: {mod_name} requires {dependency}"),
             Self::CircularDependency { cycle } => write!(f, "Circular dependency: {:?}", cycle),
         }
     }
@@ -131,7 +155,11 @@ impl ModManager {
             if !manifest_path.exists() {
                 self.discovered.push(ModInfo {
                     manifest: ModManifest {
-                        name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                        name: path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string(),
                         version: "0.0.0".into(),
                         author: "unknown".into(),
                         engine_version: "*".into(),
@@ -157,7 +185,11 @@ impl ModManager {
                         });
                     }
                     Err(e) => {
-                        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let name = path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
                         self.discovered.push(ModInfo {
                             manifest: ModManifest {
                                 name: name.clone(),
@@ -175,7 +207,11 @@ impl ModManager {
                     }
                 },
                 Err(e) => {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     self.discovered.push(ModInfo {
                         manifest: ModManifest {
                             name,
@@ -255,7 +291,11 @@ impl ModManager {
                 if !self.discovered[i].active {
                     continue;
                 }
-                if self.discovered[i].manifest.dependencies.contains(&name.to_string()) {
+                if self.discovered[i]
+                    .manifest
+                    .dependencies
+                    .contains(&name.to_string())
+                {
                     self.discovered[i].active = false;
                     cascaded.push(self.discovered[i].manifest.name.clone());
                     found = true;
@@ -271,7 +311,8 @@ impl ModManager {
 
     /// Compute load order via topological sort.
     pub fn compute_load_order(&mut self) -> Result<(), ModError> {
-        let active: Vec<usize> = self.discovered
+        let active: Vec<usize> = self
+            .discovered
             .iter()
             .enumerate()
             .filter(|(_, m)| m.active)
@@ -285,7 +326,10 @@ impl ModManager {
         // Build adjacency list
         for (local_i, &global_i) in active.iter().enumerate() {
             for dep in &self.discovered[global_i].manifest.dependencies {
-                if let Some(local_j) = active.iter().position(|&gi| self.discovered[gi].manifest.name == *dep) {
+                if let Some(local_j) = active
+                    .iter()
+                    .position(|&gi| self.discovered[gi].manifest.name == *dep)
+                {
                     adj[local_j].push(local_i); // dep -> dependent
                     in_degree[local_i] += 1;
                 }
@@ -325,7 +369,10 @@ impl ModManager {
             let pa = self.discovered[active[a]].manifest.priority;
             let pb = self.discovered[active[b]].manifest.priority;
             pa.cmp(&pb).then_with(|| {
-                self.discovered[active[a]].manifest.name.cmp(&self.discovered[active[b]].manifest.name)
+                self.discovered[active[a]]
+                    .manifest
+                    .name
+                    .cmp(&self.discovered[active[b]].manifest.name)
             })
         });
 
@@ -538,19 +585,27 @@ dependencies = ["base_mod"]
     #[test]
     fn cascade_deactivation() {
         let mods_path = setup_mods_dir();
-        write_mod(&mods_path, "base", r#"
+        write_mod(
+            &mods_path,
+            "base",
+            r#"
 name = "base"
 version = "1.0.0"
 author = "Test"
 engine_version = "*"
-"#);
-        write_mod(&mods_path, "child", r#"
+"#,
+        );
+        write_mod(
+            &mods_path,
+            "child",
+            r#"
 name = "child"
 version = "1.0.0"
 author = "Test"
 engine_version = "*"
 dependencies = ["base"]
-"#);
+"#,
+        );
         let mut mgr = ModManager::new(mods_path, "0.1.0");
         mgr.discover().unwrap();
         mgr.activate("base").unwrap();
@@ -563,20 +618,28 @@ dependencies = ["base"]
     #[test]
     fn load_order_by_priority() {
         let mods_path = setup_mods_dir();
-        write_mod(&mods_path, "low", r#"
+        write_mod(
+            &mods_path,
+            "low",
+            r#"
 name = "low"
 version = "1.0.0"
 author = "Test"
 engine_version = "*"
 priority = 1
-"#);
-        write_mod(&mods_path, "high", r#"
+"#,
+        );
+        write_mod(
+            &mods_path,
+            "high",
+            r#"
 name = "high"
 version = "1.0.0"
 author = "Test"
 engine_version = "*"
 priority = 10
-"#);
+"#,
+        );
         let mut mgr = ModManager::new(mods_path, "0.1.0");
         mgr.discover().unwrap();
         mgr.activate("low").unwrap();

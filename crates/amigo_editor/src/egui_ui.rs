@@ -28,12 +28,18 @@ fn draw_menu_bar(ctx: &egui::Context, state: &mut EditorState) {
 
             ui.menu_button("Edit", |ui| {
                 let undo_label = format!("Undo ({})", state.undo_stack.len());
-                if ui.add_enabled(state.can_undo(), egui::Button::new(undo_label)).clicked() {
+                if ui
+                    .add_enabled(state.can_undo(), egui::Button::new(undo_label))
+                    .clicked()
+                {
                     state.undo();
                     ui.close_menu();
                 }
                 let redo_label = format!("Redo ({})", state.redo_stack.len());
-                if ui.add_enabled(state.can_redo(), egui::Button::new(redo_label)).clicked() {
+                if ui
+                    .add_enabled(state.can_redo(), egui::Button::new(redo_label))
+                    .clicked()
+                {
                     state.redo();
                     ui.close_menu();
                 }
@@ -172,7 +178,10 @@ fn draw_status_bar(ctx: &egui::Context, state: &EditorState, _level: &AmigoLevel
                 EditorTool::PlaceEntity => "Entity",
                 EditorTool::PathEdit => "Path",
             };
-            ui.label(format!("Tool: {} | Tile #{}", tool_name, state.selected_tile));
+            ui.label(format!(
+                "Tool: {} | Tile #{}",
+                tool_name, state.selected_tile
+            ));
 
             ui.separator();
 

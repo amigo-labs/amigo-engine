@@ -173,21 +173,51 @@ pub enum ConfigError {
 }
 
 // Default value helpers for serde.
-fn default_true() -> bool { true }
-fn default_model() -> String { "htdemucs".into() }
-fn default_stem_count() -> u32 { 4 }
-fn default_sample_rate() -> u32 { 44100 }
-fn default_output_format() -> String { "wav".into() }
-fn default_onset_threshold() -> f64 { 0.5 }
-fn default_frame_threshold() -> f64 { 0.3 }
-fn default_min_note_length_ms() -> u32 { 50 }
-fn default_min_frequency() -> f64 { 27.5 }
-fn default_max_frequency() -> f64 { 4186.0 }
-fn default_quantize_grid() -> u32 { 16 }
-fn default_resolution() -> u32 { 16 }
-fn default_output_fmt() -> String { "amigo_tidal".into() }
-fn default_ghost_threshold() -> f64 { 0.1 }
-fn default_min_rest_length() -> u32 { 30 }
+fn default_true() -> bool {
+    true
+}
+fn default_model() -> String {
+    "htdemucs".into()
+}
+fn default_stem_count() -> u32 {
+    4
+}
+fn default_sample_rate() -> u32 {
+    44100
+}
+fn default_output_format() -> String {
+    "wav".into()
+}
+fn default_onset_threshold() -> f64 {
+    0.5
+}
+fn default_frame_threshold() -> f64 {
+    0.3
+}
+fn default_min_note_length_ms() -> u32 {
+    50
+}
+fn default_min_frequency() -> f64 {
+    27.5
+}
+fn default_max_frequency() -> f64 {
+    4186.0
+}
+fn default_quantize_grid() -> u32 {
+    16
+}
+fn default_resolution() -> u32 {
+    16
+}
+fn default_output_fmt() -> String {
+    "amigo_tidal".into()
+}
+fn default_ghost_threshold() -> f64 {
+    0.1
+}
+fn default_min_rest_length() -> u32 {
+    30
+}
 
 /// Embedded default config.
 const DEFAULT_CONFIG: &str = r#"

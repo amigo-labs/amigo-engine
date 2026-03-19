@@ -120,12 +120,10 @@ pub fn parse_amigo_tidal(content: &str) -> Result<Composition, FileError> {
 
         let mut parser = Parser::new(tokens);
         let (voice, _transforms, cycle_length) =
-            parser
-                .parse_voice_def()
-                .map_err(|e| FileError::Parse {
-                    stem: stem_name.clone(),
-                    source: e,
-                })?;
+            parser.parse_voice_def().map_err(|e| FileError::Parse {
+                stem: stem_name.clone(),
+                source: e,
+            })?;
 
         max_cycle_length = max_cycle_length.max(cycle_length);
 
@@ -176,7 +174,10 @@ pub fn format_amigo_tidal(comp: &Composition) -> String {
             };
 
             out.push_str(&format!("{voice_label}{slow} $\n"));
-            out.push_str(&format!("  n \"{}\"\n", format_pattern(&voice.note_pattern)));
+            out.push_str(&format!(
+                "  n \"{}\"\n",
+                format_pattern(&voice.note_pattern)
+            ));
             if let Some(ref amp) = voice.amp_pattern {
                 out.push_str(&format!("  # amp \"{}\"\n", format_pattern(amp)));
             }
@@ -193,9 +194,17 @@ pub fn format_amigo_tidal(comp: &Composition) -> String {
 fn format_pattern(pattern: &Pattern) -> String {
     match pattern {
         Pattern::Atom(atom) => format_atom(atom),
-        Pattern::Sequence(elems) => elems.iter().map(format_pattern).collect::<Vec<_>>().join(" "),
+        Pattern::Sequence(elems) => elems
+            .iter()
+            .map(format_pattern)
+            .collect::<Vec<_>>()
+            .join(" "),
         Pattern::Group(elems) => {
-            let inner = elems.iter().map(format_pattern).collect::<Vec<_>>().join(" ");
+            let inner = elems
+                .iter()
+                .map(format_pattern)
+                .collect::<Vec<_>>()
+                .join(" ");
             format!("[{inner}]")
         }
         Pattern::Repeat(inner, n) => format!("{}*{n}", format_pattern(inner)),
@@ -319,7 +328,9 @@ d3 $ slow 8 $ n "bd ~ sd ~ bd ~ sd bd"
         match &voice.note_pattern {
             Pattern::Sequence(elems) => {
                 // Should contain Sample("bd"), Rest, Sample("sd"), etc.
-                let has_bd = elems.iter().any(|e| matches!(e, Pattern::Atom(PatternAtom::Sample(s)) if s == "bd"));
+                let has_bd = elems
+                    .iter()
+                    .any(|e| matches!(e, Pattern::Atom(PatternAtom::Sample(s)) if s == "bd"));
                 assert!(has_bd, "expected bd sample in percussion");
             }
             other => panic!("expected Sequence, got {other:?}"),

@@ -248,8 +248,9 @@ impl Parser {
         let mut elements = Vec::new();
         loop {
             match self.peek() {
-                Some(Token::Hash | Token::Dollar | Token::Comma | Token::BracketClose)
-                | None => break,
+                Some(Token::Hash | Token::Dollar | Token::Comma | Token::BracketClose) | None => {
+                    break
+                }
                 _ => {
                     let elem = self.parse_pattern_element()?;
                     elements.push(elem);

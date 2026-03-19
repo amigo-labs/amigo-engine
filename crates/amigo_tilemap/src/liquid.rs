@@ -271,12 +271,7 @@ impl LiquidMap {
         true
     }
 
-    fn try_flow_sideways(
-        &mut self,
-        x: i32,
-        y: i32,
-        is_solid: &dyn Fn(i32, i32) -> bool,
-    ) -> bool {
+    fn try_flow_sideways(&mut self, x: i32, y: i32, is_solid: &dyn Fn(i32, i32) -> bool) -> bool {
         let cell = self.get(x, y);
         if cell.level <= 1 {
             return false; // Need at least 2 to spread.
@@ -285,7 +280,8 @@ impl LiquidMap {
         let left = self.get(x - 1, y);
         let right = self.get(x + 1, y);
         let left_ok = !is_solid(x - 1, y)
-            && (left.is_empty() || (left.liquid_type == cell.liquid_type && left.level < cell.level));
+            && (left.is_empty()
+                || (left.liquid_type == cell.liquid_type && left.level < cell.level));
         let right_ok = !is_solid(x + 1, y)
             && (right.is_empty()
                 || (right.liquid_type == cell.liquid_type && right.level < cell.level));
@@ -384,7 +380,9 @@ impl LiquidMap {
                     }
 
                     // Check for matching interaction.
-                    if let Some(result_tile) = self.find_interaction(cell.liquid_type, neighbor.liquid_type) {
+                    if let Some(result_tile) =
+                        self.find_interaction(cell.liquid_type, neighbor.liquid_type)
+                    {
                         self.set(x, y, LiquidCell::EMPTY);
                         self.set(nx, ny, LiquidCell::EMPTY);
                         self.solidified.push((x, y, result_tile));
@@ -463,7 +461,10 @@ mod tests {
         // Should have spread sideways.
         let left = map.get(7, 5);
         let right = map.get(9, 5);
-        assert!(left.level > 0 || right.level > 0, "water should spread sideways");
+        assert!(
+            left.level > 0 || right.level > 0,
+            "water should spread sideways"
+        );
     }
 
     // ── Liquid interactions ────────────────────────────────────────

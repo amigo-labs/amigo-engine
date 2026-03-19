@@ -19,10 +19,7 @@ pub enum SpriteShader {
         progress: f32,
     },
     /// Draw a colored pixel outline around the sprite.
-    Outline {
-        color: Color,
-        width: u8,
-    },
+    Outline { color: Color, width: u8 },
     /// Dissolve the sprite into pixels.
     Dissolve {
         /// 0.0 = fully visible, 1.0 = fully dissolved.
@@ -35,9 +32,7 @@ pub enum SpriteShader {
         target_palette: Vec<Color>,
     },
     /// Render the sprite as a solid-color silhouette.
-    Silhouette {
-        color: Color,
-    },
+    Silhouette { color: Color },
     /// Apply a sine-wave distortion.
     Wave {
         amplitude: f32,

@@ -150,8 +150,7 @@ impl CleanModePipeline {
         match &step {
             CleanModeStep::GenerateMelody => {
                 self.melody_ref = Some(output_path.clone());
-                self.stem_paths
-                    .insert("melody".into(), output_path.clone());
+                self.stem_paths.insert("melody".into(), output_path.clone());
             }
             CleanModeStep::GenerateStem(name) => {
                 self.stem_paths.insert(name.clone(), output_path.clone());
@@ -226,10 +225,7 @@ mod tests {
         assert_eq!(pipe.next_step(), Some(CleanModeStep::GenerateMelody));
 
         // Complete melody
-        pipe.complete_step(
-            CleanModeStep::GenerateMelody,
-            "out/melody.wav".into(),
-        );
+        pipe.complete_step(CleanModeStep::GenerateMelody, "out/melody.wav".into());
         assert_eq!(pipe.melody_ref, Some("out/melody.wav".into()));
 
         // Next should be bass (first non-melody stem)
@@ -275,10 +271,7 @@ mod tests {
 
         assert_eq!(pipe.progress(), 0.0);
 
-        pipe.complete_step(
-            CleanModeStep::GenerateMelody,
-            "melody.wav".into(),
-        );
+        pipe.complete_step(CleanModeStep::GenerateMelody, "melody.wav".into());
         assert!(pipe.progress() > 0.0);
         assert!(pipe.progress() < 1.0);
     }

@@ -334,7 +334,13 @@ mod tests {
         assert_eq!(grid.visibility_at(5, -100), TileVisibility::Hidden);
         assert_eq!(grid.visibility_at(10, 10), TileVisibility::Hidden); // == width/height, out-of-bounds
         assert_eq!(grid.visibility_at(100, 100), TileVisibility::Hidden);
-        assert_eq!(grid.visibility_at(i32::MIN, i32::MIN), TileVisibility::Hidden);
-        assert_eq!(grid.visibility_at(i32::MAX, i32::MAX), TileVisibility::Hidden);
+        assert_eq!(
+            grid.visibility_at(i32::MIN, i32::MIN),
+            TileVisibility::Hidden
+        );
+        assert_eq!(
+            grid.visibility_at(i32::MAX, i32::MAX),
+            TileVisibility::Hidden
+        );
     }
 }

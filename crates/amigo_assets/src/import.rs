@@ -288,7 +288,9 @@ pub fn import_ldtk(path: &Path) -> Result<Vec<MapDescriptor>, ImportError> {
     }
 
     if maps.is_empty() {
-        return Err(ImportError::InvalidFile("LDTK project has no levels".into()));
+        return Err(ImportError::InvalidFile(
+            "LDTK project has no levels".into(),
+        ));
     }
 
     Ok(maps)
@@ -456,10 +458,7 @@ pub fn parse_mml(name: &str, mml: &str) -> Result<MmlPattern, ImportError> {
             bpm = detected_bpm;
         }
 
-        channels.push(MmlChannel {
-            index: idx,
-            notes,
-        });
+        channels.push(MmlChannel { index: idx, notes });
     }
 
     Ok(MmlPattern {

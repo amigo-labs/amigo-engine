@@ -579,10 +579,16 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                             KeyCode::F2 => state.debug.show_grid = !state.debug.show_grid,
                             KeyCode::F3 => state.debug.show_collision = !state.debug.show_collision,
                             KeyCode::F4 => state.debug.show_paths = !state.debug.show_paths,
-                            KeyCode::F5 => state.debug.show_entity_ids = !state.debug.show_entity_ids,
+                            KeyCode::F5 => {
+                                state.debug.show_entity_ids = !state.debug.show_entity_ids
+                            }
                             KeyCode::F6 => state.debug.show_tile_ids = !state.debug.show_tile_ids,
-                            KeyCode::F7 => state.debug.show_audio_debug = !state.debug.show_audio_debug,
-                            KeyCode::F8 => state.debug.show_network_debug = !state.debug.show_network_debug,
+                            KeyCode::F7 => {
+                                state.debug.show_audio_debug = !state.debug.show_audio_debug
+                            }
+                            KeyCode::F8 => {
+                                state.debug.show_network_debug = !state.debug.show_network_debug
+                            }
                             _ => {}
                         }
                     }

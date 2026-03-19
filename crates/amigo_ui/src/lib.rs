@@ -552,7 +552,9 @@ impl UiContext {
         // Scroll via mouse wheel
         let scroll_delta = input.scroll_delta();
         let new_scroll = if scroll_delta < 0.0 {
-            scroll.saturating_add(1).min(items.len().saturating_sub(visible_count))
+            scroll
+                .saturating_add(1)
+                .min(items.len().saturating_sub(visible_count))
         } else if scroll_delta > 0.0 {
             scroll.saturating_sub(1)
         } else {

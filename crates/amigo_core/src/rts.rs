@@ -107,11 +107,7 @@ impl SelectionSystem {
     }
 
     /// Select all units of the same type as the clicked unit (double-click).
-    pub fn select_same_type(
-        &mut self,
-        clicked: EntityId,
-        all_units: &[(EntityId, UnitTypeId)],
-    ) {
+    pub fn select_same_type(&mut self, clicked: EntityId, all_units: &[(EntityId, UnitTypeId)]) {
         let target_type = all_units
             .iter()
             .find(|(e, _)| *e == clicked)
@@ -145,8 +141,10 @@ impl SelectionSystem {
     /// Append current selection to an existing control group (Shift+Ctrl+N).
     pub fn append_to_group(&mut self, group: u8) {
         if (group as usize) < self.control_groups.len() {
-            let existing: FxHashSet<EntityId> =
-                self.control_groups[group as usize].iter().copied().collect();
+            let existing: FxHashSet<EntityId> = self.control_groups[group as usize]
+                .iter()
+                .copied()
+                .collect();
             for &e in &self.selected {
                 if !existing.contains(&e) {
                     self.control_groups[group as usize].push(e);
@@ -157,10 +155,7 @@ impl SelectionSystem {
 
     /// Cycle through subgroups of the selection by unit type (Tab key).
     /// Returns the unit type that is now the active subgroup.
-    pub fn cycle_subgroup(
-        &mut self,
-        all_units: &[(EntityId, UnitTypeId)],
-    ) -> Option<UnitTypeId> {
+    pub fn cycle_subgroup(&mut self, all_units: &[(EntityId, UnitTypeId)]) -> Option<UnitTypeId> {
         let selected_set: FxHashSet<EntityId> = self.selected.iter().copied().collect();
         // Gather unique types present in the selection, preserving order.
         let mut types: Vec<UnitTypeId> = Vec::new();
@@ -479,10 +474,7 @@ impl FormationSystem {
         let mut pairs: Vec<(usize, usize, Fix)> = Vec::new();
         for (ui, (_, upos)) in units.iter().enumerate() {
             for (si, offset) in slots.slots.iter().enumerate() {
-                let world_slot = SimVec2::new(
-                    slots.center.x + offset.x,
-                    slots.center.y + offset.y,
-                );
+                let world_slot = SimVec2::new(slots.center.x + offset.x, slots.center.y + offset.y);
                 let dist_sq = upos.distance_squared(world_slot);
                 pairs.push((ui, si, dist_sq));
             }
@@ -962,11 +954,7 @@ mod tests {
         sel.update_box_select(10.0, 10.0);
         assert!(sel.box_rect().is_some());
 
-        let units = vec![
-            (eid(1), 5.0, 5.0),
-            (eid(2), 15.0, 15.0),
-            (eid(3), 8.0, 8.0),
-        ];
+        let units = vec![(eid(1), 5.0, 5.0), (eid(2), 15.0, 15.0), (eid(3), 8.0, 8.0)];
         sel.finish_box_select(&units, false);
         assert_eq!(sel.selected, vec![eid(1), eid(3)]);
         assert!(!sel.box_selecting);
@@ -1003,7 +991,12 @@ mod tests {
     #[test]
     fn test_command_queue_issue_and_advance() {
         let mut q = CommandQueue::new();
-        q.issue(UnitCommand::Move { target: SimVec2::ZERO }, false);
+        q.issue(
+            UnitCommand::Move {
+                target: SimVec2::ZERO,
+            },
+            false,
+        );
         q.issue(UnitCommand::Hold, true); // queued
         assert_eq!(q.len(), 2);
 

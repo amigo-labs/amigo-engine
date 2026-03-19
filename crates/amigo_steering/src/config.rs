@@ -59,8 +59,7 @@ impl SteeringConfig {
 
     /// Serialize to a RON string.
     pub fn to_ron(&self) -> String {
-        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .unwrap_or_default()
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()).unwrap_or_default()
     }
 }
 
@@ -90,7 +89,11 @@ mod tests {
     fn to_agent_builds_correct_behavior_count() {
         let cfg = SteeringConfig::default();
         let agent = cfg.to_agent(SimVec2::from_f32(100.0, 100.0));
-        assert_eq!(agent.behaviors.len(), 2, "Default config: Separation + Arrive");
+        assert_eq!(
+            agent.behaviors.len(),
+            2,
+            "Default config: Separation + Arrive"
+        );
         assert_eq!(agent.max_speed, Fix::from_num(cfg.max_speed));
     }
 }

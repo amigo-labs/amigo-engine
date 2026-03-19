@@ -201,7 +201,10 @@ impl ResourceFlow {
             if let (Some(fi), Some(ti)) = (from_idx, to_idx) {
                 // Determine the resource the destination wants.
                 let wanted: Vec<(ResourceType, i32)> = match &self.nodes[ti].node_type {
-                    FlowNodeType::Consumer { input, rate_per_tick } => {
+                    FlowNodeType::Consumer {
+                        input,
+                        rate_per_tick,
+                    } => {
                         vec![(*input, *rate_per_tick)]
                     }
                     FlowNodeType::Storage => {
@@ -217,7 +220,11 @@ impl ResourceFlow {
 
                 for (res, _demand) in wanted {
                     let available = self.nodes[fi].buffer.get(&res).copied().unwrap_or(0);
-                    let dest_cap = self.nodes[ti].capacity.get(&res).copied().unwrap_or(i32::MAX);
+                    let dest_cap = self.nodes[ti]
+                        .capacity
+                        .get(&res)
+                        .copied()
+                        .unwrap_or(i32::MAX);
                     let dest_buf = self.nodes[ti].buffer.get(&res).copied().unwrap_or(0);
                     let space = dest_cap - dest_buf;
                     let transfer = available.min(max_tp).min(space).max(0);
@@ -350,11 +357,7 @@ impl ZoneSystem {
     }
 
     fn idx(&self, pos: GridPos) -> Option<usize> {
-        if pos.x >= 0
-            && pos.y >= 0
-            && (pos.x as u32) < self.width
-            && (pos.y as u32) < self.height
-        {
+        if pos.x >= 0 && pos.y >= 0 && (pos.x as u32) < self.width && (pos.y as u32) < self.height {
             Some((pos.y as u32 * self.width + pos.x as u32) as usize)
         } else {
             None
@@ -450,11 +453,7 @@ impl RoadNetwork {
     }
 
     fn idx(&self, pos: GridPos) -> Option<usize> {
-        if pos.x >= 0
-            && pos.y >= 0
-            && (pos.x as u32) < self.width
-            && (pos.y as u32) < self.height
-        {
+        if pos.x >= 0 && pos.y >= 0 && (pos.x as u32) < self.width && (pos.y as u32) < self.height {
             Some((pos.y as u32 * self.width + pos.x as u32) as usize)
         } else {
             None
@@ -668,11 +667,7 @@ impl HappinessGrid {
     }
 
     fn idx(&self, pos: GridPos) -> Option<usize> {
-        if pos.x >= 0
-            && pos.y >= 0
-            && (pos.x as u32) < self.width
-            && (pos.y as u32) < self.height
-        {
+        if pos.x >= 0 && pos.y >= 0 && (pos.x as u32) < self.width && (pos.y as u32) < self.height {
             Some((pos.y as u32 * self.width + pos.x as u32) as usize)
         } else {
             None
@@ -992,11 +987,7 @@ impl ColorGradient {
     /// Default green-yellow-red gradient for most overlays.
     pub fn default_heatmap() -> Self {
         Self {
-            stops: vec![
-                (0.0, Color::GREEN),
-                (0.5, Color::YELLOW),
-                (1.0, Color::RED),
-            ],
+            stops: vec![(0.0, Color::GREEN), (0.5, Color::YELLOW), (1.0, Color::RED)],
         }
     }
 
@@ -1144,7 +1135,10 @@ mod tests {
     fn zone_system_paint_and_query() {
         let mut zones = ZoneSystem::new(10, 10);
         zones.paint_zone(Rect::new(2.0, 2.0, 3.0, 3.0), ZoneType::Residential);
-        assert_eq!(zones.zone_at(GridPos::new(3, 3)), Some(ZoneType::Residential));
+        assert_eq!(
+            zones.zone_at(GridPos::new(3, 3)),
+            Some(ZoneType::Residential)
+        );
         assert_eq!(zones.zone_at(GridPos::new(0, 0)), None);
 
         zones.clear_zone(Rect::new(2.0, 2.0, 3.0, 3.0));
@@ -1236,11 +1230,7 @@ mod tests {
     #[test]
     fn disaster_system_trigger_and_tick() {
         let mut sys = DisasterSystem::new(100);
-        sys.trigger(
-            DisasterType::Fire,
-            Rect::new(0.0, 0.0, 5.0, 5.0),
-            3,
-        );
+        sys.trigger(DisasterType::Fire, Rect::new(0.0, 0.0, 5.0, 5.0), 3);
         assert_eq!(sys.active.len(), 1);
         assert_eq!(
             sys.is_affected(GridPos::new(2, 2)),

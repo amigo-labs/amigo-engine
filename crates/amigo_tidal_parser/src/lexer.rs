@@ -126,7 +126,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                 tokens.push(Token::Comma);
                 i += 1;
             }
-            _ if ch.is_ascii_digit() || (ch == '-' && i + 1 < len && chars[i + 1].is_ascii_digit()) => {
+            _ if ch.is_ascii_digit()
+                || (ch == '-' && i + 1 < len && chars[i + 1].is_ascii_digit()) =>
+            {
                 let start = i;
                 if ch == '-' {
                     i += 1;
@@ -135,12 +137,10 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                     i += 1;
                 }
                 let text = &input[start..i];
-                let val: f64 = text
-                    .parse()
-                    .map_err(|_| LexError::InvalidNumber {
-                        text: text.to_string(),
-                        pos: start,
-                    })?;
+                let val: f64 = text.parse().map_err(|_| LexError::InvalidNumber {
+                    text: text.to_string(),
+                    pos: start,
+                })?;
                 tokens.push(Token::Number(val));
             }
             _ if ch.is_ascii_alphabetic() => {
@@ -226,18 +226,9 @@ mod tests {
     fn tokenize_simple_sequence() {
         let tokens = tokenize("c4 d4 e4").unwrap();
         assert_eq!(tokens.len(), 3);
-        assert_eq!(
-            tokens[0],
-            Token::Note(NoteValue::new(PitchClass::C, 4))
-        );
-        assert_eq!(
-            tokens[1],
-            Token::Note(NoteValue::new(PitchClass::D, 4))
-        );
-        assert_eq!(
-            tokens[2],
-            Token::Note(NoteValue::new(PitchClass::E, 4))
-        );
+        assert_eq!(tokens[0], Token::Note(NoteValue::new(PitchClass::C, 4)));
+        assert_eq!(tokens[1], Token::Note(NoteValue::new(PitchClass::D, 4)));
+        assert_eq!(tokens[2], Token::Note(NoteValue::new(PitchClass::E, 4)));
     }
 
     #[test]
@@ -262,10 +253,7 @@ mod tests {
     fn tokenize_keywords() {
         let tokens = tokenize("d1 $ slow 2 $ stack").unwrap();
         // d1 is lexed as Note(D, 1) — parser distinguishes voice labels.
-        assert_eq!(
-            tokens[0],
-            Token::Note(NoteValue::new(PitchClass::D, 1))
-        );
+        assert_eq!(tokens[0], Token::Note(NoteValue::new(PitchClass::D, 1)));
         assert_eq!(tokens[1], Token::Dollar);
         assert_eq!(tokens[2], Token::Keyword(Keyword::Slow));
         assert_eq!(tokens[3], Token::Number(2.0));
@@ -277,22 +265,10 @@ mod tests {
     fn tokenize_sharps_and_flats() {
         let tokens = tokenize("cs4 ds5 bf3 eb2").unwrap();
         assert_eq!(tokens.len(), 4);
-        assert_eq!(
-            tokens[0],
-            Token::Note(NoteValue::new(PitchClass::Cs, 4))
-        );
-        assert_eq!(
-            tokens[1],
-            Token::Note(NoteValue::new(PitchClass::Ds, 5))
-        );
-        assert_eq!(
-            tokens[2],
-            Token::Note(NoteValue::new(PitchClass::As, 3))
-        );
-        assert_eq!(
-            tokens[3],
-            Token::Note(NoteValue::new(PitchClass::Ds, 2))
-        );
+        assert_eq!(tokens[0], Token::Note(NoteValue::new(PitchClass::Cs, 4)));
+        assert_eq!(tokens[1], Token::Note(NoteValue::new(PitchClass::Ds, 5)));
+        assert_eq!(tokens[2], Token::Note(NoteValue::new(PitchClass::As, 3)));
+        assert_eq!(tokens[3], Token::Note(NoteValue::new(PitchClass::Ds, 2)));
     }
 
     #[test]
@@ -301,10 +277,7 @@ mod tests {
         assert_eq!(tokens[0], Token::Keyword(Keyword::N));
         assert_eq!(tokens[1], Token::Quote);
         // Notes inside quotes.
-        assert_eq!(
-            tokens[2],
-            Token::Note(NoteValue::new(PitchClass::C, 4))
-        );
+        assert_eq!(tokens[2], Token::Note(NoteValue::new(PitchClass::C, 4)));
     }
 
     #[test]

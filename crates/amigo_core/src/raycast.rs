@@ -159,7 +159,8 @@ pub fn raycast_tiles(
             // Interpolate slope height at the ray's x position within the tile
             let local_x = (origin.x + dx * distance) - tile_x as f32 * tile_size;
             let frac = (local_x / tile_size).clamp(0.0, 1.0);
-            let slope_height = left_height as f32 + (right_height as f32 - left_height as f32) * frac;
+            let slope_height =
+                left_height as f32 + (right_height as f32 - left_height as f32) * frac;
             let tile_top_y = tile_y as f32 * tile_size;
             let surface_y = tile_top_y + tile_size - slope_height;
             let ray_y = origin.y + dy * distance;
@@ -246,7 +247,16 @@ fn ray_vs_entity(
         CollisionShape::Circle { cx, cy, radius } => {
             let center_x = pos.x + cx;
             let center_y = pos.y + cy;
-            ray_vs_circle(origin, dx, dy, max_distance, center_x, center_y, *radius, entity)
+            ray_vs_circle(
+                origin,
+                dx,
+                dy,
+                max_distance,
+                center_x,
+                center_y,
+                *radius,
+                entity,
+            )
         }
         CollisionShape::Aabb(rect) => {
             let aabb = crate::rect::Rect::new(pos.x + rect.x, pos.y + rect.y, rect.w, rect.h);
@@ -481,8 +491,8 @@ mod tests {
         // Standing above solid tile (2,3), cast down
         let has_ground = sensor(
             RenderVec2::new(2.0 * 16.0 + 8.0, 2.0 * 16.0 + 15.0), // Bottom of tile (2,2)
-            RenderVec2::new(0.0, 1.0),                               // Down
-            2.0,                                                       // 2px range
+            RenderVec2::new(0.0, 1.0),                            // Down
+            2.0,                                                  // 2px range
             &grid,
             16.0,
         );
@@ -510,10 +520,12 @@ mod tests {
     fn ray_vs_circle_hit() {
         let hit = ray_vs_circle(
             RenderVec2::new(0.0, 0.0),
-            1.0, 0.0,   // Right
+            1.0,
+            0.0, // Right
             100.0,
-            50.0, 0.0,  // Circle center
-            10.0,        // Radius
+            50.0,
+            0.0,  // Circle center
+            10.0, // Radius
             EntityId::from_raw(1, 0),
         );
         assert!(hit.is_some());
@@ -525,9 +537,11 @@ mod tests {
     fn ray_vs_circle_miss() {
         let hit = ray_vs_circle(
             RenderVec2::new(0.0, 0.0),
-            1.0, 0.0,    // Right
+            1.0,
+            0.0, // Right
             100.0,
-            50.0, 50.0,  // Far off to the side
+            50.0,
+            50.0, // Far off to the side
             5.0,
             EntityId::from_raw(1, 0),
         );
@@ -539,7 +553,8 @@ mod tests {
         let aabb = crate::rect::Rect::new(40.0, -10.0, 20.0, 20.0);
         let hit = ray_vs_aabb(
             RenderVec2::new(0.0, 0.0),
-            1.0, 0.0,
+            1.0,
+            0.0,
             100.0,
             &aabb,
             EntityId::from_raw(1, 0),

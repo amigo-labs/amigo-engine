@@ -220,10 +220,7 @@ impl TileMap {
 
     /// Check if a tile coordinate is within bounds.
     pub fn in_bounds(&self, x: i32, y: i32) -> bool {
-        x >= 0
-            && y >= 0
-            && x < self.collision.width as i32
-            && y < self.collision.height as i32
+        x >= 0 && y >= 0 && x < self.collision.width as i32 && y < self.collision.height as i32
     }
 
     pub fn add_layer(&mut self, name: impl Into<String>) {
@@ -252,7 +249,14 @@ mod tests {
 
     #[test]
     fn ortho_screen_to_tile() {
-        let map = TileMap::new(GridMode::Orthogonal { tile_width: 16, tile_height: 16 }, 10, 10);
+        let map = TileMap::new(
+            GridMode::Orthogonal {
+                tile_width: 16,
+                tile_height: 16,
+            },
+            10,
+            10,
+        );
         assert_eq!(map.screen_to_tile(0.0, 0.0), IVec2::new(0, 0));
         assert_eq!(map.screen_to_tile(17.0, 33.0), IVec2::new(1, 2));
         assert_eq!(map.screen_to_tile(-1.0, -1.0), IVec2::new(-1, -1));
@@ -260,19 +264,37 @@ mod tests {
 
     #[test]
     fn ortho_tile_to_screen() {
-        let map = TileMap::new(GridMode::Orthogonal { tile_width: 16, tile_height: 16 }, 10, 10);
+        let map = TileMap::new(
+            GridMode::Orthogonal {
+                tile_width: 16,
+                tile_height: 16,
+            },
+            10,
+            10,
+        );
         assert_eq!(map.tile_to_screen(0, 0), (0.0, 0.0));
         assert_eq!(map.tile_to_screen(3, 5), (48.0, 80.0));
     }
 
     #[test]
     fn ortho_roundtrip() {
-        let map = TileMap::new(GridMode::Orthogonal { tile_width: 16, tile_height: 16 }, 10, 10);
+        let map = TileMap::new(
+            GridMode::Orthogonal {
+                tile_width: 16,
+                tile_height: 16,
+            },
+            10,
+            10,
+        );
         for tx in 0..5 {
             for ty in 0..5 {
                 let (sx, sy) = map.tile_to_screen(tx, ty);
                 let result = map.screen_to_tile(sx + 1.0, sy + 1.0); // +1 to be inside tile
-                assert_eq!(result, IVec2::new(tx, ty), "roundtrip failed for ({tx}, {ty})");
+                assert_eq!(
+                    result,
+                    IVec2::new(tx, ty),
+                    "roundtrip failed for ({tx}, {ty})"
+                );
             }
         }
     }
@@ -281,14 +303,28 @@ mod tests {
 
     #[test]
     fn iso_screen_to_tile_origin() {
-        let map = TileMap::new(GridMode::Isometric { tile_width: 64, tile_height: 32 }, 10, 10);
+        let map = TileMap::new(
+            GridMode::Isometric {
+                tile_width: 64,
+                tile_height: 32,
+            },
+            10,
+            10,
+        );
         let tile = map.screen_to_tile(0.0, 0.0);
         assert_eq!(tile, IVec2::new(0, 0));
     }
 
     #[test]
     fn iso_tile_to_screen() {
-        let map = TileMap::new(GridMode::Isometric { tile_width: 64, tile_height: 32 }, 10, 10);
+        let map = TileMap::new(
+            GridMode::Isometric {
+                tile_width: 64,
+                tile_height: 32,
+            },
+            10,
+            10,
+        );
         // tile (0,0) should be at screen (0, 0)
         assert_eq!(map.tile_to_screen(0, 0), (0.0, 0.0));
         // tile (1,0) should be at screen (32, 16) — right-down
@@ -299,13 +335,24 @@ mod tests {
 
     #[test]
     fn iso_roundtrip() {
-        let map = TileMap::new(GridMode::Isometric { tile_width: 64, tile_height: 32 }, 10, 10);
+        let map = TileMap::new(
+            GridMode::Isometric {
+                tile_width: 64,
+                tile_height: 32,
+            },
+            10,
+            10,
+        );
         for tx in 0..5i32 {
             for ty in 0..5i32 {
                 let (sx, sy) = map.tile_to_screen(tx, ty);
                 // Sample center of tile for accurate roundtrip
                 let result = map.screen_to_tile(sx + 0.1, sy + 0.1);
-                assert_eq!(result, IVec2::new(tx, ty), "iso roundtrip failed for ({tx}, {ty})");
+                assert_eq!(
+                    result,
+                    IVec2::new(tx, ty),
+                    "iso roundtrip failed for ({tx}, {ty})"
+                );
             }
         }
     }

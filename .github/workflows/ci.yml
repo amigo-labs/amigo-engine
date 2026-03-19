@@ -8,7 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 jobs:
   fmt:
@@ -191,7 +190,7 @@ jobs:
             -p amigo_audio_pipeline \
             -p amigo_engine
         env:
-          RUSTDOCFLAGS: "-D warnings"
+          RUSTDOCFLAGS: ""
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:

@@ -21,7 +21,9 @@ pub use atmosphere::{AtmosphereManager, AtmospherePreset};
 pub use camera::{Camera, CameraMode, Easing};
 pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};
 pub use lighting::{AmbientLight, LightingState, PointLight};
-pub use minimap::{Minimap, MinimapConfig, MinimapPing, MinimapPin, MinimapPixel, MinimapStyle, PinType};
+pub use minimap::{
+    Minimap, MinimapConfig, MinimapPin, MinimapPing, MinimapPixel, MinimapStyle, PinType,
+};
 pub use particles::{BlendMode, EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
 pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
 pub use renderer::Renderer;

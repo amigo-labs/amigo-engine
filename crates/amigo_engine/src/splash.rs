@@ -185,7 +185,7 @@ pub fn render_splash(
                         flip_x: false,
                         flip_y: false,
                         z_order: 1001,
-        shaders: Vec::new(),
+                        shaders: Vec::new(),
                     });
                 }
             }

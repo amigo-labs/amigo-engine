@@ -154,9 +154,7 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
                 inbound,
             } => match packet.header.kind {
                 PacketKind::Connect => {
-                    if !clients.contains_key(&addr)
-                        && clients.len() < self.config.max_clients
-                    {
+                    if !clients.contains_key(&addr) && clients.len() < self.config.max_clients {
                         let pid = PlayerId(*next_player_id);
                         *next_player_id += 1;
                         clients.insert(

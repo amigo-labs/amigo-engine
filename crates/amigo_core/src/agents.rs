@@ -302,10 +302,26 @@ impl Agent {
 
     /// Score a single action based on needs and context.
     fn score_action(&self, action: AgentAction, ctx: &AgentWorldContext) -> f32 {
-        let hunger_urgency = self.needs.values.get(&NeedType::Hunger).map_or(0.0, |n| n.urgency());
-        let sleep_urgency = self.needs.values.get(&NeedType::Sleep).map_or(0.0, |n| n.urgency());
-        let safety_urgency = self.needs.values.get(&NeedType::Safety).map_or(0.0, |n| n.urgency());
-        let social_urgency = self.needs.values.get(&NeedType::Social).map_or(0.0, |n| n.urgency());
+        let hunger_urgency = self
+            .needs
+            .values
+            .get(&NeedType::Hunger)
+            .map_or(0.0, |n| n.urgency());
+        let sleep_urgency = self
+            .needs
+            .values
+            .get(&NeedType::Sleep)
+            .map_or(0.0, |n| n.urgency());
+        let safety_urgency = self
+            .needs
+            .values
+            .get(&NeedType::Safety)
+            .map_or(0.0, |n| n.urgency());
+        let social_urgency = self
+            .needs
+            .values
+            .get(&NeedType::Social)
+            .map_or(0.0, |n| n.urgency());
 
         match action {
             AgentAction::Eat => {

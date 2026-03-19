@@ -122,22 +122,11 @@ impl Default for TileRegistry {
 #[derive(Clone, Debug)]
 pub enum TileEvent {
     /// A tile was placed at a position.
-    Placed {
-        x: i32,
-        y: i32,
-        tile_id: u32,
-    },
+    Placed { x: i32, y: i32, tile_id: u32 },
     /// A tile was destroyed at a position.
-    Destroyed {
-        x: i32,
-        y: i32,
-        old_tile_id: u32,
-    },
+    Destroyed { x: i32, y: i32, old_tile_id: u32 },
     /// A neighbor of this tile changed (for redstone-like propagation).
-    NeighborChanged {
-        x: i32,
-        y: i32,
-    },
+    NeighborChanged { x: i32, y: i32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -292,10 +281,7 @@ impl DynamicTileWorld {
                         continue;
                     }
 
-                    let has_gravity = self
-                        .registry
-                        .get(tile_id)
-                        .map_or(false, |p| p.gravity);
+                    let has_gravity = self.registry.get(tile_id).map_or(false, |p| p.gravity);
 
                     if !has_gravity {
                         continue;
@@ -389,7 +375,9 @@ mod tests {
         assert_eq!(world.get_tile(TileLayer::Foreground, 3, 3), 0);
 
         let events = world.take_events();
-        assert!(events.iter().any(|e| matches!(e, TileEvent::Destroyed { x: 3, y: 3, .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, TileEvent::Destroyed { x: 3, y: 3, .. })));
     }
 
     // ── Dirty tracking ────────────────────────────────────────────

@@ -209,7 +209,10 @@ impl SetupManager {
         }
 
         if !uv_path.exists() {
-            return Err(format!("uv not found at {} after installation", uv_path.display()));
+            return Err(format!(
+                "uv not found at {} after installation",
+                uv_path.display()
+            ));
         }
 
         println!("  uv installed successfully");
@@ -271,10 +274,8 @@ impl SetupManager {
         let dir = self.requirements_dir();
         std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir failed: {e}"))?;
 
-        let core_content = REQUIREMENTS_CORE.replace(
-            "{{PYTORCH_INDEX}}",
-            self.config.gpu.pytorch_index_url(),
-        );
+        let core_content =
+            REQUIREMENTS_CORE.replace("{{PYTORCH_INDEX}}", self.config.gpu.pytorch_index_url());
         write_file(&dir.join("core.txt"), &core_content)?;
         write_file(&dir.join("audio.txt"), REQUIREMENTS_AUDIO)?;
         write_file(&dir.join("artgen.txt"), REQUIREMENTS_ARTGEN)?;
@@ -313,7 +314,10 @@ impl SetupManager {
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Package install for {} failed: {stderr}", g.display_name()));
+                return Err(format!(
+                    "Package install for {} failed: {stderr}",
+                    g.display_name()
+                ));
             }
         }
 
@@ -323,11 +327,27 @@ impl SetupManager {
     /// Verify that tools are installed by running import checks.
     pub fn verify(&self) -> Vec<ToolStatus> {
         let tools: Vec<(&str, ToolGroup, &str)> = vec![
-            ("demucs", ToolGroup::Audio, "import demucs; print(demucs.__version__)"),
-            ("basic-pitch", ToolGroup::Audio, "import basic_pitch; print(basic_pitch.__version__)"),
-            ("midi_to_tidalcycles", ToolGroup::Audio, "import midi_to_tidalcycles; print('ok')"),
+            (
+                "demucs",
+                ToolGroup::Audio,
+                "import demucs; print(demucs.__version__)",
+            ),
+            (
+                "basic-pitch",
+                ToolGroup::Audio,
+                "import basic_pitch; print(basic_pitch.__version__)",
+            ),
+            (
+                "midi_to_tidalcycles",
+                ToolGroup::Audio,
+                "import midi_to_tidalcycles; print('ok')",
+            ),
             ("comfyui", ToolGroup::ArtGen, "import comfy; print('ok')"),
-            ("audiocraft", ToolGroup::MusicGen, "import audiocraft; print(audiocraft.__version__)"),
+            (
+                "audiocraft",
+                ToolGroup::MusicGen,
+                "import audiocraft; print(audiocraft.__version__)",
+            ),
         ];
 
         let uv = self.uv_path();
@@ -349,9 +369,7 @@ impl SetupManager {
 
                 let (installed, version) = match result {
                     Ok(output) if output.status.success() => {
-                        let ver = String::from_utf8_lossy(&output.stdout)
-                            .trim()
-                            .to_string();
+                        let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
                         (true, if ver == "ok" { None } else { Some(ver) })
                     }
                     _ => (false, None),
@@ -417,9 +435,15 @@ impl SetupManager {
         let now = chrono_lite_now();
 
         let groups = &self.config.groups;
-        let has_audio = groups.iter().any(|g| matches!(g, ToolGroup::Audio | ToolGroup::All));
-        let has_artgen = groups.iter().any(|g| matches!(g, ToolGroup::ArtGen | ToolGroup::All));
-        let has_musicgen = groups.iter().any(|g| matches!(g, ToolGroup::MusicGen | ToolGroup::All));
+        let has_audio = groups
+            .iter()
+            .any(|g| matches!(g, ToolGroup::Audio | ToolGroup::All));
+        let has_artgen = groups
+            .iter()
+            .any(|g| matches!(g, ToolGroup::ArtGen | ToolGroup::All));
+        let has_musicgen = groups
+            .iter()
+            .any(|g| matches!(g, ToolGroup::MusicGen | ToolGroup::All));
 
         let gpu_str = match self.config.gpu {
             GpuBackend::Cpu => "cpu",
@@ -467,8 +491,16 @@ music_gen = {has_musicgen}
         println!("\nAmigo Python Toolchain Status");
         println!("{}", "-".repeat(50));
 
-        let uv_status = if self.has_uv() { "installed" } else { "not installed" };
-        let venv_status = if self.has_venv() { "created" } else { "not created" };
+        let uv_status = if self.has_uv() {
+            "installed"
+        } else {
+            "not installed"
+        };
+        let venv_status = if self.has_venv() {
+            "created"
+        } else {
+            "not created"
+        };
 
         println!("  uv:     {uv_status} ({})", self.uv_path().display());
         println!("  venv:   {venv_status} ({})", self.venv_path().display());
@@ -490,10 +522,11 @@ music_gen = {has_musicgen}
                     println!("  {}:", tool.group.display_name());
                 }
                 let icon = if tool.installed { "+" } else { "-" };
-                let ver = tool
-                    .version
-                    .as_deref()
-                    .unwrap_or(if tool.installed { "ok" } else { "not installed" });
+                let ver = tool.version.as_deref().unwrap_or(if tool.installed {
+                    "ok"
+                } else {
+                    "not installed"
+                });
                 println!("    [{icon}] {:<20} {ver}", tool.name);
             }
         }
@@ -690,7 +723,8 @@ fn default_amigo_home() -> PathBuf {
 }
 
 fn write_file(path: &Path, content: &str) -> Result<(), String> {
-    let mut f = std::fs::File::create(path).map_err(|e| format!("create {}: {e}", path.display()))?;
+    let mut f =
+        std::fs::File::create(path).map_err(|e| format!("create {}: {e}", path.display()))?;
     f.write_all(content.as_bytes())
         .map_err(|e| format!("write {}: {e}", path.display()))?;
     Ok(())

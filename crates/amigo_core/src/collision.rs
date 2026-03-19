@@ -417,7 +417,9 @@ pub fn capsule_vs_capsule(
             best_cb = pb;
         }
     }
-    circle_vs_circle(best_ca.x, best_ca.y, a.radius, best_cb.x, best_cb.y, b.radius)
+    circle_vs_circle(
+        best_ca.x, best_ca.y, a.radius, best_cb.x, best_cb.y, b.radius,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -448,14 +450,26 @@ pub fn swept_aabb(
 
     // Distance to entry/exit for each axis
     let (x_entry_dist, x_exit_dist) = if velocity.x > 0.0 {
-        (obstacle.x - (moving.x + moving.w), (obstacle.x + obstacle.w) - moving.x)
+        (
+            obstacle.x - (moving.x + moving.w),
+            (obstacle.x + obstacle.w) - moving.x,
+        )
     } else {
-        ((obstacle.x + obstacle.w) - moving.x, obstacle.x - (moving.x + moving.w))
+        (
+            (obstacle.x + obstacle.w) - moving.x,
+            obstacle.x - (moving.x + moving.w),
+        )
     };
     let (y_entry_dist, y_exit_dist) = if velocity.y > 0.0 {
-        (obstacle.y - (moving.y + moving.h), (obstacle.y + obstacle.h) - moving.y)
+        (
+            obstacle.y - (moving.y + moving.h),
+            (obstacle.y + obstacle.h) - moving.y,
+        )
     } else {
-        ((obstacle.y + obstacle.h) - moving.y, obstacle.y - (moving.y + moving.h))
+        (
+            (obstacle.y + obstacle.h) - moving.y,
+            obstacle.y - (moving.y + moving.h),
+        )
     };
 
     // Time of entry/exit for each axis

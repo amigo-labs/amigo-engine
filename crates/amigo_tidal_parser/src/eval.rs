@@ -60,7 +60,11 @@ pub fn evaluate_pattern(composition: &Composition, cycle: u64) -> Vec<NoteEvent>
         }
     }
 
-    events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+    events.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     events
 }
 
@@ -346,10 +350,7 @@ mod tests {
             stems: vec![Stem {
                 name: "melody".into(),
                 voices: vec![Voice {
-                    note_pattern: seq(vec![
-                        note(PitchClass::C, 4),
-                        note(PitchClass::D, 4),
-                    ]),
+                    note_pattern: seq(vec![note(PitchClass::C, 4), note(PitchClass::D, 4)]),
                     amp_pattern: Some(seq(vec![
                         Pattern::Atom(PatternAtom::Number(0.8)),
                         Pattern::Atom(PatternAtom::Number(0.5)),

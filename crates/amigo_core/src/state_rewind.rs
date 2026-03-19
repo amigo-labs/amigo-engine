@@ -371,8 +371,9 @@ fn compute_delta(old: &[u8], new: &[u8]) -> Vec<u8> {
                 let nb = new.get(i).copied().unwrap_or(0);
                 if ob == nb {
                     // Allow up to 4 matching bytes within a patch to avoid tiny patches
-                    let lookahead = (i..max_len.min(i + 4))
-                        .all(|j| old.get(j).copied().unwrap_or(0) == new.get(j).copied().unwrap_or(0));
+                    let lookahead = (i..max_len.min(i + 4)).all(|j| {
+                        old.get(j).copied().unwrap_or(0) == new.get(j).copied().unwrap_or(0)
+                    });
                     if lookahead {
                         break;
                     }
@@ -401,16 +402,21 @@ fn apply_delta(old: &[u8], delta: &[u8]) -> Vec<u8> {
         return old.to_vec();
     }
     // Last 4 bytes are the target length
-    let target_len =
-        u32::from_le_bytes([delta[delta.len() - 4], delta[delta.len() - 3], delta[delta.len() - 2], delta[delta.len() - 1]])
-            as usize;
+    let target_len = u32::from_le_bytes([
+        delta[delta.len() - 4],
+        delta[delta.len() - 3],
+        delta[delta.len() - 2],
+        delta[delta.len() - 1],
+    ]) as usize;
     let mut result = old.to_vec();
     result.resize(target_len, 0);
 
     let mut pos = 0;
     let patches_end = delta.len() - 4;
     while pos + 6 <= patches_end {
-        let offset = u32::from_le_bytes([delta[pos], delta[pos + 1], delta[pos + 2], delta[pos + 3]]) as usize;
+        let offset =
+            u32::from_le_bytes([delta[pos], delta[pos + 1], delta[pos + 2], delta[pos + 3]])
+                as usize;
         let length = u16::from_le_bytes([delta[pos + 4], delta[pos + 5]]) as usize;
         pos += 6;
         if pos + length > patches_end {

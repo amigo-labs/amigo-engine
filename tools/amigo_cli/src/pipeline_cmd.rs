@@ -60,7 +60,15 @@ fn cmd_convert(args: &[String]) {
     let mut name = String::new();
     let mut meta = PipelineMetadata::default();
 
-    parse_common_args(args, &mut input, &mut output, &mut config_path, &mut bpm, &mut name, &mut meta);
+    parse_common_args(
+        args,
+        &mut input,
+        &mut output,
+        &mut config_path,
+        &mut bpm,
+        &mut name,
+        &mut meta,
+    );
 
     let input = input.unwrap_or_else(|| {
         eprintln!("--input is required");
@@ -103,7 +111,15 @@ fn cmd_separate(args: &[String]) {
     let mut name = String::new();
     let mut meta = PipelineMetadata::default();
 
-    parse_common_args(args, &mut input, &mut output, &mut config_path, &mut bpm, &mut name, &mut meta);
+    parse_common_args(
+        args,
+        &mut input,
+        &mut output,
+        &mut config_path,
+        &mut bpm,
+        &mut name,
+        &mut meta,
+    );
 
     let input = require_input(input);
     let output = output.unwrap_or_else(|| PathBuf::from("./stems"));
@@ -134,7 +150,15 @@ fn cmd_transcribe(args: &[String]) {
     let mut name = String::new();
     let mut meta = PipelineMetadata::default();
 
-    parse_common_args(args, &mut input, &mut output, &mut config_path, &mut bpm, &mut name, &mut meta);
+    parse_common_args(
+        args,
+        &mut input,
+        &mut output,
+        &mut config_path,
+        &mut bpm,
+        &mut name,
+        &mut meta,
+    );
 
     let input_dir = require_input(input);
     let output = output.unwrap_or_else(|| PathBuf::from("./midi"));
@@ -172,7 +196,15 @@ fn cmd_notate(args: &[String]) {
     let mut name = String::new();
     let mut meta = PipelineMetadata::default();
 
-    parse_common_args(args, &mut input, &mut output, &mut config_path, &mut bpm, &mut name, &mut meta);
+    parse_common_args(
+        args,
+        &mut input,
+        &mut output,
+        &mut config_path,
+        &mut bpm,
+        &mut name,
+        &mut meta,
+    );
 
     let input_dir = require_input(input);
     let output = output.unwrap_or_else(|| PathBuf::from("./tidal"));
@@ -209,7 +241,15 @@ fn cmd_batch(args: &[String]) {
     let mut name = String::new();
     let mut meta = PipelineMetadata::default();
 
-    parse_common_args(args, &mut input, &mut output, &mut config_path, &mut bpm, &mut name, &mut meta);
+    parse_common_args(
+        args,
+        &mut input,
+        &mut output,
+        &mut config_path,
+        &mut bpm,
+        &mut name,
+        &mut meta,
+    );
 
     let input_dir = require_input(input);
     let output_dir = output.unwrap_or_else(|| PathBuf::from("./tidal"));
@@ -262,7 +302,9 @@ fn cmd_batch(args: &[String]) {
 
 fn cmd_play(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Usage: amigo pipeline play <file.amigo.tidal> [--bpm BPM] [--stems melody,bass]");
+        eprintln!(
+            "Usage: amigo pipeline play <file.amigo.tidal> [--bpm BPM] [--stems melody,bass]"
+        );
         std::process::exit(1);
     }
 
@@ -274,7 +316,12 @@ fn cmd_play(args: &[String]) {
 
     match amigo_tidal_parser::load(&file_path) {
         Ok(comp) => {
-            println!("Loaded: {} (BPM: {}, {} stems)", comp.name, comp.bpm, comp.stems.len());
+            println!(
+                "Loaded: {} (BPM: {}, {} stems)",
+                comp.name,
+                comp.bpm,
+                comp.stems.len()
+            );
             for stem in &comp.stems {
                 println!("  - {} ({} voices)", stem.name, stem.voices.len());
             }
@@ -305,31 +352,45 @@ fn parse_common_args(
         match args[i].as_str() {
             "--input" | "-i" => {
                 i += 1;
-                if i < args.len() { *input = Some(PathBuf::from(&args[i])); }
+                if i < args.len() {
+                    *input = Some(PathBuf::from(&args[i]));
+                }
             }
             "--output" | "-o" => {
                 i += 1;
-                if i < args.len() { *output = Some(PathBuf::from(&args[i])); }
+                if i < args.len() {
+                    *output = Some(PathBuf::from(&args[i]));
+                }
             }
             "--config" | "-c" => {
                 i += 1;
-                if i < args.len() { *config_path = Some(PathBuf::from(&args[i])); }
+                if i < args.len() {
+                    *config_path = Some(PathBuf::from(&args[i]));
+                }
             }
             "--bpm" => {
                 i += 1;
-                if i < args.len() { *bpm = args[i].parse().unwrap_or(120.0); }
+                if i < args.len() {
+                    *bpm = args[i].parse().unwrap_or(120.0);
+                }
             }
             "--name" => {
                 i += 1;
-                if i < args.len() { *name = args[i].clone(); }
+                if i < args.len() {
+                    *name = args[i].clone();
+                }
             }
             "--license" => {
                 i += 1;
-                if i < args.len() { meta.license = Some(args[i].clone()); }
+                if i < args.len() {
+                    meta.license = Some(args[i].clone());
+                }
             }
             "--author" => {
                 i += 1;
-                if i < args.len() { meta.author = Some(args[i].clone()); }
+                if i < args.len() {
+                    meta.author = Some(args[i].clone());
+                }
             }
             _ => {}
         }
