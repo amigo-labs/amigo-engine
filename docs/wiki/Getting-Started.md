@@ -6,6 +6,7 @@ Build your first Amigo game in 15 minutes.
 
 - **Rust toolchain** -- install via [rustup](https://rustup.rs/)
 - **GPU drivers** -- Vulkan, Metal, or DX12 capable GPU required for the wgpu renderer
+- **VS Code** + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) -- provides IntelliSense (autocomplete, go-to-definition, inline errors, hover docs) for the engine API
 
 See [Installation](Installation) for detailed setup instructions.
 
@@ -18,7 +19,12 @@ curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/instal
 # Scaffold a new game
 amigo new my_game
 cd my_game
+
+# Open in VS Code
+code .
 ```
+
+When VS Code opens, rust-analyzer will index the project automatically. You get full autocomplete for all engine types (`GameContext`, `DrawContext`, `SimVec2`, `CollisionShape`, etc.) and can jump to definitions with `F12`.
 
 This generates a workspace with the following structure:
 
@@ -61,8 +67,10 @@ fn main() {
 ## Run It
 
 ```sh
-cargo run
+amigo run
 ```
+
+Or press `Ctrl+Shift+B` in VS Code if you have the Amigo task configured.
 
 A window opens at 640x360 virtual resolution. The engine runs a fixed-timestep game loop at 60 ticks/second with interpolated rendering.
 
