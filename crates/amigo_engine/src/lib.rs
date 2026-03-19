@@ -91,6 +91,17 @@ pub trait Game: 'static {
 
     /// Render the game (called every frame, with interpolation alpha).
     fn draw(&self, ctx: &mut DrawContext);
+
+    /// Called by `amigo dev` before recompile to capture game-specific state.
+    /// Return a JSON blob that will be passed to `on_dev_restore` after restart.
+    /// Default returns null (no game-specific state to save).
+    fn on_dev_snapshot(&self, _ctx: &GameContext) -> serde_json::Value {
+        serde_json::Value::Null
+    }
+
+    /// Called by `amigo dev` after recompile to restore game-specific state.
+    /// The `state` parameter is whatever `on_dev_snapshot` returned previously.
+    fn on_dev_restore(&mut self, _ctx: &mut GameContext, _state: &serde_json::Value) {}
 }
 
 /// Prelude with commonly used types.

@@ -8,6 +8,8 @@
 //! Both backends run locally on GPU. This crate provides the client libraries,
 //! audio processing utilities, and MCP tool interface.
 
+pub mod config;
+
 pub mod acestep;
 pub mod audiogen;
 pub mod clean_mode;

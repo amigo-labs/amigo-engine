@@ -10,3 +10,7 @@ serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
 ureq = { workspace = true }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
