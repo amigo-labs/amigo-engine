@@ -1,10 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::process;
 
-use amigo_core::game_preset::{
-    project_templates, GameProject, ProjectTemplate, SceneDef, ScenePreset,
-};
-use amigo_editor::{save_level, AmigoLevel, EntityPlacement, LayerData, PathData};
+use amigo_core::game_preset::{project_templates, GameProject, ScenePreset};
+use amigo_editor::{save_level, AmigoLevel, EntityPlacement, LayerData};
 
 mod pipeline_cmd;
 mod setup;
@@ -599,7 +597,7 @@ fn cmd_build(_args: &[String]) {
     println!("  Scenes: {}", manifest.scenes.len());
     println!(
         "  Resolution: {}x{}",
-        manifest.virtual_width, manifest.virtual_height
+        manifest.render.virtual_width, manifest.render.virtual_height
     );
 
     if errors == 0 {
@@ -915,7 +913,7 @@ fn cmd_release(args: &[String]) {
     println!("  Version:    {}", manifest.version);
     println!(
         "  Resolution: {}x{}",
-        manifest.virtual_width, manifest.virtual_height
+        manifest.render.virtual_width, manifest.render.virtual_height
     );
     if let Some(ref t) = target {
         println!("  Target:     {t}");
@@ -1022,7 +1020,7 @@ fn cmd_info() {
     println!("Engine:  {}", manifest.engine_version);
     println!(
         "Resolution: {}x{}",
-        manifest.virtual_width, manifest.virtual_height
+        manifest.render.virtual_width, manifest.render.virtual_height
     );
     println!("Start scene: {}", manifest.start_scene);
     println!();
