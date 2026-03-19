@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: amigo_audio_pipeline
 depends_on: ["engine/audio", "ai-pipelines/audiogen"]
 last_updated: 2026-03-18

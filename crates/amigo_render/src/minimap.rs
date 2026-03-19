@@ -94,7 +94,10 @@ pub const TEAM_COLORS: [Color; 4] = [Color::GREEN, Color::RED, Color::BLUE, Colo
 impl MinimapPin {
     /// Create a unit pin with team color.
     pub fn unit(entity: EntityId, team: u8) -> Self {
-        let color = TEAM_COLORS.get(team as usize).copied().unwrap_or(Color::WHITE);
+        let color = TEAM_COLORS
+            .get(team as usize)
+            .copied()
+            .unwrap_or(Color::WHITE);
         Self {
             entity: Some(entity),
             static_pos: None,
@@ -212,10 +215,7 @@ impl Minimap {
         let frac_x = sx / mw as f32;
         let frac_y = sy / mh as f32;
         let wb = &self.config.world_bounds;
-        Some(RenderVec2::new(
-            wb.x + frac_x * wb.w,
-            wb.y + frac_y * wb.h,
-        ))
+        Some(RenderVec2::new(wb.x + frac_x * wb.w, wb.y + frac_y * wb.h))
     }
 
     /// Update pin positions from ECS data.
@@ -264,7 +264,11 @@ impl Minimap {
                 let tile_x = (wb.x + frac_x * wb.w) as i32;
                 let tile_y = (wb.y + frac_y * wb.h) as i32;
 
-                if tile_x < 0 || tile_y < 0 || tile_x >= tile_width as i32 || tile_y >= tile_height as i32 {
+                if tile_x < 0
+                    || tile_y < 0
+                    || tile_x >= tile_width as i32
+                    || tile_y >= tile_height as i32
+                {
                     pixels.push(MinimapPixel {
                         x: mx,
                         y: my,
@@ -298,7 +302,11 @@ impl Minimap {
                     }
                 }
 
-                pixels.push(MinimapPixel { x: mx, y: my, color });
+                pixels.push(MinimapPixel {
+                    x: mx,
+                    y: my,
+                    color,
+                });
             }
         }
 
@@ -325,7 +333,11 @@ impl Minimap {
                     PinType::Arrow { color } => *color,
                     PinType::Sprite { .. } => Color::WHITE, // Sprite pins rendered separately
                 };
-                pixels.push(MinimapPixel { x: px, y: py, color });
+                pixels.push(MinimapPixel {
+                    x: px,
+                    y: py,
+                    color,
+                });
             }
         }
 
@@ -336,14 +348,22 @@ impl Minimap {
             let px = px as u32;
             let py = py as u32;
             if px < mw && py < mh {
-                pixels.push(MinimapPixel { x: px, y: py, color: ping.color });
+                pixels.push(MinimapPixel {
+                    x: px,
+                    y: py,
+                    color: ping.color,
+                });
                 // Pulse: render a 3x3 cross
                 if ping.pulse {
                     for &(dx, dy) in &[(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
                         let nx = px as i32 + dx;
                         let ny = py as i32 + dy;
                         if nx >= 0 && ny >= 0 && (nx as u32) < mw && (ny as u32) < mh {
-                            pixels.push(MinimapPixel { x: nx as u32, y: ny as u32, color: ping.color });
+                            pixels.push(MinimapPixel {
+                                x: nx as u32,
+                                y: ny as u32,
+                                color: ping.color,
+                            });
                         }
                     }
                 }
@@ -480,10 +500,8 @@ mod tests {
     #[test]
     fn viewport_rect_center() {
         let mm = Minimap::new(test_config());
-        let (x, y, w, h) = mm.viewport_rect(
-            RenderVec2::new(25.0, 25.0),
-            RenderVec2::new(10.0, 10.0),
-        );
+        let (x, y, w, h) =
+            mm.viewport_rect(RenderVec2::new(25.0, 25.0), RenderVec2::new(10.0, 10.0));
         assert!((x - 40.0).abs() < 1.0); // (25-5)/50 * 100 = 40
         assert!((w - 20.0).abs() < 1.0); // 10/50 * 100 = 20
         let _ = (y, h);

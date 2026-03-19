@@ -61,12 +61,7 @@ impl PathfindingDemo {
         if let (Some(s), Some(g)) = (self.start, self.goal) {
             let req = PathRequest::new(s, g);
             self.path = find_path(&req, &self.grid);
-            self.flow = Some(FlowField::compute(
-                g,
-                COLS as u32,
-                ROWS as u32,
-                &self.grid,
-            ));
+            self.flow = Some(FlowField::compute(g, COLS as u32, ROWS as u32, &self.grid));
         }
     }
 
@@ -121,7 +116,12 @@ impl Game for PathfindingDemo {
                 } else {
                     Color::new(0.25, 0.25, 0.30, 1.0)
                 };
-                let r = Rect::new(x as f32 * TILE + 0.5, y as f32 * TILE + 0.5, TILE - 1.0, TILE - 1.0);
+                let r = Rect::new(
+                    x as f32 * TILE + 0.5,
+                    y as f32 * TILE + 0.5,
+                    TILE - 1.0,
+                    TILE - 1.0,
+                );
                 ctx.draw_rect(r, color);
             }
         }
@@ -129,7 +129,12 @@ impl Game for PathfindingDemo {
         // Draw path
         if let Some(ref path) = self.path {
             for p in path {
-                let r = Rect::new(p.x as f32 * TILE + 2.0, p.y as f32 * TILE + 2.0, TILE - 4.0, TILE - 4.0);
+                let r = Rect::new(
+                    p.x as f32 * TILE + 2.0,
+                    p.y as f32 * TILE + 2.0,
+                    TILE - 4.0,
+                    TILE - 4.0,
+                );
                 ctx.draw_rect(r, Color::new(1.0, 0.9, 0.2, 0.7));
             }
         }
@@ -156,11 +161,21 @@ impl Game for PathfindingDemo {
 
         // Draw start and goal markers
         if let Some(s) = self.start {
-            let r = Rect::new(s.x as f32 * TILE + 1.0, s.y as f32 * TILE + 1.0, TILE - 2.0, TILE - 2.0);
+            let r = Rect::new(
+                s.x as f32 * TILE + 1.0,
+                s.y as f32 * TILE + 1.0,
+                TILE - 2.0,
+                TILE - 2.0,
+            );
             ctx.draw_rect(r, Color::new(0.2, 0.9, 0.3, 1.0));
         }
         if let Some(g) = self.goal {
-            let r = Rect::new(g.x as f32 * TILE + 1.0, g.y as f32 * TILE + 1.0, TILE - 2.0, TILE - 2.0);
+            let r = Rect::new(
+                g.x as f32 * TILE + 1.0,
+                g.y as f32 * TILE + 1.0,
+                TILE - 2.0,
+                TILE - 2.0,
+            );
             ctx.draw_rect(r, Color::new(0.9, 0.2, 0.2, 1.0));
         }
 

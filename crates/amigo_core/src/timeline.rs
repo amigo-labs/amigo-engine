@@ -144,7 +144,10 @@ pub enum PlaybackState {
 #[derive(Clone, Debug)]
 pub enum TimelineEvent {
     /// Camera should move to this position.
-    CameraMove { position: RenderVec2, zoom: Option<f32> },
+    CameraMove {
+        position: RenderVec2,
+        zoom: Option<f32>,
+    },
     /// Play a sound effect.
     PlaySfx { name: String },
     /// Transition music to a new section.
@@ -154,13 +157,21 @@ pub enum TimelineEvent {
     /// Start a dialogue sequence.
     StartDialogue { key: String, blocking: bool },
     /// Spawn an entity.
-    SpawnEntity { template: String, position: SimVec2, tag: String },
+    SpawnEntity {
+        template: String,
+        position: SimVec2,
+        tag: String,
+    },
     /// Despawn an entity by tag.
     DespawnEntity { tag: String },
     /// Apply a tween value to a named target.
     TweenValue { target_tag: String, value: f32 },
     /// Override an entity's animation.
-    AnimOverride { entity_tag: String, clip: String, speed: f32 },
+    AnimOverride {
+        entity_tag: String,
+        clip: String,
+        speed: f32,
+    },
 }
 
 /// Runtime timeline player.
@@ -219,16 +230,15 @@ impl TimelinePlayer {
         self.current_time = time.max(0.0);
         // If seeking backward, remove fired events after the new time
         if time < old_time {
-            self.fired_events
-                .retain(|&(track_idx, event_idx)| {
-                    if let Some(tl) = &self.timeline {
-                        if let Some(track) = tl.tracks.get(track_idx) {
-                            let event_time = get_event_time(track, event_idx);
-                            return event_time.map_or(true, |t| t <= time);
-                        }
+            self.fired_events.retain(|&(track_idx, event_idx)| {
+                if let Some(tl) = &self.timeline {
+                    if let Some(track) = tl.tracks.get(track_idx) {
+                        let event_time = get_event_time(track, event_idx);
+                        return event_time.map_or(true, |t| t <= time);
                     }
-                    true
-                });
+                }
+                true
+            });
         }
     }
 
@@ -272,12 +282,21 @@ impl TimelinePlayer {
             match track {
                 Track::CameraPath { points, zoom, .. } => {
                     if let Some(pos) = interpolate_vec2_keyframes(points, self.current_time) {
-                        let z = zoom.as_ref().and_then(|zk| interpolate_f32_keyframes(zk, self.current_time));
-                        events.push(TimelineEvent::CameraMove { position: pos, zoom: z });
+                        let z = zoom
+                            .as_ref()
+                            .and_then(|zk| interpolate_f32_keyframes(zk, self.current_time));
+                        events.push(TimelineEvent::CameraMove {
+                            position: pos,
+                            zoom: z,
+                        });
                     }
                 }
 
-                Track::TweenTrack { target_tag, keyframes, .. } => {
+                Track::TweenTrack {
+                    target_tag,
+                    keyframes,
+                    ..
+                } => {
                     if let Some(val) = interpolate_f32_keyframes(keyframes, self.current_time) {
                         events.push(TimelineEvent::TweenValue {
                             target_tag: target_tag.clone(),
@@ -311,27 +330,40 @@ impl TimelinePlayer {
                         {
                             match &cue.kind {
                                 SoundCueKind::Sfx => {
-                                    events.push(TimelineEvent::PlaySfx { name: cue.sound_name.clone() });
+                                    events.push(TimelineEvent::PlaySfx {
+                                        name: cue.sound_name.clone(),
+                                    });
                                 }
                                 SoundCueKind::MusicTransition => {
-                                    events.push(TimelineEvent::MusicTransition { name: cue.sound_name.clone() });
+                                    events.push(TimelineEvent::MusicTransition {
+                                        name: cue.sound_name.clone(),
+                                    });
                                 }
                                 SoundCueKind::Stop { fade_seconds } => {
-                                    events.push(TimelineEvent::StopSound { fade_seconds: *fade_seconds });
+                                    events.push(TimelineEvent::StopSound {
+                                        fade_seconds: *fade_seconds,
+                                    });
                                 }
                             }
                         }
                     }
                 }
 
-                Track::EntitySpawn { events: spawn_events, .. } => {
+                Track::EntitySpawn {
+                    events: spawn_events,
+                    ..
+                } => {
                     for (event_idx, ev) in spawn_events.iter().enumerate() {
                         if ev.time > old_time
                             && ev.time <= self.current_time
                             && self.fired_events.insert((track_idx, event_idx))
                         {
                             match &ev.kind {
-                                SpawnEventKind::Spawn { template, position, tag } => {
+                                SpawnEventKind::Spawn {
+                                    template,
+                                    position,
+                                    tag,
+                                } => {
                                     events.push(TimelineEvent::SpawnEntity {
                                         template: template.clone(),
                                         position: *position,
@@ -346,7 +378,11 @@ impl TimelinePlayer {
                     }
                 }
 
-                Track::AnimOverride { entity_tag, keyframes, .. } => {
+                Track::AnimOverride {
+                    entity_tag,
+                    keyframes,
+                    ..
+                } => {
                     if let Some(val) = interpolate_anim_keyframes(keyframes, self.current_time) {
                         events.push(TimelineEvent::AnimOverride {
                             entity_tag: entity_tag.clone(),
@@ -441,7 +477,10 @@ fn interpolate_vec2_keyframes(keyframes: &[Keyframe<RenderVec2>], time: f32) -> 
     Some(keyframes[keyframes.len() - 1].value)
 }
 
-fn interpolate_anim_keyframes(keyframes: &[Keyframe<AnimOverrideValue>], time: f32) -> Option<AnimOverrideValue> {
+fn interpolate_anim_keyframes(
+    keyframes: &[Keyframe<AnimOverrideValue>],
+    time: f32,
+) -> Option<AnimOverrideValue> {
     if keyframes.is_empty() {
         return None;
     }
@@ -482,30 +521,38 @@ mod tests {
                     name: "fade".into(),
                     target_tag: "screen_alpha".into(),
                     keyframes: vec![
-                        Keyframe { time: 0.0, value: 0.0, easing: EasingFn::Linear },
-                        Keyframe { time: 2.0, value: 1.0, easing: EasingFn::Linear },
-                        Keyframe { time: 5.0, value: 0.0, easing: EasingFn::Linear },
+                        Keyframe {
+                            time: 0.0,
+                            value: 0.0,
+                            easing: EasingFn::Linear,
+                        },
+                        Keyframe {
+                            time: 2.0,
+                            value: 1.0,
+                            easing: EasingFn::Linear,
+                        },
+                        Keyframe {
+                            time: 5.0,
+                            value: 0.0,
+                            easing: EasingFn::Linear,
+                        },
                     ],
                 },
                 Track::Sound {
                     name: "sfx".into(),
-                    cues: vec![
-                        SoundCue {
-                            time: 1.0,
-                            sound_name: "explosion".into(),
-                            kind: SoundCueKind::Sfx,
-                        },
-                    ],
+                    cues: vec![SoundCue {
+                        time: 1.0,
+                        sound_name: "explosion".into(),
+                        kind: SoundCueKind::Sfx,
+                    }],
                 },
                 Track::Dialogue {
                     name: "dialog".into(),
-                    triggers: vec![
-                        DialogueTrigger {
-                            time: 3.0,
-                            dialogue_key: "intro".into(),
-                            blocking: true,
-                        },
-                    ],
+                    triggers: vec![DialogueTrigger {
+                        time: 3.0,
+                        dialogue_key: "intro".into(),
+                        blocking: true,
+                    }],
                 },
             ],
         }
@@ -520,8 +567,12 @@ mod tests {
         let (state, events) = player.update(1.5);
         assert_eq!(state, PlaybackState::Playing);
         // Should have tween value + sfx event (sfx at 1.0 crossed)
-        assert!(events.iter().any(|e| matches!(e, TimelineEvent::TweenValue { .. })));
-        assert!(events.iter().any(|e| matches!(e, TimelineEvent::PlaySfx { name } if name == "explosion")));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, TimelineEvent::TweenValue { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, TimelineEvent::PlaySfx { name } if name == "explosion")));
     }
 
     #[test]
@@ -530,7 +581,9 @@ mod tests {
         player.play(simple_timeline());
         player.update(1.5); // Fires sfx
         let (_, events) = player.update(0.5); // Advances to 2.0, sfx already fired
-        assert!(!events.iter().any(|e| matches!(e, TimelineEvent::PlaySfx { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, TimelineEvent::PlaySfx { .. })));
     }
 
     #[test]
@@ -569,8 +622,16 @@ mod tests {
                 name: "fade".into(),
                 target_tag: "alpha".into(),
                 keyframes: vec![
-                    Keyframe { time: 0.0, value: 0.0, easing: EasingFn::Linear },
-                    Keyframe { time: 2.0, value: 1.0, easing: EasingFn::Linear },
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.0,
+                        easing: EasingFn::Linear,
+                    },
+                    Keyframe {
+                        time: 2.0,
+                        value: 1.0,
+                        easing: EasingFn::Linear,
+                    },
                 ],
             }],
         };
@@ -624,7 +685,9 @@ mod tests {
         player.update(1.5); // Fires sfx at 1.0
         player.seek(0.5); // Seek back before sfx
         let (_, events) = player.update(1.0); // Should re-fire sfx
-        assert!(events.iter().any(|e| matches!(e, TimelineEvent::PlaySfx { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, TimelineEvent::PlaySfx { .. })));
     }
 
     #[test]

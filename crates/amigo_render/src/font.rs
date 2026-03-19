@@ -435,7 +435,10 @@ impl FontAtlas {
                         if let Some(space_idx) = last_space_idx {
                             // Move glyphs after last space to next line
                             line_widths.push(
-                                glyphs.get(space_idx).map(|g| g.x + g.glyph_info.advance * g.scale).unwrap_or(cursor_x)
+                                glyphs
+                                    .get(space_idx)
+                                    .map(|g| g.x + g.glyph_info.advance * g.scale)
+                                    .unwrap_or(cursor_x),
                             );
                             let wrap_x = glyphs.get(space_idx + 1).map(|g| g.x).unwrap_or(cursor_x);
                             cursor_y += line_h;

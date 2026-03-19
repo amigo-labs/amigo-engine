@@ -266,10 +266,7 @@ mod tests {
             ref_distance: fix(10.0),
         };
         let vol = model.apply(fix(20.0), fix(1000.0));
-        assert!(
-            (vol - 0.25).abs() < 1e-3,
-            "Expected ~0.25, got {vol}"
-        );
+        assert!((vol - 0.25).abs() < 1e-3, "Expected ~0.25, got {vol}");
     }
 
     #[test]
@@ -278,24 +275,22 @@ mod tests {
             ref_distance: fix(10.0),
         };
         let vol = model.apply(fix(10.0), fix(1000.0));
-        assert!(
-            (vol - 1.0).abs() < 1e-3,
-            "Expected ~1.0, got {vol}"
-        );
+        assert!((vol - 1.0).abs() < 1e-3, "Expected ~1.0, got {vol}");
     }
 
     #[test]
     fn custom_curve_interpolation() {
         // 0.0 → 1.0,  0.5 → 0.8,  1.0 → 0.0
         let model = AttenuationModel::Custom {
-            points: vec![(fix(0.0), fix(1.0)), (fix(0.5), fix(0.8)), (fix(1.0), fix(0.0))],
+            points: vec![
+                (fix(0.0), fix(1.0)),
+                (fix(0.5), fix(0.8)),
+                (fix(1.0), fix(0.0)),
+            ],
         };
         // At fraction 0.25 (between first two points): lerp(1.0, 0.8, 0.5) = 0.9
         let vol = model.apply(fix(100.0), fix(400.0)); // frac = 0.25
-        assert!(
-            (vol - 0.9).abs() < 1e-2,
-            "Expected ~0.9, got {vol}"
-        );
+        assert!((vol - 0.9).abs() < 1e-2, "Expected ~0.9, got {vol}");
     }
 
     // -- Panning tests ------------------------------------------------------
@@ -331,7 +326,10 @@ mod tests {
         let emitter = emitter_at(1000.0, 0.0);
         let listener = listener_at(0.0, 0.0);
         let pan = compute_pan(&emitter, &listener);
-        assert!((pan - 1.0).abs() < 1e-4, "Pan should clamp to 1.0, got {pan}");
+        assert!(
+            (pan - 1.0).abs() < 1e-4,
+            "Pan should clamp to 1.0, got {pan}"
+        );
     }
 
     #[test]
@@ -352,10 +350,7 @@ mod tests {
         let listener = listener_at(0.0, 0.0);
         // distance = 200, max = 400, linear atten = 0.5, gain = 0.5 → 0.25
         let vol = compute_volume(&emitter, &listener);
-        assert!(
-            (vol - 0.25).abs() < 1e-2,
-            "Expected ~0.25, got {vol}"
-        );
+        assert!((vol - 0.25).abs() < 1e-2, "Expected ~0.25, got {vol}");
     }
 
     #[test]

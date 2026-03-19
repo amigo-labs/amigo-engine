@@ -162,18 +162,9 @@ impl ComfyUiClient {
                 if let Some(imgs) = node_output["images"].as_array() {
                     for img in imgs {
                         images.push(OutputImage {
-                            filename: img["filename"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
-                            subfolder: img["subfolder"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
-                            image_type: img["type"]
-                                .as_str()
-                                .unwrap_or("output")
-                                .to_string(),
+                            filename: img["filename"].as_str().unwrap_or_default().to_string(),
+                            subfolder: img["subfolder"].as_str().unwrap_or_default().to_string(),
+                            image_type: img["type"].as_str().unwrap_or("output").to_string(),
                         });
                     }
                 }
@@ -184,11 +175,7 @@ impl ComfyUiClient {
     }
 
     /// Download an output image to a local path via `GET /view`.
-    pub fn download_image(
-        &self,
-        image: &OutputImage,
-        output_path: &str,
-    ) -> Result<(), ComfyError> {
+    pub fn download_image(&self, image: &OutputImage, output_path: &str) -> Result<(), ComfyError> {
         let url = format!(
             "{}/view?filename={}&subfolder={}&type={}",
             self.config.base_url(),
@@ -218,8 +205,8 @@ impl ComfyUiClient {
             .map_err(|e| ComfyError::Io(e))?;
 
         let mut models = Vec::new();
-        if let Some(names) = resp["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"]
-            .as_array()
+        if let Some(names) =
+            resp["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"].as_array()
         {
             if let Some(first) = names.first() {
                 if let Some(arr) = first.as_array() {

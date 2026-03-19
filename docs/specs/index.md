@@ -250,13 +250,13 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [assets/pipeline](assets/pipeline.md)                     | done   | amigo_assets      | assets/format                 |
 | [assets/atlas](assets/atlas.md)                           | done   | amigo_assets      | assets/format                 |
 | [tooling/cli](tooling/cli.md)                             | done   | amigo_cli         | engine/core                   |
-| [tooling/setup](tooling/setup.md)                         | spec   | amigo_cli         | tooling/cli                   |
+| [tooling/setup](tooling/setup.md)                         | done   | amigo_cli         | tooling/cli                   |
 | [tooling/editor](tooling/editor.md)                       | done   | amigo_editor      | engine/core, engine/ui        |
 | [tooling/debug](tooling/debug.md)                         | done   | amigo_debug       | engine/core                   |
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | done   | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | done   | amigo_audiogen    | engine/audio                  |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
-| [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | spec  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
+| [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | done  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
 | [config/data-formats](config/data-formats.md)             | done   | --                | --                            |
 | [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |

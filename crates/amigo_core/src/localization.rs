@@ -323,12 +323,8 @@ impl LocaleManager {
                             zero.as_deref().unwrap_or(other.as_str()).to_owned()
                         }
                         PluralCategory::One => one.clone(),
-                        PluralCategory::Two => {
-                            two.as_deref().unwrap_or(other.as_str()).to_owned()
-                        }
-                        PluralCategory::Few => {
-                            few.as_deref().unwrap_or(other.as_str()).to_owned()
-                        }
+                        PluralCategory::Two => two.as_deref().unwrap_or(other.as_str()).to_owned(),
+                        PluralCategory::Few => few.as_deref().unwrap_or(other.as_str()).to_owned(),
                         PluralCategory::Many => {
                             many.as_deref().unwrap_or(other.as_str()).to_owned()
                         }

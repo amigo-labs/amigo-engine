@@ -81,7 +81,9 @@ impl ScenePreset {
             Self::Roguelike => "Procedural dungeons, permadeath. Spelunky, Isaac.",
             Self::TowerDefense => "Place towers, survive waves. Bloons, Kingdom Rush.",
             Self::BulletHell => "Dodge bullets, shoot patterns. Touhou, Ikaruga.",
-            Self::ArcadeShooter => "Scrolling shooter with power-ups and waves. Contra, Gradius, Space Invaders.",
+            Self::ArcadeShooter => {
+                "Scrolling shooter with power-ups and waves. Contra, Gradius, Space Invaders."
+            }
             Self::Puzzle => "Grid-based puzzles. Tetris, Bejeweled, Sokoban.",
             Self::FarmingSim => "Grow crops, manage a farm. Stardew Valley.",
             Self::Fighting => "Frame-based combat, combos. Street Fighter.",

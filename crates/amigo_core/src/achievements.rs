@@ -133,13 +133,21 @@ impl AchievementTracker {
     /// Register a single achievement definition.
     pub fn register(&mut self, def: AchievementDef) {
         let total = condition_threshold(&def.condition);
-        self.progress.entry(def.id.clone()).or_insert(AchievementProgress {
-            current: 0,
-            total,
-            unlocked: false,
-            unlocked_at: None,
-        });
-        build_indexes(&def.id, &def.condition, &mut self.event_index, &mut self.flag_index, &mut self.stat_index);
+        self.progress
+            .entry(def.id.clone())
+            .or_insert(AchievementProgress {
+                current: 0,
+                total,
+                unlocked: false,
+                unlocked_at: None,
+            });
+        build_indexes(
+            &def.id,
+            &def.condition,
+            &mut self.event_index,
+            &mut self.flag_index,
+            &mut self.stat_index,
+        );
         self.definitions.insert(def.id.clone(), def);
     }
 
@@ -149,7 +157,8 @@ impl AchievementTracker {
         key: &str,
         condition: impl Fn(&AchievementTracker) -> bool + 'static,
     ) {
-        self.custom_conditions.insert(key.to_string(), Box::new(condition));
+        self.custom_conditions
+            .insert(key.to_string(), Box::new(condition));
     }
 
     // -- Event / state reporting --
@@ -348,9 +357,7 @@ impl AchievementTracker {
             AchievementCondition::EventCount { event, threshold } => {
                 self.event_counts.get(event).copied().unwrap_or(0) >= *threshold
             }
-            AchievementCondition::FlagSet(flag) => {
-                self.flags.get(flag).copied().unwrap_or(false)
-            }
+            AchievementCondition::FlagSet(flag) => self.flags.get(flag).copied().unwrap_or(false),
             AchievementCondition::StatReached { stat, threshold } => {
                 self.stats.get(stat).copied().unwrap_or(0.0) >= *threshold
             }
@@ -370,7 +377,11 @@ impl AchievementTracker {
                 self.event_counts.get(event).copied().unwrap_or(0)
             }
             AchievementCondition::FlagSet(flag) => {
-                if self.flags.get(flag).copied().unwrap_or(false) { 1 } else { 0 }
+                if self.flags.get(flag).copied().unwrap_or(false) {
+                    1
+                } else {
+                    0
+                }
             }
             AchievementCondition::StatReached { stat, .. } => {
                 self.stats.get(stat).copied().unwrap_or(0.0) as u32
@@ -379,7 +390,11 @@ impl AchievementTracker {
                 subs.iter().filter(|c| self.evaluate_condition(c)).count() as u32
             }
             AchievementCondition::Any(subs) => {
-                if subs.iter().any(|c| self.evaluate_condition(c)) { 1 } else { 0 }
+                if subs.iter().any(|c| self.evaluate_condition(c)) {
+                    1
+                } else {
+                    0
+                }
             }
             AchievementCondition::Custom(_) => 0,
         }
@@ -416,13 +431,22 @@ fn build_indexes(
 ) {
     match cond {
         AchievementCondition::EventCount { event, .. } => {
-            event_idx.entry(event.clone()).or_default().push(id.to_string());
+            event_idx
+                .entry(event.clone())
+                .or_default()
+                .push(id.to_string());
         }
         AchievementCondition::FlagSet(flag) => {
-            flag_idx.entry(flag.clone()).or_default().push(id.to_string());
+            flag_idx
+                .entry(flag.clone())
+                .or_default()
+                .push(id.to_string());
         }
         AchievementCondition::StatReached { stat, .. } => {
-            stat_idx.entry(stat.clone()).or_default().push(id.to_string());
+            stat_idx
+                .entry(stat.clone())
+                .or_default()
+                .push(id.to_string());
         }
         AchievementCondition::All(subs) | AchievementCondition::Any(subs) => {
             for sub in subs {
@@ -549,7 +573,10 @@ mod tests {
             icon_sprite: "star".into(),
             hidden: false,
             condition: AchievementCondition::All(vec![
-                AchievementCondition::EventCount { event: "kill".into(), threshold: 1 },
+                AchievementCondition::EventCount {
+                    event: "kill".into(),
+                    threshold: 1,
+                },
                 AchievementCondition::FlagSet("collected".into()),
             ]),
             category: None,

@@ -179,8 +179,11 @@ pub fn png_to_webp(png_data: &[u8], quality: u8) -> Result<Vec<u8>, FormatError>
     let rgba = img.to_rgba8();
     let mut buf = Vec::new();
     // image crate 0.25+ supports WebP encoding
-    rgba.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::WebP)
-        .map_err(|e| FormatError::Unsupported(format!("WebP encoding: {e}")))?;
+    rgba.write_to(
+        &mut std::io::Cursor::new(&mut buf),
+        image::ImageFormat::WebP,
+    )
+    .map_err(|e| FormatError::Unsupported(format!("WebP encoding: {e}")))?;
     let _ = quality; // quality knob reserved for future encoder configurability
     Ok(buf)
 }

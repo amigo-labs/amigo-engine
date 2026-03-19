@@ -53,7 +53,9 @@ impl Game for InputDemo {
         // Mouse info
         ctx.draw_text(
             &format!("Mouse: ({:.0}, {:.0})", self.mouse_x, self.mouse_y),
-            8.0, 8.0, Color::WHITE,
+            8.0,
+            8.0,
+            Color::WHITE,
         );
         let left_str = if self.left_held { "held" } else { "released" };
         let right_str = if self.right_held { "held" } else { "released" };
@@ -70,11 +72,15 @@ impl Game for InputDemo {
         let mut move_str = String::new();
         for (i, &held) in self.wasd.iter().enumerate() {
             if held {
-                if !move_str.is_empty() { move_str.push(' '); }
+                if !move_str.is_empty() {
+                    move_str.push(' ');
+                }
                 move_str.push_str(labels[i]);
             }
         }
-        if move_str.is_empty() { move_str.push_str("(none)"); }
+        if move_str.is_empty() {
+            move_str.push_str("(none)");
+        }
         ctx.draw_text(&format!("Move keys: {move_str}"), 8.0, 56.0, Color::WHITE);
 
         // Arrow keys
@@ -82,11 +88,15 @@ impl Game for InputDemo {
         let mut arrow_str = String::new();
         for (i, &held) in self.arrows.iter().enumerate() {
             if held {
-                if !arrow_str.is_empty() { arrow_str.push(' '); }
+                if !arrow_str.is_empty() {
+                    arrow_str.push(' ');
+                }
                 arrow_str.push_str(arrow_labels[i]);
             }
         }
-        if arrow_str.is_empty() { arrow_str.push_str("(none)"); }
+        if arrow_str.is_empty() {
+            arrow_str.push_str("(none)");
+        }
         ctx.draw_text(&format!("Arrows: {arrow_str}"), 8.0, 70.0, Color::WHITE);
 
         // Jump (Space)
@@ -96,7 +106,9 @@ impl Game for InputDemo {
         // Action map legend
         ctx.draw_text(
             "Actions: Jump=Space, Move=WASD",
-            8.0, 104.0, Color::new(180, 180, 180, 255),
+            8.0,
+            104.0,
+            Color::new(180, 180, 180, 255),
         );
     }
 }

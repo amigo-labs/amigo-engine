@@ -258,8 +258,8 @@ impl AudioBuffer {
         // Compute energy in 3 frequency bands using simple windowed analysis.
         // Low: 0-300Hz, Mid: 300-3000Hz, High: 3000Hz+
         // We approximate using sample-domain energy of differently smoothed signals.
-        let total_energy: f32 = self.samples.iter().map(|s| s * s).sum::<f32>()
-            / self.samples.len() as f32;
+        let total_energy: f32 =
+            self.samples.iter().map(|s| s * s).sum::<f32>() / self.samples.len() as f32;
 
         if total_energy < 1e-10 {
             return SpectralReport {

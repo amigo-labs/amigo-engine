@@ -740,7 +740,7 @@ mod tests {
         let mut ext = ExtendState::new(config);
         assert_eq!(ext.check_score(100), 1); // threshold 0: 100
         assert_eq!(ext.check_score(300), 1); // threshold 1: 300
-        // Repeating interval is 300 - 100 = 200, so next at 500.
+                                             // Repeating interval is 300 - 100 = 200, so next at 500.
         assert_eq!(ext.check_score(499), 0);
         assert_eq!(ext.check_score(500), 1);
         assert_eq!(ext.check_score(700), 1); // next at 700

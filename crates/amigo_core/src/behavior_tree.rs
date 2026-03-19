@@ -427,20 +427,14 @@ fn reset_node(node: &mut BtNode) {
                 reset_node(child);
             }
         }
-        BtNode::Inverter(child)
-        | BtNode::AlwaysSucceed(child)
-        | BtNode::AlwaysFail(child) => {
+        BtNode::Inverter(child) | BtNode::AlwaysSucceed(child) | BtNode::AlwaysFail(child) => {
             reset_node(child);
         }
-        BtNode::Repeat {
-            child, current, ..
-        } => {
+        BtNode::Repeat { child, current, .. } => {
             *current = 0;
             reset_node(child);
         }
-        BtNode::Timeout {
-            child, elapsed, ..
-        } => {
+        BtNode::Timeout { child, elapsed, .. } => {
             *elapsed = 0;
             reset_node(child);
         }

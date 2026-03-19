@@ -158,8 +158,7 @@ fn catmull_rom_tangent(p0: SimVec2, p1: SimVec2, p2: SimVec2, p3: SimVec2, t: Fi
     let c0 = p2 - p0;
     let c1 = (p0 * Fix::from_num(2) - p1 * Fix::from_num(5) + p2 * Fix::from_num(4) - p3)
         * (Fix::from_num(2) * t);
-    let c2 = (-p0 + p1 * Fix::from_num(3) - p2 * Fix::from_num(3) + p3)
-        * (Fix::from_num(3) * t2);
+    let c2 = (-p0 + p1 * Fix::from_num(3) - p2 * Fix::from_num(3) + p3) * (Fix::from_num(3) * t2);
 
     (c0 + c1 + c2) * half
 }
@@ -210,10 +209,7 @@ impl CubicBezier {
 
         let three = Fix::from_num(3);
 
-        self.p0 * om3
-            + self.p1 * (three * om2 * t)
-            + self.p2 * (three * om1 * t2)
-            + self.p3 * t3
+        self.p0 * om3 + self.p1 * (three * om2 * t) + self.p2 * (three * om1 * t2) + self.p3 * t3
     }
 
     /// Tangenten-Vektor (Ableitung) bei t ∈ [0.0, 1.0].

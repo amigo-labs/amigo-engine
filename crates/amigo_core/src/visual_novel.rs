@@ -595,7 +595,10 @@ pub struct ChoiceMenu {
 impl ChoiceMenu {
     /// Create a new choice menu. Panics if `choices` is empty.
     pub fn new(choices: Vec<ChoiceOption>) -> Self {
-        assert!(!choices.is_empty(), "ChoiceMenu requires at least one choice");
+        assert!(
+            !choices.is_empty(),
+            "ChoiceMenu requires at least one choice"
+        );
         Self {
             prompt: None,
             choices,
@@ -888,9 +891,21 @@ mod tests {
     #[test]
     fn choice_menu_wraps_selection() {
         let choices = vec![
-            ChoiceOption { text: "A".into(), condition: None, previously_chosen: false },
-            ChoiceOption { text: "B".into(), condition: None, previously_chosen: false },
-            ChoiceOption { text: "C".into(), condition: None, previously_chosen: false },
+            ChoiceOption {
+                text: "A".into(),
+                condition: None,
+                previously_chosen: false,
+            },
+            ChoiceOption {
+                text: "B".into(),
+                condition: None,
+                previously_chosen: false,
+            },
+            ChoiceOption {
+                text: "C".into(),
+                condition: None,
+                previously_chosen: false,
+            },
         ];
         let mut menu = ChoiceMenu::new(choices);
         assert_eq!(menu.selected_index, 0);
@@ -904,9 +919,11 @@ mod tests {
 
     #[test]
     fn choice_menu_confirm_with_no_condition() {
-        let choices = vec![
-            ChoiceOption { text: "Go left".into(), condition: None, previously_chosen: false },
-        ];
+        let choices = vec![ChoiceOption {
+            text: "Go left".into(),
+            condition: None,
+            previously_chosen: false,
+        }];
         let menu = ChoiceMenu::new(choices);
         assert!(menu.can_confirm());
         assert!(menu.confirm().is_some());
@@ -914,13 +931,11 @@ mod tests {
 
     #[test]
     fn choice_menu_blocks_confirm_with_condition() {
-        let choices = vec![
-            ChoiceOption {
-                text: "Locked".into(),
-                condition: Some(DialogCondition::FlagSet("key".into())),
-                previously_chosen: false,
-            },
-        ];
+        let choices = vec![ChoiceOption {
+            text: "Locked".into(),
+            condition: Some(DialogCondition::FlagSet("key".into())),
+            previously_chosen: false,
+        }];
         let menu = ChoiceMenu::new(choices);
         // can_confirm returns false when there is a condition (condition-based check needs branching system)
         assert!(!menu.can_confirm());
@@ -929,12 +944,32 @@ mod tests {
     #[test]
     fn backlog_push_and_eviction() {
         let mut log = BacklogSystem::new(3);
-        log.push(BacklogEntry { speaker: None, text: "Line 1".into(), emotion: None, choice_made: None });
-        log.push(BacklogEntry { speaker: None, text: "Line 2".into(), emotion: None, choice_made: None });
-        log.push(BacklogEntry { speaker: None, text: "Line 3".into(), emotion: None, choice_made: None });
+        log.push(BacklogEntry {
+            speaker: None,
+            text: "Line 1".into(),
+            emotion: None,
+            choice_made: None,
+        });
+        log.push(BacklogEntry {
+            speaker: None,
+            text: "Line 2".into(),
+            emotion: None,
+            choice_made: None,
+        });
+        log.push(BacklogEntry {
+            speaker: None,
+            text: "Line 3".into(),
+            emotion: None,
+            choice_made: None,
+        });
         assert_eq!(log.entries().len(), 3);
 
-        log.push(BacklogEntry { speaker: None, text: "Line 4".into(), emotion: None, choice_made: None });
+        log.push(BacklogEntry {
+            speaker: None,
+            text: "Line 4".into(),
+            emotion: None,
+            choice_made: None,
+        });
         assert_eq!(log.entries().len(), 3);
         assert_eq!(log.entries()[0].text, "Line 2");
     }
@@ -1028,9 +1063,18 @@ mod tests {
     #[test]
     fn vn_scene_focus_character_dims_others() {
         let mut scene = VnScene::new();
-        scene.set_character(SlotPosition::Left, CharacterDisplay::new("a", "a_body", "a_neutral"));
-        scene.set_character(SlotPosition::Center, CharacterDisplay::new("b", "b_body", "b_neutral"));
-        scene.set_character(SlotPosition::Right, CharacterDisplay::new("c", "c_body", "c_neutral"));
+        scene.set_character(
+            SlotPosition::Left,
+            CharacterDisplay::new("a", "a_body", "a_neutral"),
+        );
+        scene.set_character(
+            SlotPosition::Center,
+            CharacterDisplay::new("b", "b_body", "b_neutral"),
+        );
+        scene.set_character(
+            SlotPosition::Right,
+            CharacterDisplay::new("c", "c_body", "c_neutral"),
+        );
 
         scene.focus_character(SlotPosition::Center);
 

@@ -426,7 +426,10 @@ mod tests {
     #[test]
     fn test_skill_unlock_with_prerequisites() {
         let mut sys = SkillUnlockSystem::new();
-        sys.add_prerequisite(Ability::SuperJump, vec![Ability::DoubleJump, Ability::WallJump]);
+        sys.add_prerequisite(
+            Ability::SuperJump,
+            vec![Ability::DoubleJump, Ability::WallJump],
+        );
 
         // Should fail — prerequisites not met.
         assert!(!sys.try_unlock(Ability::SuperJump));
@@ -468,15 +471,27 @@ mod tests {
             one_way: true,
         });
 
-        let n1: Vec<RoomId> = graph.neighbors(RoomId(1)).iter().map(|(id, _)| *id).collect();
+        let n1: Vec<RoomId> = graph
+            .neighbors(RoomId(1))
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
         assert_eq!(n1, vec![RoomId(2)]);
 
-        let n2: Vec<RoomId> = graph.neighbors(RoomId(2)).iter().map(|(id, _)| *id).collect();
+        let n2: Vec<RoomId> = graph
+            .neighbors(RoomId(2))
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
         assert!(n2.contains(&RoomId(1)));
         assert!(n2.contains(&RoomId(3)));
 
         // Room 3 cannot go back to 2 (one-way).
-        let n3: Vec<RoomId> = graph.neighbors(RoomId(3)).iter().map(|(id, _)| *id).collect();
+        let n3: Vec<RoomId> = graph
+            .neighbors(RoomId(3))
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
         assert!(!n3.contains(&RoomId(2)));
     }
 

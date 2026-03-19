@@ -26,7 +26,10 @@ pub enum SteeringBehavior {
     /// Match velocity of nearby neighbors.
     Alignment,
     /// Follow a sequence of waypoints. `look_ahead` skips to the next waypoint.
-    PathFollow { waypoints: Vec<SimVec2>, look_ahead: Fix },
+    PathFollow {
+        waypoints: Vec<SimVec2>,
+        look_ahead: Fix,
+    },
 }
 
 /// Compute the combined steering force for an agent this tick.
@@ -256,7 +259,11 @@ mod tests {
         let target = SimVec2::from_f32(10.0, 0.0);
         let agent = agent_seek(target);
         let force = compute_steering(&agent, pos, SimVec2::ZERO, &[]);
-        assert!(force.x > Fix::ZERO, "seek force should point in +x, got {}", force.x);
+        assert!(
+            force.x > Fix::ZERO,
+            "seek force should point in +x, got {}",
+            force.x
+        );
         assert_eq!(force.y, Fix::ZERO);
     }
 
@@ -308,7 +315,11 @@ mod tests {
         }
 
         let dist = (target - pos).length().to_num::<f32>();
-        assert!(dist <= 2.0, "Arrive overshot: final dist to target = {:.2}px", dist);
+        assert!(
+            dist <= 2.0,
+            "Arrive overshot: final dist to target = {:.2}px",
+            dist
+        );
     }
 
     #[test]
@@ -321,7 +332,11 @@ mod tests {
             behaviors: vec![(SteeringBehavior::Flee { target: threat }, Fix::ONE)],
         };
         let force = compute_steering(&agent, pos, SimVec2::ZERO, &[]);
-        assert!(force.x < Fix::ZERO, "flee force should point in -x, got {}", force.x);
+        assert!(
+            force.x < Fix::ZERO,
+            "flee force should point in -x, got {}",
+            force.x
+        );
     }
 
     #[test]
@@ -348,7 +363,11 @@ mod tests {
         };
         let force = compute_steering(&agent, pos_a, SimVec2::ZERO, &[(pos_b, SimVec2::ZERO)]);
         // A is at (0,0), B is at (1,0): separation should push A in -x direction
-        assert!(force.x < Fix::ZERO, "separation force should push away from neighbor in +x, got {}", force.x);
+        assert!(
+            force.x < Fix::ZERO,
+            "separation force should push away from neighbor in +x, got {}",
+            force.x
+        );
     }
 
     #[test]
@@ -379,13 +398,17 @@ mod tests {
             behaviors: vec![(SteeringBehavior::Cohesion, Fix::ONE)],
         };
         let force = compute_steering(&agent, pos, SimVec2::ZERO, &neighbors);
-        assert!(force.x > Fix::ZERO, "cohesion should pull toward group center (+x), got {}", force.x);
+        assert!(
+            force.x > Fix::ZERO,
+            "cohesion should pull toward group center (+x), got {}",
+            force.x
+        );
     }
 
     #[test]
     fn alignment_matches_neighbor_velocity() {
         let vel = SimVec2::ZERO; // agent is stationary
-        // Neighbors moving in +x
+                                 // Neighbors moving in +x
         let neighbors = vec![
             (SimVec2::from_f32(5.0, 0.0), SimVec2::from_f32(2.0, 0.0)),
             (SimVec2::from_f32(10.0, 0.0), SimVec2::from_f32(2.0, 0.0)),
@@ -396,7 +419,10 @@ mod tests {
             behaviors: vec![(SteeringBehavior::Alignment, Fix::ONE)],
         };
         let force = compute_steering(&agent, SimVec2::ZERO, vel, &neighbors);
-        assert!(force.x > Fix::ZERO, "alignment should push toward neighbor avg velocity (+x)");
+        assert!(
+            force.x > Fix::ZERO,
+            "alignment should push toward neighbor avg velocity (+x)"
+        );
     }
 
     #[test]
@@ -514,11 +540,19 @@ mod tests {
             max_speed: Fix::from_num(2.0_f32),
             max_force: Fix::from_num(4.0_f32),
             behaviors: vec![
-                (SteeringBehavior::Separation { radius: Fix::from_num(8.0_f32) }, Fix::ONE),
+                (
+                    SteeringBehavior::Separation {
+                        radius: Fix::from_num(8.0_f32),
+                    },
+                    Fix::ONE,
+                ),
                 (SteeringBehavior::Seek { target }, Fix::ONE),
             ],
         };
         let force = compute_steering(&agent, SimVec2::ZERO, SimVec2::ZERO, &[]);
-        assert!(force.x > Fix::ZERO, "With no neighbors, seek should drive +x");
+        assert!(
+            force.x > Fix::ZERO,
+            "With no neighbors, seek should drive +x"
+        );
     }
 }

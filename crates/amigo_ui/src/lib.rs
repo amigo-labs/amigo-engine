@@ -395,7 +395,7 @@ impl UiContext {
 
         if *focused {
             // Process typed characters
-            for ch in input.text_input() {
+            for &ch in input.text_input() {
                 if ch == '\x08' {
                     // Backspace
                     if *cursor > 0 {
@@ -552,7 +552,9 @@ impl UiContext {
         // Scroll via mouse wheel
         let scroll_delta = input.scroll_delta();
         let new_scroll = if scroll_delta < 0.0 {
-            scroll.saturating_add(1).min(items.len().saturating_sub(visible_count))
+            scroll
+                .saturating_add(1)
+                .min(items.len().saturating_sub(visible_count))
         } else if scroll_delta > 0.0 {
             scroll.saturating_sub(1)
         } else {
@@ -582,25 +584,30 @@ impl UiContext {
         let mut clicked_index = None;
         let mut cy = y;
 
-        // Determine which nodes are visible based on parent expansion state
-        let mut visible_nodes: Vec<(usize, &str, u32, bool)> = Vec::new();
-        let mut skip_below_depth: Option<u32> = None;
-
-        for (i, (label, depth, expanded)) in nodes.iter().enumerate() {
-            if let Some(skip_d) = skip_below_depth {
-                if *depth > skip_d {
-                    continue;
-                } else {
-                    skip_below_depth = None;
+        // Determine which nodes are visible based on parent expansion state.
+        // We collect owned copies so the borrow of `nodes` is released before mutation.
+        let mut visible_nodes: Vec<(usize, String, u32, bool)> = Vec::new();
+        {
+            let mut skip_below_depth: Option<u32> = None;
+            for (i, (label, depth, expanded)) in nodes.iter().enumerate() {
+                if let Some(skip_d) = skip_below_depth {
+                    if *depth > skip_d {
+                        continue;
+                    } else {
+                        skip_below_depth = None;
+                    }
                 }
-            }
-            visible_nodes.push((i, label.as_str(), *depth, *expanded));
-            if !expanded {
-                skip_below_depth = Some(*depth);
+                visible_nodes.push((i, label.clone(), *depth, *expanded));
+                if !expanded {
+                    skip_below_depth = Some(*depth);
+                }
             }
         }
 
-        for &(i, label, depth, expanded) in &visible_nodes {
+        for (i, ref label, depth, expanded) in &visible_nodes {
+            let i = *i;
+            let depth = *depth;
+            let expanded = *expanded;
             let nx = x + depth as f32 * indent;
             let rect = Rect::new(x, cy, width, item_h);
 

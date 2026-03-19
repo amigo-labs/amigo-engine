@@ -327,13 +327,11 @@ impl AudioManager {
                 0.0
             };
 
-            let data = variants[idx]
-                .clone()
-                .with_settings(
-                    StaticSoundSettings::new()
-                        .volume(Volume::Amplitude(volume as f64))
-                        .panning(((panning + 1.0) / 2.0) as f64), // kira panning: 0=left, 0.5=center, 1=right
-                );
+            let data = variants[idx].clone().with_settings(
+                StaticSoundSettings::new()
+                    .volume(Volume::Amplitude(volume as f64))
+                    .panning(((panning + 1.0) / 2.0) as f64), // kira panning: 0=left, 0.5=center, 1=right
+            );
             let _ = manager.play(data);
         }
     }
@@ -1201,7 +1199,7 @@ impl AdaptiveMusicEngine {
                     let oi = *old_section_idx;
                     let follow_up = *then.clone();
                     self.active_section = Some(oi); // ensure old is still active
-                    // Don't put transition back — we'll set a new one via transition_to
+                                                    // Don't put transition back — we'll set a new one via transition_to
                     let _ = self.transition_to(ni, follow_up);
                     return;
                 }

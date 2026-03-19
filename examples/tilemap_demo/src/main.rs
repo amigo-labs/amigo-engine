@@ -65,9 +65,7 @@ impl TilemapDemo {
             for x in 0..MAP_W {
                 let tile = self.tilemap.layer("terrain").unwrap().get(x, y);
                 if tile == WALL || tile == WATER {
-                    self.tilemap
-                        .collision
-                        .set(x, y, CollisionType::Solid);
+                    self.tilemap.collision.set(x, y, CollisionType::Solid);
                 }
             }
         }
@@ -76,9 +74,9 @@ impl TilemapDemo {
     fn tile_color(id: TileId) -> Option<Color> {
         match id {
             t if t == GRASS => Some(Color::rgb(0.25, 0.55, 0.20)),
-            t if t == PATH  => Some(Color::rgb(0.60, 0.55, 0.40)),
+            t if t == PATH => Some(Color::rgb(0.60, 0.55, 0.40)),
             t if t == WATER => Some(Color::rgb(0.20, 0.35, 0.65)),
-            t if t == WALL  => Some(Color::rgb(0.45, 0.40, 0.35)),
+            t if t == WALL => Some(Color::rgb(0.45, 0.40, 0.35)),
             _ => None,
         }
     }

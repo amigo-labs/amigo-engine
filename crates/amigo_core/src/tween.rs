@@ -231,11 +231,9 @@ impl EasingFn {
                 } else {
                     let c5 = 2.0 * PI / 4.5;
                     if t < 0.5 {
-                        -(2.0_f32).powf(20.0 * t - 10.0) * ((20.0 * t - 11.125) * c5).sin()
-                            / 2.0
+                        -(2.0_f32).powf(20.0 * t - 10.0) * ((20.0 * t - 11.125) * c5).sin() / 2.0
                     } else {
-                        (2.0_f32).powf(-20.0 * t + 10.0) * ((20.0 * t - 11.125) * c5).sin()
-                            / 2.0
+                        (2.0_f32).powf(-20.0 * t + 10.0) * ((20.0 * t - 11.125) * c5).sin() / 2.0
                             + 1.0
                     }
                 }
@@ -752,18 +750,8 @@ mod tests {
         for e in easings {
             let v0 = e.apply(0.0);
             let v1 = e.apply(1.0);
-            assert!(
-                (v0 - 0.0).abs() < 0.001,
-                "{:?} at t=0: got {}",
-                e,
-                v0
-            );
-            assert!(
-                (v1 - 1.0).abs() < 0.001,
-                "{:?} at t=1: got {}",
-                e,
-                v1
-            );
+            assert!((v0 - 0.0).abs() < 0.001, "{:?} at t=0: got {}", e, v0);
+            assert!((v1 - 1.0).abs() < 0.001, "{:?} at t=1: got {}", e, v1);
         }
     }
 
@@ -808,8 +796,11 @@ mod tests {
 
     #[test]
     fn test_sequence_then() {
-        let mut seq = TweenSequence::new(0.0_f32, 50.0, 1.0, EasingFn::Linear)
-            .then(100.0, 1.0, EasingFn::Linear);
+        let mut seq = TweenSequence::new(0.0_f32, 50.0, 1.0, EasingFn::Linear).then(
+            100.0,
+            1.0,
+            EasingFn::Linear,
+        );
 
         seq.update(0.5); // Midway through first tween
         assert!((seq.current() - 25.0).abs() < 0.5);
@@ -870,10 +861,7 @@ mod tests {
     #[test]
     fn test_manager_cancel() {
         let mut mgr = TweenManager::new();
-        let h = mgr.start(
-            Tween::new(0.0_f32, 100.0, 10.0, EasingFn::Linear),
-            |_| {},
-        );
+        let h = mgr.start(Tween::new(0.0_f32, 100.0, 10.0, EasingFn::Linear), |_| {});
         assert!(mgr.is_active(h));
         mgr.cancel(h);
         assert!(!mgr.is_active(h));

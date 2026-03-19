@@ -6,6 +6,9 @@ use amigo_core::game_preset::{
 };
 use amigo_editor::{save_level, AmigoLevel, EntityPlacement, LayerData, PathData};
 
+mod pipeline_cmd;
+mod setup;
+
 // ---------------------------------------------------------------------------
 // CLI argument parsing (minimal, no external dependency)
 // ---------------------------------------------------------------------------
@@ -27,6 +30,8 @@ COMMANDS:
     publish steam                        Prepare and upload to Steam (via steamcmd)
     publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
     editor                               Launch the Amigo editor
+    setup [--only GROUP] [--gpu BACKEND] Install Python toolchain (Demucs, etc.)
+    pipeline <COMMAND>                   Audio-to-TidalCycles pipeline
     list-templates                       Show available project templates
     list-presets                         Show available scene presets
     export-level <path> [--format json]  Convert a .amigo level to JSON
@@ -60,6 +65,8 @@ fn main() {
         "release" => cmd_release(&args[2..]),
         "publish" => cmd_publish(&args[2..]),
         "editor" => cmd_editor(&args[2..]),
+        "setup" => setup::cmd_setup(&args[2..]),
+        "pipeline" => pipeline_cmd::cmd_pipeline(&args[2..]),
         "list-templates" => cmd_list_templates(),
         "list-presets" => cmd_list_presets(),
         "export-level" => cmd_export_level(&args[2..]),

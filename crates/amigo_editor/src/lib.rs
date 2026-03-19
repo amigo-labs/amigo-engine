@@ -4,6 +4,7 @@ pub mod heatmap;
 pub mod play_state;
 pub mod playtest;
 pub mod plugin;
+pub mod tidal_playground;
 pub mod ui;
 pub mod visual_script;
 pub mod wizard;

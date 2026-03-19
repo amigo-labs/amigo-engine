@@ -38,6 +38,7 @@ pub struct InputState {
     mouse_position: RenderVec2,
     mouse_world_position: RenderVec2,
     mouse_scroll_delta: f32,
+    typed_chars: Vec<char>,
 }
 
 impl InputState {
@@ -52,6 +53,7 @@ impl InputState {
             mouse_position: RenderVec2::ZERO,
             mouse_world_position: RenderVec2::ZERO,
             mouse_scroll_delta: 0.0,
+            typed_chars: Vec::new(),
         }
     }
 
@@ -62,6 +64,7 @@ impl InputState {
         self.mouse_buttons_pressed.clear();
         self.mouse_buttons_released.clear();
         self.mouse_scroll_delta = 0.0;
+        self.typed_chars.clear();
     }
 
     /// Process a keyboard event.
@@ -156,6 +159,16 @@ impl InputState {
     /// Mouse scroll delta this frame.
     pub fn scroll_delta(&self) -> f32 {
         self.mouse_scroll_delta
+    }
+
+    /// Record a typed character (from keyboard text input events).
+    pub fn handle_text_input(&mut self, ch: char) {
+        self.typed_chars.push(ch);
+    }
+
+    /// Characters typed this frame (for text fields).
+    pub fn text_input(&self) -> &[char] {
+        &self.typed_chars
     }
 }
 

@@ -375,10 +375,7 @@ pub type Position = RenderVec2;
 
 /// Synchronize PhysicsWorld body positions back into ECS Position components.
 /// Call after `PhysicsWorld::step()`.
-pub fn sync_physics_to_ecs(
-    world: &PhysicsWorld,
-    positions: &mut crate::ecs::SparseSet<Position>,
-) {
+pub fn sync_physics_to_ecs(world: &PhysicsWorld, positions: &mut crate::ecs::SparseSet<Position>) {
     for (&entity, body) in &world.bodies {
         if let Some(pos) = positions.get_mut(entity) {
             *pos = body.position;
@@ -388,10 +385,7 @@ pub fn sync_physics_to_ecs(
 
 /// Synchronize ECS positions into PhysicsWorld (for Kinematic bodies moved by game code).
 /// Call before `PhysicsWorld::step()`.
-pub fn sync_ecs_to_physics(
-    positions: &crate::ecs::SparseSet<Position>,
-    world: &mut PhysicsWorld,
-) {
+pub fn sync_ecs_to_physics(positions: &crate::ecs::SparseSet<Position>, world: &mut PhysicsWorld) {
     for (&entity, body) in world.bodies.iter_mut() {
         if body.body_type == BodyType::Kinematic {
             if let Some(pos) = positions.get(entity) {

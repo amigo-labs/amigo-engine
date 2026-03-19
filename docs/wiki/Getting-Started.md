@@ -7,11 +7,13 @@ Build your first Amigo game in 15 minutes.
 - **Rust toolchain** -- install via [rustup](https://rustup.rs/)
 - **GPU drivers** -- Vulkan, Metal, or DX12 capable GPU required for the wgpu renderer
 
-## Create a project
+See [Installation](Installation) for detailed setup instructions.
+
+## Create a Project
 
 ```sh
 # Install the CLI
-cargo install --path tools/amigo_cli
+curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.sh | sh
 
 # Scaffold a new game
 amigo new my_game
@@ -35,7 +37,7 @@ my_game/
     audio/
 ```
 
-## Minimal example
+## Minimal Example
 
 ```rust
 use amigo_engine::prelude::*;
@@ -56,7 +58,7 @@ fn main() {
 }
 ```
 
-## Run it
+## Run It
 
 ```sh
 cargo run
@@ -64,7 +66,7 @@ cargo run
 
 A window opens at 640x360 virtual resolution. The engine runs a fixed-timestep game loop at 60 ticks/second with interpolated rendering.
 
-## Draw a sprite
+## Draw a Sprite
 
 ```rust
 impl Game for MyGame {
@@ -78,13 +80,12 @@ Place a `player.aseprite` or `player.png` in `assets/sprites/`. The asset pipeli
 
 ## Configuration
 
-Edit `amigo.toml` to adjust window size, audio, rendering, and dev settings. See the [config spec](specs/config/amigo-toml.md) for all options.
+Edit `amigo.toml` to adjust window size, audio, rendering, and dev settings.
 
-## Next steps
+## Next Steps
 
-- [Engine Core](specs/engine/core.md) -- ECS, fixed-point math, game loop
-- [Rendering](specs/engine/rendering.md) -- sprite batching, layers, effects
-- [Input](specs/engine/input.md) -- keyboard, mouse, gamepad
-- [Audio](specs/engine/audio.md) -- SFX, adaptive music, ambient layers
-- [Tilemap](specs/engine/tilemap.md) -- tile grids, chunk streaming
-- [Full Spec Overview](specs/_index.md) -- all engine modules
+- [CLI Reference](CLI-Reference) -- all available commands
+- [Architecture](Architecture) -- how the engine is structured
+- [AI Setup](AI-Setup) -- optional AI asset pipelines
+- [Audio Pipeline](Audio-Pipeline) -- convert audio to chiptune notation
+- [Specifications](Specifications) -- detailed engine module docs

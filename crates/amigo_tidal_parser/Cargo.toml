@@ -1,0 +1,11 @@
+[package]
+name = "amigo_tidal_parser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TidalCycles mini-notation parser for Amigo Engine"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
