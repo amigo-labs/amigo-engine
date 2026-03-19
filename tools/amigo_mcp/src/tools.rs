@@ -395,6 +395,105 @@ pub fn tool_definitions() -> Vec<Value> {
             "Get CRC checksum of current state for desync detection.",
             json!({"type": "object", "properties": {}}),
         ),
+        // ── Tilemap Query ──
+        tool(
+            "amigo_tilemap_get_tile",
+            "Read tile ID and collision type at a position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "layer": {"type": "string", "description": "Tilemap layer: terrain, decoration, etc."},
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"}
+                },
+                "required": ["layer", "x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_tilemap_get_region",
+            "Read a rectangular region of tile IDs.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "layer": {"type": "string", "description": "Tilemap layer: terrain, decoration, etc."},
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "w": {"type": "integer"},
+                    "h": {"type": "integer"}
+                },
+                "required": ["layer", "x", "y", "w", "h"]
+            }),
+        ),
+        tool(
+            "amigo_tilemap_collision_at",
+            "Read the CollisionType at a tile position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"}
+                },
+                "required": ["x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_tilemap_dimensions",
+            "Get tilemap dimensions: width, height, tile_size.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        // ── Camera ──
+        tool(
+            "amigo_camera_get",
+            "Get current camera state: position, zoom, mode, bounds.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_camera_set",
+            "Set camera position and optional zoom level.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "zoom": {"type": "number", "description": "Optional zoom level"}
+                },
+                "required": ["x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_camera_shake",
+            "Trigger a camera shake effect.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "intensity": {"type": "number"},
+                    "duration": {"type": "number", "description": "Duration in seconds"}
+                },
+                "required": ["intensity", "duration"]
+            }),
+        ),
+        tool(
+            "amigo_camera_follow",
+            "Set camera to follow a specific entity.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer"}
+                },
+                "required": ["entity_id"]
+            }),
+        ),
+        // ── Asset Pipeline ──
+        tool(
+            "amigo_pack",
+            "Run atlas packing on generated art assets. Blocks until packing completes and returns the updated manifest.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "force": {"type": "boolean", "description": "Force re-pack even if no changes detected"}
+                }
+            }),
+        ),
         // ── Dev workflow ──
         tool(
             "amigo_dev_save_snapshot",
