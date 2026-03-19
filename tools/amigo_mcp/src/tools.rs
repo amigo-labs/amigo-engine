@@ -483,6 +483,157 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["entity_id"]
             }),
         ),
+        // ── Lighting ──
+        tool(
+            "amigo_lighting_add",
+            "Add a light source at a position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "radius": {"type": "number"},
+                    "color": {"type": "array", "items": {"type": "integer"}, "description": "RGB color [r, g, b]"},
+                    "intensity": {"type": "number"}
+                },
+                "required": ["x", "y", "radius", "color", "intensity"]
+            }),
+        ),
+        tool(
+            "amigo_lighting_remove",
+            "Remove a light source by ID.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            }),
+        ),
+        tool(
+            "amigo_lighting_list",
+            "List all active light sources.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        // ── Particles ──
+        tool(
+            "amigo_particles_spawn",
+            "Spawn a particle emitter at a position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "emitter_type": {"type": "string", "description": "Emitter type: fire, smoke, sparkle, blood, etc."},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "params": {"type": "object", "description": "Optional emitter parameters (color, rate, lifetime, etc.)"}
+                },
+                "required": ["emitter_type", "x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_particles_stop",
+            "Stop a particle emitter by ID.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            }),
+        ),
+        // ── Inventory/Crafting ──
+        tool(
+            "amigo_inventory_list",
+            "List inventory contents for an entity.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer", "description": "Entity to query, defaults to player"}
+                }
+            }),
+        ),
+        tool(
+            "amigo_inventory_add",
+            "Add items to an entity's inventory.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer"},
+                    "item": {"type": "string"},
+                    "count": {"type": "integer"}
+                },
+                "required": ["entity_id", "item", "count"]
+            }),
+        ),
+        tool(
+            "amigo_inventory_remove",
+            "Remove items from an entity's inventory.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer"},
+                    "item": {"type": "string"},
+                    "count": {"type": "integer"}
+                },
+                "required": ["entity_id", "item", "count"]
+            }),
+        ),
+        tool(
+            "amigo_crafting_list_recipes",
+            "List all available crafting recipes.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_crafting_craft",
+            "Execute a crafting recipe.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "recipe_id": {"type": "string"}
+                },
+                "required": ["recipe_id"]
+            }),
+        ),
+        // ── Dialogue ──
+        tool(
+            "amigo_dialogue_start",
+            "Start a dialogue tree.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "tree_id": {"type": "string"}
+                },
+                "required": ["tree_id"]
+            }),
+        ),
+        tool(
+            "amigo_dialogue_choose",
+            "Select a dialogue choice by index.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "choice_index": {"type": "integer"}
+                },
+                "required": ["choice_index"]
+            }),
+        ),
+        tool(
+            "amigo_dialogue_get_state",
+            "Get current dialogue node, speaker, text, choices, and flags.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_dialogue_set_flag",
+            "Set a dialogue flag value.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "value": {"type": "integer"}
+                },
+                "required": ["name", "value"]
+            }),
+        ),
         // ── Asset Pipeline ──
         tool(
             "amigo_pack",
