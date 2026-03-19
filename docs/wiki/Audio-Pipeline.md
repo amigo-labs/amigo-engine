@@ -1,10 +1,10 @@
 # Audio Pipeline
 
-Die Pipeline konvertiert Audio-Dateien in `.amigo.tidal` Mini-Notation, die die Engine zur Laufzeit mit Chiptune-Oszillatoren abspielt.
+The pipeline converts audio files into `.amigo.tidal` mini-notation that the engine plays back at runtime using built-in chiptune oscillators.
 
-**Voraussetzung:** `amigo setup --only audio` (siehe [AI Setup](AI-Setup))
+**Prerequisite:** `amigo setup --only audio` (see [AI Setup](AI-Setup))
 
-## Pipeline-Stufen
+## Pipeline Stages
 
 ```
 Audio (.wav/.ogg/.mp3)
@@ -17,18 +17,18 @@ Audio (.wav/.ogg/.mp3)
     |  melody.mid, bass.mid, drums.mid, harmony.mid
     v
 [3] midi_to_tidalcycles (MIDI-to-Notation)
-    |  TidalCycles Mini-Notation pro Stem
+    |  TidalCycles mini-notation per stem
     v
 [4] Assembler (.amigo.tidal)
-    |  Metadaten + Stem-Definitionen
+    |  Metadata + stem definitions
     v
 overworld.amigo.tidal
 ```
 
-## Befehle
+## Commands
 
 ```sh
-# Volle Pipeline: Audio -> .amigo.tidal
+# Full pipeline: Audio -> .amigo.tidal
 amigo pipeline convert \
   --input overworld.wav \
   --output overworld.amigo.tidal \
@@ -37,23 +37,23 @@ amigo pipeline convert \
   --license "CC-BY-4.0" \
   --author "Ozzed"
 
-# Nur Stem-Separation
+# Only stem separation
 amigo pipeline separate --input track.wav --output ./stems/
 
-# Nur Audio-to-MIDI
+# Only audio-to-MIDI
 amigo pipeline transcribe --input ./stems/ --output ./midi/
 
-# Nur MIDI-to-TidalCycles
+# Only MIDI-to-TidalCycles
 amigo pipeline notate --input ./midi/ --output track.amigo.tidal
 
-# Batch-Verarbeitung
+# Batch processing
 amigo pipeline batch --input ./tracks/ --output ./tidal/
 
-# Datei ansehen / abspielen
+# Preview / play a file
 amigo pipeline play overworld.amigo.tidal
 ```
 
-## Konfiguration (pipeline.toml)
+## Configuration (pipeline.toml)
 
 ```toml
 name = "chiptune-default"
@@ -88,7 +88,7 @@ normalize_velocity = true
 merge_short_rests = true
 ```
 
-## .amigo.tidal Dateiformat
+## .amigo.tidal File Format
 
 ```
 -- amigo:meta
@@ -108,4 +108,4 @@ d2 $ slow 8 $ n "c3 ~ c3 ~ g2 ~ g2 ~" # amp "0.9!8"
 d3 $ slow 8 $ n "bd ~ sd ~ bd ~ sd bd"
 ```
 
-Siehe [TidalCycles](TidalCycles) fuer die vollstaendige Notation-Referenz.
+See [TidalCycles](TidalCycles) for the full notation reference.

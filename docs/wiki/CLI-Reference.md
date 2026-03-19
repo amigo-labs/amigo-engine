@@ -1,72 +1,72 @@
 # CLI Reference
 
-## Projekt-Management
+## Project Management
 
-| Befehl | Beschreibung |
-|--------|-------------|
-| `amigo new <name> [--template T]` | Neues Spielprojekt erstellen |
-| `amigo scene <name> [--preset P]` | Szene zum Projekt hinzufuegen |
-| `amigo info` | Projekt-Infos anzeigen |
-| `amigo list-templates` | Verfuegbare Projekt-Templates |
-| `amigo list-presets` | Verfuegbare Szenen-Presets |
+| Command | Description |
+|---------|-------------|
+| `amigo new <name> [--template T]` | Create a new game project |
+| `amigo scene <name> [--preset P]` | Add a scene to the project |
+| `amigo info` | Show project information |
+| `amigo list-templates` | Available project templates |
+| `amigo list-presets` | Available scene presets |
 
 ## Build & Run
 
-| Befehl | Beschreibung |
-|--------|-------------|
-| `amigo build` | Kompilierung pruefen |
-| `amigo run [--headless] [--api]` | Spiel starten |
-| `amigo editor` | Level-Editor oeffnen |
-| `amigo pack` | Assets in Atlas packen |
-| `amigo release [--target T]` | Optimiertes Release-Binary bauen |
+| Command | Description |
+|---------|-------------|
+| `amigo build` | Check compilation |
+| `amigo run [--headless] [--api]` | Run the game |
+| `amigo editor` | Open the level editor |
+| `amigo pack` | Pack assets into atlas |
+| `amigo release [--target T]` | Build optimized release binary |
 
 ## Publishing
 
-| Befehl | Beschreibung |
-|--------|-------------|
-| `amigo publish steam` | Auf Steam hochladen (via steamcmd) |
-| `amigo publish itch [--channel C]` | Auf itch.io hochladen (via butler) |
+| Command | Description |
+|---------|-------------|
+| `amigo publish steam` | Upload to Steam (via steamcmd) |
+| `amigo publish itch [--channel C]` | Upload to itch.io (via butler) |
 
-## Setup (Python-Toolchain)
+## Setup (Python Toolchain)
 
-Siehe [AI Setup](AI-Setup) fuer Details.
+See [AI Setup](AI-Setup) for details.
 
-| Befehl | Beschreibung |
-|--------|-------------|
-| `amigo setup` | Volle Installation |
-| `amigo setup --only <group>` | Nur bestimmte Tool-Gruppe |
-| `amigo setup --gpu <backend>` | GPU-Backend waehlen (cpu/nvidia/mps) |
-| `amigo setup --check` | Status anzeigen |
-| `amigo setup --update` | Packages aktualisieren |
-| `amigo setup --clean [--all]` | Aufraumen |
+| Command | Description |
+|---------|-------------|
+| `amigo setup` | Full installation |
+| `amigo setup --only <group>` | Install specific tool group only |
+| `amigo setup --gpu <backend>` | Select GPU backend (cpu/nvidia/mps) |
+| `amigo setup --check` | Show status |
+| `amigo setup --update` | Update packages |
+| `amigo setup --clean [--all]` | Clean up |
 
 ## Pipeline (Audio-to-TidalCycles)
 
-Siehe [Audio Pipeline](Audio-Pipeline) fuer Details.
+See [Audio Pipeline](Audio-Pipeline) for details.
 
-| Befehl | Beschreibung |
-|--------|-------------|
-| `amigo pipeline convert --input F --output F` | Volle Pipeline |
-| `amigo pipeline separate --input F --output D` | Nur Stem-Separation |
-| `amigo pipeline transcribe --input D --output D` | Nur Audio-to-MIDI |
-| `amigo pipeline notate --input D --output F` | Nur MIDI-to-TidalCycles |
-| `amigo pipeline batch --input D --output D` | Batch-Verarbeitung |
-| `amigo pipeline play <file>` | .amigo.tidal Datei abspielen |
+| Command | Description |
+|---------|-------------|
+| `amigo pipeline convert --input F --output F` | Full pipeline |
+| `amigo pipeline separate --input F --output D` | Stem separation only |
+| `amigo pipeline transcribe --input D --output D` | Audio-to-MIDI only |
+| `amigo pipeline notate --input D --output F` | MIDI-to-TidalCycles only |
+| `amigo pipeline batch --input D --output D` | Batch processing |
+| `amigo pipeline play <file>` | Play .amigo.tidal file |
 
-### Gemeinsame Pipeline-Flags
+### Common Pipeline Flags
 
-| Flag | Beschreibung |
+| Flag | Description |
 |------|-------------|
-| `--input <path>` | Input-Datei oder Verzeichnis |
-| `--output <path>` | Output-Datei oder Verzeichnis |
-| `--config <path>` | Pipeline-Konfiguration (TOML) |
-| `--bpm <zahl>` | BPM ueberschreiben |
-| `--name <text>` | Kompositionsname |
-| `--license <text>` | Lizenz-Metadaten |
-| `--author <text>` | Autor-Metadaten |
+| `--input <path>` | Input file or directory |
+| `--output <path>` | Output file or directory |
+| `--config <path>` | Pipeline configuration (TOML) |
+| `--bpm <number>` | Override BPM |
+| `--name <text>` | Composition name |
+| `--license <text>` | License metadata |
+| `--author <text>` | Author metadata |
 
 ## Utilities
 
-| Befehl | Beschreibung |
-|--------|-------------|
-| `amigo export-level <path> [--format json]` | Level als JSON exportieren |
+| Command | Description |
+|---------|-------------|
+| `amigo export-level <path> [--format json]` | Export level as JSON |

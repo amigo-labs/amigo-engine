@@ -1,63 +1,63 @@
 # AI Setup
 
-`amigo setup` installiert die Python-Toolchain fuer AI-Pipelines (Art Generation, Audio Analysis, Music Generation) in ein isoliertes `~/.amigo/` Verzeichnis. Kein globales Python noetig.
+`amigo setup` installs the Python toolchain for AI pipelines (art generation, audio analysis, music generation) into an isolated `~/.amigo/` directory. No global Python installation required.
 
-## Schnellstart
+## Quick Start
 
 ```sh
-# Alles installieren
+# Install everything
 amigo setup
 
-# Nur Audio-Tools
+# Only audio tools
 amigo setup --only audio
 
-# Mit NVIDIA GPU
+# With NVIDIA GPU
 amigo setup --gpu nvidia
 ```
 
-## Befehle
+## Commands
 
-| Befehl | Beschreibung |
-|--------|-------------|
-| `amigo setup` | Volle Installation (uv + Python + alle Tools) |
-| `amigo setup --only audio` | Nur Audio-Tools (Demucs, Basic Pitch) |
-| `amigo setup --only artgen` | Nur Art-Tools (ComfyUI) |
-| `amigo setup --only music-gen` | Nur Musik-Tools (ACE-Step) |
-| `amigo setup --gpu nvidia` | Mit CUDA-Support (NVIDIA GPU) |
-| `amigo setup --gpu mps` | Mit Metal-Support (macOS) |
-| `amigo setup --check` | Status aller installierten Tools anzeigen |
-| `amigo setup --update` | Packages auf neueste Version aktualisieren |
-| `amigo setup --clean` | venv/cache/requirements loeschen |
-| `amigo setup --clean --all` | Auch uv-Binary loeschen |
-| `amigo setup --python 3.12` | Andere Python-Version verwenden |
+| Command                        | Description                                 |
+| ------------------------------ | ------------------------------------------- |
+| `amigo setup`                  | Full installation (uv + Python + all tools) |
+| `amigo setup --only audio`     | Audio tools only (Demucs, Basic Pitch)      |
+| `amigo setup --only artgen`    | Art tools only (ComfyUI)                    |
+| `amigo setup --only music-gen` | Music tools only (ACE-Step)                 |
+| `amigo setup --gpu nvidia`     | With CUDA support (NVIDIA GPU)              |
+| `amigo setup --gpu mps`        | With Metal support (macOS)                  |
+| `amigo setup --check`          | Show status of all installed tools          |
+| `amigo setup --update`         | Update packages to latest versions          |
+| `amigo setup --clean`          | Remove venv/cache/requirements              |
+| `amigo setup --clean --all`    | Also remove uv binary                       |
+| `amigo setup --python 3.12`    | Use a different Python version              |
 
-## Tool-Gruppen
+## Tool Groups
 
-| Gruppe | Tools | Verwendung |
-|--------|-------|-----------|
-| `audio` | Demucs, Basic Pitch, midi_to_tidalcycles | [Audio Pipeline](Audio-Pipeline) |
-| `artgen` | ComfyUI | Sprite/Tileset-Generierung |
-| `music-gen` | ACE-Step, AudioGen | KI-Musikgenerierung |
+| Group       | Tools                                    | Used for                         |
+| ----------- | ---------------------------------------- | -------------------------------- |
+| `audio`     | Demucs, Basic Pitch, midi_to_tidalcycles | [Audio Pipeline](Audio-Pipeline) |
+| `artgen`    | ComfyUI                                  | Sprite/tileset generation        |
+| `music-gen` | ACE-Step, AudioGen                       | AI music generation              |
 
-## GPU-Backends
+## GPU Backends
 
-| Backend | Flag | Voraussetzung |
-|---------|------|--------------|
-| CPU | `--gpu cpu` (default) | Kein GPU noetig |
-| NVIDIA CUDA | `--gpu nvidia` | NVIDIA GPU + aktuelle Treiber |
-| macOS Metal | `--gpu mps` | Apple Silicon oder AMD GPU |
+| Backend     | Flag                  | Requirement                     |
+| ----------- | --------------------- | ------------------------------- |
+| CPU         | `--gpu cpu` (default) | No GPU needed                   |
+| NVIDIA CUDA | `--gpu nvidia`        | NVIDIA GPU with current drivers |
+| macOS Metal | `--gpu mps`           | Apple Silicon or AMD GPU        |
 
-## Verzeichnisstruktur
+## Directory Structure
 
 ```
 ~/.amigo/
-  bin/uv              # uv Package Manager
-  venv/               # Isoliertes Python-venv
-  requirements/       # Generierte Requirement-Files
-  config.toml         # Setup-Status und Konfiguration
+  bin/uv              # uv package manager
+  venv/               # Isolated Python venv
+  requirements/       # Generated requirement files
+  config.toml         # Setup status and configuration
 ```
 
-## Status pruefen
+## Check Status
 
 ```sh
 $ amigo setup --check
@@ -79,12 +79,12 @@ Amigo Python Toolchain Status
 --------------------------------------------------
 ```
 
-## Wie es funktioniert
+## How It Works
 
-`amigo setup` nutzt [uv](https://docs.astral.sh/uv/) als Python-Manager:
+`amigo setup` uses [uv](https://docs.astral.sh/uv/) as Python manager:
 
-1. **uv installieren** -- Single-Binary Download (~15 MB)
-2. **Python installieren** -- `uv python install 3.11`
-3. **venv erstellen** -- Isoliert in `~/.amigo/venv/`
-4. **Packages installieren** -- Pro Tool-Gruppe separate Requirements
-5. **Verifizieren** -- Import-Check fuer jedes Tool
+1. **Install uv** -- single-binary download (~15 MB)
+2. **Install Python** -- `uv python install 3.11`
+3. **Create venv** -- isolated in `~/.amigo/venv/`
+4. **Install packages** -- separate requirements per tool group
+5. **Verify** -- import check for each tool

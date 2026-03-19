@@ -1,29 +1,29 @@
 # TidalCycles Mini-Notation
 
-Die Engine nutzt ein Subset der [TidalCycles](https://tidalcycles.org/) Mini-Notation als kompaktes, manipulierbares Format fuer Game-Musik. Der `amigo_tidal_parser` Crate parst diese Notation in einen AST, den die Engine zur Laufzeit mit Chiptune-Oszillatoren auswertet.
+The engine uses a subset of [TidalCycles](https://tidalcycles.org/) mini-notation as a compact, manipulable format for game music. The `amigo_tidal_parser` crate parses this notation into an AST that the engine evaluates at runtime using built-in chiptune oscillators.
 
-## Syntax-Referenz
+## Syntax Reference
 
-| Syntax | Bedeutung | Beispiel |
-|--------|-----------|----------|
-| `"a b c"` | Sequenz | `n "c4 d4 e4"` |
-| `~` | Pause | `n "c4 ~ e4"` |
+| Syntax | Meaning | Example |
+|--------|---------|---------|
+| `"a b c"` | Sequence | `n "c4 d4 e4"` |
+| `~` | Rest (silence) | `n "c4 ~ e4"` |
 | `a*n` | Repeat | `n "c4*4"` |
 | `a!n` | Replicate (consolidated) | `n "c4!4"` |
-| `[a b]` | Subsequenz (Gruppierung) | `n "[c4 d4] e4"` |
-| `a/n` | Slow (ueber n Zyklen) | `n "c4/2"` |
-| `stack [..]` | Polyphonie (mehrere Layer) | `stack [n "c4", n "e4"]` |
-| `# param` | Parameter-Chain | `# amp "0.8"` |
-| `$ slow n` | Tempo runter | `$ slow 2` |
-| `$ fast n` | Tempo hoch | `$ fast 2` |
-| `$ rev` | Pattern umkehren | `$ rev` |
+| `[a b]` | Subsequence (grouping) | `n "[c4 d4] e4"` |
+| `a/n` | Slow (spans n cycles) | `n "c4/2"` |
+| `stack [..]` | Polyphony (multiple layers) | `stack [n "c4", n "e4"]` |
+| `# param` | Parameter chain | `# amp "0.8"` |
+| `$ slow n` | Slow down tempo | `$ slow 2` |
+| `$ fast n` | Speed up tempo | `$ fast 2` |
+| `$ rev` | Reverse pattern | `$ rev` |
 
-### Noten-Format
+### Note Format
 
-Noten bestehen aus Pitch-Klasse + Oktave: `c4`, `ds5`, `bf3`, `e2`
+Notes consist of pitch class + octave: `c4`, `ds5`, `bf3`, `e2`
 
-| Pitch | Notation | Alternativen |
-|-------|----------|-------------|
+| Pitch | Notation | Aliases |
+|-------|----------|---------|
 | C | `c` | |
 | C# | `cs` | `db` |
 | D | `d` | |
@@ -37,49 +37,49 @@ Noten bestehen aus Pitch-Klasse + Oktave: `c4`, `ds5`, `bf3`, `e2`
 | A# | `as` | `bb`, `bf` |
 | B | `b` | |
 
-Drum-Samples: `bd` (Bass Drum), `sd` (Snare), `hh` (Hi-Hat)
+Drum samples: `bd` (bass drum), `sd` (snare), `hh` (hi-hat)
 
-## Tidal Playground (Editor-Widget)
+## Tidal Playground (Editor Widget)
 
-Der Tidal Playground ist ein Panel im Amigo Editor, das beim Oeffnen einer `.amigo.tidal`-Datei erscheint.
+The Tidal Playground is a panel in the Amigo Editor that appears when opening a `.amigo.tidal` file.
 
 ### Features
 
-- **Play/Stop** mit Chiptune-Oszillatoren
-- **Per-Stem Controls**: Mute/Solo, Instrument-Auswahl, Volume
-- **BPM-Kontrolle** (20-300 BPM, live aenderbar)
+- **Play/Stop** with chiptune oscillators
+- **Per-stem controls**: mute/solo, instrument selection, volume
+- **BPM control** (20-300 BPM, live adjustable)
 - **Transforms**: slow, fast, rev
-- **Presets**: Speichern/Laden von Instrument-Konfigurationen
-- **WAV-Export**: Einen Zyklus als WAV exportieren
-- **Live-Preview**: Musik hoeren waehrend man am Level arbeitet
+- **Presets**: save/load instrument configurations
+- **WAV export**: export one cycle as WAV
+- **Live preview**: hear music while editing levels
 
-### Instrumente
+### Instruments
 
-| Instrument | Klang | Typischer Einsatz |
-|-----------|-------|------------------|
-| Square Wave | Klassisch, voll | Melodie (NES-Style Lead) |
-| Pulse 25% | Duenn, nasal | Harmonie |
-| Pulse 12.5% | Sehr duenn, metallisch | Effekte |
-| Triangle Wave | Weich, warm | Bass (NES-Style) |
-| Sawtooth Wave | Harsch, voll | Lead |
-| Noise Channel | Rauschen | Percussion / Hi-Hats |
-| Sine Wave | Rein | Sub-Bass, Testtoen |
+| Instrument | Sound | Typical Use |
+|-----------|-------|-------------|
+| Square Wave | Classic, full | Melody (NES-style lead) |
+| Pulse 25% | Thin, nasal | Harmony |
+| Pulse 12.5% | Very thin, metallic | Effects |
+| Triangle Wave | Soft, warm | Bass (NES-style) |
+| Sawtooth Wave | Harsh, full | Lead |
+| Noise Channel | Noise | Percussion / hi-hats |
+| Sine Wave | Pure | Sub-bass, test tones |
 
-## Engine-Integration
+## Engine Integration
 
 ```rust
-// .amigo.tidal laden
+// Load .amigo.tidal file
 let comp = amigo_tidal_parser::load("assets/music/overworld.amigo.tidal")?;
 
-// Playground erstellen
+// Create playground
 let mut playground = TidalPlayground::new(comp);
 playground.set_bpm(140.0);
 playground.set_instrument(0, Instrument::SquareWave);
 
-// Im Game-Loop: Audio rendern
+// In the game loop: render audio
 playground.render_audio(&mut buffer, 44100);
 
-// Preset-Wechsel basierend auf Game-State
+// Switch presets based on game state
 if entering_combat {
     playground.set_bpm(180.0);
     playground.set_transform(Some(Transform::Fast(1.5)));
