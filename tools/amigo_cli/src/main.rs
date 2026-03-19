@@ -23,6 +23,7 @@ COMMANDS:
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Check that the project compiles
     run [--headless] [--api]             Run the game (cargo run)
+    dev                                  Watch mode: rebuild + restart on .rs changes
     pack                                 Pack assets into atlas (release build)
     release [--target <TARGET>]          Build optimized release binary
     publish steam                        Prepare and upload to Steam (via steamcmd)
@@ -59,6 +60,7 @@ fn main() {
         "scene" => cmd_scene(&args[2..]),
         "build" => cmd_build(&args[2..]),
         "run" => cmd_run(&args[2..]),
+        "dev" => cmd_dev(&args[2..]),
         "pack" => cmd_pack(&args[2..]),
         "release" => cmd_release(&args[2..]),
         "publish" => cmd_publish(&args[2..]),
@@ -465,6 +467,46 @@ fn main() {{
     );
     let main_rs_path = base.join("src").join("main.rs");
     std::fs::write(&main_rs_path, main_rs).expect("Failed to write src/main.rs");
+
+    // Generate .vscode/tasks.json for dev workflow
+    let vscode_dir = base.join(".vscode");
+    std::fs::create_dir_all(&vscode_dir).ok();
+    let tasks_json = r#"{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "amigo dev",
+      "type": "shell",
+      "command": "amigo dev",
+      "isBackground": true,
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": {
+        "owner": "rustc",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^error\\[E(\\d+)\\]: (.+)$",
+          "message": 2
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "--- .rs change detected",
+          "endsPattern": "--- rebuild complete"
+        }
+      }
+    },
+    {
+      "label": "amigo run",
+      "type": "shell",
+      "command": "amigo run --api",
+      "group": "build"
+    }
+  ]
+}
+"#;
+    std::fs::write(vscode_dir.join("tasks.json"), tasks_json).ok();
 
     println!("Created project '{name}' with template '{}'", template.name);
     println!("  Directory: {}", base.display());
@@ -1070,6 +1112,184 @@ fn cmd_run(args: &[String]) {
     if !status.success() {
         process::exit(status.code().unwrap_or(1));
     }
+}
+
+// ---------------------------------------------------------------------------
+// `amigo dev` — watch mode with snapshot save/restore
+// ---------------------------------------------------------------------------
+
+fn cmd_dev(args: &[String]) {
+    if !manifest_path().exists() {
+        eprintln!("No amigo.toml found in the current directory.");
+        eprintln!("Run `amigo new <name>` to create a project, then cd into it.");
+        process::exit(1);
+    }
+
+    let api_port: u16 = args
+        .windows(2)
+        .find(|w| w[0] == "--port")
+        .and_then(|w| w[1].parse().ok())
+        .unwrap_or(9999);
+
+    println!("amigo dev — watching for .rs changes, auto-rebuild + restart");
+    println!("  API port: {api_port}");
+    println!("  Press Ctrl+C to stop\n");
+
+    let mut child: Option<std::process::Child> = None;
+
+    // Initial build + launch
+    match build_and_launch(api_port) {
+        Ok(c) => child = Some(c),
+        Err(e) => {
+            eprintln!("Initial build failed: {e}");
+            eprintln!("Fix the errors above, then save again — watching for changes...");
+        }
+    }
+
+    // Watch src/ for .rs file changes using polling (no extra dependency)
+    let src_dir = PathBuf::from("src");
+    let mut last_check = std::time::Instant::now();
+    let mut last_mtime = scan_max_mtime(&src_dir);
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Check if child exited on its own
+        if let Some(ref mut c) = child {
+            match c.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        eprintln!("Engine exited with {status}. Watching for changes...");
+                    }
+                    child = None;
+                }
+                Ok(None) => {} // still running
+                Err(_) => {
+                    child = None;
+                }
+            }
+        }
+
+        // Poll for .rs changes every 500ms
+        if last_check.elapsed() >= std::time::Duration::from_millis(500) {
+            last_check = std::time::Instant::now();
+            let current_mtime = scan_max_mtime(&src_dir);
+            if current_mtime > last_mtime {
+                last_mtime = current_mtime;
+                println!("\n--- .rs change detected, rebuilding... ---");
+
+                // Save snapshot via API before kill
+                if child.is_some() {
+                    let _ = send_api_request(api_port, "dev.save_snapshot", "{}");
+                    // Give a brief moment for the snapshot to be saved
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+
+                // Kill old process
+                if let Some(ref mut c) = child {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                }
+                child = None;
+
+                // Rebuild and relaunch
+                match build_and_launch(api_port) {
+                    Ok(c) => {
+                        child = Some(c);
+                        println!("--- rebuild complete, engine restarted ---\n");
+                    }
+                    Err(e) => {
+                        eprintln!("Build failed: {e}");
+                        eprintln!("Fix the errors, then save — watching...");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Build the game crate and launch it with API enabled.
+fn build_and_launch(api_port: u16) -> Result<std::process::Child, String> {
+    // Incremental build
+    let status = std::process::Command::new("cargo")
+        .arg("build")
+        .arg("--features")
+        .arg("amigo_engine/api")
+        .status()
+        .map_err(|e| format!("cargo build failed to start: {e}"))?;
+
+    if !status.success() {
+        return Err("compilation failed".into());
+    }
+
+    // Launch
+    let child = std::process::Command::new("cargo")
+        .arg("run")
+        .arg("--features")
+        .arg("amigo_engine/api")
+        .arg("--")
+        .env("AMIGO_API", "1")
+        .env("AMIGO_API_PORT", api_port.to_string())
+        .spawn()
+        .map_err(|e| format!("failed to launch: {e}"))?;
+
+    Ok(child)
+}
+
+/// Scan src/ recursively for the newest .rs file mtime.
+fn scan_max_mtime(dir: &Path) -> std::time::SystemTime {
+    let mut max = std::time::SystemTime::UNIX_EPOCH;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let sub = scan_max_mtime(&path);
+                if sub > max {
+                    max = sub;
+                }
+            } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
+                if let Ok(meta) = path.metadata() {
+                    if let Ok(mtime) = meta.modified() {
+                        if mtime > max {
+                            max = mtime;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    max
+}
+
+/// Send a JSON-RPC request to the engine API.
+fn send_api_request(port: u16, method: &str, params: &str) -> Result<String, String> {
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"{}","params":{}}}"#,
+        method, params
+    );
+    let addr = format!("127.0.0.1:{port}");
+    let mut stream =
+        std::net::TcpStream::connect(&addr).map_err(|e| format!("connect failed: {e}"))?;
+    stream
+        .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+        .ok();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .ok();
+
+    use std::io::{Read, Write};
+    stream
+        .write_all(body.as_bytes())
+        .map_err(|e| format!("write failed: {e}"))?;
+    stream
+        .write_all(b"\n")
+        .map_err(|e| format!("write newline failed: {e}"))?;
+
+    let mut buf = vec![0u8; 4096];
+    let n = stream
+        .read(&mut buf)
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(String::from_utf8_lossy(&buf[..n]).to_string())
 }
 
 // ---------------------------------------------------------------------------

@@ -100,6 +100,9 @@ fn handle_tools_call(
         "amigo_debug_tile_collision" => "debug.tile_collision",
         "amigo_debug_step" => "debug.step",
         "amigo_debug_state_crc" => "debug.state_crc",
+        "amigo_dev_save_snapshot" => "dev.save_snapshot",
+        "amigo_dev_snapshot_status" => "dev.snapshot_status",
+        "amigo_dev_restore_snapshot" => "dev.restore_snapshot",
         _ => {
             return McpResponse::success(
                 req.id.clone(),

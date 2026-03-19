@@ -395,6 +395,22 @@ pub fn tool_definitions() -> Vec<Value> {
             "Get CRC checksum of current state for desync detection.",
             json!({"type": "object", "properties": {}}),
         ),
+        // ── Dev workflow ──
+        tool(
+            "amigo_dev_save_snapshot",
+            "Save a dev snapshot of the engine state before recompile.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_dev_snapshot_status",
+            "Check if a dev snapshot exists and its metadata.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_dev_restore_snapshot",
+            "Restore the engine state from the last dev snapshot.",
+            json!({"type": "object", "properties": {}}),
+        ),
     ]
 }
 

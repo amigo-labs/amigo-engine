@@ -2,7 +2,9 @@
 //!
 //! Each tool maps to a ComfyUI workflow + post-processing pipeline.
 
+use crate::config::{load_art_defaults, save_art_defaults};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // -- Tool parameter structs --
 
@@ -101,6 +103,17 @@ pub struct ServerStatusResult {
     pub connected: bool,
     pub gpu: String,
     pub vram: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetDefaultsParams {
+    pub project_dir: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetDefaultsParams {
+    pub project_dir: String,
+    pub defaults: HashMap<String, serde_json::Value>,
 }
 
 // -- Tool registry for MCP --
@@ -244,18 +257,67 @@ pub fn list_tools() -> Vec<ToolDef> {
             description: "Check ComfyUI server connection status".into(),
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
         },
+        ToolDef {
+            name: "amigo_artgen_get_defaults".into(),
+            description: "Get art generation defaults from amigo.toml [art] section".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "project_dir": { "type": "string", "description": "Path to the project directory" }
+                },
+                "required": ["project_dir"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_artgen_set_defaults".into(),
+            description: "Save art generation defaults to amigo.toml [art] section".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "project_dir": { "type": "string", "description": "Path to the project directory" },
+                    "defaults": { "type": "object", "description": "Key-value pairs to save (e.g. default_sprite_size, default_style, default_palette, color_depth)" }
+                },
+                "required": ["project_dir", "defaults"]
+            }),
+        },
     ]
 }
 
-/// Dispatch a tool call by name
+/// Dispatch a tool call by name.
+///
+/// `project_dir` is used to resolve defaults from amigo.toml. If `None`,
+/// hardcoded fallbacks are used.
 pub fn dispatch_tool(
     name: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
+    dispatch_tool_with_defaults(name, params, None)
+}
+
+/// Like `dispatch_tool`, but accepts an explicit project directory for
+/// resolving [art] defaults from amigo.toml.
+pub fn dispatch_tool_with_defaults(
+    name: &str,
+    params: serde_json::Value,
+    project_dir: Option<&std::path::Path>,
+) -> Result<serde_json::Value, ToolError> {
     match name {
         "amigo_artgen_generate_sprite" => {
             let p: GenerateSpriteParams = serde_json::from_value(params)?;
+
+            // Resolve defaults: explicit param → amigo.toml → hardcoded
+            let defaults = project_dir.map(load_art_defaults);
+            let size = p.size.unwrap_or_else(|| {
+                let s = defaults
+                    .as_ref()
+                    .and_then(|d| d.default_sprite_size)
+                    .unwrap_or(64);
+                [s, s]
+            });
+            let _variants = p.variants.unwrap_or(1);
+
             // In production: build workflow, send to ComfyUI, post-process, save
+            let _ = size; // used when building the actual ComfyUI workflow
             Ok(serde_json::to_value(GenerateResult {
                 paths: vec![format!(
                     "assets/generated/sprites/{}_v1.png",
@@ -266,6 +328,13 @@ pub fn dispatch_tool(
         }
         "amigo_artgen_generate_tileset" => {
             let p: GenerateTilesetParams = serde_json::from_value(params)?;
+            let defaults = project_dir.map(load_art_defaults);
+            let _tile_size = p.tile_size.unwrap_or_else(|| {
+                defaults
+                    .as_ref()
+                    .and_then(|d| d.tileset_tile_size)
+                    .unwrap_or(16)
+            });
             Ok(serde_json::to_value(TilesetResult {
                 path: format!("assets/generated/tilesets/{}.png", sanitize(&p.theme)),
                 tiles: p.tiles,
@@ -336,6 +405,17 @@ pub fn dispatch_tool(
             gpu: "unknown".into(),
             vram: "unknown".into(),
         })?),
+        "amigo_artgen_get_defaults" => {
+            let p: GetDefaultsParams = serde_json::from_value(params)?;
+            let defaults = load_art_defaults(std::path::Path::new(&p.project_dir));
+            Ok(serde_json::to_value(defaults).unwrap_or_default())
+        }
+        "amigo_artgen_set_defaults" => {
+            let p: SetDefaultsParams = serde_json::from_value(params)?;
+            save_art_defaults(std::path::Path::new(&p.project_dir), &p.defaults);
+            let defaults = load_art_defaults(std::path::Path::new(&p.project_dir));
+            Ok(serde_json::to_value(defaults).unwrap_or_default())
+        }
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }
@@ -368,8 +448,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_tools_returns_12() {
-        assert_eq!(list_tools().len(), 12);
+    fn list_tools_returns_14() {
+        assert_eq!(list_tools().len(), 14);
     }
 
     #[test]
@@ -401,5 +481,35 @@ mod tests {
     fn dispatch_server_status() {
         let result = dispatch_tool("amigo_artgen_server_status", serde_json::json!({})).unwrap();
         assert_eq!(result["connected"], false);
+    }
+
+    #[test]
+    fn dispatch_get_defaults_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool(
+            "amigo_artgen_get_defaults",
+            serde_json::json!({ "project_dir": dir.path().to_str().unwrap() }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["default_sprite_size"].is_null());
+    }
+
+    #[test]
+    fn dispatch_set_and_get_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("amigo.toml"), "[window]\ntitle = \"Test\"\n").unwrap();
+
+        let result = dispatch_tool(
+            "amigo_artgen_set_defaults",
+            serde_json::json!({
+                "project_dir": dir.path().to_str().unwrap(),
+                "defaults": { "default_sprite_size": 32, "default_style": "caribbean" }
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["default_sprite_size"], 32);
+        assert_eq!(v["default_style"], "caribbean");
     }
 }
