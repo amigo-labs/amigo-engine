@@ -154,6 +154,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_audio_pipeline"
+version = "0.1.0"
+dependencies = [
+ "amigo_tidal_parser",
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "amigo_audiogen"
 version = "0.1.0"
 dependencies = [
@@ -169,9 +180,11 @@ name = "amigo_cli"
 version = "0.1.0"
 dependencies = [
  "amigo_assets",
+ "amigo_audio_pipeline",
  "amigo_core",
  "amigo_editor",
  "amigo_render",
+ "amigo_tidal_parser",
  "image 0.25.9",
  "ron",
  "serde",
@@ -222,6 +235,7 @@ dependencies = [
  "amigo_core",
  "amigo_input",
  "amigo_render",
+ "amigo_tidal_parser",
  "amigo_tilemap",
  "amigo_ui",
  "egui",
@@ -366,6 +380,14 @@ dependencies = [
  "fixed",
  "ron",
  "serde",
+]
+
+[[package]]
+name = "amigo_tidal_parser"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

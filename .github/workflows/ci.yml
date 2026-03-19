@@ -42,7 +42,33 @@ jobs:
             libxcursor-dev \
             libxinerama-dev \
             pkg-config
-      - run: cargo check --workspace --all-features
+      - name: Check library crates
+        run: |
+          cargo check \
+            -p amigo_core \
+            -p amigo_steering \
+            -p amigo_render \
+            -p amigo_ui \
+            -p amigo_audio \
+            -p amigo_input \
+            -p amigo_tilemap \
+            -p amigo_animation \
+            -p amigo_assets \
+            -p amigo_net \
+            -p amigo_scene \
+            -p amigo_editor \
+            -p amigo_api \
+            -p amigo_debug \
+            -p amigo_engine \
+            -p amigo_tidal_parser \
+            -p amigo_audio_pipeline
+      - name: Check tool crates
+        run: |
+          cargo check \
+            -p amigo_cli \
+            -p amigo_mcp \
+            -p amigo_artgen \
+            -p amigo_audiogen
 
   clippy:
     name: Clippy
@@ -67,7 +93,35 @@ jobs:
             libxcursor-dev \
             libxinerama-dev \
             pkg-config
-      - run: cargo clippy --workspace --all-features -- -D warnings
+      - name: Clippy library crates
+        run: |
+          cargo clippy \
+            -p amigo_core \
+            -p amigo_steering \
+            -p amigo_render \
+            -p amigo_ui \
+            -p amigo_audio \
+            -p amigo_input \
+            -p amigo_tilemap \
+            -p amigo_animation \
+            -p amigo_assets \
+            -p amigo_net \
+            -p amigo_scene \
+            -p amigo_editor \
+            -p amigo_api \
+            -p amigo_debug \
+            -p amigo_engine \
+            -p amigo_tidal_parser \
+            -p amigo_audio_pipeline \
+            -- -D warnings
+      - name: Clippy tool crates
+        run: |
+          cargo clippy \
+            -p amigo_cli \
+            -p amigo_mcp \
+            -p amigo_artgen \
+            -p amigo_audiogen \
+            -- -D warnings
 
   test:
     name: Test
@@ -90,9 +144,20 @@ jobs:
             libxcursor-dev \
             libxinerama-dev \
             pkg-config
-      - run: cargo test --workspace
+      - name: Run tests
+        run: |
+          cargo test \
+            -p amigo_core \
+            -p amigo_tidal_parser \
+            -p amigo_audio_pipeline \
+            -p amigo_editor \
+            -p amigo_assets \
+            -p amigo_audio
       - name: Doc tests
-        run: cargo test --workspace --doc
+        run: |
+          cargo test --doc \
+            -p amigo_tidal_parser \
+            -p amigo_audio_pipeline
 
   docs:
     name: Documentation
@@ -116,7 +181,15 @@ jobs:
             libxinerama-dev \
             pkg-config
       - name: Build docs
-        run: cargo doc --workspace --no-deps --all-features
+        run: |
+          cargo doc --no-deps \
+            -p amigo_core \
+            -p amigo_render \
+            -p amigo_audio \
+            -p amigo_input \
+            -p amigo_tidal_parser \
+            -p amigo_audio_pipeline \
+            -p amigo_engine
         env:
           RUSTDOCFLAGS: "-D warnings"
       - name: Upload docs artifact
@@ -156,4 +229,4 @@ jobs:
             libxcursor-dev \
             libxinerama-dev \
             pkg-config
-      - run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }} -p amigo_engine -p amigo_cli

@@ -12,6 +12,8 @@ amigo_core = { workspace = true }
 amigo_assets = { workspace = true }
 amigo_editor = { workspace = true }
 amigo_render = { workspace = true }
+amigo_tidal_parser = { workspace = true }
+amigo_audio_pipeline = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }

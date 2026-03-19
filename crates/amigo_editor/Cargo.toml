@@ -14,6 +14,7 @@ amigo_render = { workspace = true }
 amigo_ui = { workspace = true }
 amigo_input = { workspace = true }
 amigo_tilemap = { workspace = true }
+amigo_tidal_parser = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
