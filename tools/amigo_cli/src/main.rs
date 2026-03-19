@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process;
 
-use amigo_core::game_preset::{project_templates, GameProject};
+use amigo_core::game_preset::{project_templates, GameProject, ScenePreset};
 use amigo_editor::{save_level, AmigoLevel, EntityPlacement, LayerData};
 
 mod pipeline_cmd;
