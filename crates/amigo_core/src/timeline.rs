@@ -234,7 +234,7 @@ impl TimelinePlayer {
                 if let Some(tl) = &self.timeline {
                     if let Some(track) = tl.tracks.get(track_idx) {
                         let event_time = get_event_time(track, event_idx);
-                        return event_time.map_or(true, |t| t <= time);
+                        return event_time.is_none_or(|t| t <= time);
                     }
                 }
                 true

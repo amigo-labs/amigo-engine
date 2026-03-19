@@ -129,7 +129,7 @@ impl ProjectileManager {
             }
 
             // Resolve homing target position
-            let target_pos = proj.target_entity.and_then(|eid| target_positions(eid));
+            let target_pos = proj.target_entity.and_then(target_positions);
 
             // If homing target is dead, keep flying straight
             if proj.target_entity.is_some() && target_pos.is_none() {

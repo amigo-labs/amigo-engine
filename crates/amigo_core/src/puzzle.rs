@@ -51,7 +51,7 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
     }
 
     pub fn is_empty(&self, x: u32, y: u32) -> bool {
-        self.idx(x, y).map_or(true, |i| self.cells[i].is_none())
+        self.idx(x, y).is_none_or(|i| self.cells[i].is_none())
     }
 
     /// Swap two cells. Returns true if both are in bounds.
@@ -83,9 +83,7 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
                             self.cells[write_i] = self.cells[i];
                             self.cells[i] = None;
                         }
-                        if write_y > 0 {
-                            write_y -= 1;
-                        }
+                        write_y = write_y.saturating_sub(1);
                     }
                 }
             } else {
@@ -499,6 +497,7 @@ impl BlockBag {
     }
 
     /// Draw the next shape from the bag.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> BlockShape {
         if self.remaining.is_empty() {
             self.refill();

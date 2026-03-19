@@ -135,7 +135,7 @@ impl AceStepClient {
                 .send_json(body)
                 .map_err(|e| AceStepError::Http(e.to_string()))?
                 .into_json()
-                .map_err(|e| AceStepError::Io(e))?;
+                .map_err(AceStepError::Io)?;
 
         let data = resp["data"]
             .as_array()

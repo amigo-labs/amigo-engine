@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 
 pub mod spatial;
 
@@ -1252,8 +1252,8 @@ impl AdaptiveMusicEngine {
         self.pending_stingers.retain(|ps| {
             let should_fire = match ps.quantize {
                 StingerQuantize::Immediate => true,
-                StingerQuantize::Beat => ps.fire_at_beat.map_or(true, |target| beat >= target),
-                StingerQuantize::Bar => ps.fire_at_bar.map_or(true, |target| bar >= target),
+                StingerQuantize::Beat => ps.fire_at_beat.is_none_or(|target| beat >= target),
+                StingerQuantize::Bar => ps.fire_at_bar.is_none_or(|target| bar >= target),
             };
             if should_fire {
                 to_fire.push(ps.data.clone());

@@ -244,13 +244,13 @@ impl DynamicTileWorld {
     /// Is a position solid (foreground)?
     pub fn is_solid(&self, x: i32, y: i32) -> bool {
         let id = self.foreground.get_tile(x, y);
-        self.registry.get(id).map_or(false, |p| p.solid)
+        self.registry.get(id).is_some_and(|p| p.solid)
     }
 
     /// Is a position opaque (blocks light)?
     pub fn is_opaque(&self, x: i32, y: i32) -> bool {
         let id = self.foreground.get_tile(x, y);
-        self.registry.get(id).map_or(false, |p| p.opaque)
+        self.registry.get(id).is_some_and(|p| p.opaque)
     }
 
     /// Drain and return all dirty chunks since last call.
@@ -281,7 +281,7 @@ impl DynamicTileWorld {
                         continue;
                     }
 
-                    let has_gravity = self.registry.get(tile_id).map_or(false, |p| p.gravity);
+                    let has_gravity = self.registry.get(tile_id).is_some_and(|p| p.gravity);
 
                     if !has_gravity {
                         continue;

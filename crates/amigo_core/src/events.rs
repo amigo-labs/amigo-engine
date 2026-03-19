@@ -61,6 +61,7 @@ pub struct Events {
     registered: Vec<TypeId>,
 }
 
+#[allow(clippy::new_without_default)]
 impl Events {
     pub fn new() -> Self {
         Self {
@@ -72,8 +73,8 @@ impl Events {
     /// Register an event type. Must be called before emit/read.
     pub fn register<T: 'static>(&mut self) {
         let id = TypeId::of::<T>();
-        if !self.channels.contains_key(&id) {
-            self.channels.insert(id, EventChannel::new::<T>());
+        if let std::collections::hash_map::Entry::Vacant(e) = self.channels.entry(id) {
+            e.insert(EventChannel::new::<T>());
             self.registered.push(id);
         }
     }
@@ -166,15 +167,12 @@ impl EventHub {
     /// Register an event type. Must be called before emit/read.
     pub fn register<T: 'static>(&mut self) {
         let id = TypeId::of::<T>();
-        if !self.channels.contains_key(&id) {
-            self.channels.insert(
-                id,
-                EventChannelEntry {
-                    read: Box::new(Vec::<T>::new()),
-                    write: Box::new(Vec::<T>::new()),
-                    clear_fn: clear_vec::<T>,
-                },
-            );
+        if let std::collections::hash_map::Entry::Vacant(e) = self.channels.entry(id) {
+            e.insert(EventChannelEntry {
+                read: Box::new(Vec::<T>::new()),
+                write: Box::new(Vec::<T>::new()),
+                clear_fn: clear_vec::<T>,
+            });
             self.swap_order.push(id);
         }
     }

@@ -95,7 +95,7 @@ impl AudioGenClient {
                 .send_json(body)
                 .map_err(|e| AudioGenError::Http(e.to_string()))?
                 .into_json()
-                .map_err(|e| AudioGenError::Io(e))?;
+                .map_err(AudioGenError::Io)?;
 
         let data = resp["data"]
             .as_array()

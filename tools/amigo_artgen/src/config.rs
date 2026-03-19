@@ -42,7 +42,8 @@ pub fn load_art_defaults(project_dir: &Path) -> ArtDefaults {
 pub fn save_art_defaults(project_dir: &Path, updates: &HashMap<String, serde_json::Value>) {
     let path = project_dir.join("amigo.toml");
     let content = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut doc: toml::Value = toml::from_str(&content).unwrap_or(toml::Value::Table(Default::default()));
+    let mut doc: toml::Value =
+        toml::from_str(&content).unwrap_or(toml::Value::Table(Default::default()));
 
     let table = doc.as_table_mut().expect("root must be table");
     let art = table

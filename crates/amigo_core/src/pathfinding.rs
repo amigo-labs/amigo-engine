@@ -66,7 +66,7 @@ const DIRS_8: [(i32, i32); 8] = [
 ];
 
 fn heuristic(a: IVec2, b: IVec2) -> u32 {
-    ((a.x - b.x).unsigned_abs() + (a.y - b.y).unsigned_abs()) as u32
+    (a.x - b.x).unsigned_abs() + (a.y - b.y).unsigned_abs()
 }
 
 /// Find a path using A* on a tile grid.
@@ -121,12 +121,12 @@ pub fn find_path(request: &PathRequest, map: &dyn Walkable) -> Option<Vec<IVec2>
             }
 
             // Diagonal: check adjacent cardinal tiles
-            if dx != 0 && dy != 0 {
-                if !map.is_walkable(current.pos.x + dx, current.pos.y)
-                    || !map.is_walkable(current.pos.x, current.pos.y + dy)
-                {
-                    continue;
-                }
+            if dx != 0
+                && dy != 0
+                && (!map.is_walkable(current.pos.x + dx, current.pos.y)
+                    || !map.is_walkable(current.pos.x, current.pos.y + dy))
+            {
+                continue;
             }
 
             let move_cost = if dx != 0 && dy != 0 { 14 } else { 10 };
@@ -273,10 +273,11 @@ impl FlowField {
                 }
 
                 // Diagonal: require both adjacent cardinal cells walkable
-                if dx != 0 && dy != 0 {
-                    if !map.is_walkable(pos.x + dx, pos.y) || !map.is_walkable(pos.x, pos.y + dy) {
-                        continue;
-                    }
+                if dx != 0
+                    && dy != 0
+                    && (!map.is_walkable(pos.x + dx, pos.y) || !map.is_walkable(pos.x, pos.y + dy))
+                {
+                    continue;
                 }
 
                 let move_cost = if dx != 0 && dy != 0 { 14 } else { 10 };

@@ -192,6 +192,7 @@ pub struct BtContext {
 // ---------------------------------------------------------------------------
 
 /// Registry for condition and action functions. One per game (global).
+#[allow(clippy::type_complexity)]
 pub struct BtRegistry {
     conditions: FxHashMap<ConditionId, Box<dyn Fn(&BtContext, &Blackboard) -> bool + Send>>,
     actions: FxHashMap<ActionId, Box<dyn Fn(&BtContext, &mut Blackboard) -> NodeStatus + Send>>,

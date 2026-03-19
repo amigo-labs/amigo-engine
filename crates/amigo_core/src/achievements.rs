@@ -96,6 +96,7 @@ impl std::error::Error for AchievementError {}
 // ---------------------------------------------------------------------------
 
 /// Central achievement tracking system.
+#[allow(clippy::type_complexity)]
 pub struct AchievementTracker {
     definitions: FxHashMap<String, AchievementDef>,
     progress: FxHashMap<String, AchievementProgress>,
@@ -213,7 +214,7 @@ impl AchievementTracker {
     // -- Query --
 
     pub fn is_unlocked(&self, id: &str) -> bool {
-        self.progress.get(id).map_or(false, |p| p.unlocked)
+        self.progress.get(id).is_some_and(|p| p.unlocked)
     }
 
     pub fn get_progress(&self, id: &str) -> Option<&AchievementProgress> {
@@ -327,7 +328,7 @@ impl AchievementTracker {
     // -- Internal --
 
     fn check_and_unlock(&mut self, id: &str) {
-        if self.progress.get(id).map_or(true, |p| p.unlocked) {
+        if self.progress.get(id).is_none_or(|p| p.unlocked) {
             return;
         }
         let def = match self.definitions.get(id) {

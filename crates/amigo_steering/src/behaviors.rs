@@ -51,10 +51,10 @@ pub fn compute_steering(
         let force = behavior_force(behavior, self_pos, self_vel, neighbors, agent.max_speed);
         match behavior {
             SteeringBehavior::Separation { .. } => {
-                separation_total = separation_total + force * *weight;
+                separation_total += force * *weight;
             }
             _ => {
-                other_total = other_total + force * *weight;
+                other_total += force * *weight;
             }
         }
     }
@@ -142,7 +142,7 @@ fn separation(
         if dist < radius && dist > Fix::ZERO {
             // Stronger force the closer the neighbor
             let strength = max_speed * (radius - dist) / radius;
-            force = force + scale_to(delta, strength);
+            force += scale_to(delta, strength);
         }
     }
     force

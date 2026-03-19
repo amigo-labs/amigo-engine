@@ -163,7 +163,7 @@ impl SimulationRunner {
 
             for system in &mut self.systems {
                 let interval = system.tick_interval() as u64;
-                if interval <= 1 || self.tick % interval == 0 {
+                if interval <= 1 || self.tick.is_multiple_of(interval) {
                     system.update(&mut ctx);
                 }
             }

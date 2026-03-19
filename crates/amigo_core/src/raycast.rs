@@ -87,12 +87,12 @@ pub fn raycast_tiles(
     let t_delta_x = if dx.abs() < 1e-8 {
         f32::MAX
     } else {
-        (tile_size / dx.abs())
+        tile_size / dx.abs()
     };
     let t_delta_y = if dy.abs() < 1e-8 {
         f32::MAX
     } else {
-        (tile_size / dy.abs())
+        tile_size / dy.abs()
     };
 
     // Initial t to first boundary
@@ -224,7 +224,7 @@ pub fn raycast_bodies(
         }
         // Test ray against each candidate's shape
         if let Some(hit) = ray_vs_entity(origin, dx, dy, max_distance, entity, world) {
-            if closest.as_ref().map_or(true, |c| hit.distance < c.distance) {
+            if closest.as_ref().is_none_or(|c| hit.distance < c.distance) {
                 closest = Some(hit);
             }
         }
@@ -265,6 +265,7 @@ fn ray_vs_entity(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ray_vs_circle(
     origin: RenderVec2,
     dx: f32,

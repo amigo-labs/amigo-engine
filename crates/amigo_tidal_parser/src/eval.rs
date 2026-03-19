@@ -86,7 +86,7 @@ pub fn apply_transform(events: &mut Vec<NoteEvent>, transform: Transform) {
             }
             // Keep within bounds and wrap.
             for ev in events.iter_mut() {
-                ev.time = ev.time % 1.0;
+                ev.time %= 1.0;
             }
         }
         Transform::Rev => {
@@ -163,7 +163,7 @@ fn eval_pattern(
         Pattern::SlowDiv(inner, divisor) => {
             // Only produce events on every nth cycle.
             let d = *divisor as u64;
-            if _cycle % d == 0 {
+            if _cycle.is_multiple_of(d) {
                 eval_pattern(inner, start, span, _cycle / d)
             } else {
                 Vec::new()

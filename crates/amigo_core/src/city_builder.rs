@@ -102,6 +102,7 @@ pub struct FlowEdge {
 }
 
 /// Directed graph of resource production, storage, and consumption.
+#[derive(Default)]
 pub struct ResourceFlow {
     nodes: Vec<FlowNode>,
     edges: Vec<FlowEdge>,
@@ -480,7 +481,7 @@ impl RoadNetwork {
 
     /// Check whether a road exists at `pos`.
     pub fn has_road(&self, pos: GridPos) -> bool {
-        self.idx(pos).map_or(false, |i| self.tiles[i])
+        self.idx(pos).is_some_and(|i| self.tiles[i])
     }
 
     /// Check if two positions are connected via roads.
@@ -812,6 +813,7 @@ pub struct PlacedBuilding {
 }
 
 /// Central registry of all building types and their properties.
+#[derive(Default)]
 pub struct BuildingRegistry {
     buildings: Vec<BuildingDef>,
 }
@@ -1033,6 +1035,7 @@ pub struct StatisticsOverlay {
     pub gradient: ColorGradient,
 }
 
+#[allow(clippy::new_without_default)]
 impl StatisticsOverlay {
     /// Create with no active overlay and the default heatmap gradient.
     pub fn new() -> Self {

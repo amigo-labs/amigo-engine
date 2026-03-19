@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Generate a permutation table from a seed for Perlin noise.
+#[allow(clippy::needless_range_loop)]
 pub fn permutation_table(seed: u64) -> [u8; 512] {
     let mut perm = [0u8; 512];
     // Initialize with identity
@@ -36,10 +37,22 @@ const GRAD2: [(f64, f64); 8] = [
     (-1.0, 0.0),
     (0.0, 1.0),
     (0.0, -1.0),
-    (0.7071, 0.7071),
-    (-0.7071, 0.7071),
-    (0.7071, -0.7071),
-    (-0.7071, -0.7071),
+    (
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+    ),
+    (
+        -std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+    ),
+    (
+        std::f64::consts::FRAC_1_SQRT_2,
+        -std::f64::consts::FRAC_1_SQRT_2,
+    ),
+    (
+        -std::f64::consts::FRAC_1_SQRT_2,
+        -std::f64::consts::FRAC_1_SQRT_2,
+    ),
 ];
 
 fn fade(t: f64) -> f64 {
@@ -495,7 +508,7 @@ impl WorldGenerator {
     }
 
     /// Place decorations on an existing tile array based on biome definitions.
-    pub fn place_decorations(&self, tiles: &mut Vec<u32>) {
+    pub fn place_decorations(&self, tiles: &mut [u32]) {
         let biome_map = self.generate_biome_map();
         let heightmap = self.generate_heightmap();
 

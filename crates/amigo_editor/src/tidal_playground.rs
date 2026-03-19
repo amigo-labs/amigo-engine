@@ -256,8 +256,7 @@ impl TidalPlayground {
             stems,
         };
 
-        let yaml = serde_json::to_string_pretty(&preset)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let yaml = serde_json::to_string_pretty(&preset).map_err(|e| std::io::Error::other(e))?;
         std::fs::write(path, yaml)
     }
 
