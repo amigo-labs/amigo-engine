@@ -2,8 +2,10 @@
 //!
 //! Each tool maps to an audio generation or processing operation.
 
+use crate::config::{load_audio_defaults, save_audio_defaults};
 use crate::{MusicResult, SfxResult, WorldAudioStyle};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Tool parameter structs
@@ -185,6 +187,17 @@ pub struct PreviewParams {
 
 fn default_preview_secs() -> f32 {
     5.0
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetDefaultsParams {
+    pub project_dir: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetDefaultsParams {
+    pub project_dir: String,
+    pub defaults: HashMap<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +460,29 @@ pub fn list_tools() -> Vec<ToolDef> {
             description: "Check the generation queue status".into(),
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
         },
+        ToolDef {
+            name: "amigo_audiogen_get_defaults".into(),
+            description: "Get audio generation defaults from amigo.toml [audio_defaults] section".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "project_dir": { "type": "string", "description": "Path to the project directory" }
+                },
+                "required": ["project_dir"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_set_defaults".into(),
+            description: "Save audio generation defaults to amigo.toml [audio_defaults] section".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "project_dir": { "type": "string", "description": "Path to the project directory" },
+                    "defaults": { "type": "object", "description": "Key-value pairs to save (e.g. default_bpm, default_genre, sfx_duration, sample_rate)" }
+                },
+                "required": ["project_dir", "defaults"]
+            }),
+        },
     ]
 }
 
@@ -466,19 +502,36 @@ pub fn dispatch_tool(
     name: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
+    dispatch_tool_with_defaults(name, params, None)
+}
+
+/// Like `dispatch_tool`, but accepts an explicit project directory for
+/// resolving [audio_defaults] from amigo.toml.
+pub fn dispatch_tool_with_defaults(
+    name: &str,
+    params: serde_json::Value,
+    project_dir: Option<&std::path::Path>,
+) -> Result<serde_json::Value, ToolError> {
     match name {
         "amigo_audiogen_generate_music" => {
             let p: GenerateMusicParams = serde_json::from_value(params)?;
             let style = WorldAudioStyle::find(&p.world);
-            let _genre = if p.genre.is_empty() {
-                style.as_ref().map(|s| s.genre.clone()).unwrap_or_default()
-            } else {
+            let defaults = project_dir.map(load_audio_defaults);
+
+            // Resolution order: explicit param → amigo.toml → world style → hardcoded
+            let _genre = if !p.genre.is_empty() {
                 p.genre.clone()
-            };
-            let bpm = if p.bpm == 0 {
-                style.as_ref().map(|s| s.default_bpm).unwrap_or(120)
+            } else if let Some(g) = defaults.as_ref().and_then(|d| d.default_genre.clone()) {
+                g
             } else {
+                style.as_ref().map(|s| s.genre.clone()).unwrap_or_default()
+            };
+            let bpm = if p.bpm != default_bpm() {
                 p.bpm
+            } else if let Some(b) = defaults.as_ref().and_then(|d| d.default_bpm) {
+                b
+            } else {
+                style.as_ref().map(|s| s.default_bpm).unwrap_or(120)
             };
 
             // Placeholder: in production, calls ACE-Step API
@@ -502,6 +555,19 @@ pub fn dispatch_tool(
         }
         "amigo_audiogen_generate_sfx" => {
             let p: GenerateSfxParams = serde_json::from_value(params)?;
+            let defaults = project_dir.map(load_audio_defaults);
+
+            // Use amigo.toml sfx_duration as fallback if user provided the serde default
+            let duration = if (p.duration_secs - default_sfx_duration()).abs() < f32::EPSILON {
+                defaults
+                    .as_ref()
+                    .and_then(|d| d.sfx_duration)
+                    .unwrap_or(p.duration_secs)
+            } else {
+                p.duration_secs
+            };
+            let _ = duration; // used when calling the actual AudioGen API
+
             let count = p.variants.min(10);
             let safe_name = sanitize(&p.prompt);
 
@@ -714,6 +780,17 @@ pub fn dispatch_tool(
             "audiogen_queue": 0,
             "total_pending": 0,
         })),
+        "amigo_audiogen_get_defaults" => {
+            let p: GetDefaultsParams = serde_json::from_value(params)?;
+            let defaults = load_audio_defaults(std::path::Path::new(&p.project_dir));
+            Ok(serde_json::to_value(defaults).unwrap_or_default())
+        }
+        "amigo_audiogen_set_defaults" => {
+            let p: SetDefaultsParams = serde_json::from_value(params)?;
+            save_audio_defaults(std::path::Path::new(&p.project_dir), &p.defaults);
+            let defaults = load_audio_defaults(std::path::Path::new(&p.project_dir));
+            Ok(serde_json::to_value(defaults).unwrap_or_default())
+        }
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }
@@ -744,8 +821,8 @@ mod tests {
     // ── Tool listing ───────────────────────────────────────────
 
     #[test]
-    fn list_tools_returns_18() {
-        assert_eq!(list_tools().len(), 18);
+    fn list_tools_returns_20() {
+        assert_eq!(list_tools().len(), 20);
     }
 
     // ── Music generation dispatch ─────────────────────────────────
@@ -906,5 +983,35 @@ mod tests {
         assert!(result.is_ok());
         let v = result.unwrap();
         assert_eq!(v["total_pending"], 0);
+    }
+
+    #[test]
+    fn dispatch_get_defaults_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool(
+            "amigo_audiogen_get_defaults",
+            serde_json::json!({ "project_dir": dir.path().to_str().unwrap() }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["default_bpm"].is_null());
+    }
+
+    #[test]
+    fn dispatch_set_and_get_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("amigo.toml"), "[window]\ntitle = \"Test\"\n").unwrap();
+
+        let result = dispatch_tool(
+            "amigo_audiogen_set_defaults",
+            serde_json::json!({
+                "project_dir": dir.path().to_str().unwrap(),
+                "defaults": { "default_bpm": 140, "default_genre": "chiptune" }
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["default_bpm"], 140);
+        assert_eq!(v["default_genre"], "chiptune");
     }
 }

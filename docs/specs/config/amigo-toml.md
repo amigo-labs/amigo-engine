@@ -86,6 +86,37 @@ audiogen_server = "http://localhost:7861"    # AudioGen API (if separate)
 output_dir = "assets/audio/generated"
 ```
 
+### Art Generation Defaults
+
+Project-level defaults for AI art generation. Populated via "Ask Once, Save Forever" pattern: Claude asks the user once for missing values and saves them here. See [config/art-audio-defaults](art-audio-defaults.md).
+
+```toml
+[art]
+default_sprite_size = 32
+default_style = "caribbean"
+default_palette = "nes"
+color_depth = 8
+background_style = "parallax"
+tileset_tile_size = 16
+add_outline = true
+outline_color = "#1a1a2e"
+```
+
+### Audio Generation Defaults
+
+Project-level defaults for AI audio generation. Same "Ask Once, Save Forever" pattern.
+
+```toml
+[audio_defaults]
+default_genre = "chiptune"
+default_bpm = 120
+default_key = "C minor"
+sfx_duration = 2.0
+music_duration = 30.0
+sample_rate = 44100
+output_format = "wav"
+```
+
 ### GPU Scheduling Config
 
 ```toml
@@ -111,7 +142,7 @@ All config structs live in `crates/amigo_engine/src/config.rs`:
 
 | Struct | Fields |
 |--------|--------|
-| `EngineConfig` | `window`, `render`, `audio`, `dev`, `splash` |
+| `EngineConfig` | `window`, `render`, `audio`, `dev`, `splash`, `art`, `audio_defaults` |
 | `WindowConfig` | `title`, `width`, `height`, `fullscreen`, `vsync` |
 | `RenderConfig` | `virtual_width`, `virtual_height`, `scale_mode`, `art_style` |
 | `AudioConfig` | `master_volume`, `sfx_volume`, `music_volume` |

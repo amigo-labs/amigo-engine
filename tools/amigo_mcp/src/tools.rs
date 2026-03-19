@@ -395,6 +395,272 @@ pub fn tool_definitions() -> Vec<Value> {
             "Get CRC checksum of current state for desync detection.",
             json!({"type": "object", "properties": {}}),
         ),
+        // ── Tilemap Query ──
+        tool(
+            "amigo_tilemap_get_tile",
+            "Read tile ID and collision type at a position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "layer": {"type": "string", "description": "Tilemap layer: terrain, decoration, etc."},
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"}
+                },
+                "required": ["layer", "x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_tilemap_get_region",
+            "Read a rectangular region of tile IDs.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "layer": {"type": "string", "description": "Tilemap layer: terrain, decoration, etc."},
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "w": {"type": "integer"},
+                    "h": {"type": "integer"}
+                },
+                "required": ["layer", "x", "y", "w", "h"]
+            }),
+        ),
+        tool(
+            "amigo_tilemap_collision_at",
+            "Read the CollisionType at a tile position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"}
+                },
+                "required": ["x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_tilemap_dimensions",
+            "Get tilemap dimensions: width, height, tile_size.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        // ── Camera ──
+        tool(
+            "amigo_camera_get",
+            "Get current camera state: position, zoom, mode, bounds.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_camera_set",
+            "Set camera position and optional zoom level.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "zoom": {"type": "number", "description": "Optional zoom level"}
+                },
+                "required": ["x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_camera_shake",
+            "Trigger a camera shake effect.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "intensity": {"type": "number"},
+                    "duration": {"type": "number", "description": "Duration in seconds"}
+                },
+                "required": ["intensity", "duration"]
+            }),
+        ),
+        tool(
+            "amigo_camera_follow",
+            "Set camera to follow a specific entity.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer"}
+                },
+                "required": ["entity_id"]
+            }),
+        ),
+        // ── Lighting ──
+        tool(
+            "amigo_lighting_add",
+            "Add a light source at a position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "radius": {"type": "number"},
+                    "color": {"type": "array", "items": {"type": "integer"}, "description": "RGB color [r, g, b]"},
+                    "intensity": {"type": "number"}
+                },
+                "required": ["x", "y", "radius", "color", "intensity"]
+            }),
+        ),
+        tool(
+            "amigo_lighting_remove",
+            "Remove a light source by ID.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            }),
+        ),
+        tool(
+            "amigo_lighting_list",
+            "List all active light sources.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        // ── Particles ──
+        tool(
+            "amigo_particles_spawn",
+            "Spawn a particle emitter at a position.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "emitter_type": {"type": "string", "description": "Emitter type: fire, smoke, sparkle, blood, etc."},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "params": {"type": "object", "description": "Optional emitter parameters (color, rate, lifetime, etc.)"}
+                },
+                "required": ["emitter_type", "x", "y"]
+            }),
+        ),
+        tool(
+            "amigo_particles_stop",
+            "Stop a particle emitter by ID.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            }),
+        ),
+        // ── Inventory/Crafting ──
+        tool(
+            "amigo_inventory_list",
+            "List inventory contents for an entity.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer", "description": "Entity to query, defaults to player"}
+                }
+            }),
+        ),
+        tool(
+            "amigo_inventory_add",
+            "Add items to an entity's inventory.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer"},
+                    "item": {"type": "string"},
+                    "count": {"type": "integer"}
+                },
+                "required": ["entity_id", "item", "count"]
+            }),
+        ),
+        tool(
+            "amigo_inventory_remove",
+            "Remove items from an entity's inventory.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "integer"},
+                    "item": {"type": "string"},
+                    "count": {"type": "integer"}
+                },
+                "required": ["entity_id", "item", "count"]
+            }),
+        ),
+        tool(
+            "amigo_crafting_list_recipes",
+            "List all available crafting recipes.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_crafting_craft",
+            "Execute a crafting recipe.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "recipe_id": {"type": "string"}
+                },
+                "required": ["recipe_id"]
+            }),
+        ),
+        // ── Dialogue ──
+        tool(
+            "amigo_dialogue_start",
+            "Start a dialogue tree.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "tree_id": {"type": "string"}
+                },
+                "required": ["tree_id"]
+            }),
+        ),
+        tool(
+            "amigo_dialogue_choose",
+            "Select a dialogue choice by index.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "choice_index": {"type": "integer"}
+                },
+                "required": ["choice_index"]
+            }),
+        ),
+        tool(
+            "amigo_dialogue_get_state",
+            "Get current dialogue node, speaker, text, choices, and flags.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_dialogue_set_flag",
+            "Set a dialogue flag value.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "value": {"type": "integer"}
+                },
+                "required": ["name", "value"]
+            }),
+        ),
+        // ── Asset Pipeline ──
+        tool(
+            "amigo_pack",
+            "Run atlas packing on generated art assets. Blocks until packing completes and returns the updated manifest.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "force": {"type": "boolean", "description": "Force re-pack even if no changes detected"}
+                }
+            }),
+        ),
+        // ── Dev workflow ──
+        tool(
+            "amigo_dev_save_snapshot",
+            "Save a dev snapshot of the engine state before recompile.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_dev_snapshot_status",
+            "Check if a dev snapshot exists and its metadata.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_dev_restore_snapshot",
+            "Restore the engine state from the last dev snapshot.",
+            json!({"type": "object", "properties": {}}),
+        ),
     ]
 }
 

@@ -56,6 +56,27 @@ pub struct ApiCommand {
     pub params: Value,
 }
 
+/// Snapshot of dev session state for save/restore across recompiles.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DevSnapshot {
+    /// Current scene identifier.
+    pub scene_id: String,
+    /// Camera position [x, y].
+    pub camera_pos: [f32; 2],
+    /// Camera zoom level.
+    pub camera_zoom: f32,
+    /// Current tick number.
+    pub tick: u64,
+    /// Whether the engine was paused.
+    pub paused: bool,
+    /// Speed multiplier at time of snapshot.
+    pub speed_multiplier: f32,
+    /// Game-specific state (opaque JSON blob from Game::on_dev_snapshot).
+    pub game_state: Value,
+    /// Timestamp when the snapshot was taken.
+    pub timestamp: String,
+}
+
 /// Shared state between the API server thread and the engine main loop.
 pub struct ApiSharedState {
     pub snapshot: EngineSnapshot,
@@ -66,6 +87,8 @@ pub struct ApiSharedState {
     pub screenshot_results: Vec<Value>,
     pub event_buffer: Vec<GameEvent>,
     pub subscriptions: Vec<String>,
+    /// Most recent dev snapshot (set by dev.save_snapshot command).
+    pub dev_snapshot: Option<DevSnapshot>,
 }
 
 impl ApiSharedState {
@@ -82,6 +105,7 @@ impl ApiSharedState {
             screenshot_results: Vec::new(),
             event_buffer: Vec::new(),
             subscriptions: Vec::new(),
+            dev_snapshot: None,
         }
     }
 
@@ -231,6 +255,11 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         "engine.get_log" => handle_get_log(req, state),
         "engine.set_property" => handle_set_property(req, state),
         "engine.get_property" => handle_get_property(req, state),
+
+        // ── Dev workflow ──
+        "dev.save_snapshot" => handle_dev_save_snapshot(req, state),
+        "dev.snapshot_status" => handle_dev_snapshot_status(req, state),
+        "dev.restore_snapshot" => handle_dev_restore_snapshot(req, state),
 
         _ => RpcResponse::error(
             req.id,
@@ -772,6 +801,45 @@ fn handle_get_property(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Dev workflow handlers
+// ---------------------------------------------------------------------------
+
+fn handle_dev_save_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    // Queue the save_snapshot command so the engine main loop can populate
+    // DevSnapshot with actual game state (camera, scene, etc.)
+    queue_cmd(req, state, "dev.save_snapshot", req.params.clone())
+}
+
+fn handle_dev_snapshot_status(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let s = state.lock().unwrap();
+    match &s.dev_snapshot {
+        Some(snap) => RpcResponse::success(
+            req.id,
+            json!({
+                "has_snapshot": true,
+                "scene_id": snap.scene_id,
+                "tick": snap.tick,
+                "paused": snap.paused,
+                "timestamp": snap.timestamp,
+            }),
+        ),
+        None => RpcResponse::success(req.id, json!({"has_snapshot": false})),
+    }
+}
+
+fn handle_dev_restore_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let s = state.lock().unwrap();
+    match &s.dev_snapshot {
+        Some(snap) => {
+            let snap_json = serde_json::to_value(snap).unwrap_or(Value::Null);
+            drop(s);
+            queue_cmd(req, state, "dev.restore_snapshot", snap_json)
+        }
+        None => RpcResponse::error(req.id, INVALID_PARAMS, "No dev snapshot available"),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1041,5 +1109,54 @@ mod tests {
         let resp = handle_request(&make_request("get_state", Value::Null), &state);
         assert!(resp.error.is_none());
         assert!(resp.result.unwrap().get("tick").is_some());
+    }
+
+    #[test]
+    fn dev_snapshot_status_empty() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("dev.snapshot_status", Value::Null), &state);
+        assert!(resp.error.is_none());
+        let r = resp.result.unwrap();
+        assert_eq!(r["has_snapshot"], false);
+    }
+
+    #[test]
+    fn dev_save_snapshot_queues_command() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("dev.save_snapshot", json!({})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "dev.save_snapshot");
+    }
+
+    #[test]
+    fn dev_snapshot_roundtrip() {
+        let state = new_shared_state();
+        // Simulate engine populating a snapshot
+        {
+            let mut s = state.lock().unwrap();
+            s.dev_snapshot = Some(DevSnapshot {
+                scene_id: "level_1".into(),
+                camera_pos: [100.0, 200.0],
+                camera_zoom: 2.0,
+                tick: 500,
+                paused: false,
+                speed_multiplier: 1.0,
+                game_state: json!({"gold": 100}),
+                timestamp: "2026-01-01T00:00:00Z".into(),
+            });
+        }
+        // Check status
+        let resp = handle_request(&make_request("dev.snapshot_status", Value::Null), &state);
+        let r = resp.result.unwrap();
+        assert_eq!(r["has_snapshot"], true);
+        assert_eq!(r["scene_id"], "level_1");
+        assert_eq!(r["tick"], 500);
+
+        // Restore
+        let resp = handle_request(&make_request("dev.restore_snapshot", json!({})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "dev.restore_snapshot");
     }
 }

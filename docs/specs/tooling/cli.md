@@ -25,6 +25,7 @@ COMMANDS:
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Check that the project compiles
     run [--headless] [--api]             Run the game (cargo run)
+    dev [--port <PORT>]                  Run with watch mode + snapshot restore
     pack                                 Pack assets into atlas (release build)
     release [--target <TARGET>]          Build optimized release binary
     publish steam                        Prepare and upload to Steam (via steamcmd)
@@ -294,7 +295,7 @@ Uses `amigo_render::atlas::AtlasBuilder` with a maximum atlas size of 4096x4096 
 
 ## Open Questions
 
-- Whether to add a `watch` command for automatic rebuild on file changes.
+- ~~Whether to add a `watch` command for automatic rebuild on file changes.~~ **Resolved**: `amigo dev` provides this. See [tooling/dev-workflow](dev-workflow.md).
 - Whether to support WASM/web export as a publish target.
 - Whether to add an `update` command for upgrading the engine version in existing projects.
 - Whether `amigo pack` should support incremental packing (only changed assets).
@@ -307,3 +308,4 @@ Uses `amigo_render::atlas::AtlasBuilder` with a maximum atlas size of 4096x4096 
 - [assets/atlas](../assets/atlas.md) -- Texture atlas packing algorithm
 - [config/amigo-toml](../config/amigo-toml.md) -- Full `amigo.toml` specification
 - [tooling/editor](editor.md) -- Visual editor (launched via `amigo editor`)
+- [tooling/dev-workflow](dev-workflow.md) -- `amigo dev` watch mode with snapshot restore

@@ -4,6 +4,7 @@
 //! interface so Claude Code can generate and refine sprite assets.
 
 pub mod comfyui;
+pub mod config;
 pub mod postprocess;
 pub mod style;
 pub mod tools;
