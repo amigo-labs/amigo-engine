@@ -1,5 +1,7 @@
 #![warn(missing_docs)]
 
+pub mod spatial;
+
 use kira::manager::backend::DefaultBackend;
 use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
@@ -27,6 +29,8 @@ pub enum AudioError {
     NoActiveSection,
     #[error("Section not found: {0}")]
     SectionNotFound(String),
+    #[error("Stinger not found: {0}")]
+    StingerNotFound(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -737,9 +741,10 @@ pub struct Stinger {
 }
 
 /// When to trigger a stinger.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StingerQuantize {
     /// Fire on the next beat boundary.
+    #[default]
     Beat,
     /// Fire on the next bar boundary.
     Bar,

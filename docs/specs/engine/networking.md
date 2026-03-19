@@ -70,3 +70,45 @@ pub struct GameState {
 ### Replay System
 
 Commands logged with tick numbers. Replay = feed commands into fresh GameState.
+
+## Cross-System Multiplayer Boundaries
+
+Definiert welche Engine-Systeme im Multiplayer synchronisiert werden und welche lokal bleiben.
+
+### Synchronisiert (über GameCommand-Protokoll)
+
+| System | Sync-Methode | Details |
+|--------|-------------|---------|
+| **Simulation** | Lockstep | Alle Spieler laufen den gleichen Tick mit gleichen Commands |
+| **Tilemap** | Deterministisch | Gleicher Seed → gleiche Map. Tile-Mutations via GameCommand |
+| **Pathfinding** | Deterministisch | Gleicher SimVec2-Input → gleiche Pfade (Fixed-Point) |
+| **Inventory/Crafting** | GameCommand | `CraftItem`, `MoveItem` als Commands. Shared Inventory im Co-op |
+| **Waves/Spawning** | Deterministisch | SerializableRng garantiert gleiche Spawn-Reihenfolge |
+| **Save/Load** | Host-Only | Nur Host speichert/lädt. Clients synchronisieren via State-Snapshot |
+| **SimSpeed** | Host-Authoritative | Nur Host darf `Pause`/`SetSpeed`. Broadcast an alle Clients |
+
+### Nicht synchronisiert (lokal pro Client)
+
+| System | Grund |
+|--------|-------|
+| **Physics (RigidBody)** | Visuell, f32, nicht deterministisch. Ragdolls/Partikel dürfen sich unterscheiden |
+| **Rendering/Camera** | Jeder Client hat eigenen Viewport, Zoom, Shake |
+| **Audio** | Lokale Wiedergabe, kein Sync nötig |
+| **Particles** | Rein visuell |
+| **UI/Editor** | Lokal |
+| **Debug Overlay** | Lokal |
+
+### Dialogue im Co-op
+
+Dialogue-Interaktionen im Multiplayer folgen dem **Host-Decides** Prinzip:
+- Nur der Host sieht Choice-Menüs und trifft Entscheidungen
+- DialogEffect-Commands werden als GameCommand an alle Clients gebroadcastet
+- Clients sehen den Dialog-Text, aber nicht die Choice-UI
+- Alternative (konfigurierbar): **Vote-Mode** — alle Spieler stimmen ab, Mehrheit gewinnt
+
+### Host Migration
+
+Host Migration ist **nicht unterstützt** in der ersten Version. Bei Host-Disconnect endet die Session. Geplant für spätere Iteration:
+1. Alle Clients speichern GameState-Snapshots alle N Ticks
+2. Bei Host-Disconnect wählt der Client mit niedrigster Latenz als neuer Host
+3. Neuer Host sendet seinen Snapshot, alle resynchronisieren

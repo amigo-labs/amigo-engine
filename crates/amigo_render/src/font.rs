@@ -311,3 +311,397 @@ impl Default for FontManager {
         Self::new()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Text Layout Engine
+// ---------------------------------------------------------------------------
+
+/// Horizontal text alignment.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+/// Vertical text alignment.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextVAlign {
+    #[default]
+    Top,
+    Middle,
+    Bottom,
+}
+
+/// Configuration for laying out a block of text.
+pub struct TextLayout {
+    pub font_id: FontId,
+    pub text: String,
+    pub max_width: Option<f32>,
+    pub line_height: Option<f32>,
+    pub align: TextAlign,
+    pub valign: TextVAlign,
+    pub scale: f32,
+}
+
+impl Default for TextLayout {
+    fn default() -> Self {
+        Self {
+            font_id: FontId(0),
+            text: String::new(),
+            max_width: None,
+            line_height: None,
+            align: TextAlign::Left,
+            valign: TextVAlign::Top,
+            scale: 1.0,
+        }
+    }
+}
+
+/// A positioned glyph ready for rendering.
+#[derive(Clone, Debug)]
+pub struct LayoutGlyph {
+    pub ch: char,
+    pub x: f32,
+    pub y: f32,
+    pub scale: f32,
+    pub glyph_info: GlyphInfo,
+    pub color: amigo_core::color::Color,
+    pub style: GlyphStyle,
+}
+
+/// Style flags for a glyph.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GlyphStyle {
+    pub bold: bool,
+    pub italic: bool,
+}
+
+/// Result of text layout.
+pub struct LayoutResult {
+    pub glyphs: Vec<LayoutGlyph>,
+    pub bounds: (f32, f32),
+    pub line_count: u32,
+}
+
+impl FontAtlas {
+    /// Lay out text into positioned glyphs with word wrapping and alignment.
+    pub fn layout(&mut self, params: &TextLayout) -> LayoutResult {
+        let segments = parse_rich_text(&params.text);
+        let line_h = params.line_height.unwrap_or(self.px * 1.2) * params.scale;
+        let scale = params.scale;
+
+        let mut glyphs: Vec<LayoutGlyph> = Vec::new();
+        let mut cursor_x = 0.0_f32;
+        let mut cursor_y = 0.0_f32;
+        let mut line_start_idx = 0usize;
+        let mut last_space_idx: Option<usize> = None;
+        let mut line_widths: Vec<f32> = Vec::new();
+        let mut max_width_seen = 0.0_f32;
+
+        for seg in &segments {
+            let color = seg.color.unwrap_or(amigo_core::color::Color::WHITE);
+            let style = GlyphStyle {
+                bold: seg.bold,
+                italic: seg.italic,
+            };
+            let seg_scale = scale * seg.scale;
+
+            for ch in seg.text.chars() {
+                if ch == '\n' {
+                    line_widths.push(cursor_x);
+                    if cursor_x > max_width_seen {
+                        max_width_seen = cursor_x;
+                    }
+                    cursor_x = 0.0;
+                    cursor_y += line_h;
+                    line_start_idx = glyphs.len();
+                    last_space_idx = None;
+                    continue;
+                }
+
+                let gi = match self.glyph(ch) {
+                    Some(g) => g,
+                    None => continue,
+                };
+                let advance = gi.advance * seg_scale;
+                let bold_extra = if seg.bold { 1.0 * seg_scale } else { 0.0 };
+
+                // Word wrap
+                if let Some(max_w) = params.max_width {
+                    if cursor_x + advance + bold_extra > max_w && cursor_x > 0.0 {
+                        // Wrap at last space or at current position
+                        if let Some(space_idx) = last_space_idx {
+                            // Move glyphs after last space to next line
+                            line_widths.push(
+                                glyphs.get(space_idx).map(|g| g.x + g.glyph_info.advance * g.scale).unwrap_or(cursor_x)
+                            );
+                            let wrap_x = glyphs.get(space_idx + 1).map(|g| g.x).unwrap_or(cursor_x);
+                            cursor_y += line_h;
+                            let shift = wrap_x;
+                            for g in &mut glyphs[space_idx + 1..] {
+                                g.x -= shift;
+                                g.y = cursor_y;
+                            }
+                            cursor_x -= shift;
+                            line_start_idx = space_idx + 1;
+                        } else {
+                            line_widths.push(cursor_x);
+                            cursor_x = 0.0;
+                            cursor_y += line_h;
+                            line_start_idx = glyphs.len();
+                        }
+                        if cursor_x > max_width_seen {
+                            max_width_seen = cursor_x;
+                        }
+                        last_space_idx = None;
+                    }
+                }
+
+                if ch == ' ' {
+                    last_space_idx = Some(glyphs.len());
+                }
+
+                glyphs.push(LayoutGlyph {
+                    ch,
+                    x: cursor_x,
+                    y: cursor_y,
+                    scale: seg_scale,
+                    glyph_info: gi,
+                    color,
+                    style,
+                });
+
+                cursor_x += advance + bold_extra;
+            }
+        }
+
+        // Final line
+        line_widths.push(cursor_x);
+        if cursor_x > max_width_seen {
+            max_width_seen = cursor_x;
+        }
+
+        let total_height = cursor_y + line_h;
+        let line_count = line_widths.len() as u32;
+
+        // Apply horizontal alignment
+        if params.align != TextAlign::Left && params.max_width.is_some() {
+            let max_w = params.max_width.unwrap();
+            let mut line_idx = 0usize;
+            let mut current_line = 0usize;
+            for g in &mut glyphs {
+                // Detect line change by y position
+                let glyph_line = (g.y / line_h).round() as usize;
+                if glyph_line != current_line {
+                    current_line = glyph_line;
+                }
+                let lw = line_widths.get(current_line).copied().unwrap_or(0.0);
+                let shift = match params.align {
+                    TextAlign::Center => (max_w - lw) * 0.5,
+                    TextAlign::Right => max_w - lw,
+                    _ => 0.0,
+                };
+                g.x += shift;
+            }
+            let _ = line_idx;
+        }
+
+        let bounds_w = params.max_width.unwrap_or(max_width_seen);
+
+        LayoutResult {
+            glyphs,
+            bounds: (bounds_w, total_height),
+            line_count,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rich Text Parsing
+// ---------------------------------------------------------------------------
+
+/// A segment of styled text from rich text parsing.
+#[derive(Clone, Debug)]
+pub struct RichTextSegment {
+    pub text: String,
+    pub color: Option<amigo_core::color::Color>,
+    pub bold: bool,
+    pub italic: bool,
+    pub scale: f32,
+}
+
+/// Parse rich text markup into styled segments.
+/// Supports: [b]...[/b], [i]...[/i], [c=#RRGGBB]...[/c], [s=N]...[/s]
+pub fn parse_rich_text(input: &str) -> Vec<RichTextSegment> {
+    let mut segments = Vec::new();
+    let mut current_text = String::new();
+    let mut bold = false;
+    let mut italic = false;
+    let mut color: Option<amigo_core::color::Color> = None;
+    let mut scale = 1.0_f32;
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '[' {
+            // Try to parse a tag
+            let mut tag = String::new();
+            let mut found_close = false;
+            for tc in chars.by_ref() {
+                if tc == ']' {
+                    found_close = true;
+                    break;
+                }
+                tag.push(tc);
+            }
+            if !found_close {
+                current_text.push('[');
+                current_text.push_str(&tag);
+                continue;
+            }
+
+            // Flush current text
+            if !current_text.is_empty() {
+                segments.push(RichTextSegment {
+                    text: std::mem::take(&mut current_text),
+                    color,
+                    bold,
+                    italic,
+                    scale,
+                });
+            }
+
+            // Process tag
+            match tag.as_str() {
+                "b" => bold = true,
+                "/b" => bold = false,
+                "i" => italic = true,
+                "/i" => italic = false,
+                "/c" => color = None,
+                "/s" => scale = 1.0,
+                _ if tag.starts_with("c=#") || tag.starts_with("c=") => {
+                    let hex_str = tag.trim_start_matches("c=#").trim_start_matches("c=");
+                    if let Ok(hex) = u32::from_str_radix(hex_str, 16) {
+                        color = Some(amigo_core::color::Color::from_hex(hex));
+                    }
+                }
+                _ if tag.starts_with("s=") => {
+                    if let Ok(s) = tag[2..].parse::<f32>() {
+                        scale = s;
+                    }
+                }
+                _ => {
+                    // Unknown tag, treat as literal text
+                    current_text.push('[');
+                    current_text.push_str(&tag);
+                    current_text.push(']');
+                }
+            }
+        } else {
+            current_text.push(ch);
+        }
+    }
+
+    // Flush remaining text
+    if !current_text.is_empty() {
+        segments.push(RichTextSegment {
+            text: current_text,
+            color,
+            bold,
+            italic,
+            scale,
+        });
+    }
+
+    // If no segments, return one empty segment
+    if segments.is_empty() {
+        segments.push(RichTextSegment {
+            text: String::new(),
+            color: None,
+            bold: false,
+            italic: false,
+            scale: 1.0,
+        });
+    }
+
+    segments
+}
+
+// ---------------------------------------------------------------------------
+// Kerning
+// ---------------------------------------------------------------------------
+
+impl FontAtlas {
+    /// Get kerning offset between two characters.
+    /// Returns 0.0 if kerning data is not available or the pair is unknown.
+    pub fn kern(&self, left: char, right: char) -> f32 {
+        // fontdue's Font::horizontal_kern() provides kerning if available
+        self.font
+            .horizontal_kern(left, right, self.px)
+            .unwrap_or(0.0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_plain_text() {
+        let segs = parse_rich_text("Hello world");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].text, "Hello world");
+        assert!(!segs[0].bold);
+        assert!(!segs[0].italic);
+    }
+
+    #[test]
+    fn parse_bold() {
+        let segs = parse_rich_text("Normal [b]bold[/b] text");
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[0].text, "Normal ");
+        assert!(!segs[0].bold);
+        assert_eq!(segs[1].text, "bold");
+        assert!(segs[1].bold);
+        assert_eq!(segs[2].text, " text");
+        assert!(!segs[2].bold);
+    }
+
+    #[test]
+    fn parse_color() {
+        let segs = parse_rich_text("[c=#ff0000]red[/c]");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].text, "red");
+        assert!(segs[0].color.is_some());
+        let c = segs[0].color.unwrap();
+        assert!((c.r - 1.0).abs() < 0.01);
+        assert!((c.g - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_scale() {
+        let segs = parse_rich_text("[s=2.0]big[/s]");
+        assert_eq!(segs.len(), 1);
+        assert!((segs[0].scale - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_nested() {
+        let segs = parse_rich_text("[b][i]bold italic[/i][/b]");
+        assert_eq!(segs.len(), 1);
+        assert!(segs[0].bold);
+        assert!(segs[0].italic);
+    }
+
+    #[test]
+    fn parse_unclosed_tag_is_literal() {
+        let segs = parse_rich_text("text [unclosed");
+        assert_eq!(segs.len(), 1);
+        assert!(segs[0].text.contains("[unclosed"));
+    }
+}

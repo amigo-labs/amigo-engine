@@ -1,7 +1,7 @@
 ---
-status: spec
+status: done
 depends_on: []
-last_updated: 2026-03-16
+last_updated: 2026-03-18
 ---
 
 # Data Formats: RON & TOML
@@ -181,9 +181,44 @@ All generated audio is royalty-free and commercially usable:
 
 Generated output is original -- not copies of training data. Standard disclaimer: verify uniqueness of generated tracks before commercial release.
 
+## Implementation
+
+| Component | File | Details |
+|-----------|------|---------|
+| TOML config | `crates/amigo_engine/src/config.rs` | `EngineConfig` with `toml::from_str()` |
+| Input bindings (RON) | `crates/amigo_input/src/action_map.rs` | `ActionBindings` with `Key`/`MouseButton`/`GamepadButton` enum |
+| Level data (RON) | `crates/amigo_editor/src/lib.rs` | `AmigoLevel` with `save_level()`/`load_level()` |
+| Hot reload | `crates/amigo_assets/src/hot_reload.rs` | `HotReloader` using `notify` v7, watches `Modify`/`Create` events |
+
+### ActionBindings Format (actual)
+
+```rust
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum InputBinding {
+    Key(String),         // e.g., "Space", "KeyW", "ArrowUp"
+    MouseButton(u8),     // 0=Left, 1=Right, 2=Middle
+    GamepadButton(u8),   // Button index
+}
+```
+
+### AmigoLevel Format (actual)
+
+```rust
+pub struct AmigoLevel {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub tile_size: u32,
+    pub layers: Vec<LayerData>,
+    pub entities: Vec<EntityPlacement>,
+    pub paths: Vec<PathData>,
+    pub metadata: HashMap<String, String>,
+}
+```
+
 ## Internal Design
 
-Both RON and TOML parsing use serde for deserialization into strongly-typed Rust structs. Hot-reloadable files are watched via the `notify` crate (see [assets/pipeline](../assets/pipeline.md)). When a watched file changes, it is re-parsed and the corresponding in-memory representation is updated.
+Both RON and TOML parsing use serde for deserialization into strongly-typed Rust structs. Hot-reloadable files are watched via the `notify` crate v7 (see [assets/pipeline](../assets/pipeline.md)). When a watched file changes, it is re-parsed and the corresponding in-memory representation is updated.
 
 Error handling for data files follows the engine's three-layer approach:
 - **Dev mode:** Warning with fuzzy-match suggestion (`"playe" -> did you mean "player"?`)

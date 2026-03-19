@@ -157,7 +157,7 @@ pub fn sqrt_fix(x: Fix) -> Fix {
 
 /// Rendering vector using f32. Used only for rendering: screen positions,
 /// particles, camera, screen shake, UI.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RenderVec2 {
     pub x: f32,
     pub y: f32,

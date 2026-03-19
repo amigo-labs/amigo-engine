@@ -310,6 +310,201 @@ impl CollisionWorld {
         self.shapes.clear();
         self.triggers.clear();
     }
+
+    /// Get the position and shape for an entity. Used by raycast module.
+    pub fn get_shape(&self, entity: EntityId) -> Option<(RenderVec2, &CollisionShape)> {
+        self.shapes.get(&entity).map(|(pos, shape)| (*pos, shape))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Capsule Collider
+// ---------------------------------------------------------------------------
+
+/// Capsule = line segment + radius. Ideal for elongated entities (enemies in TD).
+/// Slides around corners like a circle but covers elongated shapes.
+#[derive(Clone, Copy, Debug)]
+pub struct CapsuleShape {
+    /// Half-length of the line segment (total length = 2 * half_length).
+    pub half_length: f32,
+    /// Radius at both ends.
+    pub radius: f32,
+    /// Rotation in radians (0 = horizontal).
+    pub angle: f32,
+}
+
+impl CapsuleShape {
+    /// Get the two endpoints of the capsule center line in world space.
+    pub fn endpoints(&self, pos: RenderVec2) -> (RenderVec2, RenderVec2) {
+        let cos = self.angle.cos();
+        let sin = self.angle.sin();
+        let dx = cos * self.half_length;
+        let dy = sin * self.half_length;
+        (
+            RenderVec2::new(pos.x - dx, pos.y - dy),
+            RenderVec2::new(pos.x + dx, pos.y + dy),
+        )
+    }
+}
+
+/// Find the closest point on a line segment (a, b) to point p.
+fn closest_point_on_segment(a: RenderVec2, b: RenderVec2, p: RenderVec2) -> RenderVec2 {
+    let ab = RenderVec2::new(b.x - a.x, b.y - a.y);
+    let ap = RenderVec2::new(p.x - a.x, p.y - a.y);
+    let ab_sq = ab.x * ab.x + ab.y * ab.y;
+    if ab_sq < 1e-8 {
+        return a;
+    }
+    let t = ((ap.x * ab.x + ap.y * ab.y) / ab_sq).clamp(0.0, 1.0);
+    RenderVec2::new(a.x + ab.x * t, a.y + ab.y * t)
+}
+
+/// Capsule vs Circle collision.
+pub fn capsule_vs_circle(
+    capsule_pos: RenderVec2,
+    capsule: &CapsuleShape,
+    cx: f32,
+    cy: f32,
+    r: f32,
+) -> Option<ContactInfo> {
+    let (a, b) = capsule.endpoints(capsule_pos);
+    let p = RenderVec2::new(cx, cy);
+    let closest = closest_point_on_segment(a, b, p);
+    circle_vs_circle(closest.x, closest.y, capsule.radius, cx, cy, r)
+}
+
+/// Capsule vs AABB collision (approximate: treat capsule as circle at closest point).
+pub fn capsule_vs_aabb(
+    capsule_pos: RenderVec2,
+    capsule: &CapsuleShape,
+    rect: &Rect,
+) -> Option<ContactInfo> {
+    let (a, b) = capsule.endpoints(capsule_pos);
+    // Find closest point on capsule segment to AABB center
+    let rect_center = RenderVec2::new(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
+    let closest = closest_point_on_segment(a, b, rect_center);
+    circle_vs_aabb(closest.x, closest.y, capsule.radius, rect)
+}
+
+/// Capsule vs Capsule collision.
+pub fn capsule_vs_capsule(
+    pos_a: RenderVec2,
+    a: &CapsuleShape,
+    pos_b: RenderVec2,
+    b: &CapsuleShape,
+) -> Option<ContactInfo> {
+    let (a1, a2) = a.endpoints(pos_a);
+    let (b1, b2) = b.endpoints(pos_b);
+    // Find closest point pair between two line segments
+    let mut min_dist_sq = f32::MAX;
+    let mut best_ca = a1;
+    let mut best_cb = b1;
+    for &pa in &[a1, a2] {
+        let cb = closest_point_on_segment(b1, b2, pa);
+        let d = pa.distance_squared(cb);
+        if d < min_dist_sq {
+            min_dist_sq = d;
+            best_ca = pa;
+            best_cb = cb;
+        }
+    }
+    for &pb in &[b1, b2] {
+        let ca = closest_point_on_segment(a1, a2, pb);
+        let d = ca.distance_squared(pb);
+        if d < min_dist_sq {
+            min_dist_sq = d;
+            best_ca = ca;
+            best_cb = pb;
+        }
+    }
+    circle_vs_circle(best_ca.x, best_ca.y, a.radius, best_cb.x, best_cb.y, b.radius)
+}
+
+// ---------------------------------------------------------------------------
+// Swept AABB (CCD — Continuous Collision Detection)
+// ---------------------------------------------------------------------------
+
+/// Contact from a swept collision test.
+#[derive(Clone, Copy, Debug)]
+pub struct SweptContact {
+    /// Time of impact [0.0, 1.0] within the tick.
+    pub time: f32,
+    /// Surface normal at impact.
+    pub normal: RenderVec2,
+    /// Contact info at impact.
+    pub contact: ContactInfo,
+}
+
+/// Swept AABB collision test for fast-moving objects.
+/// Tests a moving AABB against a static obstacle AABB.
+/// Returns the first time of impact within the tick (velocity applied over 1 tick).
+pub fn swept_aabb(
+    pos: RenderVec2,
+    velocity: RenderVec2,
+    shape: &Rect,
+    obstacle: &Rect,
+) -> Option<SweptContact> {
+    let moving = Rect::new(pos.x + shape.x, pos.y + shape.y, shape.w, shape.h);
+
+    // Distance to entry/exit for each axis
+    let (x_entry_dist, x_exit_dist) = if velocity.x > 0.0 {
+        (obstacle.x - (moving.x + moving.w), (obstacle.x + obstacle.w) - moving.x)
+    } else {
+        ((obstacle.x + obstacle.w) - moving.x, obstacle.x - (moving.x + moving.w))
+    };
+    let (y_entry_dist, y_exit_dist) = if velocity.y > 0.0 {
+        (obstacle.y - (moving.y + moving.h), (obstacle.y + obstacle.h) - moving.y)
+    } else {
+        ((obstacle.y + obstacle.h) - moving.y, obstacle.y - (moving.y + moving.h))
+    };
+
+    // Time of entry/exit for each axis
+    let x_entry = if velocity.x.abs() < 1e-8 {
+        -f32::MAX
+    } else {
+        x_entry_dist / velocity.x
+    };
+    let x_exit = if velocity.x.abs() < 1e-8 {
+        f32::MAX
+    } else {
+        x_exit_dist / velocity.x
+    };
+    let y_entry = if velocity.y.abs() < 1e-8 {
+        -f32::MAX
+    } else {
+        y_entry_dist / velocity.y
+    };
+    let y_exit = if velocity.y.abs() < 1e-8 {
+        f32::MAX
+    } else {
+        y_exit_dist / velocity.y
+    };
+
+    let entry_time = x_entry.max(y_entry);
+    let exit_time = x_exit.min(y_exit);
+
+    // No collision
+    if entry_time > exit_time || entry_time > 1.0 || exit_time < 0.0 {
+        return None;
+    }
+    if entry_time < 0.0 {
+        return None; // Already overlapping — not a swept hit
+    }
+
+    let normal = if x_entry > y_entry {
+        RenderVec2::new(if velocity.x > 0.0 { -1.0 } else { 1.0 }, 0.0)
+    } else {
+        RenderVec2::new(0.0, if velocity.y > 0.0 { -1.0 } else { 1.0 })
+    };
+
+    Some(SweptContact {
+        time: entry_time,
+        normal,
+        contact: ContactInfo {
+            penetration: 0.0, // At the moment of impact, penetration is zero
+            normal,
+        },
+    })
 }
 
 pub fn shape_to_aabb(pos: RenderVec2, shape: &CollisionShape) -> Rect {

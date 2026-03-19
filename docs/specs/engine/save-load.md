@@ -104,13 +104,47 @@ impl SaveManager {
 - CRC32 uses a compile-time-generated 256-entry lookup table for fast computation.
 - Autosave index rotates via modular arithmetic: `next_index = (current + 1) % autosave_slots`.
 
+## Large World Save Scaling
+
+Für Spiele mit großem State (City Builder: 50.000+ Citizens, RTS: 500+ Units, Sandbox: Millionen Tiles) gelten zusätzliche Strategien:
+
+### Kompression (LZ4)
+
+Wenn `SaveConfig::compression = true`, wird der serialisierte JSON-Payload mit LZ4 komprimiert bevor er auf Disk geschrieben wird. LZ4 ist für Geschwindigkeit optimiert (~400 MB/s Kompression) und reduziert typische Spielstände um 70-85%.
+
+```rust
+impl SaveManager {
+    /// Intern: Komprimiert data bytes mit LZ4 wenn compression aktiviert.
+    fn compress(&self, data: &[u8]) -> Vec<u8>;
+    /// Intern: Dekomprimiert LZ4-Daten.
+    fn decompress(&self, data: &[u8]) -> Result<Vec<u8>, SaveError>;
+}
+```
+
+### Serialisierungs-Budget
+
+| Spieltyp | Typischer State | JSON | JSON + LZ4 |
+|----------|----------------|------|-------------|
+| Tower Defense | 200 Entities, 30x20 Map | ~50 KB | ~10 KB |
+| Roguelike | 30 Items, 50x50 Floor | ~30 KB | ~6 KB |
+| RTS (500 Units) | 500 Units + 100 Buildings + 100x100 Map | ~500 KB | ~80 KB |
+| City Builder (50K Citizens) | 50K Citizens (statistical) + 200x200 Map + Buildings | ~2 MB | ~300 KB |
+| Sandbox (1M Tiles) | Chunk-based, nur dirty chunks | ~5 MB | ~800 KB |
+
+### Game-Layer Optimierungen
+
+Die SaveManager-API serialisiert generic `T: Serialize`. Große Spiele sollten ihren State save-freundlich strukturieren:
+
+- **Citizens (City Builder)**: Nur `(home_id, workplace_id, needs_array, state_enum, age)` pro Citizen serialisieren — nicht volle ECS-Entities.
+- **Tilemap (Sandbox)**: Run-Length Encoding (RLE) auf Tile-Daten vor Serialisierung. Dann JSON + LZ4.
+- **Units (RTS)**: Voller State pro Unit (Position, HP, Command Queue) — kein Shortcut möglich.
+
 ## Non-Goals
 
 - **Incremental saves.** The system serializes the entire game state each time. Dirty-chunk-only saving is a future optimization that would integrate with [engine/chunks](chunks.md).
 - **Binary format.** Currently JSON-only. Bincode or MessagePack support can be layered on top.
 - **Save migration.** Schema versioning and forward/backward compatibility are not yet implemented.
 - **Async I/O.** All save/load operations are synchronous. Background saving should be wrapped in a thread by the caller.
-- **Compression.** The `compression` config field is defined but not yet implemented.
 
 ## Open Questions
 
