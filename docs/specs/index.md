@@ -2,7 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
-<!-- Status: 37 done · 25 spec · 0 draft -->
+<!-- Status: 37 done · 27 spec · 0 draft -->
 
 # Amigo Engine -- Spec Overview
 
@@ -175,6 +175,8 @@ graph TD
     agentapi[ai-pipelines/agent-api]
     amigotoml[config/amigo-toml]
     datafmt[config/data-formats]
+    artaudiodef[config/art-audio-defaults]
+    devworkflow[tooling/dev-workflow]
 
     rendering --> core
     audio --> core
@@ -216,6 +218,12 @@ graph TD
     artgen --> fmt
     audiogen --> audio
     agentapi --> core
+    artaudiodef --> amigotoml
+    artaudiodef --> artgen
+    artaudiodef --> audiogen
+    devworkflow --> core
+    devworkflow --> cli
+    devworkflow --> agentapi
 ```
 
 ## Status Table
@@ -259,6 +267,8 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | done  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
 | [config/data-formats](config/data-formats.md)             | done   | --                | --                            |
+| [config/art-audio-defaults](config/art-audio-defaults.md) | spec   | amigo_artgen, amigo_audiogen | config/amigo-toml, ai-pipelines/artgen, ai-pipelines/audiogen |
+| [tooling/dev-workflow](tooling/dev-workflow.md)            | spec   | amigo_cli, amigo_api, amigo_engine | engine/core, tooling/cli, ai-pipelines/agent-api |
 | [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/steering](engine/steering.md)                     | done   | amigo_steering    | engine/core                   |
 | [engine/spline](engine/spline.md)                         | done   | amigo_core        | engine/core                   |
