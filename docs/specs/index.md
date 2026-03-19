@@ -2,7 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
-<!-- Status: 37 done · 25 spec · 0 draft -->
+<!-- Status: 62 done · 0 spec · 0 draft -->
 
 # Amigo Engine -- Spec Overview
 
@@ -246,7 +246,7 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [engine/agents](engine/agents.md)                         | done   | amigo_core        | engine/core, engine/pathfinding |
 | [engine/simulation](engine/simulation.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/save-load](engine/save-load.md)                   | done   | amigo_core        | engine/core, engine/chunks    |
-| [assets/format](assets/format.md)                         | spec   | amigo_assets      | --                            |
+| [assets/format](assets/format.md)                         | done   | amigo_assets      | --                            |
 | [assets/pipeline](assets/pipeline.md)                     | done   | amigo_assets      | assets/format                 |
 | [assets/atlas](assets/atlas.md)                           | done   | amigo_assets      | assets/format                 |
 | [tooling/cli](tooling/cli.md)                             | done   | amigo_cli         | engine/core                   |
@@ -262,30 +262,30 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/steering](engine/steering.md)                     | done   | amigo_steering    | engine/core                   |
 | [engine/spline](engine/spline.md)                         | done   | amigo_core        | engine/core                   |
-| [engine/tween](engine/tween.md)                           | spec   | amigo_core        | engine/core                   |
-| [engine/positional-audio](engine/positional-audio.md)     | spec   | amigo_audio       | engine/audio, engine/camera   |
+| [engine/tween](engine/tween.md)                           | done   | amigo_core        | engine/core                   |
+| [engine/positional-audio](engine/positional-audio.md)     | done   | amigo_audio       | engine/audio, engine/camera   |
 | [engine/bullet-patterns](engine/bullet-patterns.md)       | done   | amigo_core        | engine/core, engine/particles |
-| [engine/procedural](engine/procedural.md)                 | spec   | amigo_core        | engine/core, engine/dynamic-tilemap |
+| [engine/procedural](engine/procedural.md)                 | done   | amigo_core        | engine/core, engine/dynamic-tilemap |
 | [engine/dialogue](engine/dialogue.md)                     | done   | amigo_core        | engine/core, engine/ui        |
-| [engine/localization](engine/localization.md)             | spec   | amigo_assets      | assets/format                 |
-| [engine/timeline](engine/timeline.md)                     | spec   | amigo_core        | engine/tween, engine/camera   |
-| [engine/behavior-tree](engine/behavior-tree.md)           | spec   | amigo_core        | engine/core, engine/agents    |
-| [engine/minimap](engine/minimap.md)                       | spec   | amigo_render      | engine/camera, engine/fog-of-war |
-| [engine/state-rewind](engine/state-rewind.md)             | spec   | amigo_core        | engine/save-load, engine/simulation |
-| [engine/achievements](engine/achievements.md)             | spec   | amigo_core        | engine/save-load, engine/ui   |
-| [engine/physics](engine/physics.md)                       | spec   | amigo_core        | engine/core                   |
-| [engine/font-rendering](engine/font-rendering.md)         | spec   | amigo_render      | engine/assets, engine/ui      |
-| [engine/gpu-instancing](engine/gpu-instancing.md)         | spec   | amigo_render      | engine/rendering              |
-| [engine/modding](engine/modding.md)                       | spec   | amigo_assets      | assets/format                 |
-| [engine/accessibility](engine/accessibility.md)           | spec   | amigo_render      | engine/rendering, engine/input, engine/ui |
-| [gametypes/platformer](gametypes/platformer.md)           | spec   | --                | engine/physics, engine/tween  |
-| [gametypes/roguelike](gametypes/roguelike.md)             | spec   | --                | engine/procedural, engine/save-load |
-| [gametypes/shmup](gametypes/shmup.md)                     | spec   | --                | engine/bullet-patterns        |
-| [gametypes/rts](gametypes/rts.md)                         | spec   | --                | engine/pathfinding, engine/fog-of-war |
-| [gametypes/metroidvania](gametypes/metroidvania.md)       | spec   | --                | engine/minimap, engine/fog-of-war |
-| [gametypes/visual-novel](gametypes/visual-novel.md)       | spec   | --                | engine/dialogue, engine/tween |
-| [gametypes/puzzle](gametypes/puzzle.md)                   | spec   | --                | engine/state-rewind           |
-| [gametypes/city-builder](gametypes/city-builder.md)       | spec   | --                | engine/chunks, engine/procedural |
+| [engine/localization](engine/localization.md)             | done   | amigo_assets      | assets/format                 |
+| [engine/timeline](engine/timeline.md)                     | done   | amigo_core        | engine/tween, engine/camera   |
+| [engine/behavior-tree](engine/behavior-tree.md)           | done   | amigo_core        | engine/core, engine/agents    |
+| [engine/minimap](engine/minimap.md)                       | done   | amigo_render      | engine/camera, engine/fog-of-war |
+| [engine/state-rewind](engine/state-rewind.md)             | done   | amigo_core        | engine/save-load, engine/simulation |
+| [engine/achievements](engine/achievements.md)             | done   | amigo_core        | engine/save-load, engine/ui   |
+| [engine/physics](engine/physics.md)                       | done   | amigo_core        | engine/core                   |
+| [engine/font-rendering](engine/font-rendering.md)         | done   | amigo_render      | engine/assets, engine/ui      |
+| [engine/gpu-instancing](engine/gpu-instancing.md)         | done   | amigo_render      | engine/rendering              |
+| [engine/modding](engine/modding.md)                       | done   | amigo_assets      | assets/format                 |
+| [engine/accessibility](engine/accessibility.md)           | done   | amigo_render      | engine/rendering, engine/input, engine/ui |
+| [gametypes/platformer](gametypes/platformer.md)           | done   | amigo_core        | engine/physics, engine/tween  |
+| [gametypes/roguelike](gametypes/roguelike.md)             | done   | amigo_core        | engine/procedural, engine/save-load |
+| [gametypes/shmup](gametypes/shmup.md)                     | done   | amigo_core        | engine/bullet-patterns        |
+| [gametypes/rts](gametypes/rts.md)                         | done   | amigo_core        | engine/pathfinding, engine/fog-of-war |
+| [gametypes/metroidvania](gametypes/metroidvania.md)       | done   | amigo_core        | engine/minimap, engine/fog-of-war |
+| [gametypes/visual-novel](gametypes/visual-novel.md)       | done   | amigo_core        | engine/dialogue, engine/tween |
+| [gametypes/puzzle](gametypes/puzzle.md)                   | done   | amigo_core        | engine/state-rewind           |
+| [gametypes/city-builder](gametypes/city-builder.md)       | done   | amigo_core        | engine/chunks, engine/procedural |
 
 ## AI Pipelines
 
