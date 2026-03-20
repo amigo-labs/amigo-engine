@@ -200,6 +200,7 @@ dependencies = [
 name = "amigo_core"
 version = "0.1.0"
 dependencies = [
+ "amigo_reflect",
  "bumpalo",
  "bytemuck",
  "fixed",
@@ -331,6 +332,23 @@ version = "0.1.0"
 dependencies = [
  "amigo_core",
  "amigo_engine",
+]
+
+[[package]]
+name = "amigo_reflect"
+version = "0.1.0"
+dependencies = [
+ "amigo_reflect_derive",
+ "rustc-hash 2.1.1",
+]
+
+[[package]]
+name = "amigo_reflect_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

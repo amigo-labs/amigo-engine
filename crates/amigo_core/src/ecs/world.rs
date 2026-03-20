@@ -69,6 +69,15 @@ impl SpriteComp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StateScoped(pub u32);
 
+/// Stored accessor function pointers for reflection on dynamic components.
+#[cfg(feature = "reflect")]
+#[derive(Clone)]
+struct ReflectAccessor {
+    get_fn: fn(&dyn AnyStorage, EntityId) -> Option<*const dyn amigo_reflect::Reflect>,
+    get_mut_fn: fn(&mut dyn AnyStorage, EntityId) -> Option<*mut dyn amigo_reflect::Reflect>,
+    contains_fn: fn(&dyn AnyStorage, EntityId) -> bool,
+}
+
 /// Trait for type-erased SparseSet storage.
 trait AnyStorage: Any {
     fn as_any(&self) -> &dyn Any;
@@ -116,6 +125,10 @@ pub struct World {
 
     // Pending despawns (processed at flush)
     pending_despawn: Vec<EntityId>,
+
+    // Reflection accessor functions for dynamic components (behind `reflect` feature)
+    #[cfg(feature = "reflect")]
+    reflect_accessors: FxHashMap<TypeId, ReflectAccessor>,
 }
 
 impl World {
@@ -129,6 +142,8 @@ impl World {
             state_scoped: SparseSet::new(),
             dynamic: FxHashMap::default(),
             pending_despawn: Vec::new(),
+            #[cfg(feature = "reflect")]
+            reflect_accessors: FxHashMap::default(),
         }
     }
 
@@ -296,5 +311,293 @@ impl World {
 impl Default for World {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ── Reflect impls for built-in components (behind `reflect` feature) ──
+
+#[cfg(feature = "reflect")]
+impl amigo_reflect::Reflect for Health {
+    fn type_info() -> &'static amigo_reflect::TypeInfo
+    where
+        Self: Sized,
+    {
+        use std::sync::LazyLock;
+        static TYPE_INFO: LazyLock<amigo_reflect::TypeInfo> = LazyLock::new(|| {
+            let fields = vec![
+                amigo_reflect::FieldInfo {
+                    name: "current",
+                    type_name: std::any::type_name::<i32>(),
+                    type_id: TypeId::of::<i32>(),
+                    offset: std::mem::offset_of!(Health, current),
+                    attrs: amigo_reflect::FieldAttrs {
+                        label: None,
+                        range: None,
+                        read_only: false,
+                        skip: false,
+                    },
+                },
+                amigo_reflect::FieldInfo {
+                    name: "max",
+                    type_name: std::any::type_name::<i32>(),
+                    type_id: TypeId::of::<i32>(),
+                    offset: std::mem::offset_of!(Health, max),
+                    attrs: amigo_reflect::FieldAttrs {
+                        label: None,
+                        range: None,
+                        read_only: false,
+                        skip: false,
+                    },
+                },
+            ];
+            let fields: &'static [amigo_reflect::FieldInfo] = Box::leak(fields.into_boxed_slice());
+            amigo_reflect::TypeInfo {
+                short_name: "Health",
+                type_path: "amigo_core::ecs::world::Health",
+                type_id: TypeId::of::<Health>(),
+                fields,
+            }
+        });
+        &TYPE_INFO
+    }
+
+    fn reflected_type_info(&self) -> &'static amigo_reflect::TypeInfo {
+        <Self as amigo_reflect::Reflect>::type_info()
+    }
+
+    fn field(&self, name: &str) -> Option<amigo_reflect::FieldRef<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        match name {
+            "current" => Some(amigo_reflect::FieldRef {
+                info: &info.fields[0],
+                value: &self.current,
+            }),
+            "max" => Some(amigo_reflect::FieldRef {
+                info: &info.fields[1],
+                value: &self.max,
+            }),
+            _ => None,
+        }
+    }
+
+    fn field_mut(&mut self, name: &str) -> Option<amigo_reflect::FieldMut<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        match name {
+            "current" => Some(amigo_reflect::FieldMut {
+                info: &info.fields[0],
+                value: &mut self.current,
+            }),
+            "max" => Some(amigo_reflect::FieldMut {
+                info: &info.fields[1],
+                value: &mut self.max,
+            }),
+            _ => None,
+        }
+    }
+
+    fn fields(&self) -> Vec<amigo_reflect::FieldRef<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        vec![
+            amigo_reflect::FieldRef {
+                info: &info.fields[0],
+                value: &self.current,
+            },
+            amigo_reflect::FieldRef {
+                info: &info.fields[1],
+                value: &self.max,
+            },
+        ]
+    }
+
+    fn fields_mut(&mut self) -> Vec<amigo_reflect::FieldMut<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        let base_ptr = self as *mut Self as *mut u8;
+        unsafe {
+            vec![
+                amigo_reflect::FieldMut {
+                    info: &info.fields[0],
+                    value: &mut *(base_ptr.add(info.fields[0].offset) as *mut i32),
+                },
+                amigo_reflect::FieldMut {
+                    info: &info.fields[1],
+                    value: &mut *(base_ptr.add(info.fields[1].offset) as *mut i32),
+                },
+            ]
+        }
+    }
+
+    fn apply_patch(&mut self, patch: &amigo_reflect::ReflectPatch) -> usize {
+        let mut count = 0;
+        for (name, value) in patch.iter() {
+            match name {
+                "current" => {
+                    if let Some(val) = value.downcast_ref::<i32>() {
+                        self.current = *val;
+                        count += 1;
+                    }
+                }
+                "max" => {
+                    if let Some(val) = value.downcast_ref::<i32>() {
+                        self.max = *val;
+                        count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        count
+    }
+
+    fn clone_reflect(&self) -> Box<dyn amigo_reflect::Reflect> {
+        Box::new(*self)
+    }
+}
+
+// ── Reflection Integration (behind `reflect` feature) ──
+
+#[cfg(feature = "reflect")]
+impl World {
+    /// Helper: try to get a `&dyn Reflect` from a `&dyn AnyStorage` for a given entity,
+    /// knowing the concrete type `T` at registration time.
+    fn get_reflect_from_storage<T: amigo_reflect::Reflect + 'static>(
+        storage: &dyn AnyStorage,
+        entity: EntityId,
+    ) -> Option<*const dyn amigo_reflect::Reflect> {
+        let sparse = storage.as_any().downcast_ref::<SparseSet<T>>()?;
+        let val = sparse.get(entity)?;
+        Some(val as &dyn amigo_reflect::Reflect as *const dyn amigo_reflect::Reflect)
+    }
+
+    /// Helper: try to get a `&mut dyn Reflect` from a `&mut dyn AnyStorage` for a given entity.
+    fn get_reflect_mut_from_storage<T: amigo_reflect::Reflect + 'static>(
+        storage: &mut dyn AnyStorage,
+        entity: EntityId,
+    ) -> Option<*mut dyn amigo_reflect::Reflect> {
+        let sparse = storage.as_any_mut().downcast_mut::<SparseSet<T>>()?;
+        let val = sparse.get_mut(entity)?;
+        Some(val as &mut dyn amigo_reflect::Reflect as *mut dyn amigo_reflect::Reflect)
+    }
+
+    /// Get a type-erased reflected reference to a component on an entity.
+    /// Returns `None` if the entity does not have the component or if the type
+    /// is not registered in the provided `TypeRegistry`.
+    pub fn get_reflected(
+        &self,
+        entity: EntityId,
+        type_id: TypeId,
+        registry: &amigo_reflect::TypeRegistry,
+    ) -> Option<&dyn amigo_reflect::Reflect> {
+        // Check that the type is registered
+        let _reg = registry.get(type_id)?;
+
+        // Check built-in sparse sets
+        if type_id == TypeId::of::<Health>() {
+            return self
+                .healths
+                .get(entity)
+                .map(|v| v as &dyn amigo_reflect::Reflect);
+        }
+
+        // Check dynamic components via stored accessor functions
+        if let Some(storage) = self.dynamic.get(&type_id) {
+            if let Some(accessor) = self.reflect_accessors.get(&type_id) {
+                // SAFETY: The accessor returns a pointer that borrows from storage,
+                // which itself borrows from self. We return a reference with
+                // the lifetime of self.
+                unsafe {
+                    let ptr = (accessor.get_fn)(storage.as_ref(), entity)?;
+                    return Some(&*ptr);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Get a mutable reflected reference to a component on an entity.
+    pub fn get_reflected_mut(
+        &mut self,
+        entity: EntityId,
+        type_id: TypeId,
+        registry: &amigo_reflect::TypeRegistry,
+    ) -> Option<&mut dyn amigo_reflect::Reflect> {
+        let _reg = registry.get(type_id)?;
+
+        if type_id == TypeId::of::<Health>() {
+            return self
+                .healths
+                .get_mut(entity)
+                .map(|v| v as &mut dyn amigo_reflect::Reflect);
+        }
+
+        // For dynamic components, use stored accessor
+        let accessor = self.reflect_accessors.get(&type_id).cloned();
+        if let Some(accessor) = accessor {
+            if let Some(storage) = self.dynamic.get_mut(&type_id) {
+                // SAFETY: The accessor returns a pointer that borrows from storage,
+                // which borrows from self. We return a &mut with the lifetime of self.
+                unsafe {
+                    let ptr = (accessor.get_mut_fn)(storage.as_mut(), entity)?;
+                    return Some(&mut *ptr);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// List all component TypeIds present on an entity.
+    /// Includes both built-in (static) and dynamic components.
+    pub fn component_types(&self, entity: EntityId) -> Vec<TypeId> {
+        let mut types = Vec::new();
+
+        if self.positions.contains(entity) {
+            types.push(TypeId::of::<Position>());
+        }
+        if self.velocities.contains(entity) {
+            types.push(TypeId::of::<Velocity>());
+        }
+        if self.healths.contains(entity) {
+            types.push(TypeId::of::<Health>());
+        }
+        if self.sprites.contains(entity) {
+            types.push(TypeId::of::<SpriteComp>());
+        }
+        if self.state_scoped.contains(entity) {
+            types.push(TypeId::of::<StateScoped>());
+        }
+
+        for (type_id, storage) in &self.dynamic {
+            if let Some(accessor) = self.reflect_accessors.get(type_id) {
+                if (accessor.contains_fn)(storage.as_ref(), entity) {
+                    types.push(*type_id);
+                }
+            }
+        }
+
+        types
+    }
+
+    /// Register a dynamic component type for reflection.
+    /// This stores accessor functions that allow `get_reflected` and `get_reflected_mut`
+    /// to work with this component type.
+    pub fn register_reflected<T: amigo_reflect::Reflect + 'static>(&mut self, capacity: usize) {
+        let type_id = TypeId::of::<T>();
+        self.dynamic
+            .entry(type_id)
+            .or_insert_with(|| Box::new(SparseSet::<T>::with_capacity(capacity)));
+        self.reflect_accessors.insert(
+            type_id,
+            ReflectAccessor {
+                get_fn: Self::get_reflect_from_storage::<T>,
+                get_mut_fn: Self::get_reflect_mut_from_storage::<T>,
+                contains_fn: |storage, entity| {
+                    storage
+                        .as_any()
+                        .downcast_ref::<SparseSet<T>>()
+                        .is_some_and(|s| s.contains(entity))
+                },
+            },
+        );
     }
 }

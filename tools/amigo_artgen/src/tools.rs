@@ -259,7 +259,7 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_artgen_get_defaults".into(),
-            description: "Get art generation defaults from amigo.toml [art] section".into(),
+            description: "Get project art generation defaults from amigo.toml".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -270,12 +270,27 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_artgen_set_defaults".into(),
-            description: "Save art generation defaults to amigo.toml [art] section".into(),
+            description: "Save art generation defaults to amigo.toml [art] section. \
+                Merges with existing values. Use after asking the user for preferences."
+                .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "project_dir": { "type": "string", "description": "Path to the project directory" },
-                    "defaults": { "type": "object", "description": "Key-value pairs to save (e.g. default_sprite_size, default_style, default_palette, color_depth)" }
+                    "defaults": {
+                        "type": "object",
+                        "description": "Key-value pairs to merge into [art] section",
+                        "properties": {
+                            "default_sprite_size": { "type": "integer", "description": "Default sprite size in pixels (e.g., 16, 32, 64)" },
+                            "default_style": { "type": "string", "description": "Default art style name" },
+                            "default_palette": { "type": "string", "description": "Default color palette (e.g., 'nes', 'snes', 'gameboy')" },
+                            "color_depth": { "type": "integer", "description": "Color depth (8, 16, 24, 32)" },
+                            "tileset_tile_size": { "type": "integer", "description": "Default tileset tile size" },
+                            "background_style": { "type": "string", "description": "Default background style (e.g., 'static', 'parallax')" },
+                            "add_outline": { "type": "boolean", "description": "Add pixel outline to sprites" },
+                            "outline_color": { "type": "string", "description": "Outline color as hex (#RRGGBB)" }
+                        }
+                    }
                 },
                 "required": ["project_dir", "defaults"]
             }),
@@ -305,40 +320,80 @@ pub fn dispatch_tool_with_defaults(
         "amigo_artgen_generate_sprite" => {
             let p: GenerateSpriteParams = serde_json::from_value(params)?;
 
-            // Resolve defaults: explicit param → amigo.toml → hardcoded
+            // Resolve defaults: explicit param → amigo.toml → style → hardcoded
             let defaults = project_dir.map(load_art_defaults);
-            let size = p.size.unwrap_or_else(|| {
-                let s = defaults
-                    .as_ref()
-                    .and_then(|d| d.default_sprite_size)
-                    .unwrap_or(64);
+            let style_def = crate::StyleDef::find(&p.style);
+            let mut missing: Vec<String> = Vec::new();
+
+            let size = if let Some(s) = p.size {
+                s
+            } else if let Some(s) = defaults.as_ref().and_then(|d| d.default_sprite_size) {
                 [s, s]
-            });
+            } else {
+                let s = style_def
+                    .as_ref()
+                    .map(|sd| [sd.default_size.0, sd.default_size.1])
+                    .unwrap_or([32, 32]);
+                missing.push("sprite_size".into());
+                s
+            };
+
+            if defaults
+                .as_ref()
+                .and_then(|d| d.default_palette.as_ref())
+                .is_none()
+            {
+                missing.push("palette".into());
+            }
+
             let _variants = p.variants.unwrap_or(1);
 
             // In production: build workflow, send to ComfyUI, post-process, save
             let _ = size; // used when building the actual ComfyUI workflow
-            Ok(serde_json::to_value(GenerateResult {
+            let result = GenerateResult {
                 paths: vec![format!(
                     "assets/generated/sprites/{}_v1.png",
                     sanitize(&p.prompt)
                 )],
                 preview: None,
-            })?)
+            };
+
+            let mut response = serde_json::to_value(result)?;
+            if !missing.is_empty() {
+                response["hints"] = serde_json::json!({
+                    "defaults_missing": missing,
+                    "suggestion": "Run amigo_artgen_set_defaults to save project defaults"
+                });
+            }
+            Ok(response)
         }
         "amigo_artgen_generate_tileset" => {
             let p: GenerateTilesetParams = serde_json::from_value(params)?;
             let defaults = project_dir.map(load_art_defaults);
-            let _tile_size = p.tile_size.unwrap_or_else(|| {
-                defaults
-                    .as_ref()
-                    .and_then(|d| d.tileset_tile_size)
-                    .unwrap_or(16)
-            });
-            Ok(serde_json::to_value(TilesetResult {
+            let mut missing: Vec<String> = Vec::new();
+
+            let _tile_size = if let Some(ts) = p.tile_size {
+                ts
+            } else if let Some(ts) = defaults.as_ref().and_then(|d| d.tileset_tile_size) {
+                ts
+            } else {
+                missing.push("tileset_tile_size".into());
+                16
+            };
+
+            let result = TilesetResult {
                 path: format!("assets/generated/tilesets/{}.png", sanitize(&p.theme)),
                 tiles: p.tiles,
-            })?)
+            };
+
+            let mut response = serde_json::to_value(result)?;
+            if !missing.is_empty() {
+                response["hints"] = serde_json::json!({
+                    "defaults_missing": missing,
+                    "suggestion": "Run amigo_artgen_set_defaults to save project defaults"
+                });
+            }
+            Ok(response)
         }
         "amigo_artgen_generate_spritesheet" => {
             let p: GenerateSpritesheetParams = serde_json::from_value(params)?;
@@ -412,9 +467,11 @@ pub fn dispatch_tool_with_defaults(
         }
         "amigo_artgen_set_defaults" => {
             let p: SetDefaultsParams = serde_json::from_value(params)?;
-            save_art_defaults(std::path::Path::new(&p.project_dir), &p.defaults);
-            let defaults = load_art_defaults(std::path::Path::new(&p.project_dir));
-            Ok(serde_json::to_value(defaults).unwrap_or_default())
+            let project_path = std::path::Path::new(&p.project_dir);
+            if let Err(e) = save_art_defaults(project_path, &p.defaults) {
+                return Ok(serde_json::json!({ "saved": false, "error": e }));
+            }
+            Ok(serde_json::json!({ "saved": true, "path": "amigo.toml" }))
         }
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
@@ -513,7 +570,59 @@ mod tests {
         );
         assert!(result.is_ok());
         let v = result.unwrap();
-        assert_eq!(v["default_sprite_size"], 32);
-        assert_eq!(v["default_style"], "caribbean");
+        assert_eq!(v["saved"], true);
+        assert_eq!(v["path"], "amigo.toml");
+
+        // Verify they were actually saved
+        let get_result = dispatch_tool(
+            "amigo_artgen_get_defaults",
+            serde_json::json!({ "project_dir": dir.path().to_str().unwrap() }),
+        )
+        .unwrap();
+        assert_eq!(get_result["default_sprite_size"], 32);
+        assert_eq!(get_result["default_style"], "caribbean");
+    }
+
+    #[test]
+    fn dispatch_generate_sprite_defaults_missing_hint() {
+        // No amigo.toml -> falls back to hardcoded -> should have defaults_missing
+        let result = dispatch_tool(
+            "amigo_artgen_generate_sprite",
+            serde_json::json!({
+                "prompt": "test sprite",
+                "style": "caribbean"
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        let hints = &v["hints"];
+        assert!(hints["defaults_missing"].is_array());
+        assert!(hints["suggestion"]
+            .as_str()
+            .unwrap()
+            .contains("amigo_artgen_set_defaults"));
+    }
+
+    #[test]
+    fn dispatch_generate_sprite_no_hint_with_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("amigo.toml"),
+            "[art]\ndefault_sprite_size = 32\ndefault_palette = \"nes\"\n",
+        )
+        .unwrap();
+
+        let result = dispatch_tool_with_defaults(
+            "amigo_artgen_generate_sprite",
+            serde_json::json!({
+                "prompt": "test sprite",
+                "style": "caribbean"
+            }),
+            Some(dir.path()),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        // All defaults are provided, so no hints
+        assert!(v.get("hints").is_none());
     }
 }

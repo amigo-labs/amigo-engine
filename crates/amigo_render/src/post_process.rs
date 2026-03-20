@@ -1,3 +1,4 @@
+use amigo_core::ColorBlindMode;
 use serde::{Deserialize, Serialize};
 use wgpu;
 use wgpu::util::DeviceExt;
@@ -37,6 +38,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 ///   bit 2 (4)  - Vignette
 ///   bit 3 (8)  - Color Grading
 ///   bit 4 (16) - CRT Filter
+///   bit 5 (32) - Colorblind Filter
 const POST_PROCESS_FRAGMENT_SHADER: &str = r#"
 struct PostUniforms {
     // Bloom
@@ -59,9 +61,10 @@ struct PostUniforms {
     // Screen dimensions for resolution-dependent effects
     screen_width: f32,
     screen_height: f32,
+    // Colorblind filter
+    colorblind_mode: u32,      // 0=none, 1=protanopia, 2=deuteranopia, 3=tritanopia, 4=achromatopsia
+    colorblind_strength: f32,  // 0.0..1.0 blend with original
     _pad0: f32,
-    _pad1: f32,
-    _pad2: f32,
 };
 
 @group(0) @binding(0) var t_scene: texture_2d<f32>;
@@ -121,6 +124,57 @@ fn apply_color_grading(color: vec3<f32>) -> vec3<f32> {
     return clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+// ---------- colorblind correction (Machado et al. 2009) ----------
+
+/// Protanopia (red-blind) correction matrix.
+fn daltonize_protanopia(c: vec3<f32>) -> vec3<f32> {
+    let m = mat3x3<f32>(
+        vec3<f32>(0.567, 0.558, 0.0),
+        vec3<f32>(0.433, 0.442, 0.242),
+        vec3<f32>(0.0,   0.0,   0.758),
+    );
+    return m * c;
+}
+
+/// Deuteranopia (red-green) correction matrix.
+fn daltonize_deuteranopia(c: vec3<f32>) -> vec3<f32> {
+    let m = mat3x3<f32>(
+        vec3<f32>(0.625, 0.7, 0.0),
+        vec3<f32>(0.375, 0.3, 0.3),
+        vec3<f32>(0.0,   0.0, 0.7),
+    );
+    return m * c;
+}
+
+/// Tritanopia (blue-yellow) correction matrix.
+fn daltonize_tritanopia(c: vec3<f32>) -> vec3<f32> {
+    let m = mat3x3<f32>(
+        vec3<f32>(0.95, 0.0,  0.0),
+        vec3<f32>(0.05, 0.433, 0.475),
+        vec3<f32>(0.0,  0.567, 0.525),
+    );
+    return m * c;
+}
+
+/// Achromatopsia (monochromacy) — convert to grayscale via luminance.
+fn daltonize_achromatopsia(c: vec3<f32>) -> vec3<f32> {
+    let lum = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return vec3<f32>(lum, lum, lum);
+}
+
+/// Apply colorblind correction based on mode uniform, blended by strength.
+fn apply_colorblind(color: vec3<f32>) -> vec3<f32> {
+    var corrected: vec3<f32>;
+    switch params.colorblind_mode {
+        case 1u: { corrected = daltonize_protanopia(color); }
+        case 2u: { corrected = daltonize_deuteranopia(color); }
+        case 3u: { corrected = daltonize_tritanopia(color); }
+        case 4u: { corrected = daltonize_achromatopsia(color); }
+        default: { return color; }
+    }
+    return mix(color, corrected, params.colorblind_strength);
+}
+
 /// CRT filter: scanlines + barrel distortion.
 fn apply_crt_distortion(uv: vec2<f32>) -> vec2<f32> {
     let centered = uv - vec2<f32>(0.5);
@@ -178,6 +232,12 @@ fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
         color = apply_color_grading(color);
     }
 
+    // Colorblind correction (after grading, before CRT).
+    let colorblind_enabled = (params.enabled_flags & 32u) != 0u;
+    if colorblind_enabled {
+        color = apply_colorblind(color);
+    }
+
     // CRT scanlines (applied after all other effects).
     if crt_enabled {
         color = apply_crt_scanlines(color, working_uv);
@@ -217,6 +277,13 @@ pub enum PostEffect {
         scanline_intensity: f32,
         curvature: f32,
     },
+    /// Colorblind correction filter (Daltonization).
+    ///
+    /// Applied after color grading but before CRT scanlines.
+    ColorblindFilter {
+        mode: ColorBlindMode,
+        strength: f32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +298,7 @@ pub enum PostEffect {
 ///   bit 2 (4)  - Vignette
 ///   bit 3 (8)  - Color Grading
 ///   bit 4 (16) - CRT Filter
+///   bit 5 (32) - Colorblind Filter
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PostProcessUniforms {
@@ -247,9 +315,11 @@ pub struct PostProcessUniforms {
     pub enabled_flags: u32,
     pub screen_width: f32,
     pub screen_height: f32,
+    /// 0=none, 1=protanopia, 2=deuteranopia, 3=tritanopia, 4=achromatopsia.
+    pub colorblind_mode: u32,
+    /// Blend strength for colorblind correction (0.0..1.0).
+    pub colorblind_strength: f32,
     pub _pad0: f32,
-    pub _pad1: f32,
-    pub _pad2: f32,
 }
 
 impl PostProcessUniforms {
@@ -269,9 +339,9 @@ impl PostProcessUniforms {
             enabled_flags: 0,
             screen_width: width as f32,
             screen_height: height as f32,
+            colorblind_mode: 0,
+            colorblind_strength: 0.0,
             _pad0: 0.0,
-            _pad1: 0.0,
-            _pad2: 0.0,
         };
 
         for effect in effects {
@@ -313,6 +383,17 @@ impl PostProcessUniforms {
                     u.enabled_flags |= 16;
                     u.scanline_intensity = *scanline_intensity;
                     u.curvature = *curvature;
+                }
+                PostEffect::ColorblindFilter { mode, strength } => {
+                    u.enabled_flags |= 32;
+                    u.colorblind_mode = match mode {
+                        ColorBlindMode::None => 0,
+                        ColorBlindMode::Protanopia => 1,
+                        ColorBlindMode::Deuteranopia => 2,
+                        ColorBlindMode::Tritanopia => 3,
+                        ColorBlindMode::Achromatopsia => 4,
+                    };
+                    u.colorblind_strength = strength.clamp(0.0, 1.0);
                 }
             }
         }

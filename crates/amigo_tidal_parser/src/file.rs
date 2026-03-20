@@ -26,15 +26,15 @@ pub enum FileError {
 }
 
 /// Load a `.amigo.tidal` file into a Composition.
-pub fn load(path: &Path) -> Result<Composition, FileError> {
-    let content = std::fs::read_to_string(path)?;
+pub fn load(path: impl AsRef<Path>) -> Result<Composition, FileError> {
+    let content = std::fs::read_to_string(path.as_ref())?;
     parse_amigo_tidal(&content)
 }
 
 /// Save a Composition to `.amigo.tidal` format.
-pub fn save(composition: &Composition, path: &Path) -> Result<(), FileError> {
+pub fn save(composition: &Composition, path: impl AsRef<Path>) -> Result<(), FileError> {
     let content = format_amigo_tidal(composition);
-    std::fs::write(path, content)?;
+    std::fs::write(path.as_ref(), content)?;
     Ok(())
 }
 

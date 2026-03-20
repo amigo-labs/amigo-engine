@@ -101,6 +101,12 @@ pub struct PakWriter {
     entries: Vec<(String, AssetKind, AssetFlags, Vec<u8>)>,
 }
 
+impl Default for PakWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PakWriter {
     pub fn new() -> Self {
         Self {

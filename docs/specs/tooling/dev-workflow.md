@@ -294,3 +294,126 @@ ApiCommand::DevSaveSnapshot => {
 - Whether snapshot format should be versioned for forward compatibility
 - Maximum snapshot file size before warning
 - Whether to auto-detect `mold`/`lld` and suggest installation if not found
+
+## Acceptance Criteria
+
+### API Completeness
+
+#### CLI (`amigo_cli`)
+- [ ] `amigo dev` subcommand exists and is runnable
+- [ ] `amigo dev --port <PORT>` accepts an optional port flag
+- [ ] `amigo dev` implies `--api` (engine starts with API server enabled)
+
+#### Engine Flag
+- [ ] `amigo run --restore-snapshot <PATH>` flag is accepted and parsed
+- [ ] Engine loads the specified snapshot file on startup when flag is present
+
+#### JSON-RPC Methods (`amigo_api`)
+- [ ] `dev.save_snapshot` method exists and returns `{"path": ".amigo_dev/snapshot.ron"}`
+- [ ] `dev.snapshot_status` method exists and returns `{"has_snapshot": bool, "scene": String, "tick": u64}`
+- [ ] `handle_dev_save_snapshot` queues `ApiCommand::DevSaveSnapshot` following existing `queue_cmd` pattern
+- [ ] `handle_dev_snapshot_status` reads snapshot metadata without loading full state
+
+#### MCP Tools
+- [ ] `amigo_dev_rebuild()` MCP tool exists and triggers a manual rebuild
+- [ ] `amigo_dev_status()` MCP tool exists and returns build status (`idle`, `building`, `error`)
+- [ ] `amigo_dev_snapshot()` MCP tool exists and forces a snapshot without rebuild
+
+#### DevSnapshot Struct
+- [ ] `DevSnapshot` struct exists with fields: `scene_id: String`, `tick: u64`, `camera: CameraSnapshot`, `elapsed_secs: f64`, `game_state: Option<Vec<u8>>`, `audio_state: Option<AudioSnapshot>`
+- [ ] `DevSnapshot` derives `Serialize, Deserialize`
+- [ ] `DevSnapshot::load(path: &Path)` method exists
+- [ ] `DevSnapshot::save(path: &str)` method exists
+
+#### CameraSnapshot Struct
+- [ ] `CameraSnapshot` struct exists with fields: `x: f32`, `y: f32`, `zoom: f32`
+- [ ] `CameraSnapshot` derives `Serialize, Deserialize`
+- [ ] `CameraSnapshot::from(&Camera)` conversion exists
+
+#### AudioSnapshot Struct
+- [ ] `AudioSnapshot` struct exists with fields: `music_track: Option<String>`, `music_position_secs: f64`, `music_volume: f32`
+- [ ] `AudioSnapshot` derives `Serialize, Deserialize`
+
+#### Game Trait Extension
+- [ ] `Game::on_dev_restore(&mut self, ctx: &mut GameContext, snapshot: &DevSnapshot)` method exists with default no-op implementation
+- [ ] `Game::on_dev_snapshot(&self, ctx: &GameContext) -> Option<Vec<u8>>` method exists with default `None` implementation
+
+### Behavior
+
+#### Dev Loop — Normal Flow
+- [ ] `amigo dev` starts the engine process via `cargo run --features api -- --api`
+- [ ] `amigo dev` waits for the API server TCP port to be ready before proceeding
+- [ ] File watcher monitors `src/**/*.rs` and `Cargo.toml` using `notify` crate
+- [ ] File watcher debounces changes with a 300ms delay after the last file change
+- [ ] File watcher ignores the `target/` directory
+- [ ] On file change: sends `dev.save_snapshot` via JSON-RPC to running engine
+- [ ] Engine serializes scene ID, camera, tick, and entity state to `.amigo_dev/snapshot.ron`
+- [ ] After snapshot: sends `engine.quit` via JSON-RPC
+- [ ] After engine quits: runs `cargo build --features api`
+- [ ] On build success: relaunches engine with `--restore-snapshot .amigo_dev/snapshot.ron`
+- [ ] On build failure: prints compiler errors to terminal, engine keeps running with old code
+- [ ] On build failure: prints "Build failed. Fix errors and save again."
+- [ ] Only one build runs at a time; if files change during build, a rebuild is queued after completion
+
+#### State Restore
+- [ ] On startup with `--restore-snapshot`, engine loads `DevSnapshot` from specified path
+- [ ] Splash screen is skipped during restore (`SplashConfig.enabled = false` temporarily)
+- [ ] Engine initializes normally and calls `Game::init()` before applying snapshot
+- [ ] After `Game::init()`, snapshot is applied: scene set to `snapshot.scene_id`
+- [ ] Camera position and zoom are restored from `CameraSnapshot`
+- [ ] Game tick and elapsed time are restored
+- [ ] Music track resumes at saved position if `audio_state` is present
+- [ ] `Game::on_dev_restore(ctx, &snapshot)` is called if the game implements it
+- [ ] Snapshot file is deleted after successful restore
+
+#### Terminal Output
+- [ ] `[amigo dev] Watching src/ for changes...` printed on startup
+- [ ] `[amigo dev] Change detected: <filename>` printed on file change
+- [ ] `[amigo dev] Saving snapshot...` printed before snapshot
+- [ ] `[amigo dev] Building... (cargo build)` printed before build
+- [ ] `[amigo dev] Build OK (<time>s). Restarting...` printed on build success
+- [ ] `[amigo dev] Engine ready. Snapshot restored (scene: <id>, tick: <n>)` printed on restore
+- [ ] Terminal output uses colored status messages
+
+#### MCP Reconnection
+- [ ] `amigo_mcp` TCP connection to engine drops on engine quit
+- [ ] `amigo_mcp` retries connection with exponential backoff (100ms, 200ms, 400ms, 800ms, 1.6s)
+- [ ] Max retry time is 10 seconds
+- [ ] MCP stdio connection to Claude Code stays alive throughout (only TCP reconnects)
+
+#### Build Optimization
+- [ ] `amigo new` generates `[profile.dev]` with `opt-level = 1`
+- [ ] `amigo new` generates `[profile.dev.package."*"]` with `opt-level = 2`
+
+#### VS Code Integration
+- [ ] `amigo new` generates `.vscode/tasks.json` with `amigo dev` task
+- [ ] Task uses `$rustc` problem matcher for compiler error integration
+- [ ] Task is configured as `isBackground: true`
+- [ ] Task is set as the default build task (`Ctrl+Shift+B`)
+
+#### Edge Cases
+- [ ] If `amigo.toml` does not exist, `amigo dev` reports an error and exits
+- [ ] If the API server port is already in use, `amigo dev` reports an error
+- [ ] If the engine process crashes during snapshot, the old code continues to run
+- [ ] If `--restore-snapshot` path does not exist or is corrupt, engine starts normally without snapshot (graceful fallback)
+- [ ] If `Game::on_dev_snapshot` returns `None`, `game_state` field in snapshot is `None`
+
+### Quality Gates
+- [ ] `cargo check --workspace` compiles without errors
+- [ ] `cargo test --workspace` — all tests pass
+- [ ] `cargo clippy --workspace -- -D warnings` — no warnings
+- [ ] `cargo fmt --all --check` — correctly formatted
+- [ ] New public API has at least one test per method
+- [ ] No `unwrap()` in library code
+- [ ] No `todo!()` or `unimplemented!()` in committed code
+
+### Convention Compliance
+- [ ] CLI crate is `amigo_cli` (amigo_ prefix, snake_case)
+- [ ] API crate is `amigo_api` (amigo_ prefix, snake_case)
+- [ ] Engine crate is `amigo_engine` (amigo_ prefix, snake_case)
+- [ ] Logging uses `tracing` crate with structured logging for all dev loop status messages
+- [ ] Error handling uses `thiserror` for error types (e.g., snapshot load/save errors)
+- [ ] Snapshot serialization uses RON format (consistent with engine conventions)
+- [ ] Config files follow kebab-case naming (`.amigo_dev/snapshot.ron`)
+- [ ] No `unwrap()` in library code; all I/O operations return `Result`
+- [ ] File watcher uses `notify` crate (same as existing asset hot-reload)

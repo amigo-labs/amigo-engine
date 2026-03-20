@@ -5,6 +5,7 @@ edition.workspace = true
 
 [features]
 tracy = ["dep:tracing-tracy", "dep:tracy-client"]
+builtin_profiler = []
 
 [dependencies]
 amigo_core = { workspace = true }

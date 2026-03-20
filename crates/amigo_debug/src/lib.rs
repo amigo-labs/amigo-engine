@@ -2,6 +2,15 @@ use amigo_core::Color;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+#[cfg(feature = "builtin_profiler")]
+mod profiler;
+
+#[cfg(feature = "builtin_profiler")]
+pub use profiler::{
+    FrameProfile, FrameProfiler, ProfileSpan, ProfilerConfig, SpanGuard, SpanId, TimelineBar,
+    TimelineDrawData, TimelineLabel, TimelineRenderer, TimelineView,
+};
+
 /// Debug overlay state.
 pub struct DebugOverlay {
     pub visible: bool,
@@ -33,6 +42,18 @@ pub struct DebugOverlay {
     // Per-system profiling
     system_timings: BTreeMap<String, SystemTiming>,
     active_measurement: Option<(String, Instant)>,
+
+    // Built-in profiler integration
+    #[cfg(feature = "builtin_profiler")]
+    profiler: FrameProfiler,
+    #[cfg(feature = "builtin_profiler")]
+    active_profiler_span: Option<SpanId>,
+    /// Whether the timeline view is visible (toggled via F9).
+    #[cfg(feature = "builtin_profiler")]
+    pub show_timeline: bool,
+    /// Timeline view settings.
+    #[cfg(feature = "builtin_profiler")]
+    pub timeline_view: TimelineView,
 }
 
 /// Timing data for a single system.
@@ -96,6 +117,14 @@ impl DebugOverlay {
             fps_frame_count: 0,
             system_timings: BTreeMap::new(),
             active_measurement: None,
+            #[cfg(feature = "builtin_profiler")]
+            profiler: FrameProfiler::new(ProfilerConfig::default()),
+            #[cfg(feature = "builtin_profiler")]
+            active_profiler_span: None,
+            #[cfg(feature = "builtin_profiler")]
+            show_timeline: false,
+            #[cfg(feature = "builtin_profiler")]
+            timeline_view: TimelineView::default(),
         }
     }
 
@@ -137,11 +166,28 @@ impl DebugOverlay {
     // -- Per-system profiling ------------------------------------------------
 
     /// Start timing a named system. Call before the system runs.
+    ///
+    /// When the `builtin_profiler` feature is enabled, this also opens a
+    /// profiler span that feeds into the timeline view.
     pub fn begin_system(&mut self, name: &str) {
         self.active_measurement = Some((name.to_string(), Instant::now()));
+
+        #[cfg(feature = "builtin_profiler")]
+        {
+            // SAFETY: system names in the engine are string literals, but the
+            // public API accepts `&str`. We leak a tiny amount per unique name
+            // to satisfy the `&'static str` requirement. In practice the set of
+            // system names is small and fixed.
+            let static_name: &'static str = leak_name(name);
+            let span_id = self.profiler.begin_span(static_name);
+            self.active_profiler_span = Some(span_id);
+        }
     }
 
     /// End timing the current system. Call after the system runs.
+    ///
+    /// When the `builtin_profiler` feature is enabled, this also closes the
+    /// corresponding profiler span.
     pub fn end_system(&mut self) {
         if let Some((name, start)) = self.active_measurement.take() {
             let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -149,6 +195,13 @@ impl DebugOverlay {
                 .entry(name)
                 .or_insert_with(SystemTiming::new)
                 .record(elapsed_ms);
+        }
+
+        #[cfg(feature = "builtin_profiler")]
+        {
+            if let Some(span_id) = self.active_profiler_span.take() {
+                self.profiler.end_span(span_id);
+            }
         }
     }
 
@@ -224,6 +277,77 @@ impl DebugOverlay {
 
         lines
     }
+
+    // -- Built-in profiler integration ---------------------------------------
+
+    /// Begin a profiler frame. Call at the very start of the engine frame loop.
+    ///
+    /// This is a no-op when the `builtin_profiler` feature is not enabled.
+    #[cfg(feature = "builtin_profiler")]
+    pub fn begin_profiler_frame(&mut self, frame_number: u64) {
+        self.profiler.begin_frame(frame_number);
+    }
+
+    /// End a profiler frame. Call at the very end of the engine frame loop.
+    ///
+    /// This is a no-op when the `builtin_profiler` feature is not enabled.
+    #[cfg(feature = "builtin_profiler")]
+    pub fn end_profiler_frame(&mut self) {
+        self.profiler.end_frame();
+    }
+
+    /// Access the underlying `FrameProfiler`.
+    #[cfg(feature = "builtin_profiler")]
+    pub fn profiler(&self) -> &FrameProfiler {
+        &self.profiler
+    }
+
+    /// Mutably access the underlying `FrameProfiler`.
+    #[cfg(feature = "builtin_profiler")]
+    pub fn profiler_mut(&mut self) -> &mut FrameProfiler {
+        &mut self.profiler
+    }
+
+    /// Toggle the timeline view visibility.
+    #[cfg(feature = "builtin_profiler")]
+    pub fn toggle_timeline(&mut self) {
+        self.show_timeline = !self.show_timeline;
+    }
+
+    /// Render timeline draw data for the currently selected frame.
+    ///
+    /// Returns `None` if the timeline is not visible, the profiler is disabled,
+    /// or there is no frame data to display.
+    #[cfg(feature = "builtin_profiler")]
+    pub fn timeline_draw_data(
+        &self,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> Option<TimelineDrawData> {
+        if !self.show_timeline {
+            return None;
+        }
+
+        let history = self.profiler.history();
+        if history.is_empty() {
+            return None;
+        }
+
+        // Select the frame based on offset from latest.
+        let index = if self.timeline_view.selected_frame_offset >= history.len() {
+            0
+        } else {
+            history.len() - 1 - self.timeline_view.selected_frame_offset
+        };
+
+        let profile = &history[index];
+        Some(TimelineRenderer::render(
+            profile,
+            &self.timeline_view,
+            viewport_width,
+            viewport_height,
+        ))
+    }
 }
 
 impl Default for DebugOverlay {
@@ -280,6 +404,42 @@ pub fn init_logging() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Intern a system name as a `&'static str`.
+///
+/// Uses a global set to avoid leaking duplicate names. The number of unique
+/// system names in a typical engine is small (< 100), so the memory cost is
+/// negligible.
+#[cfg(feature = "builtin_profiler")]
+fn leak_name(name: &str) -> &'static str {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
+    static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+
+    let mut guard = match INTERNED.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    let set = guard.get_or_insert_with(HashSet::new);
+
+    // Check if we already interned this name.
+    for &interned in set.iter() {
+        if interned == name {
+            return interned;
+        }
+    }
+
+    // Leak a new copy.
+    let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+    set.insert(leaked);
+    leaked
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,5 +471,58 @@ mod tests {
         }
         let lines = overlay.overlay_lines();
         assert!(!lines.is_empty());
+    }
+
+    #[cfg(feature = "builtin_profiler")]
+    #[test]
+    fn overlay_profiler_integration() {
+        let mut overlay = DebugOverlay::new();
+        overlay.begin_profiler_frame(1);
+        overlay.begin_system("test_system");
+        overlay.end_system();
+        overlay.end_profiler_frame();
+
+        let frame = overlay.profiler().last_frame().expect("should have frame");
+        assert_eq!(frame.frame_number, 1);
+        assert_eq!(frame.spans.len(), 1);
+        assert_eq!(frame.spans[0].name, "test_system");
+
+        // SystemTiming should also be updated.
+        assert!(overlay.system_timings.contains_key("test_system"));
+    }
+
+    #[cfg(feature = "builtin_profiler")]
+    #[test]
+    fn overlay_toggle_timeline() {
+        let mut overlay = DebugOverlay::new();
+        assert!(!overlay.show_timeline);
+        overlay.toggle_timeline();
+        assert!(overlay.show_timeline);
+        overlay.toggle_timeline();
+        assert!(!overlay.show_timeline);
+    }
+
+    #[cfg(feature = "builtin_profiler")]
+    #[test]
+    fn timeline_draw_data_returns_none_when_hidden() {
+        let overlay = DebugOverlay::new();
+        assert!(overlay.timeline_draw_data(800.0, 600.0).is_none());
+    }
+
+    #[cfg(feature = "builtin_profiler")]
+    #[test]
+    fn timeline_draw_data_returns_some_when_visible() {
+        let mut overlay = DebugOverlay::new();
+        overlay.show_timeline = true;
+
+        overlay.begin_profiler_frame(1);
+        overlay.begin_system("physics");
+        overlay.end_system();
+        overlay.end_profiler_frame();
+
+        let data = overlay.timeline_draw_data(800.0, 600.0);
+        assert!(data.is_some());
+        let draw_data = data.expect("should have draw data");
+        assert!(!draw_data.bars.is_empty());
     }
 }

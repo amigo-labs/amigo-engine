@@ -1,12 +1,15 @@
 //! City-builder gametype: zoning, resource flow, road networks, happiness,
 //! buildings, disasters, and statistics overlays.
 
+use crate::agents::{NeedType, Needs};
 use crate::color::Color;
+use crate::ecs::EntityId;
 use crate::math::IVec2;
-use crate::pathfinding::FlowField;
+use crate::pathfinding::{FlowField, Walkable};
 use crate::rect::Rect;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::BinaryHeap;
 
 // ---------------------------------------------------------------------------
 // GridPos alias
@@ -134,16 +137,37 @@ impl ResourceFlow {
         self.edges.retain(|e| e.from != id && e.to != id);
     }
 
-    /// Connect two nodes with an edge. The road path is left empty (would be
-    /// computed via `RoadNetwork::shortest_path` in the full engine).
-    pub fn connect(&mut self, from: FlowNodeId, to: FlowNodeId, _road: &RoadNetwork) {
+    /// Connect two nodes with an edge. Computes a cached road path via A* and
+    /// sets `max_throughput` proportional to the path length.
+    pub fn connect(&mut self, from: FlowNodeId, to: FlowNodeId, road: &RoadNetwork) {
+        let from_pos = self.nodes.iter().find(|n| n.id == from).map(|n| n.position);
+        let to_pos = self.nodes.iter().find(|n| n.id == to).map(|n| n.position);
+
+        let (road_path, throughput) = match (from_pos, to_pos) {
+            (Some(a), Some(b)) => match road.shortest_path(a, b) {
+                Some(path) => {
+                    // Throughput inversely proportional to path length (longer = slower).
+                    let tp = (20_i32).min(50 / (path.len() as i32).max(1));
+                    (path, tp)
+                }
+                None => (Vec::new(), 10),
+            },
+            _ => (Vec::new(), 10),
+        };
+
         self.edges.push(FlowEdge {
             from,
             to,
-            max_throughput: 10,
+            max_throughput: throughput,
             current_throughput: 0,
-            road_path: Vec::new(),
+            road_path,
         });
+    }
+
+    /// Called when a road tile changes. Disconnects edges whose cached paths
+    /// passed through the changed tile, forcing reconnection via new topology.
+    pub fn on_road_change(&mut self, changed_pos: GridPos) {
+        self.edges.retain(|e| !e.road_path.contains(&changed_pos));
     }
 
     /// Disconnect two nodes.
@@ -418,6 +442,73 @@ impl ZoneSystem {
         }
         result
     }
+
+    /// Attempt to grow a building in a zone. Called periodically by the
+    /// simulation. `demand` is a 0.0..1.0 value indicating how badly new
+    /// buildings of this zone type are needed.
+    ///
+    /// Density progression: density starts at 1 (low-rise). When demand > 0.5
+    /// a mid-rise (density 2) may spawn instead. When demand > 0.8, high-rise
+    /// (density 3) can appear. Higher density buildings have larger capacity.
+    pub fn try_grow(
+        &mut self,
+        zone: ZoneType,
+        demand: f32,
+        roads: &RoadNetwork,
+        _registry: &BuildingRegistry,
+    ) -> Option<ZoneBuilding> {
+        if demand <= 0.0 {
+            return None;
+        }
+
+        let candidates = self.growable_tiles(zone, roads);
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // Pick the first growable tile (deterministic; a real game would add
+        // randomness or scoring based on land value / happiness).
+        let pos = candidates[0];
+
+        // Density progression based on demand.
+        let density: u8 = if demand > 0.8 {
+            3
+        } else if demand > 0.5 {
+            2
+        } else {
+            1
+        };
+
+        let capacity = match density {
+            1 => match zone {
+                ZoneType::Residential => 4,
+                ZoneType::Commercial => 2,
+                ZoneType::Industrial => 3,
+                ZoneType::Special(_) => 2,
+            },
+            2 => match zone {
+                ZoneType::Residential => 12,
+                ZoneType::Commercial => 8,
+                ZoneType::Industrial => 10,
+                ZoneType::Special(_) => 6,
+            },
+            _ => match zone {
+                ZoneType::Residential => 30,
+                ZoneType::Commercial => 20,
+                ZoneType::Industrial => 25,
+                ZoneType::Special(_) => 15,
+            },
+        };
+
+        Some(ZoneBuilding {
+            zone,
+            position: pos,
+            size: (1, 1),
+            density,
+            capacity,
+            occupancy: 0,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +595,111 @@ impl RoadNetwork {
         self.idx(pos).map_or(0, |i| self.traffic[i])
     }
 
+    /// Increment traffic counter for a tile (called during agent movement).
+    pub fn record_traffic(&mut self, pos: GridPos) {
+        if let Some(i) = self.idx(pos) {
+            self.traffic[i] += 1;
+        }
+    }
+
+    /// Reset per-tick traffic counters (called at the start of each tick).
+    pub fn reset_traffic(&mut self) {
+        self.traffic.iter_mut().for_each(|t| *t = 0);
+    }
+
+    /// Find shortest road path between two points via A*.
+    /// Returns `None` if no path exists or positions are not on roads.
+    pub fn shortest_path(&self, from: GridPos, to: GridPos) -> Option<Vec<GridPos>> {
+        if !self.has_road(from) || !self.has_road(to) || !self.connected(from, to) {
+            return None;
+        }
+        if from == to {
+            return Some(vec![from]);
+        }
+
+        let idx = |p: GridPos| (p.y as u32 * self.width + p.x as u32) as usize;
+        let size = (self.width * self.height) as usize;
+        let mut g_score = vec![i32::MAX; size];
+        let mut came_from: Vec<Option<GridPos>> = vec![None; size];
+
+        g_score[idx(from)] = 0;
+
+        // (negative f-score for max-heap used as min-heap, pos)
+        let mut open = BinaryHeap::new();
+        let h = |p: GridPos| (p.x - to.x).abs() + (p.y - to.y).abs();
+        open.push(std::cmp::Reverse((h(from), 0i32, from)));
+
+        while let Some(std::cmp::Reverse((_f, g, cur))) = open.pop() {
+            if cur == to {
+                // Reconstruct path.
+                let mut path = vec![to];
+                let mut c = to;
+                while let Some(prev) = came_from[idx(c)] {
+                    path.push(prev);
+                    c = prev;
+                    if c == from {
+                        break;
+                    }
+                }
+                path.reverse();
+                return Some(path);
+            }
+            if g > g_score[idx(cur)] {
+                continue;
+            }
+            for &(dx, dy) in &[(0i32, 1i32), (0, -1), (1, 0), (-1, 0)] {
+                let nx = cur.x + dx;
+                let ny = cur.y + dy;
+                let next = GridPos::new(nx, ny);
+                if !self.has_road(next) {
+                    continue;
+                }
+                let ng = g + 1;
+                let ni = idx(next);
+                if ng < g_score[ni] {
+                    g_score[ni] = ng;
+                    came_from[ni] = Some(cur);
+                    open.push(std::cmp::Reverse((ng + h(next), ng, next)));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get or compute a flow field toward a destination. Cached until
+    /// `invalidate_cache()` is called (on road topology changes).
+    pub fn flow_field_to(&mut self, destination: GridPos) -> &FlowField {
+        if !self.flow_cache.contains_key(&destination) {
+            let road_walkable = RoadWalkable {
+                tiles: &self.tiles,
+                width: self.width,
+                height: self.height,
+            };
+            let field = FlowField::compute(destination, self.width, self.height, &road_walkable);
+            self.flow_cache.insert(destination, field);
+        }
+        self.flow_cache.get(&destination).unwrap()
+    }
+
+    /// All tiles in the same connected component as `pos`.
+    pub fn connected_component(&self, pos: GridPos) -> Vec<GridPos> {
+        let idx = match self.idx(pos) {
+            Some(i) if self.tiles[i] => i,
+            _ => return Vec::new(),
+        };
+        let label = self.components[idx];
+        let mut result = Vec::new();
+        for y in 0..self.height as i32 {
+            for x in 0..self.width as i32 {
+                let i = (y as u32 * self.width + x as u32) as usize;
+                if self.tiles[i] && self.components[i] == label {
+                    result.push(GridPos::new(x, y));
+                }
+            }
+        }
+        result
+    }
+
     // -- internal helpers ---------------------------------------------------
 
     /// BFS-based connected component labelling.
@@ -538,6 +734,23 @@ impl RoadNetwork {
                 }
             }
         }
+    }
+}
+
+/// Adapter that makes the road grid implement [`Walkable`] for flow field
+/// computation.
+struct RoadWalkable<'a> {
+    tiles: &'a [bool],
+    width: u32,
+    height: u32,
+}
+
+impl<'a> Walkable for RoadWalkable<'a> {
+    fn is_walkable(&self, x: i32, y: i32) -> bool {
+        if x < 0 || y < 0 || (x as u32) >= self.width || (y as u32) >= self.height {
+            return false;
+        }
+        self.tiles[(y as u32 * self.width + x as u32) as usize]
     }
 }
 
@@ -843,6 +1056,65 @@ impl BuildingRegistry {
             .filter(|b| b.category == category)
             .collect()
     }
+
+    /// Check if a building can be placed at a position. Validates that:
+    /// 1. The building footprint is within map bounds.
+    /// 2. All footprint tiles match the expected zone (or are unzoned for
+    ///    infrastructure/service buildings).
+    /// 3. At least one footprint tile is adjacent to a road.
+    pub fn can_place(
+        &self,
+        id: BuildingId,
+        pos: GridPos,
+        zones: &ZoneSystem,
+        roads: &RoadNetwork,
+    ) -> bool {
+        let def = match self.get(id) {
+            Some(d) => d,
+            None => return false,
+        };
+
+        let (w, h) = def.size;
+        let mut any_road_adjacent = false;
+
+        for dy in 0..h as i32 {
+            for dx in 0..w as i32 {
+                let tile = GridPos::new(pos.x + dx, pos.y + dy);
+
+                // Bounds check.
+                if tile.x < 0
+                    || tile.y < 0
+                    || (tile.x as u32) >= zones.width
+                    || (tile.y as u32) >= zones.height
+                {
+                    return false;
+                }
+
+                // Zone compatibility.
+                let zone = zones.zone_at(tile);
+                let compatible = match def.category {
+                    BuildingCategory::Residential => zone == Some(ZoneType::Residential),
+                    BuildingCategory::Commercial => zone == Some(ZoneType::Commercial),
+                    BuildingCategory::Industrial => zone == Some(ZoneType::Industrial),
+                    // Service, infrastructure, decoration can be placed on any
+                    // unzoned tile.
+                    _ => zone.is_none(),
+                };
+                if !compatible {
+                    return false;
+                }
+
+                // Road adjacency (4-connected from any footprint tile).
+                for &(nx, ny) in &[(0i32, 1i32), (0, -1), (1, 0), (-1, 0)] {
+                    if roads.has_road(GridPos::new(tile.x + nx, tile.y + ny)) {
+                        any_road_adjacent = true;
+                    }
+                }
+            }
+        }
+
+        any_road_adjacent
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,6 +1325,326 @@ impl StatisticsOverlay {
     /// Deactivate the current overlay.
     pub fn clear_overlay(&mut self) {
         self.active_overlay = None;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CitizenState / CitizenSeekTarget / Citizen / PopulationSim
+// ---------------------------------------------------------------------------
+
+/// What a citizen is currently seeking when in the `Seeking` state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CitizenSeekTarget {
+    /// Looking for a residence.
+    Home,
+    /// Looking for employment.
+    Job,
+    /// Looking for food.
+    Food,
+    /// Looking for leisure / fun.
+    Entertainment,
+}
+
+/// Current behavior state of a citizen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CitizenState {
+    /// Resting at home.
+    AtHome,
+    /// Travelling between locations via the road network.
+    Commuting,
+    /// Producing resources at their workplace.
+    Working,
+    /// Visiting a commercial zone (consuming Food resource).
+    Shopping,
+    /// Visiting a leisure building / park.
+    Leisure,
+    /// Actively searching for something.
+    Seeking(CitizenSeekTarget),
+}
+
+/// A single citizen in the agent-based population simulation.
+///
+/// Citizens are lightweight structs for high population counts. Only citizens
+/// near the camera are promoted to full ECS entities with sprites (see LOD
+/// Transition Protocol in the spec).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Citizen {
+    /// Unique entity id (used for ECS promotion when on-screen).
+    pub id: EntityId,
+    /// Home building node in the resource flow graph.
+    pub home: Option<FlowNodeId>,
+    /// Workplace building node in the resource flow graph.
+    pub workplace: Option<FlowNodeId>,
+    /// Agent needs from the engine Needs system.
+    pub needs: Needs,
+    /// Current behavior state.
+    pub state: CitizenState,
+    /// Age in simulation ticks (for birth/death cycle).
+    pub age: u32,
+}
+
+/// Agent-based population simulation using Utility AI.
+///
+/// Each citizen has [`Needs`] that decay over time. The tick function evaluates
+/// needs and transitions citizens between states (home, work, shopping,
+/// leisure) along the road network.
+pub struct PopulationSim {
+    /// All citizens in the city.
+    pub agents: Vec<Citizen>,
+    /// Birth rate modifier (higher = more births per tick).
+    pub birth_rate: f32,
+    /// Death rate modifier (higher = more deaths per tick).
+    pub death_rate: f32,
+    /// Global happiness above this threshold attracts immigrants.
+    pub immigration_threshold: f32,
+    /// Next entity id counter for newly spawned citizens.
+    next_entity_index: u32,
+}
+
+impl PopulationSim {
+    /// Create an empty population simulation with default rates.
+    pub fn new() -> Self {
+        Self {
+            agents: Vec::new(),
+            birth_rate: 0.001,
+            death_rate: 0.0005,
+            immigration_threshold: 0.5,
+            next_entity_index: 0,
+        }
+    }
+
+    /// Simulate one tick. Each citizen evaluates needs via Utility AI and
+    /// picks the highest-scoring action (go home, go to work, seek food, etc.).
+    ///
+    /// State transitions:
+    /// - **AtHome**: Comfort need satisfied. If Employment urgency is high,
+    ///   transition to Commuting toward workplace.
+    /// - **Working**: Employment need satisfied, earns Gold. If Hunger urgency
+    ///   is high, transition to Shopping.
+    /// - **Shopping**: Hunger need satisfied (consumes Food). Returns home when
+    ///   Comfort urgency rises.
+    /// - **Leisure**: Fun need satisfied. Returns home after.
+    /// - **Seeking(target)**: Agent is looking for a missing resource (home,
+    ///   job, food, entertainment). Transitions once found.
+    /// - **Commuting**: In transit. Transitions to destination state next tick.
+    pub fn tick(
+        &mut self,
+        happiness: &HappinessGrid,
+        model: &HappinessModel,
+        _roads: &RoadNetwork,
+        _resources: &ResourceFlow,
+    ) {
+        for citizen in &mut self.agents {
+            citizen.age += 1;
+
+            // Decay needs.
+            citizen.needs.tick();
+
+            // Utility-based state transitions.
+            let comfort_urgency = citizen
+                .needs
+                .values
+                .get(&NeedType::Comfort)
+                .map_or(0.0, |n| n.urgency());
+            let hunger_urgency = citizen
+                .needs
+                .values
+                .get(&NeedType::Hunger)
+                .map_or(0.0, |n| n.urgency());
+            let fun_urgency = citizen
+                .needs
+                .values
+                .get(&NeedType::Fun)
+                .map_or(0.0, |n| n.urgency());
+
+            // Check local happiness for the citizen's home tile.
+            let _local_happiness = citizen
+                .home
+                .map(|_| model.global_score(happiness))
+                .unwrap_or(0.0);
+
+            match citizen.state {
+                CitizenState::AtHome => {
+                    // Satisfy comfort while at home.
+                    citizen.needs.satisfy(NeedType::Comfort, 2.0);
+                    citizen.needs.satisfy(NeedType::Sleep, 1.0);
+
+                    // Decide what to do next.
+                    if citizen.workplace.is_none() {
+                        citizen.state = CitizenState::Seeking(CitizenSeekTarget::Job);
+                    } else if hunger_urgency > 0.6 || fun_urgency > 0.5 {
+                        citizen.state = CitizenState::Commuting;
+                    } else if comfort_urgency < 0.3 && citizen.workplace.is_some() {
+                        // Comfort is fine, go to work.
+                        citizen.state = CitizenState::Commuting;
+                    }
+                }
+                CitizenState::Commuting => {
+                    // Commuting takes one tick (simplified). Pick destination
+                    // based on highest urgency.
+                    if hunger_urgency > fun_urgency && hunger_urgency > comfort_urgency {
+                        citizen.state = CitizenState::Shopping;
+                    } else if fun_urgency > comfort_urgency {
+                        citizen.state = CitizenState::Leisure;
+                    } else if citizen.workplace.is_some() {
+                        citizen.state = CitizenState::Working;
+                    } else {
+                        citizen.state = CitizenState::AtHome;
+                    }
+                }
+                CitizenState::Working => {
+                    // Satisfy employment need and earn gold (handled at
+                    // resource flow level).
+                    citizen.needs.satisfy(NeedType::Social, 0.5);
+
+                    // Leave work when hungry or tired.
+                    if hunger_urgency > 0.5 {
+                        citizen.state = CitizenState::Shopping;
+                    } else if comfort_urgency > 0.6 {
+                        citizen.state = CitizenState::Commuting;
+                    } else if fun_urgency > 0.7 {
+                        citizen.state = CitizenState::Leisure;
+                    }
+                }
+                CitizenState::Shopping => {
+                    // Satisfy hunger.
+                    citizen.needs.satisfy(NeedType::Hunger, 5.0);
+
+                    // Head home or to leisure afterwards.
+                    if fun_urgency > 0.5 {
+                        citizen.state = CitizenState::Leisure;
+                    } else {
+                        citizen.state = CitizenState::Commuting;
+                    }
+                }
+                CitizenState::Leisure => {
+                    // Satisfy fun.
+                    citizen.needs.satisfy(NeedType::Fun, 4.0);
+                    citizen.needs.satisfy(NeedType::Social, 1.0);
+
+                    // Head home afterwards.
+                    citizen.state = CitizenState::Commuting;
+                }
+                CitizenState::Seeking(target) => {
+                    match target {
+                        CitizenSeekTarget::Home => {
+                            // If homeless, stay seeking. In a full
+                            // implementation this would scan residential
+                            // vacancies.
+                            if citizen.home.is_some() {
+                                citizen.state = CitizenState::AtHome;
+                            }
+                        }
+                        CitizenSeekTarget::Job => {
+                            // Keep seeking. In full implementation, would scan
+                            // industrial/commercial vacancies.
+                            if citizen.workplace.is_some() {
+                                citizen.state = CitizenState::Commuting;
+                            }
+                        }
+                        CitizenSeekTarget::Food => {
+                            citizen.state = CitizenState::Shopping;
+                        }
+                        CitizenSeekTarget::Entertainment => {
+                            citizen.state = CitizenState::Leisure;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Birth/death/immigration cycle.
+        let pop = self.agents.len() as f32;
+        if pop > 0.0 {
+            // Deaths: remove oldest citizens exceeding death rate threshold.
+            let death_count = (pop * self.death_rate) as usize;
+            if death_count > 0 {
+                // Sort by age descending and remove the oldest.
+                self.agents.sort_by(|a, b| b.age.cmp(&a.age));
+                let remove = death_count.min(self.agents.len());
+                self.agents.truncate(self.agents.len() - remove);
+            }
+        }
+    }
+
+    /// Spawn `count` new citizens (birth/immigration). New citizens start at
+    /// home (if one is assigned) or in Seeking(Home) state.
+    pub fn spawn_citizens(&mut self, count: u32) {
+        for _ in 0..count {
+            let id = EntityId::from_raw(self.next_entity_index, 0);
+            self.next_entity_index += 1;
+            self.agents.push(Citizen {
+                id,
+                home: None,
+                workplace: None,
+                needs: Needs::human(),
+                state: CitizenState::Seeking(CitizenSeekTarget::Home),
+                age: 0,
+            });
+        }
+    }
+
+    /// Remove `count` citizens (death/emigration). Removes the oldest first.
+    pub fn remove_citizens(&mut self, count: u32) {
+        let count = (count as usize).min(self.agents.len());
+        if count == 0 {
+            return;
+        }
+        self.agents.sort_by(|a, b| b.age.cmp(&a.age));
+        self.agents.truncate(self.agents.len() - count);
+    }
+
+    /// Current population count.
+    pub fn population(&self) -> usize {
+        self.agents.len()
+    }
+
+    /// Fraction of citizens that have a workplace (0.0 - 1.0).
+    pub fn employment_rate(&self) -> f32 {
+        if self.agents.is_empty() {
+            return 0.0;
+        }
+        let employed = self.agents.iter().filter(|c| c.workplace.is_some()).count();
+        employed as f32 / self.agents.len() as f32
+    }
+
+    /// Number of citizens without a home.
+    pub fn homeless_count(&self) -> usize {
+        self.agents.iter().filter(|c| c.home.is_none()).count()
+    }
+
+    /// Assign a home to a homeless citizen. Returns `true` if a citizen was
+    /// assigned, `false` if no homeless citizens exist.
+    pub fn assign_home(&mut self, node: FlowNodeId) -> bool {
+        if let Some(citizen) = self.agents.iter_mut().find(|c| c.home.is_none()) {
+            citizen.home = Some(node);
+            if citizen.state == CitizenState::Seeking(CitizenSeekTarget::Home) {
+                citizen.state = CitizenState::AtHome;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Assign a workplace to an unemployed citizen. Returns `true` if a
+    /// citizen was assigned.
+    pub fn assign_workplace(&mut self, node: FlowNodeId) -> bool {
+        if let Some(citizen) = self.agents.iter_mut().find(|c| c.workplace.is_none()) {
+            citizen.workplace = Some(node);
+            if citizen.state == CitizenState::Seeking(CitizenSeekTarget::Job) {
+                citizen.state = CitizenState::Commuting;
+            }
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Default for PopulationSim {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1292,5 +1884,299 @@ mod tests {
         assert_eq!(overlay.active_overlay, Some(OverlayType::Traffic));
         overlay.clear_overlay();
         assert!(overlay.active_overlay.is_none());
+    }
+
+    // ── RoadNetwork pathfinding ──────────────────────────────
+
+    #[test]
+    fn road_shortest_path_simple() {
+        let mut roads = RoadNetwork::new(10, 10);
+        for x in 0..5 {
+            roads.place_road(GridPos::new(x, 0));
+        }
+        let path = roads.shortest_path(GridPos::new(0, 0), GridPos::new(4, 0));
+        assert!(path.is_some());
+        let path = path.unwrap();
+        assert_eq!(path.first(), Some(&GridPos::new(0, 0)));
+        assert_eq!(path.last(), Some(&GridPos::new(4, 0)));
+        assert_eq!(path.len(), 5);
+    }
+
+    #[test]
+    fn road_shortest_path_no_connection() {
+        let mut roads = RoadNetwork::new(10, 10);
+        roads.place_road(GridPos::new(0, 0));
+        roads.place_road(GridPos::new(5, 5));
+        assert!(roads
+            .shortest_path(GridPos::new(0, 0), GridPos::new(5, 5))
+            .is_none());
+    }
+
+    #[test]
+    fn road_connected_component() {
+        let mut roads = RoadNetwork::new(10, 10);
+        roads.place_road(GridPos::new(0, 0));
+        roads.place_road(GridPos::new(1, 0));
+        roads.place_road(GridPos::new(2, 0));
+        roads.place_road(GridPos::new(8, 8)); // Separate island.
+        let comp = roads.connected_component(GridPos::new(0, 0));
+        assert_eq!(comp.len(), 3);
+        assert!(!comp.contains(&GridPos::new(8, 8)));
+    }
+
+    #[test]
+    fn road_flow_field() {
+        let mut roads = RoadNetwork::new(5, 5);
+        for x in 0..5 {
+            roads.place_road(GridPos::new(x, 2));
+        }
+        let _field = roads.flow_field_to(GridPos::new(4, 2));
+        // Just verify it doesn't panic and is cached.
+        assert!(roads.flow_cache.contains_key(&GridPos::new(4, 2)));
+    }
+
+    // ── ZoneSystem growth ───────────────────────────────────
+
+    #[test]
+    fn zone_try_grow_low_demand() {
+        let mut zones = ZoneSystem::new(10, 10);
+        let mut roads = RoadNetwork::new(10, 10);
+        roads.place_road(GridPos::new(3, 2));
+        zones.paint_zone(Rect::new(3.0, 3.0, 2.0, 2.0), ZoneType::Residential);
+        let registry = BuildingRegistry::new();
+
+        let building = zones.try_grow(ZoneType::Residential, 0.3, &roads, &registry);
+        assert!(building.is_some());
+        let b = building.unwrap();
+        assert_eq!(b.density, 1); // Low demand = low density.
+        assert_eq!(b.zone, ZoneType::Residential);
+    }
+
+    #[test]
+    fn zone_try_grow_high_demand_high_density() {
+        let mut zones = ZoneSystem::new(10, 10);
+        let mut roads = RoadNetwork::new(10, 10);
+        roads.place_road(GridPos::new(3, 2));
+        zones.paint_zone(Rect::new(3.0, 3.0, 2.0, 2.0), ZoneType::Commercial);
+        let registry = BuildingRegistry::new();
+
+        let building = zones.try_grow(ZoneType::Commercial, 0.9, &roads, &registry);
+        assert!(building.is_some());
+        assert_eq!(building.unwrap().density, 3); // High demand = high density.
+    }
+
+    #[test]
+    fn zone_try_grow_zero_demand() {
+        let mut zones = ZoneSystem::new(10, 10);
+        let roads = RoadNetwork::new(10, 10);
+        let registry = BuildingRegistry::new();
+        assert!(zones
+            .try_grow(ZoneType::Residential, 0.0, &roads, &registry)
+            .is_none());
+    }
+
+    // ── BuildingRegistry can_place ──────────────────────────
+
+    #[test]
+    fn building_can_place_valid() {
+        let mut registry = BuildingRegistry::new();
+        registry.register(BuildingDef {
+            id: BuildingId(0),
+            name: "House".into(),
+            size: (1, 1),
+            cost: FxHashMap::default(),
+            upkeep: FxHashMap::default(),
+            production: None,
+            consumption: None,
+            effect_radius: None,
+            happiness_effects: FxHashMap::default(),
+            negative_effects: FxHashMap::default(),
+            category: BuildingCategory::Residential,
+        });
+
+        let mut zones = ZoneSystem::new(10, 10);
+        zones.paint_zone(Rect::new(3.0, 3.0, 1.0, 1.0), ZoneType::Residential);
+        let mut roads = RoadNetwork::new(10, 10);
+        roads.place_road(GridPos::new(3, 2)); // Road adjacent above.
+
+        assert!(registry.can_place(BuildingId(0), GridPos::new(3, 3), &zones, &roads));
+    }
+
+    #[test]
+    fn building_can_place_wrong_zone() {
+        let mut registry = BuildingRegistry::new();
+        registry.register(BuildingDef {
+            id: BuildingId(0),
+            name: "House".into(),
+            size: (1, 1),
+            cost: FxHashMap::default(),
+            upkeep: FxHashMap::default(),
+            production: None,
+            consumption: None,
+            effect_radius: None,
+            happiness_effects: FxHashMap::default(),
+            negative_effects: FxHashMap::default(),
+            category: BuildingCategory::Residential,
+        });
+
+        let mut zones = ZoneSystem::new(10, 10);
+        zones.paint_zone(Rect::new(3.0, 3.0, 1.0, 1.0), ZoneType::Industrial);
+        let mut roads = RoadNetwork::new(10, 10);
+        roads.place_road(GridPos::new(3, 2));
+
+        // Residential building can't go in industrial zone.
+        assert!(!registry.can_place(BuildingId(0), GridPos::new(3, 3), &zones, &roads));
+    }
+
+    #[test]
+    fn building_can_place_no_road() {
+        let mut registry = BuildingRegistry::new();
+        registry.register(BuildingDef {
+            id: BuildingId(0),
+            name: "House".into(),
+            size: (1, 1),
+            cost: FxHashMap::default(),
+            upkeep: FxHashMap::default(),
+            production: None,
+            consumption: None,
+            effect_radius: None,
+            happiness_effects: FxHashMap::default(),
+            negative_effects: FxHashMap::default(),
+            category: BuildingCategory::Residential,
+        });
+
+        let mut zones = ZoneSystem::new(10, 10);
+        zones.paint_zone(Rect::new(3.0, 3.0, 1.0, 1.0), ZoneType::Residential);
+        let roads = RoadNetwork::new(10, 10); // No roads at all.
+
+        assert!(!registry.can_place(BuildingId(0), GridPos::new(3, 3), &zones, &roads));
+    }
+
+    // ── PopulationSim ───────────────────────────────────────
+
+    #[test]
+    fn population_spawn_and_count() {
+        let mut pop = PopulationSim::new();
+        assert_eq!(pop.population(), 0);
+        pop.spawn_citizens(10);
+        assert_eq!(pop.population(), 10);
+        assert_eq!(pop.homeless_count(), 10); // All new citizens are homeless.
+        assert!((pop.employment_rate() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn population_remove_citizens() {
+        let mut pop = PopulationSim::new();
+        pop.spawn_citizens(5);
+        pop.remove_citizens(3);
+        assert_eq!(pop.population(), 2);
+    }
+
+    #[test]
+    fn population_assign_home_and_workplace() {
+        let mut pop = PopulationSim::new();
+        pop.spawn_citizens(3);
+
+        assert!(pop.assign_home(FlowNodeId(10)));
+        assert_eq!(pop.homeless_count(), 2);
+
+        assert!(pop.assign_workplace(FlowNodeId(20)));
+        assert!(pop.employment_rate() > 0.0);
+    }
+
+    #[test]
+    fn population_tick_state_transitions() {
+        let mut pop = PopulationSim::new();
+        pop.spawn_citizens(1);
+        // Assign home and workplace so the citizen can transition.
+        pop.agents[0].home = Some(FlowNodeId(0));
+        pop.agents[0].workplace = Some(FlowNodeId(1));
+        pop.agents[0].state = CitizenState::AtHome;
+
+        let grid = HappinessGrid::new(10, 10);
+        let model = HappinessModel::default_weights();
+        let roads = RoadNetwork::new(10, 10);
+        let resources = ResourceFlow::new();
+
+        // Tick several times to see state transitions.
+        for _ in 0..5 {
+            pop.tick(&grid, &model, &roads, &resources);
+        }
+        // After ticking, the citizen should have moved from AtHome.
+        // We can't predict the exact state but it shouldn't still be seeking.
+        assert_ne!(
+            pop.agents[0].state,
+            CitizenState::Seeking(CitizenSeekTarget::Home)
+        );
+    }
+
+    #[test]
+    fn population_death_cycle() {
+        let mut pop = PopulationSim::new();
+        pop.spawn_citizens(100);
+        pop.death_rate = 0.5; // Very high death rate for testing.
+                              // Age them.
+        for c in &mut pop.agents {
+            c.age = 1000;
+        }
+
+        let grid = HappinessGrid::new(10, 10);
+        let model = HappinessModel::default_weights();
+        let roads = RoadNetwork::new(10, 10);
+        let resources = ResourceFlow::new();
+        pop.tick(&grid, &model, &roads, &resources);
+        assert!(pop.population() < 100);
+    }
+
+    // ── ResourceFlow on_road_change ─────────────────────────
+
+    #[test]
+    fn resource_flow_on_road_change() {
+        let mut flow = ResourceFlow::new();
+        let a = flow.add_node(FlowNode {
+            id: FlowNodeId(0),
+            node_type: FlowNodeType::Producer {
+                output: ResourceType::Wood,
+                rate_per_tick: 3,
+                input: None,
+            },
+            position: GridPos::new(0, 0),
+            buffer: FxHashMap::default(),
+            capacity: {
+                let mut m = FxHashMap::default();
+                m.insert(ResourceType::Wood, 100);
+                m
+            },
+        });
+        let b = flow.add_node(FlowNode {
+            id: FlowNodeId(0),
+            node_type: FlowNodeType::Storage,
+            position: GridPos::new(3, 0),
+            buffer: FxHashMap::default(),
+            capacity: {
+                let mut m = FxHashMap::default();
+                m.insert(ResourceType::Wood, 100);
+                m
+            },
+        });
+
+        // Manually add an edge with a cached path through (1,0) and (2,0).
+        flow.edges.push(FlowEdge {
+            from: a,
+            to: b,
+            max_throughput: 10,
+            current_throughput: 0,
+            road_path: vec![
+                GridPos::new(0, 0),
+                GridPos::new(1, 0),
+                GridPos::new(2, 0),
+                GridPos::new(3, 0),
+            ],
+        });
+
+        assert_eq!(flow.edges.len(), 1);
+        // Simulate road removal at (1,0) — should disconnect the edge.
+        flow.on_road_change(GridPos::new(1, 0));
+        assert_eq!(flow.edges.len(), 0);
     }
 }

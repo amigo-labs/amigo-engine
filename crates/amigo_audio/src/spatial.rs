@@ -1,9 +1,17 @@
-//! Pure-math spatial audio: distance attenuation, stereo panning, and data
-//! structures for positional sound. No kira dependency — the integration layer
-//! is left for game code.
+//! Spatial audio: distance attenuation, stereo panning, and a kira-integrated
+//! system for managing positional sound instances.
 
+use amigo_core::ecs::{EntityId, SparseSet};
 use amigo_core::math::{Fix, SimVec2};
+use kira::manager::backend::DefaultBackend;
+use kira::manager::AudioManager as KiraManager;
+use kira::sound::static_sound::StaticSoundHandle;
+use kira::sound::PlaybackState;
+use kira::tween::Tween;
+use kira::Volume;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 // ---------------------------------------------------------------------------
 // Attenuation models
@@ -144,6 +152,25 @@ pub struct SpatialListener {
     pub viewport_half_width: Fix,
 }
 
+impl SpatialListener {
+    /// Create a listener from raw camera parameters.
+    ///
+    /// This avoids a dependency on the render crate's `Camera` type. Call site
+    /// typically looks like:
+    /// ```ignore
+    /// let view = camera.view_rect();
+    /// let listener = SpatialListener::from_camera_params(
+    ///     camera.position.x, camera.position.y, view.w,
+    /// );
+    /// ```
+    pub fn from_camera_params(cam_x: f32, cam_y: f32, viewport_width: f32) -> Self {
+        Self {
+            position: SimVec2::new(Fix::from_num(cam_x), Fix::from_num(cam_y)),
+            viewport_half_width: Fix::from_num(viewport_width * 0.5),
+        }
+    }
+}
+
 impl Default for SpatialListener {
     fn default() -> Self {
         Self {
@@ -201,6 +228,149 @@ pub fn compute_pan(emitter: &SpatialEmitter, listener: &SpatialListener) -> f32 
     }
     let dx: f32 = (emitter.position.x - listener.position.x).to_num();
     (dx / half_w).clamp(-1.0, 1.0)
+}
+
+// ---------------------------------------------------------------------------
+// SpatialSoundInstance — internal tracking for a playing spatial sound
+// ---------------------------------------------------------------------------
+
+struct SpatialSoundInstance {
+    handle: StaticSoundHandle,
+    emitter_entity: Option<EntityId>,
+    /// Snapshot of emitter params at play time (used if entity has no emitter
+    /// component or was despawned).
+    fallback_emitter: SpatialEmitter,
+}
+
+// ---------------------------------------------------------------------------
+// SpatialAudioSystem
+// ---------------------------------------------------------------------------
+
+/// Orchestrates spatial audio calculations and applies results to kira handles.
+///
+/// Each frame, call [`update`](SpatialAudioSystem::update) after the camera has
+/// been updated. The system resolves emitter positions, computes attenuation and
+/// panning, and pushes the results into kira's `StaticSoundHandle`s.
+pub struct SpatialAudioSystem {
+    /// Active spatial sound instances being tracked.
+    active: FxHashMap<SpatialSoundId, SpatialSoundInstance>,
+    next_id: u32,
+}
+
+impl SpatialAudioSystem {
+    /// Create a new, empty spatial audio system.
+    pub fn new() -> Self {
+        Self {
+            active: FxHashMap::default(),
+            next_id: 0,
+        }
+    }
+
+    /// Play a spatial sound.
+    ///
+    /// If `entity` is `Some`, the emitter position is read from the entity's
+    /// [`SpatialEmitter`] component in the provided [`SparseSet`] each frame.
+    /// Otherwise the position from `emitter` is used as a static location.
+    ///
+    /// The sound is played through `sfx` (which picks the variant) and the
+    /// resulting handle is tracked for spatial updates.
+    pub fn spatial_play(
+        &mut self,
+        sfx: &mut crate::SfxManager,
+        kira: &mut KiraManager<DefaultBackend>,
+        name: &str,
+        emitter: &SpatialEmitter,
+        entity: Option<EntityId>,
+    ) -> SpatialSoundId {
+        let id = SpatialSoundId(self.next_id);
+        self.next_id = self.next_id.wrapping_add(1);
+
+        // Use SfxManager's loaded data to pick a variant and play it.
+        let handle = sfx.play_returning_handle(name, kira);
+
+        if let Some(handle) = handle {
+            self.active.insert(
+                id,
+                SpatialSoundInstance {
+                    handle,
+                    emitter_entity: entity,
+                    fallback_emitter: emitter.clone(),
+                },
+            );
+            debug!("SpatialAudioSystem: playing '{name}' as {id:?}");
+        } else {
+            warn!("SpatialAudioSystem: failed to play '{name}'");
+        }
+
+        id
+    }
+
+    /// Update all active spatial sounds: recalculate volume and panning
+    /// based on current listener and emitter positions.
+    ///
+    /// Call once per frame after the camera update.
+    pub fn update(&mut self, listener: &SpatialListener, emitters: &SparseSet<SpatialEmitter>) {
+        for instance in self.active.values_mut() {
+            // Resolve the emitter: prefer the ECS component, fall back to snapshot.
+            let emitter = match instance.emitter_entity {
+                Some(eid) => emitters.get(eid).unwrap_or(&instance.fallback_emitter),
+                None => &instance.fallback_emitter,
+            };
+
+            let volume = compute_volume(emitter, listener);
+            let pan = compute_pan(emitter, listener);
+
+            // Apply volume via kira (amplitude).
+            instance
+                .handle
+                .set_volume(Volume::Amplitude(volume as f64), Tween::default());
+
+            // kira panning: 0.0 = left, 0.5 = center, 1.0 = right.
+            let kira_pan = ((pan + 1.0) * 0.5) as f64;
+            instance.handle.set_panning(kira_pan, Tween::default());
+        }
+    }
+
+    /// Stop a spatial sound immediately.
+    pub fn stop(&mut self, id: SpatialSoundId) {
+        if let Some(mut instance) = self.active.remove(&id) {
+            let _ = instance.handle.stop(Tween::default());
+            debug!("SpatialAudioSystem: stopped {id:?}");
+        }
+    }
+
+    /// Stop all spatial sounds for a given entity.
+    pub fn stop_entity(&mut self, entity: EntityId) {
+        let to_remove: Vec<SpatialSoundId> = self
+            .active
+            .iter()
+            .filter(|(_, inst)| inst.emitter_entity == Some(entity))
+            .map(|(id, _)| *id)
+            .collect();
+
+        for id in to_remove {
+            if let Some(mut instance) = self.active.remove(&id) {
+                let _ = instance.handle.stop(Tween::default());
+            }
+        }
+    }
+
+    /// Remove finished sounds from tracking.
+    pub fn cleanup(&mut self) {
+        self.active
+            .retain(|_, inst| inst.handle.state() != PlaybackState::Stopped);
+    }
+
+    /// Number of currently tracked spatial sounds.
+    pub fn active_count(&self) -> usize {
+        self.active.len()
+    }
+}
+
+impl Default for SpatialAudioSystem {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------

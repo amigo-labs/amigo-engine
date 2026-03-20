@@ -68,7 +68,12 @@ pub mod waves;
 // -- Core re-exports (always available) -------------------------------------
 pub use accessibility::{
     AccessibilityConfig, AccessibilityFeature, AccessibilityManager, ColorBlindFilter,
-    ColorBlindMode, SubtitleCategory, SubtitleDirection, SubtitleManager,
+    ColorBlindMode, HighContrastTheme, InputAssistSettings, ShakeSettings, Subtitle,
+    SubtitleCategory, SubtitleDirection, SubtitleManager, TextScaleSettings,
+};
+pub use achievements::{
+    AchievementCondition, AchievementDef, AchievementError, AchievementProgress,
+    AchievementSaveData, AchievementToastRenderer, AchievementTracker,
 };
 pub use collision::{
     CapsuleShape, CollisionShape, CollisionWorld, ContactInfo, SpatialHash, SweptContact,
@@ -87,9 +92,10 @@ pub use localization::{
 };
 pub use math::{Fix, RenderVec2, SimVec2};
 pub use metroidvania::{
-    Ability, AbilityGate, AbilitySet, BacktrackMarker, BossData, BossId, CheckpointData,
-    CheckpointSystem, ExplorationGraph, RoomConnection, RoomId, RoomNode, SkillUnlockSystem,
-    ZoneId,
+    Ability, AbilityGate, AbilitySet, BacktrackMarker, BossData, BossId, BossMovement, BossPhase,
+    BossRoomSystem, CheckpointData, CheckpointSystem, ExplorationGraph, MapPin, MapRevealer,
+    PatternSequence, PhaseConfig, RoomConnection, RoomId, RoomNode, RoomTransitionSystem,
+    SkillUnlockSystem, TransitionResult, ZoneId,
 };
 pub use pathfinding::{find_path, FlowField, PathFollower, PathRequest, Walkable, WaypointPath};
 pub use physics::{
