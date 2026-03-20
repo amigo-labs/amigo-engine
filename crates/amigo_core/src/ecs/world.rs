@@ -317,175 +317,143 @@ impl Default for World {
 // ── Reflection Integration (behind `reflect` feature) ──
 
 #[cfg(feature = "reflect")]
-mod reflect_impl {
-    use super::*;
-    use amigo_reflect::{Reflect, TypeRegistry};
-
+impl World {
     /// Helper: try to get a `&dyn Reflect` from a `&dyn AnyStorage` for a given entity,
     /// knowing the concrete type `T` at registration time.
-    fn get_reflect_from_storage<T: Reflect + 'static>(
+    fn get_reflect_from_storage<T: amigo_reflect::Reflect + 'static>(
         storage: &dyn AnyStorage,
         entity: EntityId,
-    ) -> Option<*const dyn Reflect> {
+    ) -> Option<*const dyn amigo_reflect::Reflect> {
         let sparse = storage.as_any().downcast_ref::<SparseSet<T>>()?;
         let val = sparse.get(entity)?;
-        Some(val as &dyn Reflect as *const dyn Reflect)
+        Some(val as &dyn amigo_reflect::Reflect as *const dyn amigo_reflect::Reflect)
     }
 
     /// Helper: try to get a `&mut dyn Reflect` from a `&mut dyn AnyStorage` for a given entity.
-    fn get_reflect_mut_from_storage<T: Reflect + 'static>(
+    fn get_reflect_mut_from_storage<T: amigo_reflect::Reflect + 'static>(
         storage: &mut dyn AnyStorage,
         entity: EntityId,
-    ) -> Option<*mut dyn Reflect> {
+    ) -> Option<*mut dyn amigo_reflect::Reflect> {
         let sparse = storage.as_any_mut().downcast_mut::<SparseSet<T>>()?;
         let val = sparse.get_mut(entity)?;
-        Some(val as &mut dyn Reflect as *mut dyn Reflect)
+        Some(val as &mut dyn amigo_reflect::Reflect as *mut dyn amigo_reflect::Reflect)
     }
 
-    impl World {
-        /// Get a type-erased reflected reference to a component on an entity.
-        /// Returns `None` if the entity does not have the component or if the type
-        /// is not registered in the provided `TypeRegistry`.
-        pub fn get_reflected(
-            &self,
-            entity: EntityId,
-            type_id: TypeId,
-            registry: &TypeRegistry,
-        ) -> Option<&dyn Reflect> {
-            // Check that the type is registered
-            let _reg = registry.get(type_id)?;
+    /// Get a type-erased reflected reference to a component on an entity.
+    /// Returns `None` if the entity does not have the component or if the type
+    /// is not registered in the provided `TypeRegistry`.
+    pub fn get_reflected(
+        &self,
+        entity: EntityId,
+        type_id: TypeId,
+        registry: &amigo_reflect::TypeRegistry,
+    ) -> Option<&dyn amigo_reflect::Reflect> {
+        // Check that the type is registered
+        let _reg = registry.get(type_id)?;
 
-            // Check built-in sparse sets
-            if type_id == TypeId::of::<Health>() {
-                return self.healths.get(entity).map(|v| v as &dyn Reflect);
-            }
-
-            // Check dynamic components -- we need the concrete type to downcast
-            // Since we don't know the concrete type at this point, we iterate
-            // through dynamic storage and attempt downcast via the registry.
-            if let Some(storage) = self.dynamic.get(&type_id) {
-                // We need to try downcasting. The only way to do this generically
-                // is to use the as_any() + downcast pattern, but we need to know T.
-                // For now, use the AnyStorage::as_any() and try known types.
-                // This is a limitation -- dynamic reflection requires a registration
-                // step that stores accessor functions.
-                //
-                // Use a helper stored at registration time via register_reflected.
-                if let Some(accessor) = self.reflect_accessors.get(&type_id) {
-                    // SAFETY: The accessor returns a pointer that borrows from storage,
-                    // which itself borrows from self. We return a reference with
-                    // the lifetime of self.
-                    unsafe {
-                        let ptr = (accessor.get_fn)(storage.as_ref(), entity)?;
-                        return Some(&*ptr);
-                    }
-                }
-            }
-
-            None
+        // Check built-in sparse sets
+        if type_id == TypeId::of::<Health>() {
+            return self.healths.get(entity).map(|v| v as &dyn amigo_reflect::Reflect);
         }
 
-        /// Get a mutable reflected reference to a component on an entity.
-        pub fn get_reflected_mut(
-            &mut self,
-            entity: EntityId,
-            type_id: TypeId,
-            registry: &TypeRegistry,
-        ) -> Option<&mut dyn Reflect> {
-            let _reg = registry.get(type_id)?;
-
-            if type_id == TypeId::of::<Health>() {
-                return self.healths.get_mut(entity).map(|v| v as &mut dyn Reflect);
+        // Check dynamic components via stored accessor functions
+        if let Some(storage) = self.dynamic.get(&type_id) {
+            if let Some(accessor) = self.reflect_accessors.get(&type_id) {
+                // SAFETY: The accessor returns a pointer that borrows from storage,
+                // which itself borrows from self. We return a reference with
+                // the lifetime of self.
+                unsafe {
+                    let ptr = (accessor.get_fn)(storage.as_ref(), entity)?;
+                    return Some(&*ptr);
+                }
             }
+        }
 
-            // For dynamic components, use stored accessor
+        None
+    }
+
+    /// Get a mutable reflected reference to a component on an entity.
+    pub fn get_reflected_mut(
+        &mut self,
+        entity: EntityId,
+        type_id: TypeId,
+        registry: &amigo_reflect::TypeRegistry,
+    ) -> Option<&mut dyn amigo_reflect::Reflect> {
+        let _reg = registry.get(type_id)?;
+
+        if type_id == TypeId::of::<Health>() {
+            return self.healths.get_mut(entity).map(|v| v as &mut dyn amigo_reflect::Reflect);
+        }
+
+        // For dynamic components, use stored accessor
+        let accessor = self.reflect_accessors.get(&type_id).cloned();
+        if let Some(accessor) = accessor {
             if let Some(storage) = self.dynamic.get_mut(&type_id) {
-                let accessor = self.reflect_accessors.get(&type_id).cloned();
-                if let Some(accessor) = accessor {
-                    // SAFETY: The accessor returns a pointer that borrows from storage,
-                    // which borrows from self. We return a &mut with the lifetime of self.
-                    unsafe {
-                        let ptr = (accessor.get_mut_fn)(storage.as_mut(), entity)?;
-                        return Some(&mut *ptr);
-                    }
+                // SAFETY: The accessor returns a pointer that borrows from storage,
+                // which borrows from self. We return a &mut with the lifetime of self.
+                unsafe {
+                    let ptr = (accessor.get_mut_fn)(storage.as_mut(), entity)?;
+                    return Some(&mut *ptr);
                 }
             }
-
-            None
         }
 
-        /// List all component TypeIds present on an entity.
-        /// Includes both built-in (static) and dynamic components.
-        pub fn component_types(&self, entity: EntityId) -> Vec<TypeId> {
-            let mut types = Vec::new();
-
-            if self.positions.contains(entity) {
-                types.push(TypeId::of::<Position>());
-            }
-            if self.velocities.contains(entity) {
-                types.push(TypeId::of::<Velocity>());
-            }
-            if self.healths.contains(entity) {
-                types.push(TypeId::of::<Health>());
-            }
-            if self.sprites.contains(entity) {
-                types.push(TypeId::of::<SpriteComp>());
-            }
-            if self.state_scoped.contains(entity) {
-                types.push(TypeId::of::<StateScoped>());
-            }
-
-            for (type_id, storage) in &self.dynamic {
-                // Check if the entity has this component by trying to access it
-                // We need a contains method on AnyStorage
-                if storage.as_any().downcast_ref::<SparseSet<()>>().is_none() {
-                    // Can't check directly without knowing the type, but we stored
-                    // it as a SparseSet<T>. Use the reflect_accessors to check.
-                    if let Some(accessor) = self.reflect_accessors.get(type_id) {
-                        if (accessor.contains_fn)(storage.as_ref(), entity) {
-                            types.push(*type_id);
-                        }
-                    } else {
-                        // No accessor -- can't inspect. Skip.
-                    }
-                }
-            }
-
-            types
-        }
-
-        /// Register a dynamic component type for reflection.
-        /// This stores accessor functions that allow `get_reflected` and `get_reflected_mut`
-        /// to work with this component type.
-        pub fn register_reflected<T: Reflect + 'static>(&mut self, capacity: usize) {
-            let type_id = TypeId::of::<T>();
-            self.dynamic
-                .entry(type_id)
-                .or_insert_with(|| Box::new(SparseSet::<T>::with_capacity(capacity)));
-            self.reflect_accessors.insert(
-                type_id,
-                ReflectAccessor {
-                    get_fn: |storage, entity| get_reflect_from_storage::<T>(storage, entity),
-                    get_mut_fn: |storage, entity| get_reflect_mut_from_storage::<T>(storage, entity),
-                    contains_fn: |storage, entity| {
-                        storage
-                            .as_any()
-                            .downcast_ref::<SparseSet<T>>()
-                            .is_some_and(|s| s.contains(entity))
-                    },
-                },
-            );
-        }
+        None
     }
 
-    /// Stored accessor function pointers for reflection on dynamic components.
-    #[derive(Clone)]
-    pub(super) struct ReflectAccessor {
-        pub get_fn: fn(&dyn AnyStorage, EntityId) -> Option<*const dyn Reflect>,
-        pub get_mut_fn: fn(&mut dyn AnyStorage, EntityId) -> Option<*mut dyn Reflect>,
-        pub contains_fn: fn(&dyn AnyStorage, EntityId) -> bool,
+    /// List all component TypeIds present on an entity.
+    /// Includes both built-in (static) and dynamic components.
+    pub fn component_types(&self, entity: EntityId) -> Vec<TypeId> {
+        let mut types = Vec::new();
+
+        if self.positions.contains(entity) {
+            types.push(TypeId::of::<Position>());
+        }
+        if self.velocities.contains(entity) {
+            types.push(TypeId::of::<Velocity>());
+        }
+        if self.healths.contains(entity) {
+            types.push(TypeId::of::<Health>());
+        }
+        if self.sprites.contains(entity) {
+            types.push(TypeId::of::<SpriteComp>());
+        }
+        if self.state_scoped.contains(entity) {
+            types.push(TypeId::of::<StateScoped>());
+        }
+
+        for (type_id, storage) in &self.dynamic {
+            if let Some(accessor) = self.reflect_accessors.get(type_id) {
+                if (accessor.contains_fn)(storage.as_ref(), entity) {
+                    types.push(*type_id);
+                }
+            }
+        }
+
+        types
+    }
+
+    /// Register a dynamic component type for reflection.
+    /// This stores accessor functions that allow `get_reflected` and `get_reflected_mut`
+    /// to work with this component type.
+    pub fn register_reflected<T: amigo_reflect::Reflect + 'static>(&mut self, capacity: usize) {
+        let type_id = TypeId::of::<T>();
+        self.dynamic
+            .entry(type_id)
+            .or_insert_with(|| Box::new(SparseSet::<T>::with_capacity(capacity)));
+        self.reflect_accessors.insert(
+            type_id,
+            ReflectAccessor {
+                get_fn: Self::get_reflect_from_storage::<T>,
+                get_mut_fn: Self::get_reflect_mut_from_storage::<T>,
+                contains_fn: |storage, entity| {
+                    storage
+                        .as_any()
+                        .downcast_ref::<SparseSet<T>>()
+                        .is_some_and(|s| s.contains(entity))
+                },
+            },
+        );
     }
 }
-
-// Add the reflect_accessors field to World when the reflect feature is on
 
