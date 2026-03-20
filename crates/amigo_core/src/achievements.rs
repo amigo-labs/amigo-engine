@@ -672,25 +672,17 @@ impl AchievementToastRenderer {
         let fade = self.fade_duration;
         let hold = self.display_duration;
 
-        // Update each active toast.
+        // Update each active toast, allowing multiple phase transitions per frame
+        // if dt is large enough.
         for toast in &mut self.active_toasts {
             toast.elapsed += dt;
-            match toast.phase {
-                ToastPhase::FadeIn => {
-                    if toast.elapsed >= fade {
-                        toast.elapsed -= fade;
-                        toast.phase = ToastPhase::Hold;
-                    }
-                }
-                ToastPhase::Hold => {
-                    if toast.elapsed >= hold {
-                        toast.elapsed -= hold;
-                        toast.phase = ToastPhase::FadeOut;
-                    }
-                }
-                ToastPhase::FadeOut => {
-                    // Removal handled below.
-                }
+            if matches!(toast.phase, ToastPhase::FadeIn) && toast.elapsed >= fade {
+                toast.elapsed -= fade;
+                toast.phase = ToastPhase::Hold;
+            }
+            if matches!(toast.phase, ToastPhase::Hold) && toast.elapsed >= hold {
+                toast.elapsed -= hold;
+                toast.phase = ToastPhase::FadeOut;
             }
         }
 

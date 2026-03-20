@@ -271,7 +271,8 @@ pub fn list_tools() -> Vec<ToolDef> {
         ToolDef {
             name: "amigo_artgen_set_defaults".into(),
             description: "Save art generation defaults to amigo.toml [art] section. \
-                Merges with existing values. Use after asking the user for preferences.".into(),
+                Merges with existing values. Use after asking the user for preferences."
+                .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -337,7 +338,11 @@ pub fn dispatch_tool_with_defaults(
                 s
             };
 
-            if defaults.as_ref().and_then(|d| d.default_palette.as_ref()).is_none() {
+            if defaults
+                .as_ref()
+                .and_then(|d| d.default_palette.as_ref())
+                .is_none()
+            {
                 missing.push("palette".into());
             }
 
@@ -592,7 +597,10 @@ mod tests {
         let v = result.unwrap();
         let hints = &v["hints"];
         assert!(hints["defaults_missing"].is_array());
-        assert!(hints["suggestion"].as_str().unwrap().contains("amigo_artgen_set_defaults"));
+        assert!(hints["suggestion"]
+            .as_str()
+            .unwrap()
+            .contains("amigo_artgen_set_defaults"));
     }
 
     #[test]

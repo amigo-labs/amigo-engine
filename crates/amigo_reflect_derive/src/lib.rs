@@ -178,7 +178,7 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     }
 
-    let field_count = field_infos.len();
+    let _field_count = field_infos.len();
 
     // Generate the field info initializer expressions (used inside LazyLock closure)
     let field_info_init: Vec<TokenStream2> = field_infos
@@ -220,9 +220,8 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
             let name_str = ident.to_string();
             quote! {
                 #name_str => {
-                    let info = __amigo_reflect_type_info();
                     ::core::option::Option::Some(amigo_reflect::FieldRef {
-                        info: &info.fields[#i],
+                        info: &__info.fields[#i],
                         value: &self.#ident,
                     })
                 }
@@ -238,9 +237,8 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
             let name_str = ident.to_string();
             quote! {
                 #name_str => {
-                    let info = __amigo_reflect_type_info();
                     ::core::option::Option::Some(amigo_reflect::FieldMut {
-                        info: &info.fields[#i],
+                        info: &__info.fields[#i],
                         value: &mut self.#ident,
                     })
                 }
@@ -315,14 +313,29 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
             where
                 Self: Sized,
             {
-                __amigo_reflect_type_info()
+                use ::std::sync::LazyLock;
+                static TYPE_INFO: LazyLock<amigo_reflect::TypeInfo> = LazyLock::new(|| {
+                    let fields: ::std::vec::Vec<amigo_reflect::FieldInfo> = ::std::vec![
+                        #(#field_info_init),*
+                    ];
+                    let fields: &'static [amigo_reflect::FieldInfo] =
+                        ::std::boxed::Box::leak(fields.into_boxed_slice());
+                    amigo_reflect::TypeInfo {
+                        short_name: #struct_name_str,
+                        type_path: #struct_name_str,
+                        type_id: ::core::any::TypeId::of::<#struct_name>(),
+                        fields,
+                    }
+                });
+                &TYPE_INFO
             }
 
             fn reflected_type_info(&self) -> &'static amigo_reflect::TypeInfo {
-                __amigo_reflect_type_info()
+                <Self as amigo_reflect::Reflect>::type_info()
             }
 
             fn field(&self, name: &str) -> ::core::option::Option<amigo_reflect::FieldRef<'_>> {
+                let __info = <Self as amigo_reflect::Reflect>::type_info();
                 match name {
                     #(#field_match_arms)*
                     _ => ::core::option::Option::None,
@@ -330,6 +343,7 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
             }
 
             fn field_mut(&mut self, name: &str) -> ::core::option::Option<amigo_reflect::FieldMut<'_>> {
+                let __info = <Self as amigo_reflect::Reflect>::type_info();
                 match name {
                     #(#field_mut_match_arms)*
                     _ => ::core::option::Option::None,
@@ -337,14 +351,14 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
             }
 
             fn fields(&self) -> ::std::vec::Vec<amigo_reflect::FieldRef<'_>> {
-                let info = __amigo_reflect_type_info();
+                let info = <Self as amigo_reflect::Reflect>::type_info();
                 ::std::vec![
                     #(#fields_entries),*
                 ]
             }
 
             fn fields_mut(&mut self) -> ::std::vec::Vec<amigo_reflect::FieldMut<'_>> {
-                let info = __amigo_reflect_type_info();
+                let info = <Self as amigo_reflect::Reflect>::type_info();
                 let base_ptr = self as *mut Self as *mut u8;
                 // SAFETY: Each field offset is computed by offset_of! and each pointer
                 // is to a distinct field within the same struct. The struct is behind
@@ -372,30 +386,6 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     #(#clone_fields),*
                 })
             }
-        }
-
-        /// Helper function returning the lazily-initialized static TypeInfo for this struct.
-        /// Uses `LazyLock` because `TypeId::of` and `type_name` are not const fns.
-        #[doc(hidden)]
-        fn __amigo_reflect_type_info() -> &'static amigo_reflect::TypeInfo {
-            use ::std::sync::LazyLock;
-
-            static TYPE_INFO: LazyLock<amigo_reflect::TypeInfo> = LazyLock::new(|| {
-                // Leak a boxed slice to get &'static [FieldInfo]
-                let fields: ::std::vec::Vec<amigo_reflect::FieldInfo> = ::std::vec![
-                    #(#field_info_init),*
-                ];
-                let fields: &'static [amigo_reflect::FieldInfo] =
-                    ::std::boxed::Box::leak(fields.into_boxed_slice());
-
-                amigo_reflect::TypeInfo {
-                    short_name: #struct_name_str,
-                    type_path: #struct_name_str,
-                    type_id: ::core::any::TypeId::of::<#struct_name>(),
-                    fields,
-                }
-            });
-            &TYPE_INFO
         }
     };
 
