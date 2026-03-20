@@ -13,7 +13,7 @@ proposed
 
 ## Context
 
-The game loop in Amigo Engine is monolithic. The `Game` trait (`crates/amigo_engine/src/lib.rs`, lines 85-105) requires implementors to provide a single `fn update(&mut self, ctx: &mut GameContext) -> SceneAction` that runs all game logic. The engine calls this once per fixed-timestep tick inside `EngineApp::window_event` (`crates/amigo_engine/src/engine.rs`, lines 707-709):
+Game logic currently lives inside a single monolithic `Game::update(&mut self, ctx: &mut GameContext) -> SceneAction` method (defined in `crates/amigo_engine/src/lib.rs`, line 90). The engine calls this once per fixed-timestep tick inside `EngineApp::window_event` (`engine.rs`, line 707-710):
 
 ```rust
 let action = {
@@ -22,68 +22,74 @@ let action = {
 };
 ```
 
-Plugins get a separate `fn update(&mut self, ctx: &mut GameContext)` call after the game update (engine.rs, lines 722-727), but there is no ordering control between plugins or between game systems -- everything runs sequentially in the order the user writes it inside `Game::update()`.
+After the game update, plugins get a sequential `plugin.update(&mut state.game_ctx)` call (line 724-727), and then `world.flush()` and `events.flush()` run at the end of the tick (line 731-733).
 
-This has three problems:
+This architecture has several limitations:
 
-1. **No dependency declaration**: Systems that read Position after a physics system writes it must be manually ordered by the developer. Nothing enforces this.
-2. **No parallelism**: All systems run single-threaded on the main thread. The `GameContext` borrows `&mut World` exclusively, preventing concurrent read-only access.
-3. **Plugin interleaving**: Plugins always run after the game update (engine.rs line 724), making it impossible for a plugin to inject logic between two game systems (e.g., a networking plugin that must run between input-gathering and simulation).
+1. **No declarative ordering.** System execution order is implicit in the procedural code inside `Game::update`. There is no way to express "system A runs before system B" or "system C needs write access to positions but only read access to healths" without manually structuring the code.
 
-The `Plugin` trait (engine.rs, lines 21-29) has `build`, `init`, and `update` hooks, but no concept of system ordering or dependency edges.
+2. **No automatic parallelization.** All systems run sequentially on the main thread. The `Plugin::update` trait method (`engine.rs`, line 28) takes `&mut GameContext`, making every plugin mutually exclusive.
+
+3. **No dependency tracking.** There is no way for the engine to detect data races between systems at compile time or runtime. Two plugins writing to `world.positions` in the same tick is silently racy.
+
+The `Plugin` trait (`engine.rs`, line 21-29) provides `build`, `init`, and `update` hooks, but `update` is called in registration order with no dependency metadata.
 
 ## Decision
 
-Introduce a `SystemGraph` scheduler behind the `system_graph` feature flag. Systems are registered declaratively with ordering constraints, and the scheduler resolves execution order via topological sort.
+Introduce a **System Graph** behind the feature flag `system_graph`. This depends on AP-01 (archetype storage) for the component access metadata needed to determine parallelism.
 
-**API shape**:
+A system is a function `fn(SystemContext) -> ()` registered via a builder API:
+
 ```rust
-app.add_system(physics_system)
-    .label("physics")
+engine.add_system(movement_system)
+    .label("movement")
     .after("input")
-    .before("render_prep");
+    .before("collision")
+    .writes::<Position>()
+    .reads::<Velocity>();
 ```
 
-Each system is a `fn(&mut SystemContext)` where `SystemContext` provides scoped access to components (read-only or read-write). The scheduler builds a DAG from labels and `after`/`before` constraints, topologically sorts it, and detects conflicts (two systems writing the same component without an ordering edge).
+At startup, the engine builds a DAG from the declared ordering constraints and component access sets. A topological sort produces an execution schedule. Systems that have no data conflicts (disjoint component access sets) and no ordering constraints are grouped into parallel stages.
 
-**Auto-parallelism** (phase 2): Systems with non-overlapping component access (determined by declared read/write sets) and no ordering constraint between them are dispatched to a thread pool. This depends on AP-01's archetype storage enabling safe concurrent read access to disjoint archetypes.
+At runtime, each tick walks the schedule. Sequential stages run on the main thread. Parallel stages dispatch systems to a thread pool (using `rayon::scope` or a lightweight fork-join scheduler). `GameContext` is split into per-system borrows based on the declared access, checked at schedule-build time.
 
-**Backward compatibility**: When `system_graph` is disabled, the existing `Game::update()` monolith continues to work. When enabled, `Game::update()` can still be used as a single "default" system, but users are encouraged to register individual systems.
+The existing `Game::update` method remains as a compatibility shim -- it runs as a single system at a configurable point in the schedule (default: after all engine systems, before flush).
 
 ### Alternatives Considered
 
-1. **Stage-based scheduling (Bevy 0.x style)**: Fixed stages (PreUpdate, Update, PostUpdate) with systems sorted within each stage. Rejected because rigid stage boundaries make it hard to express fine-grained dependencies across stages, and the Bevy ecosystem has already moved away from this model.
+1. **Manual stage ordering (Phase enum).** Simpler: define a fixed set of phases (PreUpdate, Update, PostUpdate) and let systems register into phases. Rejected because it does not allow fine-grained parallelism within a phase and forces an artificial phase taxonomy.
 
-2. **Manual thread pool with message passing**: Systems explicitly spawn tasks and communicate via channels. Rejected because it pushes scheduling complexity onto game developers and makes deterministic replay harder (AP-07 requires deterministic system ordering).
+2. **Async systems with `async fn update`.** Would leverage Rust's async machinery for cooperative scheduling. Rejected because it infects the entire API with async, conflicts with the fixed-timestep guarantee, and has poor ergonomics for game code.
 
 ## Migration Path
 
-1. **Define `System` trait and `SystemGraph` struct** -- Create `crates/amigo_core/src/scheduler/system_graph.rs` with `System { name, run_fn, reads: Vec<ComponentId>, writes: Vec<ComponentId>, after: Vec<Label>, before: Vec<Label> }` and a topological sort that produces an execution plan. Verify: unit test with 5 systems and explicit before/after constraints produces the expected linear order; cycle detection panics with a clear error message.
+1. **Define `System` trait and `SystemDescriptor`** -- Create `crates/amigo_core/src/ecs/system.rs` with a `System` trait (a `run` method taking a `SystemContext`), a `SystemDescriptor` holding label, ordering constraints, and component access sets. Gate behind `#[cfg(feature = "system_graph")]`. Verify: unit test that constructs 5 descriptors with `.after()/.before()` constraints and produces a valid topological order.
 
-2. **Integrate into `Engine::run`** -- Behind `#[cfg(feature = "system_graph")]`, replace the single `game.update(&mut game_ctx)` call in the tick loop (engine.rs line 709) with `system_graph.run(&mut game_ctx)`. The Game trait gains `fn register_systems(&self, graph: &mut SystemGraph)` with a default implementation that wraps `update()` as a single system. Verify: existing `Game` implementations compile and run without changes when the feature is enabled.
+2. **Build the scheduler** -- Implement topological sort with Kahn's algorithm in `crates/amigo_core/src/ecs/schedule.rs`. Detect cycles (return an error with the cycle path). Group non-conflicting systems into parallel stages. Verify: test that 30 no-op systems schedule in <0.1ms, and that a cycle is detected and reported.
 
-3. (rough) Implement `SystemContext` that borrows specific component sets from `World`, enabling the borrow checker to verify non-overlapping access at runtime (or compile time via archetype queries from AP-01).
+3. **Integrate with `EngineApp`** -- Behind the feature flag, replace the `game.update()` + `plugin.update()` sequence in `engine.rs` (lines 707-727) with `schedule.run(&mut game_ctx)`. The `Game::update` method is registered as a system labeled `"game_update"`. Verify: existing game code works unchanged when the feature is enabled.
 
-4. (rough) Add conflict detection: if two systems both write the same component and have no ordering edge, emit a warning (debug builds) or error.
-
-5. (rough) Phase 2: thread-pool dispatch for non-conflicting systems using `rayon::scope` or a custom work-stealing pool. Benchmark with 30 systems to verify scheduling overhead stays under 0.5ms.
+4. (rough) Add `rayon` dependency behind the feature flag; dispatch parallel stages via `rayon::scope`.
+5. (rough) Provide a `SystemContext` that borrows only the declared components, enforced by the schedule builder.
+6. (rough) Add a debug visualization (F-key toggle) that prints the system graph and per-system timing.
 
 ## Abort Criteria
 
-- If scheduling overhead (topological sort + system dispatch + context construction) exceeds 0.5ms per tick with 30 registered systems, abandon the graph scheduler and keep the monolithic update.
-- If the `SystemContext` borrow model cannot express the common pattern of "read Position, write Velocity" without runtime panics in typical game code, simplify to a stage-based model instead.
+- If scheduling overhead exceeds **0.5ms per tick** with 30 registered systems (measured on a release build, single-threaded), abandon this approach.
+- If the API requires more than 3 lines of boilerplate per system registration, simplify or reconsider.
 
 ## Consequences
 
 ### Positive
-- Explicit ordering constraints make system dependencies visible and enforceable.
-- Enables future auto-parallelism for read-only systems without game code changes.
-- Plugins can register systems at specific points in the graph, not just "after everything."
+- Declarative ordering eliminates implicit execution-order bugs.
+- Automatic parallelization of non-conflicting systems across CPU cores.
+- Foundation for hot-reloadable systems and editor integration.
+- Data-race detection at schedule-build time rather than at runtime.
 
 ### Negative / Trade-offs
-- New API surface that existing games must adopt to benefit from.
-- Topological sort and dependency resolution add startup cost (one-time) and per-tick dispatch overhead.
-- Deterministic replay (AP-07) requires the system execution order to be stable across runs -- the sort must be deterministic (e.g., tie-break by registration order).
+- Increased complexity in the engine core; the schedule builder is non-trivial.
+- Indirection between system registration and execution makes debugging harder (stack traces go through the scheduler).
+- Depends on AP-01 for component access metadata; cannot ship independently.
 
 ## Updates
 

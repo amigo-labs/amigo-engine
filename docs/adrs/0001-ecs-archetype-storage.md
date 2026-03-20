@@ -13,60 +13,66 @@ proposed
 
 ## Context
 
-All entity/component data in Amigo Engine lives in per-component `SparseSet<T>` instances inside `World` (`crates/amigo_core/src/ecs/world.rs`). The five built-in component types (Position, Velocity, Health, SpriteComp, StateScoped) are stored as named public fields (lines 108-112), while game-specific components go through a `dynamic: FxHashMap<TypeId, Box<dyn AnyStorage>>` map (line 115) with type-erased access via `AnyStorage` (lines 73-101).
+The ECS in `crates/amigo_core/src/ecs/` currently stores every component type in its own `SparseSet<T>` (defined in `sparse_set.rs`). The `World` struct (`world.rs`, line 104) holds five statically-typed `SparseSet` fields (`positions`, `velocities`, `healths`, `sprites`, `state_scoped`) plus a `dynamic: FxHashMap<TypeId, Box<dyn AnyStorage>>` map for game-specific components.
 
-Queries use the `join`, `join3`, and `join4` free functions in `crates/amigo_core/src/ecs/query.rs`. Each join drives iteration from the smallest SparseSet and performs `O(1)` sparse lookups into the other sets per entity (e.g., `JoinIter3::next()` at line 162 calls `self.a.get(id)`, `self.b.get(id)`, `self.c.get(id)` for every candidate). For a 3-component join over 10k entities where most entities share the same component set, this means 2 random sparse-array lookups per entity per tick -- these are not cache-friendly because each `SparseSet` stores its dense data in a separate `Vec<T>` (`crates/amigo_core/src/ecs/sparse_set.rs`, line 11).
+Queries that touch multiple components -- `join`, `join3`, `join4` in `query.rs` -- drive iteration from the smallest set and perform sparse lookups into every other set. For example, `JoinIter3::next()` (line 162) calls `self.a.get(id)`, `self.b.get(id)`, `self.c.get(id)` per entity. Each `.get()` does a bounds check plus an indirect read through the sparse array (`sparse_set.rs`, line 91-97). With 10k entities and a 3-component join this means ~30k random sparse lookups per query.
 
-The `Component` trait (`crates/amigo_core/src/ecs/query.rs`, lines 330-335) statically routes to the correct `SparseSet` field, so changing the underlying storage is invisible to game code that uses `world.storage::<T>()`.
+This access pattern has two performance problems:
 
-For games with many entities sharing the same component combination (e.g., 10k NPCs each with Position + Velocity + Health + SpriteComp), archetype storage would pack all four component arrays contiguously per archetype, enabling linear iteration with no sparse lookups and significantly better cache locality.
+1. **Cache misses on multi-component iteration.** Each `SparseSet` stores its dense data contiguously, but the data for entity N in set A and entity N in set B live at unrelated memory addresses. A system that reads `(Position, Velocity, Health)` for 10k entities bounces between three disjoint allocations.
+
+2. **Scaling.** The `join` functions pick the smallest set to drive and probe the others, but the probing is O(1) per lookup only in terms of instructions -- the cache cost is what matters when the sparse arrays grow large (the sparse array in `SparseSet` resizes to hold the maximum entity index; see `ensure_sparse`, line 40).
+
+An archetype-based layout groups entities that share the exact same set of component types into contiguous "archetype tables." Iterating a 3-component query becomes a linear scan over one or more archetype tables with zero sparse lookups.
 
 ## Decision
 
-Introduce a hybrid Archetype + SparseSet storage model behind the `ecs_archetypes` feature flag.
+Introduce a hybrid **Archetype + SparseSet** storage model behind the feature flag `ecs_archetypes`.
 
-**Archetype storage**: entities with the same set of component types are grouped into an `Archetype` struct containing parallel `Vec<T>` columns for each component type. A `ComponentId`-keyed archetype graph tracks edges for add/remove operations. Iteration over archetypes matching a query is a linear scan of contiguous arrays -- no per-entity sparse lookup.
+**Archetype storage** will be the primary path for multi-component iteration:
+- An `Archetype` struct contains a `Vec<u8>` column per component type, tightly packed, plus a parallel `Vec<EntityId>`.
+- An `ArchetypeId` is a hash of the sorted `TypeId` set. A `FxHashMap<ArchetypeId, Archetype>` in `World` holds all archetypes.
+- Entity-to-archetype mapping is maintained in a `Vec<ArchetypeLocation>` indexed by `EntityId::index`, where `ArchetypeLocation = (ArchetypeId, row: u32)`.
+- When an entity gains or loses a component, it moves to the appropriate archetype (row swap-remove in the old, push in the new).
 
-**Hybrid approach**: SparseSet remains the default for dynamic and infrequently-queried components. The 5 built-in component fields on `World` migrate to archetype storage; dynamic components added via `insert_dynamic` stay in SparseSets unless explicitly opted in. This avoids forcing archetype moves for debug-only or singleton components.
+**SparseSet storage** remains available as a fallback for singleton/tag components or components that are added and removed very frequently (where archetype moves would be expensive). The existing `SparseSet<T>` is unchanged.
 
-**Query API**: The existing `join`/`join3`/`join4` functions will dispatch to archetype iteration when all queried components are archetype-managed, falling back to the current SparseSet join otherwise. The `Component` trait gains an associated const `ARCHETYPE_MANAGED: bool` to enable compile-time dispatch.
+**Query API:** The existing `join`/`join3`/`join4` free functions will be updated to iterate matching archetype tables when the feature is enabled, falling back to the current sparse-set probing path when it is not. The `Component` trait (`query.rs`, line 330) will gain an associated constant indicating storage strategy.
 
 ### Alternatives Considered
 
-1. **Pure archetype (Bevy-style)**: Every component in archetypes, archetype fragmentation handled by table-of-tables. Rejected because Amigo's dynamic component system (`insert_dynamic`) would cause excessive archetype fragmentation for game-specific tags and markers, and the migration cost is higher.
+1. **Pure archetype (no SparseSet fallback).** Rejected because frequent component add/remove (e.g., status effects, temporary tags) causes excessive archetype moves. The hybrid approach lets users opt specific component types into SparseSet storage.
 
-2. **SparseSet with columnar iteration optimization**: Keep SparseSets but add a `BitSet` intersection pre-pass to skip non-matching entities. Rejected because it still requires per-entity random access into each set's dense array; for large homogeneous populations the cache miss pattern is the bottleneck, not the branch.
+2. **Grouped SparseSet (sort dense arrays to align entity order across sets).** Simpler to implement but does not give contiguous multi-component rows and requires re-sorting each frame, which is O(n log n) per set.
 
 ## Migration Path
 
-1. **Add `Archetype` and `ArchetypeId` types** -- Create `crates/amigo_core/src/ecs/archetype.rs` containing `Archetype { id, component_ids: Vec<ComponentId>, columns: Vec<Box<dyn AnyColumn>>, entity_ids: Vec<EntityId> }` and a `AnyColumn` trait mirroring `AnyStorage` but without change-tracking (change detection moves to ADR-0003). Verify: unit test spawning 1k entities into a single archetype and reading back all components.
+1. **Add `Archetype` and `ArchetypeMap` types** -- Create `crates/amigo_core/src/ecs/archetype.rs` with the archetype table, column storage, and archetype graph (edges for "add component X" / "remove component X" transitions). Gate behind `#[cfg(feature = "ecs_archetypes")]`. Verify: unit tests that insert 10k entities with 3 components, iterate them, and confirm the data is correct.
 
-2. **Build the archetype graph in `World`** -- Add `archetypes: Vec<Archetype>` and `entity_archetype: Vec<ArchetypeId>` to `World` behind `#[cfg(feature = "ecs_archetypes")]`. Implement `spawn_archetype()` that places the entity directly into the correct archetype based on the component bundle. Verify: `cargo test --features ecs_archetypes` passes; `world.get::<Position>(id)` returns the same value whether stored in archetype or SparseSet.
+2. **Wire archetype storage into `World`** -- Behind the feature flag, add an `archetypes: ArchetypeMap` field to `World` (`world.rs`). Update `spawn`/`despawn`/`add`/`remove_comp` to maintain archetype membership alongside the existing sparse sets. Verify: existing ECS tests pass with the feature both on and off (`cargo test --features ecs_archetypes -p amigo_core`).
 
-3. (rough) Implement archetype-aware `join`/`join3` that iterate matching archetypes linearly, falling back to SparseSet join for mixed queries.
+3. **Benchmark harness** -- Add a `benches/ecs_iter.rs` criterion benchmark that creates 10k entities with `(Position, Velocity, Health)` and measures `join3` iteration time with and without the feature. Verify: archetype path is at least 2x faster than the SparseSet path. If not, abort (see below).
 
-4. (rough) Benchmark 3-component join over 10k entities (Position + Velocity + Health). Compare archetype iteration vs. current SparseSet join. If not 2x faster, abort.
-
-5. (rough) Migrate the 5 built-in `SparseSet` fields on `World` behind the feature flag so they are backed by archetype columns when `ecs_archetypes` is enabled.
-
-6. (rough) Update `flush()` to handle archetype-level despawn (swap-remove within archetype, update entity-to-archetype mapping).
+4. (rough) Update `join`/`join3`/`join4` to dispatch through archetype tables when the feature is enabled.
+5. (rough) Add `#[component(storage = "sparse_set")]` attribute macro or trait constant to let users opt specific types out of archetype storage.
+6. (rough) Handle archetype edge caching so that repeated add/remove patterns (e.g., `StatusEffect`) do not re-hash every time.
 
 ## Abort Criteria
 
-- If archetype-based 3-component iteration (Position + Velocity + Health) over 10,000 entities is not at least 2x faster than the current SparseSet `join3` implementation, abandon this approach and keep SparseSet-only storage.
-- If archetype fragmentation exceeds 50 archetypes in the standard game template (indicating component combinations are too diverse for archetype grouping to help), reconsider the hybrid boundary.
+- If archetype-based iteration is not at least **2x faster** than the current SparseSet `join3` for 3-component queries with 10k entities in a criterion benchmark, abandon this approach.
+- If archetype move cost causes a measurable regression (>0.5ms per frame) in a stress test that adds/removes a component from 500 entities per tick, fall back to pure SparseSet.
 
 ## Consequences
 
 ### Positive
-- Linear, cache-friendly iteration for the common case of many entities sharing the same component set.
-- No per-entity sparse lookup overhead for matched archetype queries.
-- SparseSet remains available for dynamic/singleton components, preserving flexibility.
+- Linear, cache-friendly iteration for the common "process all entities with components A, B, C" pattern.
+- Foundation for automatic system parallelization (AP-02): archetype tables can be borrowed independently.
+- Matches the mental model of most ECS literature, making the engine easier to learn.
 
 ### Negative / Trade-offs
-- Adding or removing a component from an entity requires moving it between archetypes (memcpy of all columns), which is more expensive than the current SparseSet insert/remove.
-- Two storage backends increase code complexity and the surface area for bugs.
-- Feature-flag gating means CI must test both paths.
+- Adding or removing a component is now an archetype move (memcpy of all columns for that entity), which is more expensive than a single `SparseSet::insert`/`remove`.
+- Increased code complexity: two storage backends with feature-gated code paths.
+- Entity lookup by ID now requires an indirection through the archetype location table.
 
 ## Updates
 
