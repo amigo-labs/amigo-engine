@@ -242,3 +242,146 @@ ToolDef {
 - Whether to support per-world defaults (e.g., `[art.caribbean]` with different palette than `[art.dune]`)
 - Whether to add a `amigo_artgen_reset_defaults()` tool
 - Whether defaults should be inherited from a parent template
+
+## Acceptance Criteria
+
+### API Completeness
+
+#### Config in `amigo.toml` — Art Section
+- [ ] `[art]` section is recognized and parsed from `amigo.toml`
+- [ ] `art.default_sprite_size` key is supported (integer)
+- [ ] `art.default_style` key is supported (string)
+- [ ] `art.default_palette` key is supported (string)
+- [ ] `art.color_depth` key is supported (integer)
+- [ ] `art.background_style` key is supported (string)
+- [ ] `art.tileset_tile_size` key is supported (integer)
+- [ ] `art.add_outline` key is supported (boolean)
+- [ ] `art.outline_color` key is supported (string, hex)
+
+#### Config in `amigo.toml` — Audio Section
+- [ ] `[audio]` section is recognized and parsed from `amigo.toml`
+- [ ] `audio.default_genre` key is supported (string)
+- [ ] `audio.default_bpm` key is supported (integer)
+- [ ] `audio.default_key` key is supported (string)
+- [ ] `audio.sfx_duration` key is supported (float)
+- [ ] `audio.music_duration` key is supported (float)
+- [ ] `audio.sample_rate` key is supported (integer)
+- [ ] `audio.output_format` key is supported (string)
+
+#### MCP Tool: `amigo_artgen_get_defaults()`
+- [ ] Tool exists with name `amigo_artgen_get_defaults`
+- [ ] Tool description: "Get project art generation defaults from amigo.toml"
+- [ ] Tool accepts empty input schema (`{}`)
+- [ ] Tool returns all art defaults from `[art]` section as JSON object
+
+#### MCP Tool: `amigo_artgen_set_defaults(defaults)`
+- [ ] Tool exists with name `amigo_artgen_set_defaults`
+- [ ] Tool description mentions merging with existing values
+- [ ] Tool accepts `default_sprite_size` parameter (integer)
+- [ ] Tool accepts `default_style` parameter (string)
+- [ ] Tool accepts `default_palette` parameter (string)
+- [ ] Tool accepts `color_depth` parameter (integer)
+- [ ] Tool accepts `tileset_tile_size` parameter (integer)
+- [ ] Tool accepts `add_outline` parameter (boolean)
+- [ ] Tool accepts `outline_color` parameter (string)
+- [ ] Tool returns `{"saved": true, "path": "amigo.toml"}`
+
+#### MCP Tool: `amigo_audiogen_get_defaults()`
+- [ ] Tool exists with name `amigo_audiogen_get_defaults`
+- [ ] Tool description: "Get project audio generation defaults from amigo.toml"
+- [ ] Tool accepts empty input schema
+- [ ] Tool returns all audio defaults from `[audio]` section as JSON object
+
+#### MCP Tool: `amigo_audiogen_set_defaults(defaults)`
+- [ ] Tool exists with name `amigo_audiogen_set_defaults`
+- [ ] Tool description mentions merging with existing values
+- [ ] Tool returns `{"saved": true, "path": "amigo.toml"}`
+
+#### Internal Functions — Art Gen (`tools/amigo_artgen/src/`)
+- [ ] `resolve_params(params: &GenerateSpriteParams, project_dir: &Path) -> ResolvedSpriteParams` function exists
+- [ ] `load_art_defaults(project_dir: &Path) -> ArtDefaults` function exists
+- [ ] `save_art_defaults(project_dir: &Path, updates: &HashMap<String, toml::Value>)` function exists
+- [ ] `ArtDefaults` struct exists with `#[serde(default)]` deserialization
+
+#### Internal Functions — Audio Gen (`tools/amigo_audiogen/src/`)
+- [ ] `resolve_params(params: &GenerateMusicParams, project_dir: &Path) -> ResolvedMusicParams` function exists
+- [ ] `load_audio_defaults(project_dir: &Path) -> AudioDefaults` function exists
+- [ ] `save_audio_defaults(project_dir: &Path, updates: &HashMap<String, toml::Value>)` function exists
+- [ ] `AudioDefaults` struct exists with `#[serde(default)]` deserialization
+
+### Behavior
+
+#### Default Resolution Order
+- [ ] Step 1: Explicit parameter value from the tool call is used if present
+- [ ] Step 2: If missing, project default from `amigo.toml` `[art]` or `[audio]` section is used
+- [ ] Step 3: If missing, style default (e.g., `StyleDef.default_size`) is used
+- [ ] Step 4: If missing, hardcoded fallback is used (always exists, never fails)
+- [ ] Resolution proceeds through steps in order, stopping at the first available value
+
+#### Art Parameter Hardcoded Fallbacks
+- [ ] Sprite size falls back to `32`
+- [ ] Style name falls back to `"caribbean"`
+- [ ] Color depth falls back to `32` (no limit)
+- [ ] Tileset tile size falls back to `16`
+- [ ] Background style falls back to `"static"`
+- [ ] Outline falls back to `true`
+- [ ] Outline color falls back to `"#1a1a2e"`
+
+#### Audio Parameter Hardcoded Fallbacks
+- [ ] BPM falls back to `120`
+- [ ] Genre falls back to `""`
+- [ ] Music duration falls back to `30.0`
+- [ ] SFX duration falls back to `2.0`
+- [ ] Key falls back to `"C minor"`
+- [ ] Sample rate falls back to `44100`
+- [ ] Output format falls back to `"wav"`
+
+#### `defaults_missing` Hint
+- [ ] If resolution reaches step 3 (style fallback) or step 4 (hardcoded fallback), the tool response includes a `defaults_missing` hint
+- [ ] `defaults_missing` is an array of parameter names that were not found in explicit or project defaults
+- [ ] Response includes a `suggestion` field: `"Run amigo_artgen_set_defaults to save project defaults"` (or audiogen equivalent)
+- [ ] Hint is included in the `hints` object alongside the `result`
+
+#### "Ask Once" Flow
+- [ ] After a generation tool returns `defaults_missing`, Claude can call `set_defaults` to save preferences
+- [ ] Saved defaults are used in all subsequent generation calls without re-prompting
+- [ ] Explicit parameter values in tool calls always override saved defaults
+
+#### Config File Merging (`set_defaults`)
+- [ ] `set_defaults` performs a merge, not an overwrite of the entire `[art]` or `[audio]` section
+- [ ] Existing keys not included in the `set_defaults` call are preserved
+- [ ] Keys included in the `set_defaults` call are added or updated
+- [ ] The resulting `amigo.toml` is written with `toml::to_string_pretty`
+
+#### Config File Read
+- [ ] `load_art_defaults` reads from `<project_dir>/amigo.toml`
+- [ ] If `amigo.toml` does not exist, `load_art_defaults` returns empty/default `ArtDefaults`
+- [ ] If `amigo.toml` exists but has no `[art]` section, returns empty/default `ArtDefaults`
+- [ ] `load_audio_defaults` reads from `<project_dir>/amigo.toml`
+- [ ] If `amigo.toml` does not exist, `load_audio_defaults` returns empty/default `AudioDefaults`
+- [ ] If `amigo.toml` exists but has no `[audio]` section, returns empty/default `AudioDefaults`
+
+#### Edge Cases
+- [ ] If `amigo.toml` is malformed TOML, parsing falls back to default (no crash)
+- [ ] If `amigo.toml` is not writable, `save_*_defaults` returns an error (not a panic)
+- [ ] If `set_defaults` is called with an empty object, the file is unchanged
+- [ ] If the `[art]` or `[audio]` section does not exist when `set_defaults` is called, it is created
+- [ ] Concurrent reads and writes to `amigo.toml` do not corrupt the file (sequential access)
+
+### Quality Gates
+- [ ] `cargo check --workspace` compiles without errors
+- [ ] `cargo test --workspace` — all tests pass
+- [ ] `cargo clippy --workspace -- -D warnings` — no warnings
+- [ ] `cargo fmt --all --check` — correctly formatted
+- [ ] New public API has at least one test per method
+- [ ] No `unwrap()` in library code
+- [ ] No `todo!()` or `unimplemented!()` in committed code
+
+### Convention Compliance
+- [ ] MCP tool names use `amigo_` prefix and snake_case (`amigo_artgen_get_defaults`, `amigo_audiogen_set_defaults`, etc.)
+- [ ] Config file is `amigo.toml` (kebab-case naming convention)
+- [ ] Logging uses `tracing` crate for warnings on missing defaults, parse errors
+- [ ] Error handling uses `thiserror` for config read/write errors
+- [ ] No `unwrap()` in library code; `fs::read_to_string` failures return defaults gracefully
+- [ ] Config structs use `#[serde(default)]` for forward-compatible deserialization
+- [ ] TOML parsing uses `toml` crate (consistent with existing `amigo.toml` handling)
