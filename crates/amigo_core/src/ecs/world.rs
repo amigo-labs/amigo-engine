@@ -314,6 +314,145 @@ impl Default for World {
     }
 }
 
+// ── Reflect impls for built-in components (behind `reflect` feature) ──
+
+#[cfg(feature = "reflect")]
+impl amigo_reflect::Reflect for Health {
+    fn type_info() -> &'static amigo_reflect::TypeInfo
+    where
+        Self: Sized,
+    {
+        use std::sync::LazyLock;
+        static TYPE_INFO: LazyLock<amigo_reflect::TypeInfo> = LazyLock::new(|| {
+            let fields = vec![
+                amigo_reflect::FieldInfo {
+                    name: "current",
+                    type_name: std::any::type_name::<i32>(),
+                    type_id: TypeId::of::<i32>(),
+                    offset: std::mem::offset_of!(Health, current),
+                    attrs: amigo_reflect::FieldAttrs {
+                        label: None,
+                        range: None,
+                        read_only: false,
+                        skip: false,
+                    },
+                },
+                amigo_reflect::FieldInfo {
+                    name: "max",
+                    type_name: std::any::type_name::<i32>(),
+                    type_id: TypeId::of::<i32>(),
+                    offset: std::mem::offset_of!(Health, max),
+                    attrs: amigo_reflect::FieldAttrs {
+                        label: None,
+                        range: None,
+                        read_only: false,
+                        skip: false,
+                    },
+                },
+            ];
+            let fields: &'static [amigo_reflect::FieldInfo] = Box::leak(fields.into_boxed_slice());
+            amigo_reflect::TypeInfo {
+                short_name: "Health",
+                type_path: "amigo_core::ecs::world::Health",
+                type_id: TypeId::of::<Health>(),
+                fields,
+            }
+        });
+        &TYPE_INFO
+    }
+
+    fn reflected_type_info(&self) -> &'static amigo_reflect::TypeInfo {
+        <Self as amigo_reflect::Reflect>::type_info()
+    }
+
+    fn field(&self, name: &str) -> Option<amigo_reflect::FieldRef<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        match name {
+            "current" => Some(amigo_reflect::FieldRef {
+                info: &info.fields[0],
+                value: &self.current,
+            }),
+            "max" => Some(amigo_reflect::FieldRef {
+                info: &info.fields[1],
+                value: &self.max,
+            }),
+            _ => None,
+        }
+    }
+
+    fn field_mut(&mut self, name: &str) -> Option<amigo_reflect::FieldMut<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        match name {
+            "current" => Some(amigo_reflect::FieldMut {
+                info: &info.fields[0],
+                value: &mut self.current,
+            }),
+            "max" => Some(amigo_reflect::FieldMut {
+                info: &info.fields[1],
+                value: &mut self.max,
+            }),
+            _ => None,
+        }
+    }
+
+    fn fields(&self) -> Vec<amigo_reflect::FieldRef<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        vec![
+            amigo_reflect::FieldRef {
+                info: &info.fields[0],
+                value: &self.current,
+            },
+            amigo_reflect::FieldRef {
+                info: &info.fields[1],
+                value: &self.max,
+            },
+        ]
+    }
+
+    fn fields_mut(&mut self) -> Vec<amigo_reflect::FieldMut<'_>> {
+        let info = <Self as amigo_reflect::Reflect>::type_info();
+        let base_ptr = self as *mut Self as *mut u8;
+        unsafe {
+            vec![
+                amigo_reflect::FieldMut {
+                    info: &info.fields[0],
+                    value: &mut *(base_ptr.add(info.fields[0].offset) as *mut i32),
+                },
+                amigo_reflect::FieldMut {
+                    info: &info.fields[1],
+                    value: &mut *(base_ptr.add(info.fields[1].offset) as *mut i32),
+                },
+            ]
+        }
+    }
+
+    fn apply_patch(&mut self, patch: &amigo_reflect::ReflectPatch) -> usize {
+        let mut count = 0;
+        for (name, value) in patch.iter() {
+            match name {
+                "current" => {
+                    if let Some(val) = value.downcast_ref::<i32>() {
+                        self.current = *val;
+                        count += 1;
+                    }
+                }
+                "max" => {
+                    if let Some(val) = value.downcast_ref::<i32>() {
+                        self.max = *val;
+                        count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        count
+    }
+
+    fn clone_reflect(&self) -> Box<dyn amigo_reflect::Reflect> {
+        Box::new(*self)
+    }
+}
+
 // ── Reflection Integration (behind `reflect` feature) ──
 
 #[cfg(feature = "reflect")]
