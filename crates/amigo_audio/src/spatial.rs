@@ -7,6 +7,7 @@ use kira::manager::backend::DefaultBackend;
 use kira::manager::AudioManager as KiraManager;
 use kira::sound::static_sound::StaticSoundHandle;
 use kira::sound::PlaybackState;
+use kira::tween::Tween;
 use kira::Volume;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -326,20 +327,20 @@ impl SpatialAudioSystem {
             // Apply volume via kira (amplitude).
             instance
                 .handle
-                .set_volume(Volume::Amplitude(volume as f64), Default::default());
+                .set_volume(Volume::Amplitude(volume as f64), Tween::default());
 
             // kira panning: 0.0 = left, 0.5 = center, 1.0 = right.
             let kira_pan = ((pan + 1.0) * 0.5) as f64;
             instance
                 .handle
-                .set_panning(kira_pan, Default::default());
+                .set_panning(kira_pan, Tween::default());
         }
     }
 
     /// Stop a spatial sound immediately.
     pub fn stop(&mut self, id: SpatialSoundId) {
         if let Some(mut instance) = self.active.remove(&id) {
-            let _ = instance.handle.stop(Default::default());
+            let _ = instance.handle.stop(Tween::default());
             debug!("SpatialAudioSystem: stopped {id:?}");
         }
     }
@@ -355,7 +356,7 @@ impl SpatialAudioSystem {
 
         for id in to_remove {
             if let Some(mut instance) = self.active.remove(&id) {
-                let _ = instance.handle.stop(Default::default());
+                let _ = instance.handle.stop(Tween::default());
             }
         }
     }
