@@ -1,11 +1,11 @@
 ---
-number: "0010"
+number: "0009"
 title: Node-Based Audio Graph Replacing Linear Playback
 status: proposed
 date: 2026-03-20
 ---
 
-# ADR-0010: Node-Based Audio Graph Replacing Linear Playback
+# ADR-0009: Node-Based Audio Graph Replacing Linear Playback
 
 ## Status
 

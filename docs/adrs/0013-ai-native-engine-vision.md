@@ -1,11 +1,11 @@
 ---
-number: "0015"
+number: "0013"
 title: AI-Native Engine Vision & Public API Strategy
 status: proposed
 date: 2026-03-20
 ---
 
-# ADR-0015: AI-Native Engine Vision & Public API Strategy
+# ADR-0013: AI-Native Engine Vision & Public API Strategy
 
 ## Status
 

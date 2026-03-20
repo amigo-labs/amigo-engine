@@ -1,11 +1,11 @@
 ---
-number: "0012"
+number: "0010"
 title: Editor V2 — Reflection-Based Inspector and Live Editing
 status: proposed
 date: 2026-03-20
 ---
 
-# ADR-0012: Editor V2 — Reflection-Based Inspector and Live Editing
+# ADR-0010: Editor V2 — Reflection-Based Inspector and Live Editing
 
 ## Status
 

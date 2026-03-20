@@ -1,11 +1,11 @@
 ---
-number: "0013"
+number: "0011"
 title: Deklarative UI mit Retained-Mode Layout
 status: proposed
 date: 2026-03-20
 ---
 
-# ADR-0013: Deklarative UI mit Retained-Mode Layout
+# ADR-0011: Deklarative UI mit Retained-Mode Layout
 
 ## Status
 

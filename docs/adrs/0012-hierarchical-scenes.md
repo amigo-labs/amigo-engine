@@ -1,11 +1,11 @@
 ---
-number: "0014"
+number: "0012"
 title: Hierarchische Szenen-Komposition
 status: proposed
 date: 2026-03-20
 ---
 
-# ADR-0014: Hierarchische Szenen-Komposition
+# ADR-0012: Hierarchische Szenen-Komposition
 
 ## Status
 
