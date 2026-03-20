@@ -339,9 +339,9 @@ impl PostProcessUniforms {
             enabled_flags: 0,
             screen_width: width as f32,
             screen_height: height as f32,
+            colorblind_mode: 0,
+            colorblind_strength: 0.0,
             _pad0: 0.0,
-            _pad1: 0.0,
-            _pad2: 0.0,
         };
 
         for effect in effects {
@@ -383,6 +383,17 @@ impl PostProcessUniforms {
                     u.enabled_flags |= 16;
                     u.scanline_intensity = *scanline_intensity;
                     u.curvature = *curvature;
+                }
+                PostEffect::ColorblindFilter { mode, strength } => {
+                    u.enabled_flags |= 32;
+                    u.colorblind_mode = match mode {
+                        ColorBlindMode::None => 0,
+                        ColorBlindMode::Protanopia => 1,
+                        ColorBlindMode::Deuteranopia => 2,
+                        ColorBlindMode::Tritanopia => 3,
+                        ColorBlindMode::Achromatopsia => 4,
+                    };
+                    u.colorblind_strength = strength.clamp(0.0, 1.0);
                 }
             }
         }

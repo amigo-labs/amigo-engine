@@ -1,12 +1,16 @@
 //! City-builder gametype: zoning, resource flow, road networks, happiness,
 //! buildings, disasters, and statistics overlays.
 
+use crate::agents::{NeedType, Needs};
 use crate::color::Color;
+use crate::ecs::EntityId;
 use crate::math::IVec2;
-use crate::pathfinding::FlowField;
+use crate::pathfinding::{FlowField, Walkable};
 use crate::rect::Rect;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::BinaryHeap;
+use std::collections::VecDeque;
 
 // ---------------------------------------------------------------------------
 // GridPos alias
@@ -134,16 +138,37 @@ impl ResourceFlow {
         self.edges.retain(|e| e.from != id && e.to != id);
     }
 
-    /// Connect two nodes with an edge. The road path is left empty (would be
-    /// computed via `RoadNetwork::shortest_path` in the full engine).
-    pub fn connect(&mut self, from: FlowNodeId, to: FlowNodeId, _road: &RoadNetwork) {
+    /// Connect two nodes with an edge. Computes a cached road path via A* and
+    /// sets `max_throughput` proportional to the path length.
+    pub fn connect(&mut self, from: FlowNodeId, to: FlowNodeId, road: &RoadNetwork) {
+        let from_pos = self.nodes.iter().find(|n| n.id == from).map(|n| n.position);
+        let to_pos = self.nodes.iter().find(|n| n.id == to).map(|n| n.position);
+
+        let (road_path, throughput) = match (from_pos, to_pos) {
+            (Some(a), Some(b)) => match road.shortest_path(a, b) {
+                Some(path) => {
+                    // Throughput inversely proportional to path length (longer = slower).
+                    let tp = (20_i32).max(1).min(50 / (path.len() as i32).max(1));
+                    (path, tp)
+                }
+                None => (Vec::new(), 10),
+            },
+            _ => (Vec::new(), 10),
+        };
+
         self.edges.push(FlowEdge {
             from,
             to,
-            max_throughput: 10,
+            max_throughput: throughput,
             current_throughput: 0,
-            road_path: Vec::new(),
+            road_path,
         });
+    }
+
+    /// Called when a road tile changes. Disconnects edges whose cached paths
+    /// passed through the changed tile, forcing reconnection via new topology.
+    pub fn on_road_change(&mut self, changed_pos: GridPos) {
+        self.edges.retain(|e| !e.road_path.contains(&changed_pos));
     }
 
     /// Disconnect two nodes.
@@ -502,6 +527,112 @@ impl RoadNetwork {
     /// Traffic density at a tile (agents using this tile per tick).
     pub fn traffic_density(&self, pos: GridPos) -> u32 {
         self.idx(pos).map_or(0, |i| self.traffic[i])
+    }
+
+    /// Increment traffic counter for a tile (called during agent movement).
+    pub fn record_traffic(&mut self, pos: GridPos) {
+        if let Some(i) = self.idx(pos) {
+            self.traffic[i] += 1;
+        }
+    }
+
+    /// Reset per-tick traffic counters (called at the start of each tick).
+    pub fn reset_traffic(&mut self) {
+        self.traffic.iter_mut().for_each(|t| *t = 0);
+    }
+
+    /// Find shortest road path between two points via A*.
+    /// Returns `None` if no path exists or positions are not on roads.
+    pub fn shortest_path(&self, from: GridPos, to: GridPos) -> Option<Vec<GridPos>> {
+        if !self.has_road(from) || !self.has_road(to) || !self.connected(from, to) {
+            return None;
+        }
+        if from == to {
+            return Some(vec![from]);
+        }
+
+        let idx = |p: GridPos| (p.y as u32 * self.width + p.x as u32) as usize;
+        let size = (self.width * self.height) as usize;
+        let mut g_score = vec![i32::MAX; size];
+        let mut came_from: Vec<Option<GridPos>> = vec![None; size];
+
+        g_score[idx(from)] = 0;
+
+        // (negative f-score for max-heap used as min-heap, pos)
+        let mut open = BinaryHeap::new();
+        let h = |p: GridPos| (p.x - to.x).abs() + (p.y - to.y).abs();
+        open.push(std::cmp::Reverse((h(from), 0i32, from)));
+
+        while let Some(std::cmp::Reverse((_f, g, cur))) = open.pop() {
+            if cur == to {
+                // Reconstruct path.
+                let mut path = vec![to];
+                let mut c = to;
+                while let Some(prev) = came_from[idx(c)] {
+                    path.push(prev);
+                    c = prev;
+                    if c == from {
+                        break;
+                    }
+                }
+                path.reverse();
+                return Some(path);
+            }
+            if g > g_score[idx(cur)] {
+                continue;
+            }
+            for &(dx, dy) in &[(0i32, 1i32), (0, -1), (1, 0), (-1, 0)] {
+                let nx = cur.x + dx;
+                let ny = cur.y + dy;
+                let next = GridPos::new(nx, ny);
+                if !self.has_road(next) {
+                    continue;
+                }
+                let ng = g + 1;
+                let ni = idx(next);
+                if ng < g_score[ni] {
+                    g_score[ni] = ng;
+                    came_from[ni] = Some(cur);
+                    open.push(std::cmp::Reverse((ng + h(next), ng, next)));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get or compute a flow field toward a destination. Cached until
+    /// `invalidate_cache()` is called (on road topology changes).
+    pub fn flow_field_to(&mut self, destination: GridPos) -> &FlowField {
+        if !self.flow_cache.contains_key(&destination) {
+            let road_walkable = RoadWalkable {
+                tiles: &self.tiles,
+                width: self.width,
+                height: self.height,
+            };
+            let field =
+                FlowField::compute(destination, self.width, self.height, &road_walkable);
+            self.flow_cache.insert(destination, field);
+        }
+        self.flow_cache.get(&destination).unwrap()
+    }
+
+    /// All tiles in the same connected component as `pos`.
+    pub fn connected_component(&self, pos: GridPos) -> Vec<GridPos> {
+        let idx = match self.idx(pos) {
+            Some(i) if self.tiles[i] => i,
+            _ => return Vec::new(),
+        };
+        let label = self.components[idx];
+        let mut result = Vec::new();
+        for y in 0..self.height as i32 {
+            for x in 0..self.width as i32 {
+                let i = (y as u32 * self.width + x as u32) as usize;
+                if self.tiles[i] && self.components[i] == label {
+                    result.push(GridPos::new(x, y));
+                }
+            }
+        }
+        result
     }
 
     // -- internal helpers ---------------------------------------------------

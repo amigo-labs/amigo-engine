@@ -4,8 +4,13 @@
 //! StatReached, All, Any, Custom). The tracker monitors game events and manages
 //! unlock state. Persistence via SaveManager.
 
+use std::path::Path;
+
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+
+use crate::color::Color;
+use crate::rect::Rect;
 
 // ---------------------------------------------------------------------------
 // Achievement Definition
@@ -76,6 +81,8 @@ pub struct AchievementSaveData {
 
 #[derive(Debug)]
 pub enum AchievementError {
+    Io(std::io::Error),
+    Parse(String),
     NotFound(String),
     Duplicate(String),
 }
@@ -83,6 +90,8 @@ pub enum AchievementError {
 impl std::fmt::Display for AchievementError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Io(e) => write!(f, "IO error loading definitions: {e}"),
+            Self::Parse(msg) => write!(f, "RON parse error: {msg}"),
             Self::NotFound(id) => write!(f, "Achievement not found: {id}"),
             Self::Duplicate(id) => write!(f, "Duplicate achievement ID: {id}"),
         }
@@ -90,6 +99,12 @@ impl std::fmt::Display for AchievementError {
 }
 
 impl std::error::Error for AchievementError {}
+
+impl From<std::io::Error> for AchievementError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // AchievementTracker
@@ -131,7 +146,26 @@ impl AchievementTracker {
         }
     }
 
-    /// Register a single achievement definition.
+    // -----------------------------------------------------------------------
+    // Definition loading
+    // -----------------------------------------------------------------------
+
+    /// Load achievement definitions from a RON file.
+    /// Initializes progress entries for all defined achievements.
+    pub fn load_definitions(&mut self, path: &Path) -> Result<(), AchievementError> {
+        let content = std::fs::read_to_string(path)?;
+        let defs: Vec<AchievementDef> =
+            ron::from_str(&content).map_err(|e| AchievementError::Parse(e.to_string()))?;
+        for def in defs {
+            if self.definitions.contains_key(&def.id) {
+                return Err(AchievementError::Duplicate(def.id));
+            }
+            self.register(def);
+        }
+        Ok(())
+    }
+
+    /// Register a single achievement definition programmatically.
     pub fn register(&mut self, def: AchievementDef) {
         let total = condition_threshold(&def.condition);
         self.progress
@@ -321,6 +355,32 @@ impl AchievementTracker {
         self.pending_toasts.clear();
     }
 
+    /// Print all achievements and their progress to the log.
+    pub fn debug_list(&self) {
+        let mut defs: Vec<&AchievementDef> = self.definitions.values().collect();
+        defs.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then(a.id.cmp(&b.id)));
+        for def in defs {
+            let progress = self.progress.get(&def.id);
+            let (current, total, unlocked) = match progress {
+                Some(p) => (p.current, p.total, p.unlocked),
+                None => (0, 0, false),
+            };
+            let status = if unlocked { "UNLOCKED" } else { "locked" };
+            eprintln!(
+                "[achievement] {} ({}) - {} [{}/{}] [{}]",
+                def.id, def.name, def.description, current, total, status,
+            );
+        }
+        eprintln!(
+            "[achievement] Total: {}/{} ({:.0}%)",
+            self.unlocked_count(),
+            self.total_count(),
+            self.completion() * 100.0,
+        );
+    }
+
+    /// Enable or disable tracking. When disabled, `report_event` / `set_flag`
+    /// calls are ignored.
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
     }
@@ -335,8 +395,24 @@ impl AchievementTracker {
             Some(d) => d.clone(),
             None => return,
         };
-        let met = self.evaluate_condition(&def.condition);
-        let current = self.condition_current(&def.condition);
+        // Evaluate custom conditions separately to avoid borrow issues:
+        // we need to temporarily take the callbacks out of self, evaluate,
+        // then put them back.
+        let custom_results = self.snapshot_custom_results(&def.condition);
+        let met = Self::evaluate_condition_with(
+            &def.condition,
+            &self.event_counts,
+            &self.flags,
+            &self.stats,
+            &custom_results,
+        );
+        let current = Self::condition_current_with(
+            &def.condition,
+            &self.event_counts,
+            &self.flags,
+            &self.stats,
+            &custom_results,
+        );
         // Update progress (no more borrows on self needed)
         if let Some(progress) = self.progress.get_mut(id) {
             progress.current = current;
@@ -353,51 +429,108 @@ impl AchievementTracker {
         }
     }
 
-    fn evaluate_condition(&self, cond: &AchievementCondition) -> bool {
+    /// Snapshot the results of all custom conditions referenced by `cond`.
+    /// This evaluates callback functions while `&self` is still available,
+    /// producing a map of key -> bool that the static evaluator can use.
+    fn snapshot_custom_results(
+        &self,
+        cond: &AchievementCondition,
+    ) -> FxHashMap<String, bool> {
+        let mut results = FxHashMap::default();
+        Self::collect_custom_keys(cond, &mut results);
+        for (key, val) in results.iter_mut() {
+            if let Some(cb) = self.custom_conditions.get(key) {
+                *val = cb(self);
+            }
+        }
+        results
+    }
+
+    fn collect_custom_keys(cond: &AchievementCondition, out: &mut FxHashMap<String, bool>) {
+        match cond {
+            AchievementCondition::Custom(key) => {
+                out.insert(key.clone(), false);
+            }
+            AchievementCondition::All(subs) | AchievementCondition::Any(subs) => {
+                for sub in subs {
+                    Self::collect_custom_keys(sub, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn evaluate_condition_with(
+        cond: &AchievementCondition,
+        event_counts: &FxHashMap<String, u32>,
+        flags: &FxHashMap<String, bool>,
+        stats: &FxHashMap<String, f32>,
+        custom_results: &FxHashMap<String, bool>,
+    ) -> bool {
         match cond {
             AchievementCondition::EventCount { event, threshold } => {
-                self.event_counts.get(event).copied().unwrap_or(0) >= *threshold
+                event_counts.get(event).copied().unwrap_or(0) >= *threshold
             }
-            AchievementCondition::FlagSet(flag) => self.flags.get(flag).copied().unwrap_or(false),
+            AchievementCondition::FlagSet(flag) => flags.get(flag).copied().unwrap_or(false),
             AchievementCondition::StatReached { stat, threshold } => {
-                self.stats.get(stat).copied().unwrap_or(0.0) >= *threshold
+                stats.get(stat).copied().unwrap_or(0.0) >= *threshold
             }
-            AchievementCondition::All(subs) => subs.iter().all(|c| self.evaluate_condition(c)),
-            AchievementCondition::Any(subs) => subs.iter().any(|c| self.evaluate_condition(c)),
-            AchievementCondition::Custom(_key) => {
-                // Custom conditions need special handling to avoid borrow issues
-                // We check against a snapshot approach
-                false // Custom conditions are checked via register_custom_condition
+            AchievementCondition::All(subs) => subs
+                .iter()
+                .all(|c| Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)),
+            AchievementCondition::Any(subs) => subs
+                .iter()
+                .any(|c| Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)),
+            AchievementCondition::Custom(key) => {
+                custom_results.get(key).copied().unwrap_or(false)
             }
         }
     }
 
-    fn condition_current(&self, cond: &AchievementCondition) -> u32 {
+    fn condition_current_with(
+        cond: &AchievementCondition,
+        event_counts: &FxHashMap<String, u32>,
+        flags: &FxHashMap<String, bool>,
+        stats: &FxHashMap<String, f32>,
+        custom_results: &FxHashMap<String, bool>,
+    ) -> u32 {
         match cond {
             AchievementCondition::EventCount { event, .. } => {
-                self.event_counts.get(event).copied().unwrap_or(0)
+                event_counts.get(event).copied().unwrap_or(0)
             }
             AchievementCondition::FlagSet(flag) => {
-                if self.flags.get(flag).copied().unwrap_or(false) {
+                if flags.get(flag).copied().unwrap_or(false) {
                     1
                 } else {
                     0
                 }
             }
             AchievementCondition::StatReached { stat, .. } => {
-                self.stats.get(stat).copied().unwrap_or(0.0) as u32
+                stats.get(stat).copied().unwrap_or(0.0) as u32
             }
-            AchievementCondition::All(subs) => {
-                subs.iter().filter(|c| self.evaluate_condition(c)).count() as u32
-            }
+            AchievementCondition::All(subs) => subs
+                .iter()
+                .filter(|c| {
+                    Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)
+                })
+                .count() as u32,
             AchievementCondition::Any(subs) => {
-                if subs.iter().any(|c| self.evaluate_condition(c)) {
+                if subs
+                    .iter()
+                    .any(|c| Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results))
+                {
                     1
                 } else {
                     0
                 }
             }
-            AchievementCondition::Custom(_) => 0,
+            AchievementCondition::Custom(key) => {
+                if custom_results.get(key).copied().unwrap_or(false) {
+                    1
+                } else {
+                    0
+                }
+            }
         }
     }
 }

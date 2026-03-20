@@ -1,4 +1,7 @@
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+
+use crate::ecs::EntityId;
 
 // ---------------------------------------------------------------------------
 // Puzzle grid — generic grid with cell operations

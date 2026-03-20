@@ -4,9 +4,13 @@
 //! system for non-linear progression, checkpoint/save-room support, boss encounter
 //! lifecycle, and backtrack markers for the minimap.
 
+use crate::collision::CollisionShape;
 use crate::ecs::EntityId;
+use crate::fog_of_war::{FogOfWarGrid, TileVisibility};
+use crate::math::SimVec2;
 use crate::rect::Rect;
 use crate::save::SaveManager;
+use fixed::types::I16F16;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -162,6 +166,9 @@ pub struct RoomNode {
     pub area_name: String,
     /// Which area/zone this room belongs to (for map coloring).
     pub zone: ZoneId,
+    /// Room-specific camera mode override tag (`None` = default RoomTransition).
+    /// The render layer maps this string to a concrete `CameraMode` variant.
+    pub camera_override: Option<String>,
     /// Whether this room has been visited by the player.
     pub discovered: bool,
     /// Optional checkpoint (save room) data.

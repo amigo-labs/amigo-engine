@@ -5,7 +5,8 @@
 //! built with the engine are playable by as wide an audience as possible.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::color::Color;
 
