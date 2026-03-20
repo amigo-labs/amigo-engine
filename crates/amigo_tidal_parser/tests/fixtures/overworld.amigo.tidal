@@ -1,0 +1,20 @@
+-- amigo:meta
+-- name: "overworld_theme"
+-- bpm: 140
+-- source: "ozzed_adventure.wav"
+-- license: "CC-BY-4.0"
+-- author: "Ozzed"
+
+-- amigo:stem melody
+d1 $ slow 8 $ stack [
+  n "c5 d5 e5 ~ g5 a5 g5 e5" # amp "0.8 0.7 0.9 0 0.8 0.7 0.9 0.8",
+  n "e4 ~ g4 ~ e4 ~ g4 ~" # amp "0.5 0 0.5 0 0.5 0 0.5 0"
+]
+
+-- amigo:stem bass
+d2 $ slow 8 $
+  n "c3 ~ c3 ~ g2 ~ g2 ~" # amp "0.9!8"
+
+-- amigo:stem percussion
+d3 $ slow 8 $
+  n "bd ~ sd ~ bd ~ sd bd" # amp "1.0 0 0.8 0 1.0 0 0.8 0.6"

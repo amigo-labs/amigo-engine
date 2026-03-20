@@ -206,6 +206,87 @@ impl SfxManager {
                 .retain(|h| h.state() != kira::sound::PlaybackState::Stopped);
         }
     }
+
+    /// Play a sound effect and return the kira handle (for spatial audio use).
+    ///
+    /// This respects cooldowns and concurrency limits just like [`play`](Self::play),
+    /// but returns the raw [`StaticSoundHandle`] so the caller (e.g.
+    /// [`SpatialAudioSystem`](crate::spatial::SpatialAudioSystem)) can adjust
+    /// volume and panning each frame.
+    pub fn play_returning_handle(
+        &mut self,
+        name: &str,
+        kira: &mut KiraManager<DefaultBackend>,
+    ) -> Option<StaticSoundHandle> {
+        let now = Instant::now();
+
+        let (cooldown, max_concurrent, _pitch_variance) =
+            if let Some(def) = self.definitions.get(name) {
+                (def.cooldown, def.max_concurrent, def.pitch_variance)
+            } else {
+                (None, u32::MAX, 0.0)
+            };
+
+        let rt = self.runtime.entry(name.to_string()).or_default();
+
+        // Cooldown check
+        if let (Some(cd), Some(last)) = (cooldown, rt.last_played) {
+            if now.duration_since(last).as_secs_f32() < cd {
+                debug!("SFX '{name}' on cooldown");
+                return None;
+            }
+        }
+
+        // Prune finished handles
+        rt.active_handles
+            .retain(|h| h.state() != kira::sound::PlaybackState::Stopped);
+
+        // Concurrency check
+        if rt.active_handles.len() as u32 >= max_concurrent {
+            debug!("SFX '{name}' at max concurrent ({max_concurrent})");
+            return None;
+        }
+
+        // Pick variant
+        let variants = self.loaded_data.get(name)?;
+        if variants.is_empty() {
+            return None;
+        }
+        let idx = (now.elapsed().subsec_nanos() as usize) % variants.len();
+        let data = variants[idx].clone();
+
+        match kira.play(data) {
+            Ok(handle) => {
+                let ret = handle.clone();
+                rt.active_handles.push(handle);
+                rt.last_played = Some(now);
+                Some(ret)
+            }
+            Err(e) => {
+                warn!("Failed to play SFX '{name}': {e}");
+                None
+            }
+        }
+    }
+
+    /// Shorthand: play a sound at a world position with default attenuation.
+    ///
+    /// Delegates to [`SpatialAudioSystem::spatial_play`](crate::spatial::SpatialAudioSystem::spatial_play)
+    /// using a default [`SpatialEmitter`](crate::spatial::SpatialEmitter) placed
+    /// at the given position.
+    pub fn play_spatial(
+        &mut self,
+        spatial: &mut crate::spatial::SpatialAudioSystem,
+        kira: &mut KiraManager<DefaultBackend>,
+        name: &str,
+        position: amigo_core::math::SimVec2,
+    ) -> crate::spatial::SpatialSoundId {
+        let emitter = crate::spatial::SpatialEmitter {
+            position,
+            ..Default::default()
+        };
+        spatial.spatial_play(self, kira, name, &emitter, None)
+    }
 }
 
 // ---------------------------------------------------------------------------

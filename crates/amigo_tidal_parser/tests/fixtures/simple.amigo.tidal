@@ -1,0 +1,6 @@
+-- amigo:meta
+-- name: "simple_test"
+-- bpm: 120
+
+-- amigo:stem melody
+d1 $ n "c4 d4 e4 f4"

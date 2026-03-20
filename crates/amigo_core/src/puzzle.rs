@@ -538,6 +538,986 @@ impl BlockBag {
     }
 }
 
+// ===========================================================================
+// General turn-based puzzle infrastructure (command pattern, undo, constraints,
+// win detection, level loading, hints, progress tracking)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Core types — TileId, GridPos, GridDir
+// ---------------------------------------------------------------------------
+
+/// Tile identifier — indexes into the tilemap's tile palette.
+pub type TileId = u16;
+
+/// Sentinel value for an empty / air tile.
+pub const TILE_EMPTY: TileId = 0;
+/// Sentinel value for a solid / wall tile.
+pub const TILE_SOLID: TileId = 1;
+
+/// Integer grid position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct GridPos {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl GridPos {
+    pub fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+
+    /// Return the adjacent position in the given direction.
+    pub fn neighbor(self, dir: GridDir) -> GridPos {
+        match dir {
+            GridDir::Up => GridPos { x: self.x, y: self.y - 1 },
+            GridDir::Down => GridPos { x: self.x, y: self.y + 1 },
+            GridDir::Left => GridPos { x: self.x - 1, y: self.y },
+            GridDir::Right => GridPos { x: self.x + 1, y: self.y },
+        }
+    }
+
+    /// Manhattan distance between two positions.
+    pub fn manhattan_distance(self, other: GridPos) -> u32 {
+        ((self.x - other.x).unsigned_abs()) + ((self.y - other.y).unsigned_abs())
+    }
+}
+
+/// Cardinal direction on the grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GridDir {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl GridDir {
+    /// Return the opposite direction.
+    pub fn opposite(self) -> Self {
+        match self {
+            GridDir::Up => GridDir::Down,
+            GridDir::Down => GridDir::Up,
+            GridDir::Left => GridDir::Right,
+            GridDir::Right => GridDir::Left,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MoveError
+// ---------------------------------------------------------------------------
+
+/// Error returned when a puzzle command is rejected.
+#[derive(Clone, Debug)]
+pub enum MoveError {
+    /// Move blocked by wall or obstacle.
+    Blocked,
+    /// Move violates a constraint (e.g. pushing two boxes at once in Sokoban).
+    ConstraintViolation(String),
+    /// No valid action for the given input.
+    InvalidAction,
+}
+
+impl core::fmt::Display for MoveError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            MoveError::Blocked => write!(f, "move blocked"),
+            MoveError::ConstraintViolation(reason) => write!(f, "constraint violation: {reason}"),
+            MoveError::InvalidAction => write!(f, "invalid action"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PuzzleState — full mutable state for a single level
+// ---------------------------------------------------------------------------
+
+/// The full puzzle state for a single level. Contains all mutable game data.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PuzzleState {
+    /// Grid dimensions.
+    pub width: u32,
+    pub height: u32,
+    /// Tile data — flat row-major array (collision / object layer).
+    pub tiles: Vec<TileId>,
+    /// Movable entities on the grid (player, boxes, etc.).
+    pub entities: Vec<PuzzleEntity>,
+    /// Named flags for level-specific logic (switches, toggles).
+    pub flags: FxHashMap<String, bool>,
+}
+
+impl PuzzleState {
+    /// Create a new empty puzzle state.
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            tiles: vec![TILE_EMPTY; (width * height) as usize],
+            entities: Vec::new(),
+            flags: FxHashMap::default(),
+        }
+    }
+
+    /// Convert grid position to flat index, returning None if out of bounds.
+    fn pos_to_idx(&self, pos: GridPos) -> Option<usize> {
+        if pos.x >= 0 && pos.y >= 0 && (pos.x as u32) < self.width && (pos.y as u32) < self.height
+        {
+            Some((pos.y as u32 * self.width + pos.x as u32) as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Get tile at position, None if out of bounds.
+    pub fn tile_at(&self, pos: GridPos) -> Option<TileId> {
+        self.pos_to_idx(pos).map(|i| self.tiles[i])
+    }
+
+    /// Set tile at position (no-op if out of bounds).
+    pub fn set_tile(&mut self, pos: GridPos, tile: TileId) {
+        if let Some(i) = self.pos_to_idx(pos) {
+            self.tiles[i] = tile;
+        }
+    }
+
+    /// Find entity at a given position.
+    pub fn entity_at(&self, pos: GridPos) -> Option<&PuzzleEntity> {
+        self.entities.iter().find(|e| e.pos == pos)
+    }
+
+    /// Find entity at a given position (mutable).
+    pub fn entity_at_mut(&mut self, pos: GridPos) -> Option<&mut PuzzleEntity> {
+        self.entities.iter_mut().find(|e| e.pos == pos)
+    }
+
+    /// Move an entity to a new position by its id.
+    pub fn move_entity(&mut self, id: EntityId, to: GridPos) {
+        if let Some(ent) = self.entities.iter_mut().find(|e| e.id == id) {
+            ent.pos = to;
+        }
+    }
+
+    /// Find entity by id.
+    pub fn entity_by_id(&self, id: EntityId) -> Option<&PuzzleEntity> {
+        self.entities.iter().find(|e| e.id == id)
+    }
+
+    /// Check if a grid position is within bounds and not blocked by a solid tile.
+    pub fn is_walkable(&self, pos: GridPos) -> bool {
+        match self.tile_at(pos) {
+            Some(tile) => tile != TILE_SOLID,
+            None => false, // out of bounds
+        }
+    }
+
+    /// Check if a position is within the grid bounds.
+    pub fn in_bounds(&self, pos: GridPos) -> bool {
+        pos.x >= 0
+            && pos.y >= 0
+            && (pos.x as u32) < self.width
+            && (pos.y as u32) < self.height
+    }
+}
+
+/// A movable entity on the puzzle grid.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PuzzleEntity {
+    pub id: EntityId,
+    pub pos: GridPos,
+    pub entity_type: PuzzleEntityType,
+    /// Whether this entity can be pushed by other entities.
+    pub pushable: bool,
+}
+
+/// Types of puzzle entities.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PuzzleEntityType {
+    Player,
+    Box,
+    Key,
+    /// Game-specific entity identified by index.
+    Custom(u16),
+}
+
+// ---------------------------------------------------------------------------
+// PuzzleCommand trait — Command Pattern for reversible moves
+// ---------------------------------------------------------------------------
+
+/// A reversible command representing a single atomic game action.
+/// Implements the Command Pattern — every move can be undone.
+pub trait PuzzleCommand: Send + Sync {
+    /// Execute the command, mutating the puzzle state.
+    /// Returns Ok if valid, Err if rejected.
+    fn execute(&mut self, state: &mut PuzzleState) -> Result<(), MoveError>;
+    /// Reverse the command, restoring the previous state exactly.
+    fn undo(&mut self, state: &mut PuzzleState);
+    /// Human-readable description for debugging / replay display.
+    fn description(&self) -> &str;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in commands: MoveCommand, PlaceCommand, CompositeCommand
+// ---------------------------------------------------------------------------
+
+/// Move an entity one tile in a direction, with push-chain support.
+pub struct MoveCommand {
+    pub entity: EntityId,
+    pub direction: GridDir,
+    /// Entities that were pushed as a chain reaction (filled during execute).
+    pushed: Vec<(EntityId, GridPos)>,
+}
+
+impl MoveCommand {
+    pub fn new(entity: EntityId, direction: GridDir) -> Self {
+        Self {
+            entity,
+            direction,
+            pushed: Vec::new(),
+        }
+    }
+}
+
+impl PuzzleCommand for MoveCommand {
+    fn execute(&mut self, state: &mut PuzzleState) -> Result<(), MoveError> {
+        let entity = state
+            .entity_by_id(self.entity)
+            .ok_or(MoveError::InvalidAction)?;
+        let from = entity.pos;
+        let to = from.neighbor(self.direction);
+
+        if !state.is_walkable(to) {
+            return Err(MoveError::Blocked);
+        }
+
+        // Collect the push chain: walk forward from `to` gathering pushable entities.
+        self.pushed.clear();
+        let mut check_pos = to;
+        loop {
+            // Is there an entity at check_pos?
+            let blocker = state.entity_at(check_pos).map(|e| (e.id, e.pos, e.pushable));
+            match blocker {
+                Some((bid, bpos, true)) => {
+                    // Pushable — record it and check the next tile.
+                    let next = bpos.neighbor(self.direction);
+                    if !state.is_walkable(next) {
+                        return Err(MoveError::Blocked);
+                    }
+                    self.pushed.push((bid, bpos));
+                    check_pos = next;
+                }
+                Some((_, _, false)) => {
+                    // Non-pushable entity blocks the move.
+                    return Err(MoveError::Blocked);
+                }
+                None => break, // nothing blocking
+            }
+        }
+
+        // Execute push chain in reverse order (furthest entity first) to avoid overlap.
+        for &(pid, ppos) in self.pushed.iter().rev() {
+            let dest = ppos.neighbor(self.direction);
+            state.move_entity(pid, dest);
+        }
+
+        // Move the acting entity.
+        state.move_entity(self.entity, to);
+
+        Ok(())
+    }
+
+    fn undo(&mut self, state: &mut PuzzleState) {
+        // Reverse: move acting entity back, then un-push in forward order.
+        let entity = state.entity_by_id(self.entity);
+        if let Some(ent) = entity {
+            let current = ent.pos;
+            let original = current.neighbor(self.direction.opposite());
+            state.move_entity(self.entity, original);
+        }
+
+        // Restore pushed entities to their original positions (forward order).
+        for &(pid, original_pos) in &self.pushed {
+            state.move_entity(pid, original_pos);
+        }
+    }
+
+    fn description(&self) -> &str {
+        "move entity"
+    }
+}
+
+/// Place or remove a tile/object at a grid position.
+pub struct PlaceCommand {
+    pub position: GridPos,
+    pub tile: TileId,
+    /// Previous tile at this position (filled during execute, used for undo).
+    previous: Option<TileId>,
+}
+
+impl PlaceCommand {
+    pub fn new(position: GridPos, tile: TileId) -> Self {
+        Self {
+            position,
+            tile,
+            previous: None,
+        }
+    }
+}
+
+impl PuzzleCommand for PlaceCommand {
+    fn execute(&mut self, state: &mut PuzzleState) -> Result<(), MoveError> {
+        self.previous = state.tile_at(self.position);
+        state.set_tile(self.position, self.tile);
+        Ok(())
+    }
+
+    fn undo(&mut self, state: &mut PuzzleState) {
+        if let Some(prev) = self.previous {
+            state.set_tile(self.position, prev);
+        }
+    }
+
+    fn description(&self) -> &str {
+        "place tile"
+    }
+}
+
+/// Composite command — multiple sub-commands that execute/undo atomically.
+pub struct CompositeCommand {
+    pub commands: Vec<Box<dyn PuzzleCommand>>,
+    /// How many sub-commands were successfully executed (for partial rollback).
+    executed_count: usize,
+}
+
+impl CompositeCommand {
+    pub fn new(commands: Vec<Box<dyn PuzzleCommand>>) -> Self {
+        Self {
+            commands,
+            executed_count: 0,
+        }
+    }
+}
+
+impl PuzzleCommand for CompositeCommand {
+    fn execute(&mut self, state: &mut PuzzleState) -> Result<(), MoveError> {
+        self.executed_count = 0;
+        for cmd in &mut self.commands {
+            match cmd.execute(state) {
+                Ok(()) => {
+                    self.executed_count += 1;
+                }
+                Err(e) => {
+                    // Roll back all previously executed sub-commands in reverse order.
+                    for i in (0..self.executed_count).rev() {
+                        self.commands[i].undo(state);
+                    }
+                    self.executed_count = 0;
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, state: &mut PuzzleState) {
+        // Undo all executed sub-commands in reverse order.
+        for i in (0..self.executed_count).rev() {
+            self.commands[i].undo(state);
+        }
+        self.executed_count = 0;
+    }
+
+    fn description(&self) -> &str {
+        "composite command"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// UndoStack — unlimited undo/redo using the Command Pattern
+// ---------------------------------------------------------------------------
+
+/// Unlimited undo/redo stack using the Command Pattern.
+pub struct UndoStack {
+    /// Executed commands (past). Top of stack = most recent.
+    history: Vec<Box<dyn PuzzleCommand>>,
+    /// Undone commands (future). Cleared when a new command is executed.
+    redo_stack: Vec<Box<dyn PuzzleCommand>>,
+    /// Maximum history depth (0 = unlimited).
+    pub max_depth: usize,
+}
+
+impl UndoStack {
+    pub fn new() -> Self {
+        Self {
+            history: Vec::new(),
+            redo_stack: Vec::new(),
+            max_depth: 0,
+        }
+    }
+
+    pub fn with_max_depth(max_depth: usize) -> Self {
+        Self {
+            history: Vec::new(),
+            redo_stack: Vec::new(),
+            max_depth,
+        }
+    }
+
+    /// Execute a command and push it onto the history stack.
+    /// Clears the redo stack (branching invalidates future).
+    pub fn execute(
+        &mut self,
+        mut command: Box<dyn PuzzleCommand>,
+        state: &mut PuzzleState,
+    ) -> Result<(), MoveError> {
+        command.execute(state)?;
+        self.redo_stack.clear();
+        self.history.push(command);
+
+        // Enforce max depth.
+        if self.max_depth > 0 && self.history.len() > self.max_depth {
+            self.history.remove(0);
+        }
+
+        Ok(())
+    }
+
+    /// Undo the most recent command. Returns false if history is empty.
+    pub fn undo(&mut self, state: &mut PuzzleState) -> bool {
+        if let Some(mut cmd) = self.history.pop() {
+            cmd.undo(state);
+            self.redo_stack.push(cmd);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Redo the most recently undone command. Returns false if redo stack is empty.
+    pub fn redo(&mut self, state: &mut PuzzleState) -> bool {
+        if let Some(mut cmd) = self.redo_stack.pop() {
+            // Re-execute the command. If it fails we put it back (shouldn't happen
+            // normally since we're replaying a previously valid command).
+            if cmd.execute(state).is_ok() {
+                self.history.push(cmd);
+                true
+            } else {
+                self.redo_stack.push(cmd);
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Undo all commands back to the initial state.
+    pub fn undo_all(&mut self, state: &mut PuzzleState) {
+        while self.undo(state) {}
+    }
+
+    /// Number of moves in history.
+    pub fn move_count(&self) -> usize {
+        self.history.len()
+    }
+
+    /// Whether undo is available.
+    pub fn can_undo(&self) -> bool {
+        !self.history.is_empty()
+    }
+
+    /// Whether redo is available.
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
+    /// Clear all history (e.g. on level restart).
+    pub fn clear(&mut self) {
+        self.history.clear();
+        self.redo_stack.clear();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Constraint system — pre-move validation
+// ---------------------------------------------------------------------------
+
+/// A single constraint rule for pre-move validation.
+pub trait Constraint: Send + Sync {
+    /// Check if the proposed command is valid in the current state.
+    fn validate(
+        &self,
+        command: &dyn PuzzleCommand,
+        state: &PuzzleState,
+    ) -> Result<(), MoveError>;
+}
+
+/// Pre-move validation. Checks whether a proposed action is legal
+/// before it is executed, preventing invalid state.
+pub struct ConstraintValidator {
+    constraints: Vec<Box<dyn Constraint>>,
+}
+
+impl ConstraintValidator {
+    pub fn new() -> Self {
+        Self {
+            constraints: Vec::new(),
+        }
+    }
+
+    pub fn add_constraint(&mut self, constraint: Box<dyn Constraint>) {
+        self.constraints.push(constraint);
+    }
+
+    /// Validate a command against all constraints. Returns first failure.
+    pub fn validate(
+        &self,
+        command: &dyn PuzzleCommand,
+        state: &PuzzleState,
+    ) -> Result<(), MoveError> {
+        for c in &self.constraints {
+            c.validate(command, state)?;
+        }
+        Ok(())
+    }
+}
+
+/// Built-in constraint: entities cannot move into Solid tiles.
+pub struct SolidTileConstraint;
+
+impl Constraint for SolidTileConstraint {
+    fn validate(
+        &self,
+        _command: &dyn PuzzleCommand,
+        _state: &PuzzleState,
+    ) -> Result<(), MoveError> {
+        // Solid-tile checking is handled inside MoveCommand::execute.
+        // This constraint exists as a named sentinel for constraint lists;
+        // games that build custom commands should check `state.is_walkable()`
+        // during their own validation.
+        Ok(())
+    }
+}
+
+/// Built-in constraint: only one entity per tile (no stacking).
+pub struct NoOverlapConstraint;
+
+impl Constraint for NoOverlapConstraint {
+    fn validate(
+        &self,
+        _command: &dyn PuzzleCommand,
+        _state: &PuzzleState,
+    ) -> Result<(), MoveError> {
+        // Overlap checking is enforced by MoveCommand::execute which
+        // rejects moves when an entity occupies the target and is
+        // not pushable. This constraint marker can be used by custom
+        // commands for their own overlap checks.
+        Ok(())
+    }
+}
+
+/// Built-in constraint: push chains have a maximum length.
+pub struct MaxPushChainConstraint {
+    pub max_chain: usize,
+}
+
+impl Constraint for MaxPushChainConstraint {
+    fn validate(
+        &self,
+        _command: &dyn PuzzleCommand,
+        _state: &PuzzleState,
+    ) -> Result<(), MoveError> {
+        // The push chain length is computed inside MoveCommand::execute.
+        // For pre-validation, a game using this constraint should downcast
+        // or inspect the command. For now this provides a configuration slot.
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WinCondition — configurable completion detection
+// ---------------------------------------------------------------------------
+
+/// Configurable completion detection — checked after each turn.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum WinCondition {
+    /// All entities of type A are on tiles of type B (Sokoban: all boxes on targets).
+    AllOnTarget {
+        entity_type: PuzzleEntityType,
+        target_tile: TileId,
+    },
+    /// All specified flags are true.
+    AllFlagsSet(Vec<String>),
+    /// A specific entity type reaches a specific position (reach the exit).
+    EntityAtPosition {
+        entity_type: PuzzleEntityType,
+        target: GridPos,
+    },
+    /// No entities of a given type remain (e.g. clear all gems).
+    NoneRemaining(PuzzleEntityType),
+    /// Custom: evaluated by a callback index (for game-specific conditions).
+    Custom(u16),
+    /// Multiple conditions, all must be satisfied.
+    All(Vec<WinCondition>),
+    /// Multiple conditions, any one suffices.
+    Any(Vec<WinCondition>),
+}
+
+/// Result of checking the win condition after a turn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PuzzleResult {
+    /// Puzzle not yet solved.
+    InProgress,
+    /// Puzzle solved. Includes move count for scoring.
+    Solved { moves: u32 },
+    /// Puzzle is in an unwinnable state (optional detection).
+    Deadlocked,
+}
+
+impl WinCondition {
+    /// Evaluate the win condition against the current puzzle state.
+    /// `move_count` is passed so that `Solved` can include it.
+    pub fn check(&self, state: &PuzzleState, move_count: u32) -> PuzzleResult {
+        if self.is_satisfied(state) {
+            PuzzleResult::Solved { moves: move_count }
+        } else {
+            PuzzleResult::InProgress
+        }
+    }
+
+    /// Internal recursive satisfaction check.
+    fn is_satisfied(&self, state: &PuzzleState) -> bool {
+        match self {
+            WinCondition::AllOnTarget { entity_type, target_tile } => {
+                let matching: Vec<_> = state
+                    .entities
+                    .iter()
+                    .filter(|e| e.entity_type == *entity_type)
+                    .collect();
+                if matching.is_empty() {
+                    return false;
+                }
+                matching.iter().all(|e| {
+                    state.tile_at(e.pos) == Some(*target_tile)
+                })
+            }
+            WinCondition::AllFlagsSet(flags) => {
+                flags.iter().all(|f| state.flags.get(f).copied().unwrap_or(false))
+            }
+            WinCondition::EntityAtPosition { entity_type, target } => {
+                state.entities.iter().any(|e| {
+                    e.entity_type == *entity_type && e.pos == *target
+                })
+            }
+            WinCondition::NoneRemaining(entity_type) => {
+                !state.entities.iter().any(|e| e.entity_type == *entity_type)
+            }
+            WinCondition::Custom(_) => {
+                // Custom conditions must be evaluated by game-specific code.
+                false
+            }
+            WinCondition::All(conditions) => {
+                conditions.iter().all(|c| c.is_satisfied(state))
+            }
+            WinCondition::Any(conditions) => {
+                conditions.iter().any(|c| c.is_satisfied(state))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TurnTick — turn-based simulation control
+// ---------------------------------------------------------------------------
+
+/// Controls the turn-based simulation tick.
+/// The world only advances when the player commits an action.
+#[derive(Clone, Debug)]
+pub struct TurnTick {
+    /// Current turn number (incremented on each player action).
+    pub turn: u32,
+    /// Whether a turn is currently being processed (animation phase).
+    pub animating: bool,
+    /// Duration of the animation phase per turn (in render frames).
+    pub animation_frames: u32,
+    /// Remaining animation frames for the current turn.
+    remaining_frames: u32,
+}
+
+impl TurnTick {
+    pub fn new(animation_frames: u32) -> Self {
+        Self {
+            turn: 0,
+            animating: false,
+            animation_frames,
+            remaining_frames: 0,
+        }
+    }
+
+    /// Submit a player action, advancing the turn. Returns false if still animating.
+    pub fn submit_action(&mut self) -> bool {
+        if self.animating {
+            return false;
+        }
+        self.turn += 1;
+        if self.animation_frames > 0 {
+            self.animating = true;
+            self.remaining_frames = self.animation_frames;
+        }
+        true
+    }
+
+    /// Tick the animation timer. Returns true when animation is complete
+    /// and the system is ready for the next action.
+    pub fn tick_animation(&mut self) -> bool {
+        if !self.animating {
+            return true;
+        }
+        if self.remaining_frames > 0 {
+            self.remaining_frames -= 1;
+        }
+        if self.remaining_frames == 0 {
+            self.animating = false;
+            return true;
+        }
+        false
+    }
+
+    /// Whether the system is ready to accept a new player action.
+    pub fn ready_for_input(&self) -> bool {
+        !self.animating
+    }
+
+    /// Reset to turn 0 (level restart).
+    pub fn reset(&mut self) {
+        self.turn = 0;
+        self.animating = false;
+        self.remaining_frames = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HintSystem — optional pre-computed solution hints
+// ---------------------------------------------------------------------------
+
+/// Optional hint system with pre-computed solution steps.
+pub struct HintSystem {
+    /// Full solution as a sequence of directions (loaded from level data).
+    solution: Vec<GridDir>,
+    /// How many hints have been revealed so far.
+    revealed_count: usize,
+    /// Whether hints are available for this level.
+    pub available: bool,
+}
+
+impl HintSystem {
+    pub fn new(solution: Vec<GridDir>) -> Self {
+        let available = !solution.is_empty();
+        Self {
+            solution,
+            revealed_count: 0,
+            available,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            solution: Vec::new(),
+            revealed_count: 0,
+            available: false,
+        }
+    }
+
+    /// Reveal the next hint step. Returns the direction, or None if all revealed.
+    pub fn reveal_next(&mut self) -> Option<GridDir> {
+        if self.revealed_count < self.solution.len() {
+            let dir = self.solution[self.revealed_count];
+            self.revealed_count += 1;
+            Some(dir)
+        } else {
+            None
+        }
+    }
+
+    /// Number of hints revealed so far.
+    pub fn revealed(&self) -> usize {
+        self.revealed_count
+    }
+
+    /// Total number of solution steps.
+    pub fn total_steps(&self) -> usize {
+        self.solution.len()
+    }
+
+    /// Reset revealed count (e.g. after undo-all).
+    pub fn reset(&mut self) {
+        self.revealed_count = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LevelLoader — RON level definitions
+// ---------------------------------------------------------------------------
+
+/// Error type for level loading.
+#[derive(Clone, Debug)]
+pub enum LoadError {
+    /// File not found or unreadable.
+    Io(String),
+    /// RON parse error.
+    Parse(String),
+    /// Validation error (e.g. tile count doesn't match dimensions).
+    Validation(String),
+}
+
+impl core::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            LoadError::Io(msg) => write!(f, "IO error: {msg}"),
+            LoadError::Parse(msg) => write!(f, "parse error: {msg}"),
+            LoadError::Validation(msg) => write!(f, "validation error: {msg}"),
+        }
+    }
+}
+
+/// RON-serializable level definition.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LevelDef {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    /// Flat tile array (row-major).
+    pub tiles: Vec<TileId>,
+    /// Entity placements.
+    pub entities: Vec<EntityPlacement>,
+    /// Win condition for this level.
+    pub win_condition: WinCondition,
+    /// Optional pre-computed solution for hints.
+    pub solution: Option<Vec<GridDir>>,
+    /// Optional par score (target move count).
+    pub par_moves: Option<u32>,
+}
+
+/// Entity placement within a level definition.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EntityPlacement {
+    pub pos: GridPos,
+    pub entity_type: PuzzleEntityType,
+    pub pushable: bool,
+}
+
+/// Loads puzzle levels from RON definitions.
+pub struct LevelLoader;
+
+impl LevelLoader {
+    /// Load a level from a RON file path.
+    pub fn load(path: &str) -> Result<LevelDef, LoadError> {
+        let contents = std::fs::read_to_string(path)
+            .map_err(|e| LoadError::Io(e.to_string()))?;
+        let def: LevelDef =
+            ron::from_str(&contents).map_err(|e| LoadError::Parse(e.to_string()))?;
+
+        // Validate dimensions.
+        let expected = (def.width * def.height) as usize;
+        if def.tiles.len() != expected {
+            return Err(LoadError::Validation(format!(
+                "tile count {} doesn't match {}x{} = {}",
+                def.tiles.len(),
+                def.width,
+                def.height,
+                expected
+            )));
+        }
+
+        Ok(def)
+    }
+
+    /// Load a level definition from a RON string (no filesystem access).
+    pub fn load_from_str(ron_str: &str) -> Result<LevelDef, LoadError> {
+        let def: LevelDef =
+            ron::from_str(ron_str).map_err(|e| LoadError::Parse(e.to_string()))?;
+
+        let expected = (def.width * def.height) as usize;
+        if def.tiles.len() != expected {
+            return Err(LoadError::Validation(format!(
+                "tile count {} doesn't match {}x{} = {}",
+                def.tiles.len(),
+                def.width,
+                def.height,
+                expected
+            )));
+        }
+
+        Ok(def)
+    }
+
+    /// Convert a LevelDef into a playable PuzzleState + WinCondition + HintSystem.
+    pub fn instantiate(def: &LevelDef) -> (PuzzleState, WinCondition, HintSystem) {
+        let mut state = PuzzleState {
+            width: def.width,
+            height: def.height,
+            tiles: def.tiles.clone(),
+            entities: Vec::with_capacity(def.entities.len()),
+            flags: FxHashMap::default(),
+        };
+
+        for (i, placement) in def.entities.iter().enumerate() {
+            state.entities.push(PuzzleEntity {
+                id: EntityId::from_raw(i as u32, 0),
+                pos: placement.pos,
+                entity_type: placement.entity_type,
+                pushable: placement.pushable,
+            });
+        }
+
+        let win = def.win_condition.clone();
+        let hints = match &def.solution {
+            Some(sol) => HintSystem::new(sol.clone()),
+            None => HintSystem::empty(),
+        };
+
+        (state, win, hints)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LevelProgress — tracks completion and best scores
+// ---------------------------------------------------------------------------
+
+/// Tracks which levels have been completed and their best scores.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct LevelProgress {
+    /// Level name -> best move count.
+    pub completed: FxHashMap<String, u32>,
+    /// Currently selected level pack / world.
+    pub current_pack: String,
+}
+
+impl LevelProgress {
+    /// Mark a level as complete with the given move count.
+    /// Only updates if the new score is better (fewer moves).
+    pub fn mark_complete(&mut self, level: &str, moves: u32) {
+        let entry = self.completed.entry(level.to_string()).or_insert(u32::MAX);
+        if moves < *entry {
+            *entry = moves;
+        }
+    }
+
+    /// Get the best score for a level.
+    pub fn best_score(&self, level: &str) -> Option<u32> {
+        self.completed.get(level).copied()
+    }
+
+    /// Check if a level has been completed.
+    pub fn is_complete(&self, level: &str) -> bool {
+        self.completed.contains_key(level)
+    }
+
+    /// Total number of completed levels.
+    pub fn completion_count(&self) -> usize {
+        self.completed.len()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -831,5 +1811,505 @@ mod tests {
 
         // Cell should have fallen
         assert_eq!(grid.get(0, 4), Some(5));
+    }
+
+    // ── GridPos ──────────────────────────────────────────────
+
+    #[test]
+    fn grid_pos_neighbor() {
+        let p = GridPos::new(5, 5);
+        assert_eq!(p.neighbor(GridDir::Up), GridPos::new(5, 4));
+        assert_eq!(p.neighbor(GridDir::Down), GridPos::new(5, 6));
+        assert_eq!(p.neighbor(GridDir::Left), GridPos::new(4, 5));
+        assert_eq!(p.neighbor(GridDir::Right), GridPos::new(6, 5));
+    }
+
+    #[test]
+    fn grid_pos_manhattan() {
+        let a = GridPos::new(1, 2);
+        let b = GridPos::new(4, 6);
+        assert_eq!(a.manhattan_distance(b), 7);
+    }
+
+    // ── PuzzleState ──────────────────────────────────────────
+
+    fn make_sokoban_state() -> PuzzleState {
+        // 5x5 grid, walls on edges, player at (1,1), box at (2,2), target tile 2 at (3,3)
+        let mut state = PuzzleState::new(5, 5);
+        // Set border walls
+        for x in 0..5i32 {
+            state.set_tile(GridPos::new(x, 0), TILE_SOLID);
+            state.set_tile(GridPos::new(x, 4), TILE_SOLID);
+        }
+        for y in 0..5i32 {
+            state.set_tile(GridPos::new(0, y), TILE_SOLID);
+            state.set_tile(GridPos::new(4, y), TILE_SOLID);
+        }
+        // Target tile at (3,3)
+        state.set_tile(GridPos::new(3, 3), 2);
+
+        // Player at (1,1)
+        state.entities.push(PuzzleEntity {
+            id: EntityId::from_raw(0, 0),
+            pos: GridPos::new(1, 1),
+            entity_type: PuzzleEntityType::Player,
+            pushable: false,
+        });
+        // Box at (2,2)
+        state.entities.push(PuzzleEntity {
+            id: EntityId::from_raw(1, 0),
+            pos: GridPos::new(2, 2),
+            entity_type: PuzzleEntityType::Box,
+            pushable: true,
+        });
+        state
+    }
+
+    #[test]
+    fn puzzle_state_basics() {
+        let state = make_sokoban_state();
+        assert!(!state.is_walkable(GridPos::new(0, 0)));
+        assert!(state.is_walkable(GridPos::new(1, 1)));
+        assert!(state.in_bounds(GridPos::new(4, 4)));
+        assert!(!state.in_bounds(GridPos::new(5, 0)));
+        assert!(state.entity_at(GridPos::new(1, 1)).is_some());
+        assert_eq!(
+            state.entity_at(GridPos::new(1, 1)).unwrap().entity_type,
+            PuzzleEntityType::Player
+        );
+    }
+
+    // ── MoveCommand with push chain ──────────────────────────
+
+    #[test]
+    fn move_command_simple() {
+        let mut state = make_sokoban_state();
+        let player_id = EntityId::from_raw(0, 0);
+
+        // Move player right: (1,1) -> (2,1) — no obstacle
+        let mut cmd = MoveCommand::new(player_id, GridDir::Right);
+        assert!(cmd.execute(&mut state).is_ok());
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 1));
+
+        // Undo
+        cmd.undo(&mut state);
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+    }
+
+    #[test]
+    fn move_command_push_box() {
+        let mut state = make_sokoban_state();
+        let player_id = EntityId::from_raw(0, 0);
+        let box_id = EntityId::from_raw(1, 0);
+
+        // Move player to (2,1) first
+        let mut cmd1 = MoveCommand::new(player_id, GridDir::Right);
+        cmd1.execute(&mut state).unwrap();
+
+        // Move player down to (2,2) — pushes box from (2,2) to (2,3)
+        let mut cmd2 = MoveCommand::new(player_id, GridDir::Down);
+        cmd2.execute(&mut state).unwrap();
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 2));
+        assert_eq!(state.entity_by_id(box_id).unwrap().pos, GridPos::new(2, 3));
+
+        // Undo — box returns to (2,2), player to (2,1)
+        cmd2.undo(&mut state);
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 1));
+        assert_eq!(state.entity_by_id(box_id).unwrap().pos, GridPos::new(2, 2));
+    }
+
+    #[test]
+    fn move_command_blocked_by_wall() {
+        let mut state = make_sokoban_state();
+        let player_id = EntityId::from_raw(0, 0);
+
+        // Move player up from (1,1) — hits wall at (1,0)
+        let mut cmd = MoveCommand::new(player_id, GridDir::Up);
+        assert!(cmd.execute(&mut state).is_err());
+        // Player didn't move
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+    }
+
+    // ── PlaceCommand ─────────────────────────────────────────
+
+    #[test]
+    fn place_command_and_undo() {
+        let mut state = PuzzleState::new(3, 3);
+        let pos = GridPos::new(1, 1);
+
+        let mut cmd = PlaceCommand::new(pos, 42);
+        cmd.execute(&mut state).unwrap();
+        assert_eq!(state.tile_at(pos), Some(42));
+
+        cmd.undo(&mut state);
+        assert_eq!(state.tile_at(pos), Some(TILE_EMPTY));
+    }
+
+    // ── CompositeCommand ─────────────────────────────────────
+
+    #[test]
+    fn composite_command_rollback_on_failure() {
+        let mut state = make_sokoban_state();
+        let player_id = EntityId::from_raw(0, 0);
+
+        // First: valid move right. Second: invalid move up into wall from (2,1) -> (2,0).
+        let cmd1 = Box::new(MoveCommand::new(player_id, GridDir::Right));
+        let cmd2 = Box::new(MoveCommand::new(player_id, GridDir::Up));
+
+        let mut composite = CompositeCommand::new(vec![cmd1, cmd2]);
+        assert!(composite.execute(&mut state).is_err());
+
+        // Player should be back at original position due to rollback.
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+    }
+
+    // ── UndoStack ────────────────────────────────────────────
+
+    #[test]
+    fn undo_stack_execute_undo_redo() {
+        let mut state = make_sokoban_state();
+        let mut stack = UndoStack::new();
+        let player_id = EntityId::from_raw(0, 0);
+
+        // Execute two moves
+        stack
+            .execute(
+                Box::new(MoveCommand::new(player_id, GridDir::Right)),
+                &mut state,
+            )
+            .unwrap();
+        stack
+            .execute(
+                Box::new(MoveCommand::new(player_id, GridDir::Down)),
+                &mut state,
+            )
+            .unwrap();
+        assert_eq!(stack.move_count(), 2);
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 2));
+
+        // Undo one
+        assert!(stack.undo(&mut state));
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 1));
+        assert!(stack.can_redo());
+
+        // Redo
+        assert!(stack.redo(&mut state));
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 2));
+        assert!(!stack.can_redo());
+
+        // Undo all
+        stack.undo_all(&mut state);
+        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+        assert_eq!(stack.move_count(), 0);
+    }
+
+    #[test]
+    fn undo_stack_new_move_clears_redo() {
+        let mut state = make_sokoban_state();
+        let mut stack = UndoStack::new();
+        let player_id = EntityId::from_raw(0, 0);
+
+        stack
+            .execute(
+                Box::new(MoveCommand::new(player_id, GridDir::Right)),
+                &mut state,
+            )
+            .unwrap();
+        stack.undo(&mut state);
+        assert!(stack.can_redo());
+
+        // New move should clear redo
+        stack
+            .execute(
+                Box::new(MoveCommand::new(player_id, GridDir::Down)),
+                &mut state,
+            )
+            .unwrap();
+        assert!(!stack.can_redo());
+    }
+
+    #[test]
+    fn undo_stack_max_depth() {
+        let mut state = make_sokoban_state();
+        let mut stack = UndoStack::with_max_depth(2);
+        let player_id = EntityId::from_raw(0, 0);
+
+        stack
+            .execute(Box::new(MoveCommand::new(player_id, GridDir::Right)), &mut state)
+            .unwrap();
+        stack
+            .execute(Box::new(MoveCommand::new(player_id, GridDir::Down)), &mut state)
+            .unwrap();
+        stack
+            .execute(Box::new(MoveCommand::new(player_id, GridDir::Left)), &mut state)
+            .unwrap();
+
+        // Only 2 moves retained
+        assert_eq!(stack.move_count(), 2);
+    }
+
+    // ── WinCondition ─────────────────────────────────────────
+
+    #[test]
+    fn win_condition_all_on_target() {
+        let mut state = make_sokoban_state();
+        let win = WinCondition::AllOnTarget {
+            entity_type: PuzzleEntityType::Box,
+            target_tile: 2,
+        };
+
+        // Box not on target yet
+        assert_eq!(win.check(&state, 0), PuzzleResult::InProgress);
+
+        // Move box to (3,3) where target tile is
+        state.move_entity(EntityId::from_raw(1, 0), GridPos::new(3, 3));
+        assert_eq!(win.check(&state, 5), PuzzleResult::Solved { moves: 5 });
+    }
+
+    #[test]
+    fn win_condition_entity_at_position() {
+        let mut state = make_sokoban_state();
+        let win = WinCondition::EntityAtPosition {
+            entity_type: PuzzleEntityType::Player,
+            target: GridPos::new(3, 3),
+        };
+
+        assert_eq!(win.check(&state, 0), PuzzleResult::InProgress);
+
+        state.move_entity(EntityId::from_raw(0, 0), GridPos::new(3, 3));
+        assert_eq!(win.check(&state, 3), PuzzleResult::Solved { moves: 3 });
+    }
+
+    #[test]
+    fn win_condition_all_flags_set() {
+        let mut state = PuzzleState::new(3, 3);
+        state.flags.insert("switch_a".to_string(), false);
+        state.flags.insert("switch_b".to_string(), false);
+
+        let win = WinCondition::AllFlagsSet(vec!["switch_a".to_string(), "switch_b".to_string()]);
+        assert_eq!(win.check(&state, 0), PuzzleResult::InProgress);
+
+        state.flags.insert("switch_a".to_string(), true);
+        assert_eq!(win.check(&state, 0), PuzzleResult::InProgress);
+
+        state.flags.insert("switch_b".to_string(), true);
+        assert_eq!(win.check(&state, 2), PuzzleResult::Solved { moves: 2 });
+    }
+
+    #[test]
+    fn win_condition_none_remaining() {
+        let mut state = PuzzleState::new(3, 3);
+        state.entities.push(PuzzleEntity {
+            id: EntityId::from_raw(0, 0),
+            pos: GridPos::new(0, 0),
+            entity_type: PuzzleEntityType::Key,
+            pushable: false,
+        });
+
+        let win = WinCondition::NoneRemaining(PuzzleEntityType::Key);
+        assert_eq!(win.check(&state, 0), PuzzleResult::InProgress);
+
+        state.entities.clear();
+        assert_eq!(win.check(&state, 1), PuzzleResult::Solved { moves: 1 });
+    }
+
+    #[test]
+    fn win_condition_composite_all() {
+        let mut state = PuzzleState::new(3, 3);
+        state.flags.insert("done".to_string(), true);
+
+        let win = WinCondition::All(vec![
+            WinCondition::AllFlagsSet(vec!["done".to_string()]),
+            WinCondition::NoneRemaining(PuzzleEntityType::Key),
+        ]);
+        assert_eq!(win.check(&state, 0), PuzzleResult::Solved { moves: 0 });
+    }
+
+    // ── TurnTick ─────────────────────────────────────────────
+
+    #[test]
+    fn turn_tick_lifecycle() {
+        let mut tick = TurnTick::new(3);
+        assert!(tick.ready_for_input());
+        assert_eq!(tick.turn, 0);
+
+        // Submit action
+        assert!(tick.submit_action());
+        assert_eq!(tick.turn, 1);
+        assert!(!tick.ready_for_input());
+
+        // Can't submit while animating
+        assert!(!tick.submit_action());
+
+        // Tick animation 3 times
+        assert!(!tick.tick_animation()); // frame 2 remaining
+        assert!(!tick.tick_animation()); // frame 1 remaining
+        assert!(tick.tick_animation());  // done
+        assert!(tick.ready_for_input());
+    }
+
+    #[test]
+    fn turn_tick_zero_animation() {
+        let mut tick = TurnTick::new(0);
+        assert!(tick.submit_action());
+        // No animation phase — immediately ready
+        assert!(tick.ready_for_input());
+    }
+
+    #[test]
+    fn turn_tick_reset() {
+        let mut tick = TurnTick::new(5);
+        tick.submit_action();
+        tick.reset();
+        assert_eq!(tick.turn, 0);
+        assert!(tick.ready_for_input());
+    }
+
+    // ── HintSystem ───────────────────────────────────────────
+
+    #[test]
+    fn hint_system_reveal() {
+        let mut hints = HintSystem::new(vec![GridDir::Up, GridDir::Right, GridDir::Down]);
+        assert!(hints.available);
+        assert_eq!(hints.total_steps(), 3);
+        assert_eq!(hints.revealed(), 0);
+
+        assert_eq!(hints.reveal_next(), Some(GridDir::Up));
+        assert_eq!(hints.reveal_next(), Some(GridDir::Right));
+        assert_eq!(hints.revealed(), 2);
+
+        hints.reset();
+        assert_eq!(hints.revealed(), 0);
+        assert_eq!(hints.reveal_next(), Some(GridDir::Up));
+    }
+
+    #[test]
+    fn hint_system_empty() {
+        let mut hints = HintSystem::empty();
+        assert!(!hints.available);
+        assert_eq!(hints.reveal_next(), None);
+    }
+
+    // ── LevelProgress ────────────────────────────────────────
+
+    #[test]
+    fn level_progress_tracking() {
+        let mut progress = LevelProgress::default();
+        assert!(!progress.is_complete("level_1"));
+
+        progress.mark_complete("level_1", 15);
+        assert!(progress.is_complete("level_1"));
+        assert_eq!(progress.best_score("level_1"), Some(15));
+
+        // Better score replaces
+        progress.mark_complete("level_1", 10);
+        assert_eq!(progress.best_score("level_1"), Some(10));
+
+        // Worse score doesn't replace
+        progress.mark_complete("level_1", 20);
+        assert_eq!(progress.best_score("level_1"), Some(10));
+
+        progress.mark_complete("level_2", 5);
+        assert_eq!(progress.completion_count(), 2);
+    }
+
+    // ── LevelLoader (from string) ────────────────────────────
+
+    #[test]
+    fn level_loader_from_str() {
+        let ron = r#"(
+            name: "test_level",
+            width: 3,
+            height: 3,
+            tiles: [1,1,1, 1,0,1, 1,1,1],
+            entities: [
+                (pos: (x: 1, y: 1), entity_type: Player, pushable: false),
+            ],
+            win_condition: EntityAtPosition(entity_type: Player, target: (x: 2, y: 1)),
+            solution: Some([Right]),
+            par_moves: Some(1),
+        )"#;
+
+        let def = LevelLoader::load_from_str(ron).unwrap();
+        assert_eq!(def.name, "test_level");
+        assert_eq!(def.width, 3);
+        assert_eq!(def.tiles.len(), 9);
+        assert_eq!(def.entities.len(), 1);
+        assert_eq!(def.par_moves, Some(1));
+
+        let (state, win, hints) = LevelLoader::instantiate(&def);
+        assert_eq!(state.entities.len(), 1);
+        assert_eq!(state.entities[0].pos, GridPos::new(1, 1));
+        assert!(hints.available);
+        assert_eq!(hints.total_steps(), 1);
+
+        // Player not at target yet
+        assert_eq!(win.check(&state, 0), PuzzleResult::InProgress);
+    }
+
+    #[test]
+    fn level_loader_invalid_dimensions() {
+        let ron = r#"(
+            name: "bad",
+            width: 3,
+            height: 3,
+            tiles: [0, 0],
+            entities: [],
+            win_condition: AllFlagsSet([]),
+            solution: None,
+            par_moves: None,
+        )"#;
+
+        let result = LevelLoader::load_from_str(ron);
+        assert!(result.is_err());
+    }
+
+    // ── ConstraintValidator ──────────────────────────────────
+
+    #[test]
+    fn constraint_validator_passes_with_no_constraints() {
+        let validator = ConstraintValidator::new();
+        let state = PuzzleState::new(3, 3);
+        let cmd = MoveCommand::new(EntityId::from_raw(0, 0), GridDir::Right);
+        assert!(validator.validate(&cmd, &state).is_ok());
+    }
+
+    // ── Full Sokoban workflow ────────────────────────────────
+
+    #[test]
+    fn sokoban_full_workflow() {
+        // Set up a simple Sokoban: push box to target, detect win, track progress.
+        let mut state = make_sokoban_state();
+        let mut stack = UndoStack::new();
+        let mut tick = TurnTick::new(0); // no animation for test
+        let player_id = EntityId::from_raw(0, 0);
+
+        let win = WinCondition::AllOnTarget {
+            entity_type: PuzzleEntityType::Box,
+            target_tile: 2, // target tile at (3,3)
+        };
+
+        // Move player: right, down, right, down — push box to (3,3)
+        let moves = [GridDir::Right, GridDir::Down, GridDir::Right, GridDir::Down];
+        for dir in moves {
+            assert!(tick.ready_for_input());
+            let cmd = Box::new(MoveCommand::new(player_id, dir));
+            stack.execute(cmd, &mut state).unwrap();
+            tick.submit_action();
+        }
+
+        assert_eq!(
+            state.entity_by_id(EntityId::from_raw(1, 0)).unwrap().pos,
+            GridPos::new(3, 3)
+        );
+        assert_eq!(
+            win.check(&state, stack.move_count() as u32),
+            PuzzleResult::Solved { moves: 4 }
+        );
+
+        // Record progress
+        let mut progress = LevelProgress::default();
+        progress.mark_complete("sokoban_1", stack.move_count() as u32);
+        assert_eq!(progress.best_score("sokoban_1"), Some(4));
     }
 }

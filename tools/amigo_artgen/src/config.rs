@@ -27,7 +27,10 @@ pub fn load_art_defaults(project_dir: &Path) -> ArtDefaults {
     };
     let table: toml::Value = match toml::from_str(&content) {
         Ok(v) => v,
-        Err(_) => return ArtDefaults::default(),
+        Err(e) => {
+            tracing::warn!("Failed to parse amigo.toml: {}", e);
+            return ArtDefaults::default();
+        }
     };
     match table.get("art") {
         Some(art) => {
@@ -39,17 +42,30 @@ pub fn load_art_defaults(project_dir: &Path) -> ArtDefaults {
 }
 
 /// Merge updates into the [art] section of amigo.toml.
-pub fn save_art_defaults(project_dir: &Path, updates: &HashMap<String, serde_json::Value>) {
+///
+/// Returns `Ok(())` on success, or an error message if the file could not be written.
+pub fn save_art_defaults(
+    project_dir: &Path,
+    updates: &HashMap<String, serde_json::Value>,
+) -> Result<(), String> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
     let path = project_dir.join("amigo.toml");
     let content = std::fs::read_to_string(&path).unwrap_or_default();
     let mut doc: toml::Value =
         toml::from_str(&content).unwrap_or(toml::Value::Table(Default::default()));
 
-    let table = doc.as_table_mut().expect("root must be table");
+    let table = doc
+        .as_table_mut()
+        .ok_or_else(|| "amigo.toml root is not a table".to_string())?;
     let art = table
         .entry("art")
         .or_insert_with(|| toml::Value::Table(Default::default()));
-    let art_table = art.as_table_mut().expect("[art] must be table");
+    let art_table = art
+        .as_table_mut()
+        .ok_or_else(|| "[art] is not a table".to_string())?;
 
     for (key, value) in updates {
         let toml_val = json_to_toml(value);
@@ -57,7 +73,7 @@ pub fn save_art_defaults(project_dir: &Path, updates: &HashMap<String, serde_jso
     }
 
     let output = toml::to_string_pretty(&doc).unwrap_or_default();
-    let _ = std::fs::write(&path, output);
+    std::fs::write(&path, output).map_err(|e| format!("Failed to write amigo.toml: {}", e))
 }
 
 fn json_to_toml(v: &serde_json::Value) -> toml::Value {
@@ -90,19 +106,86 @@ mod tests {
     }
 
     #[test]
+    fn load_defaults_no_art_section() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("amigo.toml"),
+            "[window]\ntitle = \"Test\"\n",
+        )
+        .unwrap();
+        let defaults = load_art_defaults(dir.path());
+        assert!(defaults.default_sprite_size.is_none());
+    }
+
+    #[test]
+    fn load_defaults_malformed_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("amigo.toml"), "not valid { toml").unwrap();
+        let defaults = load_art_defaults(dir.path());
+        assert!(defaults.default_sprite_size.is_none());
+    }
+
+    #[test]
     fn save_and_load_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        // Write a minimal amigo.toml
         let mut f = std::fs::File::create(dir.path().join("amigo.toml")).unwrap();
         writeln!(f, "[window]\ntitle = \"Test\"").unwrap();
 
         let mut updates = HashMap::new();
         updates.insert("default_sprite_size".into(), serde_json::json!(32));
         updates.insert("default_style".into(), serde_json::json!("caribbean"));
-        save_art_defaults(dir.path(), &updates);
+        save_art_defaults(dir.path(), &updates).unwrap();
 
         let defaults = load_art_defaults(dir.path());
         assert_eq!(defaults.default_sprite_size, Some(32));
         assert_eq!(defaults.default_style, Some("caribbean".into()));
+    }
+
+    #[test]
+    fn save_merges_with_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("amigo.toml"),
+            "[art]\ndefault_style = \"caribbean\"\n",
+        )
+        .unwrap();
+
+        let mut updates = HashMap::new();
+        updates.insert("default_sprite_size".into(), serde_json::json!(32));
+        save_art_defaults(dir.path(), &updates).unwrap();
+
+        let defaults = load_art_defaults(dir.path());
+        assert_eq!(defaults.default_style, Some("caribbean".into())); // preserved
+        assert_eq!(defaults.default_sprite_size, Some(32)); // added
+    }
+
+    #[test]
+    fn save_empty_updates_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "[window]\ntitle = \"Test\"\n";
+        std::fs::write(dir.path().join("amigo.toml"), original).unwrap();
+
+        let updates = HashMap::new();
+        save_art_defaults(dir.path(), &updates).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("amigo.toml")).unwrap();
+        assert_eq!(content, original);
+    }
+
+    #[test]
+    fn save_creates_art_section() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("amigo.toml"),
+            "[window]\ntitle = \"Test\"\n",
+        )
+        .unwrap();
+
+        let mut updates = HashMap::new();
+        updates.insert("default_sprite_size".into(), serde_json::json!(32));
+        save_art_defaults(dir.path(), &updates).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("amigo.toml")).unwrap();
+        assert!(content.contains("[art]"));
     }
 }

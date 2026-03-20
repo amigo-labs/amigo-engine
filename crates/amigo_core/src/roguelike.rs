@@ -1,5 +1,6 @@
-use crate::math::RenderVec2;
-use rustc_hash::FxHashSet;
+use crate::math::{Fix, RenderVec2};
+use crate::save::{SaveError, SaveManager};
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,7 @@ impl Room {
 pub enum RoomType {
     Normal,
     Spawn,
+    Elite,
     Boss,
     Treasure,
     Shop,

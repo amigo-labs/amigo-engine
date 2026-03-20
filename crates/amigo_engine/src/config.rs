@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Engine configuration loaded from amigo.toml.
+///
+/// The `[art]` section (art generation defaults) is parsed by `amigo_artgen`.
+/// Audio generation defaults live alongside the engine audio settings in the
+/// `[audio]` section and are parsed by `amigo_audiogen`. Both sets of keys
+/// coexist because serde ignores unknown fields by default.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngineConfig {
     pub window: WindowConfig,
@@ -9,6 +14,9 @@ pub struct EngineConfig {
     pub dev: DevConfig,
     #[serde(default)]
     pub splash: SplashConfig,
+    /// Art generation defaults (parsed by amigo_artgen, ignored by engine).
+    #[serde(default, skip_serializing)]
+    pub art: Option<toml::Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,6 +100,7 @@ impl Default for EngineConfig {
                 headless: false,
             },
             splash: SplashConfig::default(),
+            art: None,
         }
     }
 }

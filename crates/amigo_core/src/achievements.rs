@@ -592,6 +592,214 @@ fn build_indexes(
 }
 
 // ---------------------------------------------------------------------------
+// Toast Notification Renderer
+// ---------------------------------------------------------------------------
+
+/// Phase of a toast animation.
+#[derive(Clone, Copy, Debug)]
+enum ToastPhase {
+    FadeIn,
+    Hold,
+    FadeOut,
+}
+
+/// State for a single on-screen toast notification.
+struct ToastState {
+    achievement_id: String,
+    elapsed: f32,
+    phase: ToastPhase,
+}
+
+/// Renders achievement toast popups. Manages a display queue with timed
+/// fade-in / hold / fade-out animation. Up to 3 toasts are visible at once.
+pub struct AchievementToastRenderer {
+    /// Currently displaying toasts (max 3 visible at once).
+    active_toasts: Vec<ToastState>,
+    /// Waiting queue when more than 3 toasts are pending.
+    queued: Vec<String>,
+    /// Duration each toast is visible (hold phase) in seconds.
+    display_duration: f32,
+    /// Fade-in/out duration in seconds.
+    fade_duration: f32,
+}
+
+/// Maximum number of toasts visible simultaneously.
+const MAX_VISIBLE_TOASTS: usize = 3;
+/// Default hold duration in seconds.
+const DEFAULT_DISPLAY_DURATION: f32 = 4.0;
+/// Default fade duration in seconds.
+const DEFAULT_FADE_DURATION: f32 = 0.5;
+/// Toast panel width in pixels.
+const TOAST_WIDTH: f32 = 280.0;
+/// Toast panel height in pixels.
+const TOAST_HEIGHT: f32 = 64.0;
+/// Vertical spacing between stacked toasts.
+const TOAST_SPACING: f32 = 8.0;
+/// Horizontal margin from the right edge of the screen.
+const TOAST_MARGIN_RIGHT: f32 = 16.0;
+/// Vertical margin from the top of the screen.
+const TOAST_MARGIN_TOP: f32 = 16.0;
+/// Padding inside the toast panel.
+const TOAST_PADDING: f32 = 8.0;
+/// Size reserved for the achievement icon.
+const TOAST_ICON_SIZE: f32 = 48.0;
+
+impl AchievementToastRenderer {
+    pub fn new() -> Self {
+        Self {
+            active_toasts: Vec::new(),
+            queued: Vec::new(),
+            display_duration: DEFAULT_DISPLAY_DURATION,
+            fade_duration: DEFAULT_FADE_DURATION,
+        }
+    }
+
+    /// Queue a toast for an unlocked achievement.
+    pub fn queue(&mut self, achievement_id: String) {
+        if self.active_toasts.len() < MAX_VISIBLE_TOASTS {
+            self.active_toasts.push(ToastState {
+                achievement_id,
+                elapsed: 0.0,
+                phase: ToastPhase::FadeIn,
+            });
+        } else {
+            self.queued.push(achievement_id);
+        }
+    }
+
+    /// Update toast timers and transitions. Call once per frame.
+    pub fn update(&mut self, dt: f32) {
+        let fade = self.fade_duration;
+        let hold = self.display_duration;
+
+        // Update each active toast.
+        for toast in &mut self.active_toasts {
+            toast.elapsed += dt;
+            match toast.phase {
+                ToastPhase::FadeIn => {
+                    if toast.elapsed >= fade {
+                        toast.elapsed -= fade;
+                        toast.phase = ToastPhase::Hold;
+                    }
+                }
+                ToastPhase::Hold => {
+                    if toast.elapsed >= hold {
+                        toast.elapsed -= hold;
+                        toast.phase = ToastPhase::FadeOut;
+                    }
+                }
+                ToastPhase::FadeOut => {
+                    // Removal handled below.
+                }
+            }
+        }
+
+        // Remove finished toasts (fade-out elapsed).
+        self.active_toasts
+            .retain(|t| !matches!(t.phase, ToastPhase::FadeOut if t.elapsed >= fade));
+
+        // Promote from queue.
+        while self.active_toasts.len() < MAX_VISIBLE_TOASTS {
+            if let Some(id) = self.queued.pop() {
+                self.active_toasts.push(ToastState {
+                    achievement_id: id,
+                    elapsed: 0.0,
+                    phase: ToastPhase::FadeIn,
+                });
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Render active toasts. Draws icon + name + description in a small panel
+    /// sliding in from the top-right corner.
+    ///
+    /// Because `UiContext` lives in `amigo_ui` (which depends on `amigo_core`),
+    /// rendering is done through a callback. The callback receives
+    /// `(rect, alpha, icon_sprite, name, description)` for each visible toast.
+    ///
+    /// Example integration with `UiContext`:
+    /// ```ignore
+    /// toast_renderer.draw_with(&tracker, screen_width, |rect, alpha, icon, name, desc| {
+    ///     let bg = Color::new(0, 0, 0, (alpha * 200.0) as u8);
+    ///     ui.filled_rect(rect, bg);
+    ///     ui.sprite(icon, rect.x + 8.0, rect.y + 8.0);
+    ///     let text_color = Color::new(255, 255, 255, (alpha * 255.0) as u8);
+    ///     ui.pixel_text(name, rect.x + 64.0, rect.y + 8.0, text_color);
+    ///     ui.pixel_text(desc, rect.x + 64.0, rect.y + 28.0, text_color);
+    /// });
+    /// ```
+    pub fn draw_with(
+        &self,
+        tracker: &AchievementTracker,
+        screen_width: f32,
+        mut draw_fn: impl FnMut(Rect, f32, &str, &str, &str),
+    ) {
+        for (i, toast) in self.active_toasts.iter().enumerate() {
+            let alpha = self.toast_alpha(toast);
+            if alpha <= 0.0 {
+                continue;
+            }
+            let def = match tracker.definitions.get(&toast.achievement_id) {
+                Some(d) => d,
+                None => continue,
+            };
+            let x = screen_width - TOAST_WIDTH - TOAST_MARGIN_RIGHT;
+            let y =
+                TOAST_MARGIN_TOP + (i as f32) * (TOAST_HEIGHT + TOAST_SPACING);
+            let rect = Rect::new(x, y, TOAST_WIDTH, TOAST_HEIGHT);
+            draw_fn(rect, alpha, &def.icon_sprite, &def.name, &def.description);
+        }
+    }
+
+    /// Convenience method that renders toasts with a default visual style.
+    /// Uses `filled_rect` for background, `sprite` for icon, and `pixel_text`
+    /// for name/description. Accepts closures matching the `UiContext` API.
+    pub fn draw_default(
+        &self,
+        tracker: &AchievementTracker,
+        screen_width: f32,
+        mut filled_rect_fn: impl FnMut(Rect, Color),
+        mut sprite_fn: impl FnMut(&str, f32, f32),
+        mut text_fn: impl FnMut(&str, f32, f32, Color),
+    ) {
+        self.draw_with(tracker, screen_width, |rect, alpha, icon, name, desc| {
+            let a = alpha * (200.0 / 255.0);
+            let bg = Color::new(0.0, 0.0, 0.0, a);
+            filled_rect_fn(rect, bg);
+            sprite_fn(icon, rect.x + TOAST_PADDING, rect.y + TOAST_PADDING);
+            let text_x = rect.x + TOAST_PADDING + TOAST_ICON_SIZE + TOAST_PADDING;
+            let text_a = alpha;
+            let text_color = Color::new(1.0, 1.0, 1.0, text_a);
+            text_fn(name, text_x, rect.y + TOAST_PADDING, text_color);
+            text_fn(
+                desc,
+                text_x,
+                rect.y + TOAST_PADDING + 20.0,
+                text_color,
+            );
+        });
+    }
+
+    fn toast_alpha(&self, toast: &ToastState) -> f32 {
+        match toast.phase {
+            ToastPhase::FadeIn => (toast.elapsed / self.fade_duration).min(1.0),
+            ToastPhase::Hold => 1.0,
+            ToastPhase::FadeOut => {
+                (1.0 - toast.elapsed / self.fade_duration).max(0.0)
+            }
+        }
+    }
+}
+
+impl Default for AchievementToastRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

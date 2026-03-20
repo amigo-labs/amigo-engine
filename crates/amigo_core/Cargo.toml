@@ -6,8 +6,10 @@ edition.workspace = true
 [features]
 default = []
 td = []
+reflect = ["amigo_reflect"]
 
 [dependencies]
+amigo_reflect = { workspace = true, optional = true }
 fixed = { workspace = true }
 serde = { workspace = true }
 rustc-hash = { workspace = true }

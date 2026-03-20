@@ -400,38 +400,149 @@ impl Minimap {
             }
         }
 
-        // Render pins as colored pixels
+        // Render pins
+        self.render_pins_to_pixels(&mut pixels, fog);
+
+        // Render pings
+        self.render_pings_to_pixels(&mut pixels);
+
+        pixels
+    }
+
+    /// Determine fog-based opacity for a pin at its current world position.
+    /// Returns `None` if the pin should not be rendered at all (hidden and not always_visible).
+    /// Returns `Some(alpha)` where alpha is 1.0 for visible, 0.5 for explored.
+    fn pin_fog_opacity(&self, pin: &MinimapPin, fog: Option<&FogOfWarGrid>) -> Option<f32> {
+        if pin.always_visible {
+            return Some(1.0);
+        }
+        if let Some(fog) = fog {
+            let tx = pin.world_pos.x as i32;
+            let ty = pin.world_pos.y as i32;
+            let vis = fog.visibility_at(tx, ty);
+            match vis {
+                TileVisibility::Hidden => None,
+                TileVisibility::Explored => Some(0.5),
+                TileVisibility::Visible => Some(1.0),
+            }
+        } else {
+            Some(1.0)
+        }
+    }
+
+    /// Render pins into the pixel buffer, handling Dot, Sprite, and Arrow types.
+    fn render_pins_to_pixels(&self, pixels: &mut Vec<MinimapPixel>, fog: Option<&FogOfWarGrid>) {
+        let (mw, mh) = self.config.size;
+
         for pin in &self.pins {
-            // Fog visibility check
-            if !pin.always_visible {
-                if let Some(fog) = fog {
-                    let tx = pin.world_pos.x as i32;
-                    let ty = pin.world_pos.y as i32;
-                    let vis = fog.visibility_at(tx, ty);
-                    if vis == TileVisibility::Hidden {
-                        continue;
+            let opacity = match self.pin_fog_opacity(pin, fog) {
+                Some(o) => o,
+                None => continue, // Hidden — skip
+            };
+
+            let (px, py) = self.world_to_minimap(pin.world_pos);
+
+            match &pin.pin_type {
+                PinType::Dot { color } => {
+                    let px = px as u32;
+                    let py = py as u32;
+                    if px < mw && py < mh {
+                        let c = Color::new(color.r, color.g, color.b, color.a * opacity);
+                        pixels.push(MinimapPixel { x: px, y: py, color: c });
+                    }
+                }
+
+                PinType::Sprite { name } => {
+                    if let Some(icon) = self.icon_registry.get(name) {
+                        // Center the icon on the pin position
+                        let ox = px as i32 - (icon.width as i32 / 2);
+                        let oy = py as i32 - (icon.height as i32 / 2);
+                        for iy in 0..icon.height {
+                            for ix in 0..icon.width {
+                                let sx = ox + ix as i32;
+                                let sy = oy + iy as i32;
+                                if sx >= 0 && sy >= 0 && (sx as u32) < mw && (sy as u32) < mh {
+                                    let idx = (iy * icon.width + ix) as usize;
+                                    let ic = icon.pixels[idx];
+                                    // Skip transparent icon pixels
+                                    if ic.a > 0.0 {
+                                        let c =
+                                            Color::new(ic.r, ic.g, ic.b, ic.a * opacity);
+                                        pixels.push(MinimapPixel {
+                                            x: sx as u32,
+                                            y: sy as u32,
+                                            color: c,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Fallback: render as white dot if icon not found
+                        let px = px as u32;
+                        let py = py as u32;
+                        if px < mw && py < mh {
+                            let c = Color::new(1.0, 1.0, 1.0, opacity);
+                            pixels.push(MinimapPixel { x: px, y: py, color: c });
+                        }
+                    }
+                }
+
+                PinType::Arrow { color } => {
+                    // Directional arrow at minimap edge for off-screen entities.
+                    // Clamp pin position to minimap edge and draw a small arrow.
+                    let in_bounds = px >= 0.0
+                        && py >= 0.0
+                        && (px as u32) < mw
+                        && (py as u32) < mh;
+
+                    if in_bounds {
+                        // Entity is on-screen within minimap — render as a dot
+                        let c = Color::new(color.r, color.g, color.b, color.a * opacity);
+                        pixels.push(MinimapPixel {
+                            x: px as u32,
+                            y: py as u32,
+                            color: c,
+                        });
+                    } else {
+                        // Clamp to minimap edge
+                        let cx = px.clamp(0.0, (mw - 1) as f32) as u32;
+                        let cy = py.clamp(0.0, (mh - 1) as f32) as u32;
+                        let c = Color::new(color.r, color.g, color.b, color.a * opacity);
+                        // Draw a 3-pixel arrow indicator at the edge
+                        pixels.push(MinimapPixel { x: cx, y: cy, color: c });
+                        // Add perpendicular pixels for visibility
+                        let on_left = cx == 0;
+                        let on_right = cx == mw - 1;
+                        let on_top = cy == 0;
+                        let on_bottom = cy == mh - 1;
+                        if on_left || on_right {
+                            // Vertical arrow tail
+                            if cy > 0 {
+                                pixels.push(MinimapPixel { x: cx, y: cy - 1, color: c });
+                            }
+                            if cy + 1 < mh {
+                                pixels.push(MinimapPixel { x: cx, y: cy + 1, color: c });
+                            }
+                        }
+                        if on_top || on_bottom {
+                            // Horizontal arrow tail
+                            if cx > 0 {
+                                pixels.push(MinimapPixel { x: cx - 1, y: cy, color: c });
+                            }
+                            if cx + 1 < mw {
+                                pixels.push(MinimapPixel { x: cx + 1, y: cy, color: c });
+                            }
+                        }
                     }
                 }
             }
-
-            let (px, py) = self.world_to_minimap(pin.world_pos);
-            let px = px as u32;
-            let py = py as u32;
-            if px < mw && py < mh {
-                let color = match &pin.pin_type {
-                    PinType::Dot { color } => *color,
-                    PinType::Arrow { color } => *color,
-                    PinType::Sprite { .. } => Color::WHITE, // Sprite pins rendered separately
-                };
-                pixels.push(MinimapPixel {
-                    x: px,
-                    y: py,
-                    color,
-                });
-            }
         }
+    }
 
-        // Render pings
+    /// Render pings into the pixel buffer.
+    fn render_pings_to_pixels(&self, pixels: &mut Vec<MinimapPixel>) {
+        let (mw, mh) = self.config.size;
         for ping in &self.pings {
             let pos = RenderVec2::new(ping.position.x.to_num(), ping.position.y.to_num());
             let (px, py) = self.world_to_minimap(pos);
@@ -459,11 +570,91 @@ impl Minimap {
                 }
             }
         }
+    }
 
-        pixels
+    /// Render a border around the minimap into the pixel buffer.
+    /// Called by [`render`] after generating tile/pin/ping pixels.
+    fn render_border_to_pixels(&self, pixels: &mut Vec<MinimapPixel>) {
+        let border_color = match self.config.style.border_color {
+            Some(c) => c,
+            None => return,
+        };
+        let bw = self.config.style.border_width;
+        if bw == 0 {
+            return;
+        }
+        let (mw, mh) = self.config.size;
+
+        for b in 0..bw {
+            // Top and bottom rows
+            for mx in 0..mw {
+                pixels.push(MinimapPixel { x: mx, y: b, color: border_color });
+                if mh > b {
+                    pixels.push(MinimapPixel { x: mx, y: mh - 1 - b, color: border_color });
+                }
+            }
+            // Left and right columns (excluding corners already drawn)
+            for my in bw..(mh.saturating_sub(bw)) {
+                pixels.push(MinimapPixel { x: b, y: my, color: border_color });
+                if mw > b {
+                    pixels.push(MinimapPixel { x: mw - 1 - b, y: my, color: border_color });
+                }
+            }
+        }
+    }
+
+    /// Render the camera viewport indicator as a colored rectangle outline on the minimap.
+    fn render_viewport_to_pixels(
+        &self,
+        pixels: &mut Vec<MinimapPixel>,
+        camera_pos: RenderVec2,
+        camera_view_size: RenderVec2,
+    ) {
+        let color = self.config.style.viewport_indicator_color;
+        let (mw, mh) = self.config.size;
+
+        let top_left = RenderVec2::new(
+            camera_pos.x - camera_view_size.x * 0.5,
+            camera_pos.y - camera_view_size.y * 0.5,
+        );
+        let bottom_right = RenderVec2::new(
+            camera_pos.x + camera_view_size.x * 0.5,
+            camera_pos.y + camera_view_size.y * 0.5,
+        );
+
+        let (x0f, y0f) = self.world_to_minimap(top_left);
+        let (x1f, y1f) = self.world_to_minimap(bottom_right);
+
+        // Clamp to minimap bounds
+        let x0 = (x0f as i32).max(0) as u32;
+        let y0 = (y0f as i32).max(0) as u32;
+        let x1 = ((x1f as i32).max(0) as u32).min(mw.saturating_sub(1));
+        let y1 = ((y1f as i32).max(0) as u32).min(mh.saturating_sub(1));
+
+        // Top edge
+        for mx in x0..=x1 {
+            pixels.push(MinimapPixel { x: mx, y: y0, color });
+        }
+        // Bottom edge
+        if y1 != y0 {
+            for mx in x0..=x1 {
+                pixels.push(MinimapPixel { x: mx, y: y1, color });
+            }
+        }
+        // Left edge
+        for my in (y0 + 1)..y1 {
+            pixels.push(MinimapPixel { x: x0, y: my, color });
+        }
+        // Right edge
+        if x1 != x0 {
+            for my in (y0 + 1)..y1 {
+                pixels.push(MinimapPixel { x: x1, y: my, color });
+            }
+        }
     }
 
     /// Generate viewport indicator rectangle (camera position on minimap).
+    /// Returns `(x, y, width, height)` in screen-space pixels.
     pub fn viewport_rect(
         &self,
         camera_pos: RenderVec2,
@@ -482,6 +673,84 @@ impl Minimap {
         )
     }
 
+    /// Full render pass: generates tile pixels, pins, pings, viewport indicator,
+    /// and border. This is the primary entry point for minimap rendering.
+    ///
+    /// `tile_colors` maps a tile ID to its minimap color.
+    /// `tiles` is the flat row-major tile array.
+    /// `tile_width`/`tile_height` is the tilemap size in tiles.
+    /// `fog` is the optional fog-of-war grid.
+    /// `main_camera` is the main game camera (used for viewport indicator).
+    pub fn render(
+        &self,
+        tiles: &[u32],
+        tile_width: u32,
+        tile_height: u32,
+        tile_colors: &dyn Fn(u32) -> Color,
+        fog: Option<&FogOfWarGrid>,
+        main_camera: &Camera,
+    ) -> Vec<MinimapPixel> {
+        let mut pixels = self.generate_pixels(tiles, tile_width, tile_height, tile_colors, fog);
+
+        // Viewport indicator from main camera
+        let view = main_camera.view_rect();
+        self.render_viewport_to_pixels(
+            &mut pixels,
+            main_camera.effective_position(),
+            RenderVec2::new(view.w, view.h),
+        );
+
+        // Border on top of everything
+        self.render_border_to_pixels(&mut pixels);
+
+        pixels
+    }
+
+    /// Convert the minimap pixel buffer into a flat RGBA byte array suitable for
+    /// uploading to a GPU texture. Pixels are composited in order (later pixels
+    /// overwrite earlier ones at the same coordinate).
+    pub fn pixels_to_rgba(&self, pixels: &[MinimapPixel]) -> Vec<u8> {
+        let (mw, mh) = self.config.size;
+        let size = (mw as usize) * (mh as usize);
+        let mut buf = vec![0u8; size * 4];
+
+        for px in pixels {
+            let idx = ((px.y as usize) * (mw as usize) + (px.x as usize)) * 4;
+            if idx + 3 < buf.len() {
+                let c = &px.color;
+                if c.a >= 1.0 {
+                    // Opaque: overwrite
+                    buf[idx] = (c.r * 255.0) as u8;
+                    buf[idx + 1] = (c.g * 255.0) as u8;
+                    buf[idx + 2] = (c.b * 255.0) as u8;
+                    buf[idx + 3] = 255;
+                } else if c.a > 0.0 {
+                    // Alpha blend over existing
+                    let dst_r = buf[idx] as f32 / 255.0;
+                    let dst_g = buf[idx + 1] as f32 / 255.0;
+                    let dst_b = buf[idx + 2] as f32 / 255.0;
+                    let a = c.a;
+                    buf[idx] = ((c.r * a + dst_r * (1.0 - a)) * 255.0) as u8;
+                    buf[idx + 1] = ((c.g * a + dst_g * (1.0 - a)) * 255.0) as u8;
+                    buf[idx + 2] = ((c.b * a + dst_b * (1.0 - a)) * 255.0) as u8;
+                    buf[idx + 3] = 255;
+                }
+            }
+        }
+
+        buf
+    }
+
+    /// Read-only access to the current pins.
+    pub fn pins(&self) -> &[MinimapPin] {
+        &self.pins
+    }
+
+    /// Read-only access to the current pings.
+    pub fn pings(&self) -> &[MinimapPing] {
+        &self.pings
+    }
+
     /// Number of active pins.
     pub fn pin_count(&self) -> usize {
         self.pins.len()
@@ -490,6 +759,14 @@ impl Minimap {
     /// Number of active pings.
     pub fn ping_count(&self) -> usize {
         self.pings.len()
+    }
+
+    /// Check if a screen position falls within the minimap area.
+    pub fn contains_screen_pos(&self, screen_pos: RenderVec2) -> bool {
+        let sx = screen_pos.x - self.config.screen_pos.x;
+        let sy = screen_pos.y - self.config.screen_pos.y;
+        let (mw, mh) = self.config.size;
+        sx >= 0.0 && sy >= 0.0 && sx < mw as f32 && sy < mh as f32
     }
 }
 

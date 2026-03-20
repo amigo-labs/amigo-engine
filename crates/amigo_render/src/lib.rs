@@ -22,7 +22,8 @@ pub use camera::{Camera, CameraMode, Easing};
 pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};
 pub use lighting::{AmbientLight, LightingState, PointLight};
 pub use minimap::{
-    Minimap, MinimapConfig, MinimapPin, MinimapPing, MinimapPixel, MinimapStyle, PinType,
+    IconRegistry, Minimap, MinimapConfig, MinimapPin, MinimapPing, MinimapPixel, MinimapStyle,
+    PinType, SpriteIcon, TEAM_COLORS,
 };
 pub use particles::{BlendMode, EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
 pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};

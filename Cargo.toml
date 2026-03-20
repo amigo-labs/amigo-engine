@@ -18,6 +18,8 @@ members = [
     "crates/amigo_engine",
     "crates/amigo_tidal_parser",
     "crates/amigo_audio_pipeline",
+    "crates/amigo_reflect",
+    "crates/amigo_reflect_derive",
     "tools/amigo_mcp",
     "tools/amigo_artgen",
     "tools/amigo_audiogen",
@@ -57,6 +59,8 @@ amigo_debug = { path = "crates/amigo_debug" }
 amigo_engine = { path = "crates/amigo_engine" }
 amigo_tidal_parser = { path = "crates/amigo_tidal_parser" }
 amigo_audio_pipeline = { path = "crates/amigo_audio_pipeline" }
+amigo_reflect = { path = "crates/amigo_reflect" }
+amigo_reflect_derive = { path = "crates/amigo_reflect_derive" }
 
 # External dependencies
 wgpu = "24"

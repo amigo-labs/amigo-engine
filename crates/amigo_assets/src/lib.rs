@@ -7,6 +7,7 @@ pub mod hot_reload;
 pub mod import;
 pub mod modding;
 pub mod pak;
+pub mod registry;
 
 pub use aseprite::{load_aseprite, AsepriteData};
 pub use asset_manager::{AssetManager, SpriteData};
@@ -14,6 +15,11 @@ pub use descriptors::{EntityDescriptor, MapDescriptor, SpriteDescriptor, Tileset
 pub use handle::{AssetHandle, AssetState, HandleAllocator};
 pub use hot_reload::HotReloader;
 pub use pak::{AssetKind, PakEntry, PakReader, PakWriter};
+pub use registry::{
+    FormatError as RegistryError, FormatRegistry, FormatWarning, LayerDef, LayerRule,
+    MusicConfig, MusicTransition, PostProcessConfig, SectionDef, SfxBundle, SfxCategory, SfxDef,
+    StingerDef, StingerQuantize, StyleDef, WorldAudioStyle,
+};
 
 use thiserror::Error;
 

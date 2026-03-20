@@ -264,14 +264,264 @@ impl Default for SubtitleManager {
 }
 
 // ---------------------------------------------------------------------------
+// High Contrast Theme
+// ---------------------------------------------------------------------------
+
+/// A high-contrast theme that overrides default UI colors.
+///
+/// Games can use the built-in presets or register custom themes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HighContrastTheme {
+    /// Human-readable theme name.
+    pub name: String,
+    /// Panel / window background color.
+    pub background: Color,
+    /// Default text color.
+    pub foreground: Color,
+    /// Accent color for highlights and focus indicators.
+    pub accent: Color,
+    /// Color for interactive elements (buttons, links).
+    pub interactive: Color,
+    /// Hover / focus color for interactive elements.
+    pub interactive_hover: Color,
+    /// Border width multiplier for visibility (in logical pixels).
+    pub border_width: f32,
+    /// Whether to draw a dark outline behind text for readability.
+    pub text_shadow: bool,
+}
+
+impl HighContrastTheme {
+    /// Built-in "White on Black" theme.
+    pub fn white_on_black() -> Self {
+        Self {
+            name: "White on Black".into(),
+            background: Color::BLACK,
+            foreground: Color::WHITE,
+            accent: Color::new(0.0, 1.0, 1.0, 1.0),     // cyan
+            interactive: Color::new(1.0, 1.0, 0.0, 1.0),  // yellow
+            interactive_hover: Color::new(1.0, 0.65, 0.0, 1.0), // orange
+            border_width: 3.0,
+            text_shadow: true,
+        }
+    }
+
+    /// Built-in "Black on White" theme.
+    pub fn black_on_white() -> Self {
+        Self {
+            name: "Black on White".into(),
+            background: Color::WHITE,
+            foreground: Color::BLACK,
+            accent: Color::new(0.0, 0.0, 0.8, 1.0),     // dark blue
+            interactive: Color::new(0.0, 0.5, 0.0, 1.0),  // dark green
+            interactive_hover: Color::new(0.0, 0.3, 0.8, 1.0), // blue
+            border_width: 3.0,
+            text_shadow: false,
+        }
+    }
+
+    /// Built-in "Yellow on Blue" theme (popular for low vision).
+    pub fn yellow_on_blue() -> Self {
+        Self {
+            name: "Yellow on Blue".into(),
+            background: Color::new(0.0, 0.0, 0.5, 1.0),  // dark blue
+            foreground: Color::new(1.0, 1.0, 0.0, 1.0),   // yellow
+            accent: Color::WHITE,
+            interactive: Color::new(0.0, 1.0, 0.0, 1.0),  // green
+            interactive_hover: Color::new(0.5, 1.0, 0.5, 1.0), // light green
+            border_width: 3.0,
+            text_shadow: true,
+        }
+    }
+
+    /// Look up a built-in theme by name (case-insensitive).
+    pub fn builtin(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "white on black" | "white_on_black" => Some(Self::white_on_black()),
+            "black on white" | "black_on_white" => Some(Self::black_on_white()),
+            "yellow on blue" | "yellow_on_blue" => Some(Self::yellow_on_blue()),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Text Scale Settings
+// ---------------------------------------------------------------------------
+
+/// Global text scale factors applied on top of per-font pixel sizes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TextScaleSettings {
+    /// Global scale factor for all text (default 1.0, range 0.5..3.0).
+    pub global_scale: f32,
+    /// Separate scale for UI text.
+    pub ui_scale: f32,
+    /// Separate scale for subtitles.
+    pub subtitle_scale: f32,
+}
+
+impl Default for TextScaleSettings {
+    fn default() -> Self {
+        Self {
+            global_scale: 1.0,
+            ui_scale: 1.0,
+            subtitle_scale: 1.0,
+        }
+    }
+}
+
+impl TextScaleSettings {
+    /// Clamp all scales to valid range (0.5..3.0).
+    pub fn clamped(&self) -> Self {
+        Self {
+            global_scale: self.global_scale.clamp(0.5, 3.0),
+            ui_scale: self.ui_scale.clamp(0.5, 3.0),
+            subtitle_scale: self.subtitle_scale.clamp(0.5, 3.0),
+        }
+    }
+
+    /// Effective subtitle scale (global * subtitle).
+    pub fn effective_subtitle_scale(&self) -> f32 {
+        (self.global_scale * self.subtitle_scale).clamp(0.5, 9.0)
+    }
+
+    /// Effective UI scale (global * ui).
+    pub fn effective_ui_scale(&self) -> f32 {
+        (self.global_scale * self.ui_scale).clamp(0.5, 9.0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Input Assistance Settings
+// ---------------------------------------------------------------------------
+
+/// Input assistance settings for accessibility.
+///
+/// Provides sticky keys, hold-to-activate delays, toggle-mode conversion,
+/// and configurable key-repeat behavior.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InputAssistSettings {
+    /// Actions that use sticky-key mode: a press toggles the action on,
+    /// the next press toggles it off.
+    pub sticky_keys: HashSet<String>,
+    /// Actions that require being held for a duration (in seconds) before
+    /// they activate.
+    pub hold_to_activate: HashMap<String, f32>,
+    /// Actions that are normally hold-to-use but are converted to toggle mode.
+    pub toggle_mode: HashSet<String>,
+    /// Seconds before key repeat starts when an input is held (default 0.5).
+    pub repeat_delay: f32,
+    /// Repeats per second while held (default 10.0).
+    pub repeat_rate: f32,
+}
+
+impl Default for InputAssistSettings {
+    fn default() -> Self {
+        Self {
+            sticky_keys: HashSet::new(),
+            hold_to_activate: HashMap::new(),
+            toggle_mode: HashSet::new(),
+            repeat_delay: 0.5,
+            repeat_rate: 10.0,
+        }
+    }
+}
+
+impl InputAssistSettings {
+    /// Process raw input through assistance filters.
+    ///
+    /// - `action`: the action identifier being queried.
+    /// - `raw_pressed`: whether the raw input is currently pressed.
+    /// - `held_duration`: how long the input has been continuously held (seconds).
+    /// - `dt`: frame delta time.
+    ///
+    /// Returns `true` if the action should be considered active this frame.
+    pub fn filter(
+        &self,
+        action: &str,
+        raw_pressed: bool,
+        held_duration: f32,
+        dt: f32,
+    ) -> bool {
+        // Hold-to-activate: require held for `duration` before activating.
+        if let Some(&required) = self.hold_to_activate.get(action) {
+            if raw_pressed && held_duration < required {
+                return false;
+            }
+        }
+
+        // Key repeat logic: after repeat_delay, fire at repeat_rate Hz.
+        if raw_pressed && held_duration > self.repeat_delay && self.repeat_rate > 0.0 {
+            let repeat_interval = 1.0 / self.repeat_rate;
+            let time_since_delay = held_duration - self.repeat_delay;
+            let prev_time = time_since_delay - dt;
+            // Fire if we crossed a repeat boundary this frame.
+            if prev_time < 0.0 {
+                return true;
+            }
+            let current_count = (time_since_delay / repeat_interval) as u32;
+            let prev_count = (prev_time / repeat_interval) as u32;
+            if current_count > prev_count {
+                return true;
+            }
+        }
+
+        raw_pressed
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Screen Shake Reduction
+// ---------------------------------------------------------------------------
+
+/// Controls how screen shake is applied for motion-sensitive players.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShakeSettings {
+    /// Global multiplier for screen shake intensity. 0.0 = disabled.
+    pub intensity_multiplier: f32,
+    /// Maximum pixel displacement cap.
+    pub max_displacement: f32,
+    /// Replace shake with a brief screen flash instead (for motion-sensitive
+    /// players).
+    pub flash_instead: bool,
+}
+
+impl Default for ShakeSettings {
+    fn default() -> Self {
+        Self {
+            intensity_multiplier: 1.0,
+            max_displacement: 16.0,
+            flash_instead: false,
+        }
+    }
+}
+
+impl ShakeSettings {
+    /// Apply shake settings to a raw displacement value, returning the
+    /// effective displacement.
+    ///
+    /// Returns `0.0` if `flash_instead` is true (caller should trigger a
+    /// flash effect instead).
+    pub fn apply(&self, raw_displacement: f32) -> f32 {
+        if self.flash_instead {
+            return 0.0;
+        }
+        (raw_displacement * self.intensity_multiplier).min(self.max_displacement)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // AccessibilityConfig
 // ---------------------------------------------------------------------------
 
 /// Central accessibility configuration, saved per-user.
+///
+/// Serializes to RON for persistence in the user's save directory.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccessibilityConfig {
     /// Active colorblind correction mode.
     pub color_blind_mode: ColorBlindMode,
+    /// Colorblind correction strength (0.0..1.0).
+    pub colorblind_strength: f32,
     /// Screen-shake intensity multiplier (0.0 = disabled, 1.0 = full).
     pub screen_shake_intensity: f32,
     /// Whether subtitles are enabled globally.
@@ -280,20 +530,57 @@ pub struct AccessibilityConfig {
     pub subtitle_font_size: f32,
     /// Whether high-contrast UI mode is active.
     pub high_contrast_mode: bool,
+    /// Name of the active high-contrast theme (if any).
+    pub high_contrast_theme: Option<String>,
     /// Whether input remapping is enabled.
     pub input_remapping_enabled: bool,
+    /// Text scaling settings.
+    pub text_scale: TextScaleSettings,
+    /// Input assistance settings.
+    pub input_assist: InputAssistSettings,
+    /// Screen shake settings.
+    pub shake: ShakeSettings,
+    /// Which subtitle categories are enabled.
+    pub subtitle_categories: Vec<SubtitleCategory>,
 }
 
 impl Default for AccessibilityConfig {
     fn default() -> Self {
         Self {
             color_blind_mode: ColorBlindMode::None,
+            colorblind_strength: 1.0,
             screen_shake_intensity: 1.0,
             subtitle_enabled: false,
             subtitle_font_size: 24.0,
             high_contrast_mode: false,
+            high_contrast_theme: None,
             input_remapping_enabled: false,
+            text_scale: TextScaleSettings::default(),
+            input_assist: InputAssistSettings::default(),
+            shake: ShakeSettings::default(),
+            subtitle_categories: vec![
+                SubtitleCategory::Music,
+                SubtitleCategory::SoundEffect,
+                SubtitleCategory::Voice,
+                SubtitleCategory::Ambient,
+            ],
         }
+    }
+}
+
+impl AccessibilityConfig {
+    /// Save configuration to a RON file.
+    pub fn save(&self, path: &Path) -> Result<(), std::io::Error> {
+        let ron = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        std::fs::write(path, ron)
+    }
+
+    /// Load configuration from a RON file.
+    pub fn load(path: &Path) -> Result<Self, std::io::Error> {
+        let contents = std::fs::read_to_string(path)?;
+        ron::from_str(&contents)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
     }
 }
 
@@ -303,9 +590,9 @@ impl Default for AccessibilityConfig {
 
 /// Top-level manager that ties together all accessibility subsystems.
 ///
-/// Holds the user config, the colorblind filter, and the subtitle manager.
-/// Game code interacts with this struct to query and apply accessibility
-/// features each frame.
+/// Holds the user config, the colorblind filter, the subtitle manager,
+/// and the active high-contrast theme.  Game code interacts with this
+/// struct to query and apply accessibility features each frame.
 pub struct AccessibilityManager {
     /// User-facing configuration (serialisable).
     pub config: AccessibilityConfig,
@@ -313,6 +600,10 @@ pub struct AccessibilityManager {
     filter: ColorBlindFilter,
     /// Subtitle manager.
     pub subtitles: SubtitleManager,
+    /// The currently active high-contrast theme (resolved from config).
+    active_theme: Option<HighContrastTheme>,
+    /// Registry of custom high-contrast themes.
+    custom_themes: HashMap<String, HighContrastTheme>,
 }
 
 impl AccessibilityManager {
@@ -324,16 +615,27 @@ impl AccessibilityManager {
             config,
             filter,
             subtitles: SubtitleManager::new(),
+            active_theme: None,
+            custom_themes: HashMap::new(),
         }
     }
 
     /// Create a manager from an existing config.
     pub fn from_config(config: AccessibilityConfig) -> Self {
-        let filter = ColorBlindFilter::new(config.color_blind_mode);
+        let filter = ColorBlindFilter::with_strength(
+            config.color_blind_mode,
+            config.colorblind_strength,
+        );
+        let active_theme = config
+            .high_contrast_theme
+            .as_deref()
+            .and_then(HighContrastTheme::builtin);
         Self {
             config,
             filter,
             subtitles: SubtitleManager::new(),
+            active_theme,
+            custom_themes: HashMap::new(),
         }
     }
 
@@ -358,12 +660,71 @@ impl AccessibilityManager {
     /// Update the colorblind mode and rebuild the internal filter.
     pub fn set_color_blind_mode(&mut self, mode: ColorBlindMode) {
         self.config.color_blind_mode = mode;
-        self.filter = ColorBlindFilter::new(mode);
+        self.filter = ColorBlindFilter::with_strength(mode, self.config.colorblind_strength);
+    }
+
+    /// Update the colorblind correction strength (0.0..1.0).
+    pub fn set_colorblind_strength(&mut self, strength: f32) {
+        self.config.colorblind_strength = strength.clamp(0.0, 1.0);
+        self.filter = ColorBlindFilter::with_strength(
+            self.config.color_blind_mode,
+            self.config.colorblind_strength,
+        );
     }
 
     /// Get the effective screen-shake multiplier (clamped to 0.0 .. 1.0).
     pub fn screen_shake_multiplier(&self) -> f32 {
         self.config.screen_shake_intensity.clamp(0.0, 1.0)
+    }
+
+    /// Get the active high-contrast theme, if any.
+    pub fn active_theme(&self) -> Option<&HighContrastTheme> {
+        self.active_theme.as_ref()
+    }
+
+    /// Set the active high-contrast theme by name.
+    ///
+    /// Looks up built-in themes first, then custom-registered themes.
+    /// Pass `None` to disable.
+    pub fn set_high_contrast_theme(&mut self, name: Option<&str>) {
+        match name {
+            Some(n) => {
+                self.config.high_contrast_theme = Some(n.to_string());
+                self.config.high_contrast_mode = true;
+                self.active_theme = HighContrastTheme::builtin(n)
+                    .or_else(|| self.custom_themes.get(n).cloned());
+            }
+            None => {
+                self.config.high_contrast_theme = None;
+                self.config.high_contrast_mode = false;
+                self.active_theme = None;
+            }
+        }
+    }
+
+    /// Register a custom high-contrast theme.
+    pub fn register_theme(&mut self, theme: HighContrastTheme) {
+        self.custom_themes.insert(theme.name.clone(), theme);
+    }
+
+    /// Apply raw screen-shake displacement through the shake settings.
+    pub fn apply_shake(&self, raw_displacement: f32) -> f32 {
+        self.config.shake.apply(raw_displacement)
+    }
+
+    /// Returns `true` if shake should be replaced with a flash effect.
+    pub fn should_flash_instead_of_shake(&self) -> bool {
+        self.config.shake.flash_instead
+    }
+
+    /// Get text scale settings.
+    pub fn text_scale(&self) -> &TextScaleSettings {
+        &self.config.text_scale
+    }
+
+    /// Get input assistance settings.
+    pub fn input_assist(&self) -> &InputAssistSettings {
+        &self.config.input_assist
     }
 
     /// Tick per-frame systems (subtitles, etc.).
@@ -582,10 +943,115 @@ mod tests {
     fn config_default_values() {
         let cfg = AccessibilityConfig::default();
         assert_eq!(cfg.color_blind_mode, ColorBlindMode::None);
+        assert!(approx_eq(cfg.colorblind_strength, 1.0));
         assert!(approx_eq(cfg.screen_shake_intensity, 1.0));
         assert!(!cfg.subtitle_enabled);
         assert!(approx_eq(cfg.subtitle_font_size, 24.0));
         assert!(!cfg.high_contrast_mode);
+        assert!(cfg.high_contrast_theme.is_none());
         assert!(!cfg.input_remapping_enabled);
+        assert!(approx_eq(cfg.text_scale.global_scale, 1.0));
+        assert!(approx_eq(cfg.input_assist.repeat_delay, 0.5));
+        assert!(approx_eq(cfg.shake.intensity_multiplier, 1.0));
+    }
+
+    // -- HighContrastTheme tests ------------------------------------------
+
+    #[test]
+    fn builtin_themes_exist() {
+        assert!(HighContrastTheme::builtin("white on black").is_some());
+        assert!(HighContrastTheme::builtin("black_on_white").is_some());
+        assert!(HighContrastTheme::builtin("Yellow on Blue").is_some());
+        assert!(HighContrastTheme::builtin("nonexistent").is_none());
+    }
+
+    // -- TextScaleSettings tests ------------------------------------------
+
+    #[test]
+    fn text_scale_clamping() {
+        let ts = TextScaleSettings {
+            global_scale: 5.0,
+            ui_scale: 0.1,
+            subtitle_scale: 2.0,
+        };
+        let clamped = ts.clamped();
+        assert!(approx_eq(clamped.global_scale, 3.0));
+        assert!(approx_eq(clamped.ui_scale, 0.5));
+        assert!(approx_eq(clamped.subtitle_scale, 2.0));
+    }
+
+    // -- InputAssistSettings tests ----------------------------------------
+
+    #[test]
+    fn input_assist_hold_to_activate() {
+        let mut assist = InputAssistSettings::default();
+        assist
+            .hold_to_activate
+            .insert("heavy_attack".into(), 0.5);
+
+        // Not held long enough
+        assert!(!assist.filter("heavy_attack", true, 0.3, 0.016));
+        // Held long enough
+        assert!(assist.filter("heavy_attack", true, 0.6, 0.016));
+        // Not pressed at all
+        assert!(!assist.filter("heavy_attack", false, 0.0, 0.016));
+    }
+
+    // -- ShakeSettings tests ----------------------------------------------
+
+    #[test]
+    fn shake_settings_apply() {
+        let shake = ShakeSettings {
+            intensity_multiplier: 0.5,
+            max_displacement: 8.0,
+            flash_instead: false,
+        };
+        assert!(approx_eq(shake.apply(10.0), 5.0));
+        assert!(approx_eq(shake.apply(20.0), 8.0)); // capped
+    }
+
+    #[test]
+    fn shake_flash_instead() {
+        let shake = ShakeSettings {
+            intensity_multiplier: 1.0,
+            max_displacement: 16.0,
+            flash_instead: true,
+        };
+        assert!(approx_eq(shake.apply(10.0), 0.0));
+    }
+
+    // -- AccessibilityManager theme tests ---------------------------------
+
+    #[test]
+    fn manager_set_high_contrast_theme() {
+        let mut mgr = AccessibilityManager::new();
+        assert!(mgr.active_theme().is_none());
+
+        mgr.set_high_contrast_theme(Some("white on black"));
+        assert!(mgr.active_theme().is_some());
+        assert!(mgr.config.high_contrast_mode);
+
+        mgr.set_high_contrast_theme(None);
+        assert!(mgr.active_theme().is_none());
+        assert!(!mgr.config.high_contrast_mode);
+    }
+
+    #[test]
+    fn manager_custom_theme() {
+        let mut mgr = AccessibilityManager::new();
+        let custom = HighContrastTheme {
+            name: "My Theme".into(),
+            background: Color::BLACK,
+            foreground: Color::WHITE,
+            accent: Color::RED,
+            interactive: Color::GREEN,
+            interactive_hover: Color::BLUE,
+            border_width: 4.0,
+            text_shadow: false,
+        };
+        mgr.register_theme(custom);
+        mgr.set_high_contrast_theme(Some("My Theme"));
+        assert!(mgr.active_theme().is_some());
+        assert_eq!(mgr.active_theme().unwrap().name, "My Theme");
     }
 }
