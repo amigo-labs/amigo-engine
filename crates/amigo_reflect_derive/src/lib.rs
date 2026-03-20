@@ -158,9 +158,10 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let mut all_field_names = Vec::new();
 
     for field in fields {
-        let ident = field.ident.as_ref().ok_or_else(|| {
-            syn::Error::new_spanned(field, "unnamed fields not supported")
-        })?;
+        let ident = field
+            .ident
+            .as_ref()
+            .ok_or_else(|| syn::Error::new_spanned(field, "unnamed fields not supported"))?;
         let attrs = parse_field_attrs(field)?;
         all_field_names.push(ident.clone());
         if !attrs.skip {

@@ -200,16 +200,25 @@ mod tests {
 
     #[test]
     fn field_by_name() {
-        let h = Health { current: 50, max: 100 };
+        let h = Health {
+            current: 50,
+            max: 100,
+        };
         let field_ref = h.field("current").expect("should find current");
         assert_eq!(field_ref.info.name, "current");
-        let val = field_ref.value.downcast_ref::<i32>().expect("should be i32");
+        let val = field_ref
+            .value
+            .downcast_ref::<i32>()
+            .expect("should be i32");
         assert_eq!(*val, 50);
     }
 
     #[test]
     fn field_by_name_unknown_returns_none() {
-        let h = Health { current: 50, max: 100 };
+        let h = Health {
+            current: 50,
+            max: 100,
+        };
         assert!(h.field("nonexistent").is_none());
     }
 
@@ -226,10 +235,16 @@ mod tests {
 
     #[test]
     fn field_mut_by_name() {
-        let mut h = Health { current: 50, max: 100 };
+        let mut h = Health {
+            current: 50,
+            max: 100,
+        };
         {
             let field_mut = h.field_mut("current").expect("should find current");
-            let val = field_mut.value.downcast_mut::<i32>().expect("should be i32");
+            let val = field_mut
+                .value
+                .downcast_mut::<i32>()
+                .expect("should be i32");
             *val = 75;
         }
         assert_eq!(h.current, 75);
@@ -237,7 +252,10 @@ mod tests {
 
     #[test]
     fn field_mut_type_mismatch() {
-        let mut h = Health { current: 50, max: 100 };
+        let mut h = Health {
+            current: 50,
+            max: 100,
+        };
         let field_mut = h.field_mut("current").expect("should find current");
         // Try to downcast to wrong type
         assert!(field_mut.value.downcast_mut::<f32>().is_none());
@@ -245,7 +263,10 @@ mod tests {
 
     #[test]
     fn fields_returns_all_non_skipped_in_order() {
-        let h = Health { current: 10, max: 20 };
+        let h = Health {
+            current: 10,
+            max: 20,
+        };
         let fields = h.fields();
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].info.name, "current");
@@ -269,7 +290,10 @@ mod tests {
 
     #[test]
     fn apply_patch_updates_matching_fields() {
-        let mut h = Health { current: 50, max: 100 };
+        let mut h = Health {
+            current: 50,
+            max: 100,
+        };
         let mut patch = ReflectPatch::new();
         patch.set("current", 75i32);
         let count = h.apply_patch(&patch);
@@ -279,7 +303,10 @@ mod tests {
 
     #[test]
     fn apply_patch_skips_read_only() {
-        let mut h = Health { current: 50, max: 100 };
+        let mut h = Health {
+            current: 50,
+            max: 100,
+        };
         let mut patch = ReflectPatch::new();
         patch.set("max", 200i32);
         let count = h.apply_patch(&patch);
@@ -290,7 +317,10 @@ mod tests {
 
     #[test]
     fn apply_patch_partial_match() {
-        let mut h = Health { current: 50, max: 100 };
+        let mut h = Health {
+            current: 50,
+            max: 100,
+        };
         let mut patch = ReflectPatch::new();
         patch.set("current", 75i32);
         patch.set("nonexistent", 42i32);
@@ -302,7 +332,10 @@ mod tests {
 
     #[test]
     fn apply_patch_no_match_returns_zero() {
-        let mut h = Health { current: 50, max: 100 };
+        let mut h = Health {
+            current: 50,
+            max: 100,
+        };
         let mut patch = ReflectPatch::new();
         patch.set("foo", 1i32);
         patch.set("bar", 2i32);
@@ -312,19 +345,28 @@ mod tests {
 
     #[test]
     fn clone_reflect_creates_independent_copy() {
-        let h = Health { current: 50, max: 100 };
+        let h = Health {
+            current: 50,
+            max: 100,
+        };
         let cloned = h.clone_reflect();
         let info = cloned.reflected_type_info();
         assert_eq!(info.short_name, "Health");
 
         let current_ref = cloned.field("current").expect("should find current");
-        let val = current_ref.value.downcast_ref::<i32>().expect("should be i32");
+        let val = current_ref
+            .value
+            .downcast_ref::<i32>()
+            .expect("should be i32");
         assert_eq!(*val, 50);
     }
 
     #[test]
     fn reflected_type_info_matches_type_info() {
-        let h = Health { current: 10, max: 20 };
+        let h = Health {
+            current: 10,
+            max: 20,
+        };
         let info_static = Health::type_info();
         let info_instance = h.reflected_type_info();
         assert_eq!(info_static.short_name, info_instance.short_name);
@@ -335,7 +377,9 @@ mod tests {
     fn registry_register_and_get() {
         let mut registry = TypeRegistry::new();
         registry.register::<Health>();
-        let reg = registry.get(TypeId::of::<Health>()).expect("should be registered");
+        let reg = registry
+            .get(TypeId::of::<Health>())
+            .expect("should be registered");
         assert_eq!(reg.info.short_name, "Health");
         assert!(reg.default_fn.is_some());
     }
@@ -363,7 +407,9 @@ mod tests {
         }
         let mut registry = TypeRegistry::new();
         registry.register_no_default::<NoDefault>();
-        let reg = registry.get(TypeId::of::<NoDefault>()).expect("should be registered");
+        let reg = registry
+            .get(TypeId::of::<NoDefault>())
+            .expect("should be registered");
         assert!(reg.default_fn.is_none());
     }
 
