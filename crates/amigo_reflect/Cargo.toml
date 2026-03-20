@@ -1,0 +1,8 @@
+[package]
+name = "amigo_reflect"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+amigo_reflect_derive = { path = "../amigo_reflect_derive" }
+rustc-hash = { workspace = true }
