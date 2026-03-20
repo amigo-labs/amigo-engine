@@ -147,7 +147,7 @@ impl ResourceFlow {
             (Some(a), Some(b)) => match road.shortest_path(a, b) {
                 Some(path) => {
                     // Throughput inversely proportional to path length (longer = slower).
-                    let tp = (20_i32).max(1).min(50 / (path.len() as i32).max(1));
+                    let tp = (20_i32).min(50 / (path.len() as i32).max(1));
                     (path, tp)
                 }
                 None => (Vec::new(), 10),
@@ -1472,9 +1472,7 @@ impl PopulationSim {
                     // Decide what to do next.
                     if citizen.workplace.is_none() {
                         citizen.state = CitizenState::Seeking(CitizenSeekTarget::Job);
-                    } else if hunger_urgency > 0.6 {
-                        citizen.state = CitizenState::Commuting;
-                    } else if fun_urgency > 0.5 {
+                    } else if hunger_urgency > 0.6 || fun_urgency > 0.5 {
                         citizen.state = CitizenState::Commuting;
                     } else if comfort_urgency < 0.3 && citizen.workplace.is_some() {
                         // Comfort is fine, go to work.

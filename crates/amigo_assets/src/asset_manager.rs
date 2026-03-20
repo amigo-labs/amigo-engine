@@ -142,10 +142,8 @@ impl AssetManager {
         for name in &self.sprite_names {
             let name_lower = name.to_lowercase();
             let dist = levenshtein(&query_lower, &name_lower);
-            if dist <= 3 {
-                if best.is_none() || dist < best.unwrap().1 {
-                    best = Some((name, dist));
-                }
+            if dist <= 3 && (best.is_none() || dist < best.unwrap().1) {
+                best = Some((name, dist));
             }
         }
 

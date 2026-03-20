@@ -1,5 +1,5 @@
 use amigo_tidal_parser::ast::*;
-use amigo_tidal_parser::{evaluate_pattern, apply_transform, NoteValue, PitchClass, Transform};
+use amigo_tidal_parser::{apply_transform, evaluate_pattern, NoteValue, PitchClass, Transform};
 
 fn note(pc: PitchClass, oct: i8) -> Pattern {
     Pattern::Atom(PatternAtom::Note(NoteValue::new(pc, oct)))
@@ -136,10 +136,7 @@ fn transform_slow() {
 
 #[test]
 fn transform_fast() {
-    let comp = make_comp(seq(vec![
-        note(PitchClass::C, 4),
-        note(PitchClass::D, 4),
-    ]));
+    let comp = make_comp(seq(vec![note(PitchClass::C, 4), note(PitchClass::D, 4)]));
     let mut events = evaluate_pattern(&comp, 0);
     apply_transform(&mut events, Transform::Fast(2.0));
     // With fast 2, events at 0.0, 0.5 become 0.0, 0.0 (wrapped).
@@ -202,10 +199,7 @@ fn legato_pattern_applied() {
         stems: vec![Stem {
             name: "melody".into(),
             voices: vec![Voice {
-                note_pattern: seq(vec![
-                    note(PitchClass::C, 4),
-                    note(PitchClass::D, 4),
-                ]),
+                note_pattern: seq(vec![note(PitchClass::C, 4), note(PitchClass::D, 4)]),
                 amp_pattern: None,
                 legato_pattern: Some(seq(vec![
                     Pattern::Atom(PatternAtom::Number(1.0)),

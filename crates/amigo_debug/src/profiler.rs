@@ -172,10 +172,7 @@ impl FrameProfiler {
         };
 
         let now = Instant::now();
-        let start_us = open
-            .start
-            .duration_since(frame_start)
-            .as_micros() as u64;
+        let start_us = open.start.duration_since(frame_start).as_micros() as u64;
         let duration_us = now.duration_since(open.start).as_micros() as u64;
 
         let color = name_color(open.name);
@@ -219,10 +216,7 @@ impl FrameProfiler {
             // Drain open spans (take them all at once to avoid borrow issues).
             let remaining: Vec<OpenSpan> = self.open_spans.drain(..).collect();
             for open in remaining {
-                let start_us = open
-                    .start
-                    .duration_since(frame_start)
-                    .as_micros() as u64;
+                let start_us = open.start.duration_since(frame_start).as_micros() as u64;
                 let duration_us = now.duration_since(open.start).as_micros() as u64;
 
                 self.current_spans.push(ProfileSpan {
@@ -574,8 +568,16 @@ mod tests {
         assert_eq!(frame.spans.len(), 2);
 
         // Find spans by name.
-        let render_span = frame.spans.iter().find(|s| s.name == "render").expect("render span");
-        let frame_span = frame.spans.iter().find(|s| s.name == "frame").expect("frame span");
+        let render_span = frame
+            .spans
+            .iter()
+            .find(|s| s.name == "render")
+            .expect("render span");
+        let frame_span = frame
+            .spans
+            .iter()
+            .find(|s| s.name == "frame")
+            .expect("frame span");
 
         assert_eq!(render_span.depth, 1);
         assert_eq!(render_span.parent, Some(frame_span.id));

@@ -133,19 +133,39 @@ fn default_base_volume() -> f32 {
 /// Rules that drive adaptive layer volume.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum LayerRule {
-    Lerp { param: String, from: f32, to: f32 },
-    Threshold { param: String, above: f32, fade_seconds: f32 },
-    Toggle { param: String, fade_seconds: f32 },
+    Lerp {
+        param: String,
+        from: f32,
+        to: f32,
+    },
+    Threshold {
+        param: String,
+        above: f32,
+        fade_seconds: f32,
+    },
+    Toggle {
+        param: String,
+        fade_seconds: f32,
+    },
 }
 
 /// Transition type between music sections.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MusicTransition {
-    CrossfadeOnBar { bars: u32 },
-    FadeOutThenPlay { fade_bars: u32 },
+    CrossfadeOnBar {
+        bars: u32,
+    },
+    FadeOutThenPlay {
+        fade_bars: u32,
+    },
     CutOnBar,
-    StingerThen { stinger: String, then: Box<MusicTransition> },
-    LayerSwap { bars_per_layer: u32 },
+    StingerThen {
+        stinger: String,
+        then: Box<MusicTransition>,
+    },
+    LayerSwap {
+        bars_per_layer: u32,
+    },
 }
 
 /// A one-shot musical cue.
@@ -388,8 +408,7 @@ impl FormatRegistry {
                             file: file_label.clone(),
                             message: format!(
                                 "Layer {:?} references missing file: {}",
-                                layer.name,
-                                layer.file
+                                layer.name, layer.file
                             ),
                         });
                     }
@@ -404,8 +423,7 @@ impl FormatRegistry {
                         file: file_label.clone(),
                         message: format!(
                             "Stinger {:?} references missing file: {}",
-                            stinger.name,
-                            stinger.file
+                            stinger.name, stinger.file
                         ),
                     });
                 }
@@ -428,9 +446,7 @@ impl FormatRegistry {
                     if !full.exists() {
                         warnings.push(FormatWarning {
                             file: file_label.clone(),
-                            message: format!(
-                                "SFX {sound_name:?} references missing file: {file}"
-                            ),
+                            message: format!("SFX {sound_name:?} references missing file: {file}"),
                         });
                     }
                 }
@@ -512,9 +528,7 @@ fn check_stinger_refs(
         if !stinger_names.contains(stinger.as_str()) {
             warnings.push(FormatWarning {
                 file: file_label.to_path_buf(),
-                message: format!(
-                    "Transition references undefined stinger: {stinger:?}"
-                ),
+                message: format!("Transition references undefined stinger: {stinger:?}"),
             });
         }
         check_stinger_refs(then, stinger_names, file_label, warnings);
@@ -583,7 +597,9 @@ mod tests {
         assert_eq!(cfg.sections.len(), 1);
         assert_eq!(cfg.sections[0].layers.len(), 1);
         assert_eq!(cfg.stingers.len(), 1);
-        assert!(cfg.transitions.contains_key(&("calm".into(), "battle".into())));
+        assert!(cfg
+            .transitions
+            .contains_key(&("calm".into(), "battle".into())));
     }
 
     #[test]
@@ -761,15 +777,23 @@ mod tests {
                 bpm: 120,
                 beats_per_bar: 4,
                 sections: vec![
-                    SectionDef { name: "a".into(), layers: vec![] },
-                    SectionDef { name: "a".into(), layers: vec![] },
+                    SectionDef {
+                        name: "a".into(),
+                        layers: vec![],
+                    },
+                    SectionDef {
+                        name: "a".into(),
+                        layers: vec![],
+                    },
                 ],
                 transitions: HashMap::new(),
                 stingers: vec![],
             },
         );
         let warnings = reg.validate(Path::new("/nonexistent"));
-        assert!(warnings.iter().any(|w| w.message.contains("Duplicate section")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.message.contains("Duplicate section")));
     }
 
     #[test]
@@ -794,7 +818,9 @@ mod tests {
             },
         );
         let warnings = reg.validate(Path::new("/nonexistent"));
-        assert!(warnings.iter().any(|w| w.message.contains("undefined stinger")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.message.contains("undefined stinger")));
     }
 
     #[test]

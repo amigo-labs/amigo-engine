@@ -189,11 +189,7 @@ impl SpriteIcon {
         //               ###
         //               .#.
         let t = Color::TRANSPARENT;
-        Self::new(
-            3,
-            3,
-            vec![t, color, t, color, color, color, t, color, t],
-        )
+        Self::new(3, 3, vec![t, color, t, color, color, color, t, color, t])
     }
 
     /// Create a single-color square icon.
@@ -448,7 +444,11 @@ impl Minimap {
                     let py = py as u32;
                     if px < mw && py < mh {
                         let c = Color::new(color.r, color.g, color.b, color.a * opacity);
-                        pixels.push(MinimapPixel { x: px, y: py, color: c });
+                        pixels.push(MinimapPixel {
+                            x: px,
+                            y: py,
+                            color: c,
+                        });
                     }
                 }
 
@@ -466,8 +466,7 @@ impl Minimap {
                                     let ic = icon.pixels[idx];
                                     // Skip transparent icon pixels
                                     if ic.a > 0.0 {
-                                        let c =
-                                            Color::new(ic.r, ic.g, ic.b, ic.a * opacity);
+                                        let c = Color::new(ic.r, ic.g, ic.b, ic.a * opacity);
                                         pixels.push(MinimapPixel {
                                             x: sx as u32,
                                             y: sy as u32,
@@ -483,7 +482,11 @@ impl Minimap {
                         let py = py as u32;
                         if px < mw && py < mh {
                             let c = Color::new(1.0, 1.0, 1.0, opacity);
-                            pixels.push(MinimapPixel { x: px, y: py, color: c });
+                            pixels.push(MinimapPixel {
+                                x: px,
+                                y: py,
+                                color: c,
+                            });
                         }
                     }
                 }
@@ -491,10 +494,7 @@ impl Minimap {
                 PinType::Arrow { color } => {
                     // Directional arrow at minimap edge for off-screen entities.
                     // Clamp pin position to minimap edge and draw a small arrow.
-                    let in_bounds = px >= 0.0
-                        && py >= 0.0
-                        && (px as u32) < mw
-                        && (py as u32) < mh;
+                    let in_bounds = px >= 0.0 && py >= 0.0 && (px as u32) < mw && (py as u32) < mh;
 
                     if in_bounds {
                         // Entity is on-screen within minimap — render as a dot
@@ -510,7 +510,11 @@ impl Minimap {
                         let cy = py.clamp(0.0, (mh - 1) as f32) as u32;
                         let c = Color::new(color.r, color.g, color.b, color.a * opacity);
                         // Draw a 3-pixel arrow indicator at the edge
-                        pixels.push(MinimapPixel { x: cx, y: cy, color: c });
+                        pixels.push(MinimapPixel {
+                            x: cx,
+                            y: cy,
+                            color: c,
+                        });
                         // Add perpendicular pixels for visibility
                         let on_left = cx == 0;
                         let on_right = cx == mw - 1;
@@ -519,19 +523,35 @@ impl Minimap {
                         if on_left || on_right {
                             // Vertical arrow tail
                             if cy > 0 {
-                                pixels.push(MinimapPixel { x: cx, y: cy - 1, color: c });
+                                pixels.push(MinimapPixel {
+                                    x: cx,
+                                    y: cy - 1,
+                                    color: c,
+                                });
                             }
                             if cy + 1 < mh {
-                                pixels.push(MinimapPixel { x: cx, y: cy + 1, color: c });
+                                pixels.push(MinimapPixel {
+                                    x: cx,
+                                    y: cy + 1,
+                                    color: c,
+                                });
                             }
                         }
                         if on_top || on_bottom {
                             // Horizontal arrow tail
                             if cx > 0 {
-                                pixels.push(MinimapPixel { x: cx - 1, y: cy, color: c });
+                                pixels.push(MinimapPixel {
+                                    x: cx - 1,
+                                    y: cy,
+                                    color: c,
+                                });
                             }
                             if cx + 1 < mw {
-                                pixels.push(MinimapPixel { x: cx + 1, y: cy, color: c });
+                                pixels.push(MinimapPixel {
+                                    x: cx + 1,
+                                    y: cy,
+                                    color: c,
+                                });
                             }
                         }
                     }
@@ -588,16 +608,32 @@ impl Minimap {
         for b in 0..bw {
             // Top and bottom rows
             for mx in 0..mw {
-                pixels.push(MinimapPixel { x: mx, y: b, color: border_color });
+                pixels.push(MinimapPixel {
+                    x: mx,
+                    y: b,
+                    color: border_color,
+                });
                 if mh > b {
-                    pixels.push(MinimapPixel { x: mx, y: mh - 1 - b, color: border_color });
+                    pixels.push(MinimapPixel {
+                        x: mx,
+                        y: mh - 1 - b,
+                        color: border_color,
+                    });
                 }
             }
             // Left and right columns (excluding corners already drawn)
             for my in bw..(mh.saturating_sub(bw)) {
-                pixels.push(MinimapPixel { x: b, y: my, color: border_color });
+                pixels.push(MinimapPixel {
+                    x: b,
+                    y: my,
+                    color: border_color,
+                });
                 if mw > b {
-                    pixels.push(MinimapPixel { x: mw - 1 - b, y: my, color: border_color });
+                    pixels.push(MinimapPixel {
+                        x: mw - 1 - b,
+                        y: my,
+                        color: border_color,
+                    });
                 }
             }
         }
@@ -633,22 +669,38 @@ impl Minimap {
 
         // Top edge
         for mx in x0..=x1 {
-            pixels.push(MinimapPixel { x: mx, y: y0, color });
+            pixels.push(MinimapPixel {
+                x: mx,
+                y: y0,
+                color,
+            });
         }
         // Bottom edge
         if y1 != y0 {
             for mx in x0..=x1 {
-                pixels.push(MinimapPixel { x: mx, y: y1, color });
+                pixels.push(MinimapPixel {
+                    x: mx,
+                    y: y1,
+                    color,
+                });
             }
         }
         // Left edge
         for my in (y0 + 1)..y1 {
-            pixels.push(MinimapPixel { x: x0, y: my, color });
+            pixels.push(MinimapPixel {
+                x: x0,
+                y: my,
+                color,
+            });
         }
         // Right edge
         if x1 != x0 {
             for my in (y0 + 1)..y1 {
-                pixels.push(MinimapPixel { x: x1, y: my, color });
+                pixels.push(MinimapPixel {
+                    x: x1,
+                    y: my,
+                    color,
+                });
             }
         }
     }
@@ -949,7 +1001,11 @@ mod tests {
 
         let fog = FogOfWarGrid::new(10, 10); // All hidden
         let opacity = mm.pin_fog_opacity(&mm.pins[0], Some(&fog));
-        assert_eq!(opacity, Some(1.0), "Always-visible pin should have full opacity");
+        assert_eq!(
+            opacity,
+            Some(1.0),
+            "Always-visible pin should have full opacity"
+        );
     }
 
     #[test]
@@ -984,7 +1040,10 @@ mod tests {
         let pixels = mm.generate_pixels(&tiles, 10, 10, &|_| Color::BLACK, None);
 
         // Should have tile pixels (100) + diamond pixels (5 non-transparent in a 3x3 diamond)
-        let red_pixels = pixels.iter().filter(|p| p.color.r > 0.5 && p.color.g < 0.1).count();
+        let red_pixels = pixels
+            .iter()
+            .filter(|p| p.color.r > 0.5 && p.color.g < 0.1)
+            .count();
         assert_eq!(red_pixels, 5, "Diamond icon should produce 5 red pixels");
     }
 
@@ -1006,7 +1065,9 @@ mod tests {
             entity: None,
             static_pos: None,
             world_pos: RenderVec2::new(20.0, 5.0), // Off right edge
-            pin_type: PinType::Arrow { color: Color::YELLOW },
+            pin_type: PinType::Arrow {
+                color: Color::YELLOW,
+            },
             always_visible: true,
         };
         mm.add_pin(pin);
@@ -1019,7 +1080,10 @@ mod tests {
             .iter()
             .filter(|p| p.color.r > 0.5 && p.color.g > 0.5 && p.color.b < 0.1)
             .collect();
-        assert!(!yellow_pixels.is_empty(), "Arrow pin should produce pixels at edge");
+        assert!(
+            !yellow_pixels.is_empty(),
+            "Arrow pin should produce pixels at edge"
+        );
         assert!(
             yellow_pixels.iter().all(|p| p.x == 9),
             "All arrow pixels should be at right edge (x=9)"
@@ -1045,8 +1109,15 @@ mod tests {
 
         // Border should form a 1px rectangle around the 10x10 minimap
         // Top row: 10, bottom row: 10, left column: 8, right column: 8 = 36
-        assert_eq!(pixels.len(), 36, "1px border on 10x10 should produce 36 pixels");
-        assert!(pixels.iter().all(|p| p.color.r > 0.9), "All border pixels should be red");
+        assert_eq!(
+            pixels.len(),
+            36,
+            "1px border on 10x10 should produce 36 pixels"
+        );
+        assert!(
+            pixels.iter().all(|p| p.color.r > 0.9),
+            "All border pixels should be red"
+        );
     }
 
     #[test]
@@ -1064,7 +1135,10 @@ mod tests {
 
         let mut pixels = Vec::new();
         mm.render_border_to_pixels(&mut pixels);
-        assert!(pixels.is_empty(), "No border pixels when border_color is None");
+        assert!(
+            pixels.is_empty(),
+            "No border pixels when border_color is None"
+        );
     }
 
     #[test]
@@ -1089,7 +1163,11 @@ mod tests {
         // All pixels should be on edges of the rect
         for p in &pixels {
             let on_edge = p.x == 7 || p.x == 13 || p.y == 7 || p.y == 13;
-            assert!(on_edge, "Viewport pixel ({},{}) should be on the rect edge", p.x, p.y);
+            assert!(
+                on_edge,
+                "Viewport pixel ({},{}) should be on the rect edge",
+                p.x, p.y
+            );
         }
     }
 
@@ -1104,14 +1182,30 @@ mod tests {
         });
 
         let pixels = vec![
-            MinimapPixel { x: 0, y: 0, color: Color::RED },
-            MinimapPixel { x: 1, y: 0, color: Color::GREEN },
-            MinimapPixel { x: 0, y: 1, color: Color::BLUE },
-            MinimapPixel { x: 1, y: 1, color: Color::WHITE },
+            MinimapPixel {
+                x: 0,
+                y: 0,
+                color: Color::RED,
+            },
+            MinimapPixel {
+                x: 1,
+                y: 0,
+                color: Color::GREEN,
+            },
+            MinimapPixel {
+                x: 0,
+                y: 1,
+                color: Color::BLUE,
+            },
+            MinimapPixel {
+                x: 1,
+                y: 1,
+                color: Color::WHITE,
+            },
         ];
         let rgba = mm.pixels_to_rgba(&pixels);
         assert_eq!(rgba.len(), 16); // 2x2x4
-        // First pixel: red (255,0,0,255)
+                                    // First pixel: red (255,0,0,255)
         assert_eq!(rgba[0], 255);
         assert_eq!(rgba[1], 0);
         assert_eq!(rgba[2], 0);
@@ -1130,8 +1224,16 @@ mod tests {
 
         // White base, then 50% red overlay
         let pixels = vec![
-            MinimapPixel { x: 0, y: 0, color: Color::WHITE },
-            MinimapPixel { x: 0, y: 0, color: Color::new(1.0, 0.0, 0.0, 0.5) },
+            MinimapPixel {
+                x: 0,
+                y: 0,
+                color: Color::WHITE,
+            },
+            MinimapPixel {
+                x: 0,
+                y: 0,
+                color: Color::new(1.0, 0.0, 0.0, 0.5),
+            },
         ];
         let rgba = mm.pixels_to_rgba(&pixels);
         // Result: r = 1.0*0.5 + 1.0*0.5 = 1.0, g = 0.0*0.5 + 1.0*0.5 = 0.5
@@ -1191,6 +1293,9 @@ mod tests {
         let pixels = mm.render(&tiles, 10, 10, &|_| Color::GREEN, None, &camera);
 
         // Should contain tile pixels + viewport indicator + border
-        assert!(pixels.len() > 100, "render() should produce more than just tile pixels");
+        assert!(
+            pixels.len() > 100,
+            "render() should produce more than just tile pixels"
+        );
     }
 }

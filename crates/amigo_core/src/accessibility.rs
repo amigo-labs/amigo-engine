@@ -566,7 +566,7 @@ impl AccessibilityConfig {
     /// Save configuration to a RON file.
     pub fn save(&self, path: &Path) -> Result<(), std::io::Error> {
         let ron = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         std::fs::write(path, ron)
     }
 

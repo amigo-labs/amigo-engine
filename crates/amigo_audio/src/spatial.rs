@@ -309,11 +309,7 @@ impl SpatialAudioSystem {
     /// based on current listener and emitter positions.
     ///
     /// Call once per frame after the camera update.
-    pub fn update(
-        &mut self,
-        listener: &SpatialListener,
-        emitters: &SparseSet<SpatialEmitter>,
-    ) {
+    pub fn update(&mut self, listener: &SpatialListener, emitters: &SparseSet<SpatialEmitter>) {
         for instance in self.active.values_mut() {
             // Resolve the emitter: prefer the ECS component, fall back to snapshot.
             let emitter = match instance.emitter_entity {
@@ -331,9 +327,7 @@ impl SpatialAudioSystem {
 
             // kira panning: 0.0 = left, 0.5 = center, 1.0 = right.
             let kira_pan = ((pan + 1.0) * 0.5) as f64;
-            instance
-                .handle
-                .set_panning(kira_pan, Tween::default());
+            instance.handle.set_panning(kira_pan, Tween::default());
         }
     }
 

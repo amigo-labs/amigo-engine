@@ -956,6 +956,12 @@ pub struct UndoStack {
     pub max_depth: usize,
 }
 
+impl Default for UndoStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UndoStack {
     pub fn new() -> Self {
         Self {
@@ -1061,6 +1067,12 @@ pub trait Constraint: Send + Sync {
 /// before it is executed, preventing invalid state.
 pub struct ConstraintValidator {
     constraints: Vec<Box<dyn Constraint>>,
+}
+
+impl Default for ConstraintValidator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConstraintValidator {
