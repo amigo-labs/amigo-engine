@@ -1405,7 +1405,7 @@ impl MetaManager {
     /// Persist current meta-progression to disk.
     pub fn save(&self) -> Result<(), SaveError> {
         self.save_manager
-            .save(META_SAVE_SLOT, &self.progression)
+            .save(META_SAVE_SLOT, "meta_progression", &self.progression, 0.0)
     }
 
     /// Add currency earned from a run (respects `DeathMode` retention).
