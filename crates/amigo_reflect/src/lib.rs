@@ -6,6 +6,9 @@
 //! Use `#[derive(Reflect)]` from `amigo_reflect_derive` to auto-implement reflection for
 //! named-field structs.
 
+// Allow the derive macro to reference `amigo_reflect::` types when used within this crate.
+extern crate self as amigo_reflect;
+
 mod registry;
 
 pub use registry::{TypeRegistration, TypeRegistry};
