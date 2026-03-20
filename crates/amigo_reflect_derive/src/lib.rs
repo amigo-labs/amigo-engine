@@ -38,22 +38,12 @@ pub fn derive_reflect(input: TokenStream) -> TokenStream {
     }
 }
 
+#[derive(Default)]
 struct FieldAttrsParsed {
     skip: bool,
     read_only: bool,
     label: Option<String>,
     range: Option<(f64, f64)>,
-}
-
-impl Default for FieldAttrsParsed {
-    fn default() -> Self {
-        Self {
-            skip: false,
-            read_only: false,
-            label: None,
-            range: None,
-        }
-    }
 }
 
 fn parse_field_attrs(field: &syn::Field) -> syn::Result<FieldAttrsParsed> {
