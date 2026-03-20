@@ -256,3 +256,111 @@ The `TimelineRenderer` maps `FrameProfile` data to pixel coordinates:
 - Should the timeline F-key be F9, or should we repurpose F4 (currently `show_paths`)? F9 keeps backward compatibility but is further from the existing F1-F8 block.
 - Should `FrameProfile` include a snapshot of `DebugOverlay` stats (FPS, entity count, draw calls) for correlation, or should those be displayed separately alongside the timeline?
 - Should the `span` convenience method accept a mutable reference to self and return `R`, or should we provide a macro `profile_span!("name", { ... })` that handles the borrow more ergonomically?
+
+## Acceptance Criteria
+
+### API Completeness
+
+#### Core Types
+- [ ] `SpanId(u32)` struct exists and derives `Clone, Copy, Debug, PartialEq, Eq, Hash`
+- [ ] `ProfileSpan` struct exists with fields: `id: SpanId`, `parent: Option<SpanId>`, `name: &'static str`, `start_us: u64`, `duration_us: u64`, `depth: u16`, `color: u32`
+- [ ] `ProfileSpan` derives `Clone, Debug`
+- [ ] `FrameProfile` struct exists with fields: `frame_number: u64`, `total_us: u64`, `spans: Vec<ProfileSpan>`
+- [ ] `FrameProfile` derives `Clone, Debug`
+- [ ] `ProfilerConfig` struct exists with fields: `history_size: usize`, `enabled: bool`
+- [ ] `ProfilerConfig` derives `Clone, Debug`
+- [ ] `ProfilerConfig::default()` returns `history_size: 300, enabled: true`
+
+#### FrameProfiler
+- [ ] `FrameProfiler::new(config: ProfilerConfig) -> Self`
+- [ ] `FrameProfiler::begin_frame(&mut self, frame_number: u64)`
+- [ ] `FrameProfiler::begin_span(&mut self, name: &'static str) -> SpanId`
+- [ ] `FrameProfiler::end_span(&mut self, id: SpanId)`
+- [ ] `FrameProfiler::end_frame(&mut self)`
+- [ ] `FrameProfiler::span<R>(&mut self, name: &'static str, f: impl FnOnce() -> R) -> R`
+- [ ] `FrameProfiler::history(&self) -> &[FrameProfile]`
+- [ ] `FrameProfiler::last_frame(&self) -> Option<&FrameProfile>`
+- [ ] `FrameProfiler::set_config(&mut self, config: ProfilerConfig)`
+- [ ] `FrameProfiler::is_enabled(&self) -> bool`
+- [ ] `FrameProfiler::clear(&mut self)`
+- [ ] `FrameProfiler::begin_span_guard(&mut self, name: &'static str) -> SpanGuard<'_>`
+
+#### SpanGuard
+- [ ] `SpanGuard<'a>` struct exists with fields: `profiler: &'a mut FrameProfiler`, `id: SpanId`
+- [ ] `SpanGuard` implements `Drop` which calls `end_span`
+
+#### Timeline Renderer Types
+- [ ] `TimelineView` struct exists with fields: `selected_frame_offset: usize`, `zoom: f32`, `row_height: f32`, `paused: bool`
+- [ ] `TimelineView::default()` returns `selected_frame_offset: 0, zoom: 1.0, row_height: 18.0, paused: false`
+- [ ] `TimelineRenderer` struct exists
+- [ ] `TimelineRenderer::render(profile: &FrameProfile, view: &TimelineView, viewport_width: f32, viewport_height: f32) -> TimelineDrawData`
+- [ ] `TimelineDrawData` struct exists with fields: `bars: Vec<TimelineBar>`, `labels: Vec<TimelineLabel>`, `budget_line_x: f32`
+- [ ] `TimelineBar` struct exists with fields: `x: f32`, `y: f32`, `width: f32`, `height: f32`, `color: Color`
+- [ ] `TimelineLabel` struct exists with fields: `x: f32`, `y: f32`, `text: String`, `color: Color`
+
+### Behavior
+
+#### Normal Flow
+- [ ] `begin_frame` records the frame-start timestamp and resets the per-frame span list
+- [ ] `begin_span` opens a new span that nests under the current open span (if any)
+- [ ] `begin_span` returns a `SpanId` for use with `end_span`
+- [ ] `end_span` closes the span identified by `SpanId` and records its duration
+- [ ] `end_frame` finalizes the `FrameProfile` and pushes it into the ring buffer
+- [ ] `end_frame` evicts the oldest frame when the ring buffer is full
+- [ ] `span()` convenience method times a closure as a named span and returns its result
+- [ ] `begin_span_guard` returns an RAII guard that calls `end_span` on drop
+- [ ] Spans nest automatically: a span opened while another is open becomes a child
+- [ ] `history()` returns frames oldest-first (index 0 = oldest)
+- [ ] `last_frame()` returns the most recently completed frame profile
+
+#### Edge Cases
+- [ ] If `end_span` is never called for an open span, `end_frame` force-closes all open spans with the frame-end timestamp and logs a warning
+- [ ] If `begin_span` is called outside of a `begin_frame`/`end_frame` bracket, the call is a no-op
+- [ ] If the ring buffer is full, the oldest `FrameProfile` is silently overwritten (no panic, no error)
+- [ ] When `config.enabled` is `false`, all recording methods (`begin_frame`, `begin_span`, `end_span`, `end_frame`) are no-ops
+- [ ] When `config.enabled` is `false`, no `Instant::now()` calls are made (zero overhead beyond a bool check)
+
+#### Ordering Guarantees
+- [ ] Spans within a single `FrameProfile` are sorted by `start_us`
+- [ ] `SpanId` values are only valid within the frame that created them
+
+#### Integration with DebugOverlay
+- [ ] When `builtin_profiler` feature is enabled, `DebugOverlay::begin_system(name)` delegates to `profiler.begin_span(name)`
+- [ ] When `builtin_profiler` feature is enabled, `DebugOverlay::end_system()` delegates to `profiler.end_span(id)`
+- [ ] `SystemTiming` struct is still updated in parallel so the text overlay remains functional
+- [ ] Both text and timeline views coexist
+
+#### Timeline Rendering
+- [ ] X axis maps `start_us` to x position and `duration_us` to width
+- [ ] Y axis maps span `depth` to vertical row position using `row_height`
+- [ ] A vertical guideline at 16,666 us marks the 60 fps budget (`budget_line_x`)
+- [ ] Zoom and pan are controlled by `TimelineView` fields
+- [ ] Renderer outputs abstract `TimelineDrawData`, not GPU commands directly
+
+#### Performance
+- [ ] `begin_span` / `end_span` do not allocate (span `Vec` is pre-allocated and reused)
+- [ ] `name: &'static str` avoids per-frame string allocation
+- [ ] `TimelineRenderer` is only called when the overlay is visible
+
+#### Data Structures
+- [ ] Ring buffer uses `VecDeque<FrameProfile>` capped at `history_size`
+- [ ] Timestamps use `std::time::Instant`; offsets stored as `u64` microseconds relative to frame start
+- [ ] Span colors derived from `name.as_ptr() as u32` for deterministic per-name coloring
+
+### Quality Gates
+- [ ] `cargo check --workspace` compiles without errors
+- [ ] `cargo test --workspace` — all tests pass
+- [ ] `cargo clippy --workspace -- -D warnings` — no warnings
+- [ ] `cargo fmt --all --check` — correctly formatted
+- [ ] New public API has at least one test per method
+- [ ] No `unwrap()` in library code
+- [ ] No `todo!()` or `unimplemented!()` in committed code
+
+### Convention Compliance
+- [ ] Crate is `amigo_debug` (amigo_ prefix, snake_case)
+- [ ] All functionality gated behind `builtin_profiler` feature flag
+- [ ] Logging uses `tracing` crate (e.g., warning when `end_frame` force-closes open spans)
+- [ ] Error handling uses `thiserror` for any error types
+- [ ] No `unwrap()` in library code; graceful handling of edge cases
+- [ ] Traits use PascalCase; structs use PascalCase
+- [ ] F-key toggle follows existing F1-F8 pattern in engine.rs

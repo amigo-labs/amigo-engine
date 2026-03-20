@@ -281,3 +281,107 @@ A separate crate is required because Rust proc-macros must be compiled as `proc-
 - **Should `Reflect` require `Clone`?** `clone_reflect()` requires cloning for undo snapshots. This is already satisfied by most components (`Position`, `Health`, `SpriteComp` all derive `Clone`). Proposal: yes, require `Clone` as a supertrait.
 - **Should the built-in components (`Position`, `Velocity`, etc.) derive `Reflect` directly, or should we provide manual impls?** `Position(pub SimVec2)` is a tuple struct, which the derive macro does not support in v1. Manual impls for the 5 built-in types are low effort.
 - **Interaction with archetype storage (ADR-0001)**: If archetypes land first, `get_reflected` must also probe archetype columns. The `AnyColumn` trait from ADR-0001 would need a similar downcast-function-pointer mechanism. Resolve: implement reflection against the current SparseSet storage; archetype support is additive.
+
+## Acceptance Criteria
+
+### API Completeness
+
+#### Core Types (`amigo_reflect/src/lib.rs`)
+- [ ] `FieldInfo` struct exists with fields: `name: &'static str`, `type_name: &'static str`, `type_id: TypeId`, `offset: usize`, `attrs: FieldAttrs`
+- [ ] `FieldInfo` derives `Clone, Debug`
+- [ ] `FieldAttrs` struct exists with fields: `label: Option<&'static str>`, `range: Option<(f64, f64)>`, `read_only: bool`, `skip: bool`
+- [ ] `FieldAttrs` derives `Clone, Debug, Default`
+- [ ] `TypeInfo` struct exists with fields: `short_name: &'static str`, `type_path: &'static str`, `type_id: TypeId`, `fields: &'static [FieldInfo]`
+- [ ] `TypeInfo` derives `Clone, Debug`
+- [ ] `FieldRef<'a>` struct exists with fields: `info: &'static FieldInfo`, `value: &'a dyn Any`
+- [ ] `FieldMut<'a>` struct exists with fields: `info: &'static FieldInfo`, `value: &'a mut dyn Any`
+
+#### Reflect Trait
+- [ ] `Reflect` trait has supertrait `Any + 'static`
+- [ ] `Reflect::type_info() -> &'static TypeInfo` (where Self: Sized)
+- [ ] `Reflect::reflected_type_info(&self) -> &'static TypeInfo`
+- [ ] `Reflect::field(&self, name: &str) -> Option<FieldRef<'_>>`
+- [ ] `Reflect::field_mut(&mut self, name: &str) -> Option<FieldMut<'_>>`
+- [ ] `Reflect::fields(&self) -> Vec<FieldRef<'_>>`
+- [ ] `Reflect::fields_mut(&mut self) -> Vec<FieldMut<'_>>`
+- [ ] `Reflect::apply_patch(&mut self, patch: &ReflectPatch) -> usize`
+- [ ] `Reflect::clone_reflect(&self) -> Box<dyn Reflect>`
+
+#### ReflectPatch
+- [ ] `ReflectPatch` struct exists with internal `fields: Vec<(String, Box<dyn Any>)>`
+- [ ] `ReflectPatch::new() -> Self`
+- [ ] `ReflectPatch::set<T: Any + Clone + 'static>(&mut self, name: &str, value: T)`
+- [ ] `ReflectPatch::iter(&self) -> impl Iterator<Item = (&str, &dyn Any)>`
+
+#### TypeRegistry (`amigo_reflect/src/registry.rs`)
+- [ ] `TypeRegistry` struct exists
+- [ ] `TypeRegistration` struct exists with fields: `info: &'static TypeInfo`, `default_fn: Option<fn() -> Box<dyn Reflect>>`
+- [ ] `TypeRegistry::new() -> Self`
+- [ ] `TypeRegistry::register<T: Reflect + Default>(&mut self)`
+- [ ] `TypeRegistry::register_no_default<T: Reflect>(&mut self)`
+- [ ] `TypeRegistry::get(&self, type_id: TypeId) -> Option<&TypeRegistration>`
+- [ ] `TypeRegistry::get_by_name(&self, name: &str) -> Option<&TypeRegistration>`
+- [ ] `TypeRegistry::iter(&self) -> impl Iterator<Item = &TypeRegistration>`
+- [ ] `TypeRegistry::len(&self) -> usize`
+- [ ] `TypeRegistry::is_empty(&self) -> bool`
+
+#### Derive Macro (`amigo_reflect_derive/src/lib.rs`)
+- [ ] `#[proc_macro_derive(Reflect, attributes(reflect))]` proc macro exists
+- [ ] Derive macro supports `#[reflect(skip)]` attribute
+- [ ] Derive macro supports `#[reflect(read_only)]` attribute
+- [ ] Derive macro supports `#[reflect(label = "...")]` attribute
+- [ ] Derive macro supports `#[reflect(range = 0.0..=100.0)]` attribute
+- [ ] Derive macro only supports named-field structs (compile error on tuple structs or enums)
+
+#### World Integration (`amigo_core::ecs::world`, behind `#[cfg(feature = "reflect")]`)
+- [ ] `World::get_reflected(&self, entity: EntityId, type_id: TypeId, registry: &TypeRegistry) -> Option<&dyn Reflect>`
+- [ ] `World::get_reflected_mut(&mut self, entity: EntityId, type_id: TypeId, registry: &TypeRegistry) -> Option<&mut dyn Reflect>`
+- [ ] `World::component_types(&self, entity: EntityId) -> Vec<TypeId>`
+
+### Behavior
+
+#### Normal Flow
+- [ ] Types registered via `registry.register::<T>()` are retrievable by `TypeId` and by short name
+- [ ] Derive macro generates a `static TypeInfo` with field metadata using `std::mem::offset_of!`
+- [ ] `world.component_types(entity)` returns TypeIds for both built-in (static) and dynamic components
+- [ ] `world.get_reflected(entity, type_id, &registry)` returns `&dyn Reflect` for registered components
+- [ ] `field_mut()` returns a `FieldMut` whose `value` can be downcast and written to mutate the field
+- [ ] `register::<T>()` stores a `default_fn` that creates `Box::new(T::default())`
+
+#### Edge Cases
+- [ ] `field("nonexistent")` returns `None`
+- [ ] `FieldMut::value.downcast_mut::<WrongType>()` returns `None` (type mismatch is handled gracefully)
+- [ ] Fields with `#[reflect(skip)]` are excluded from `fields()` and `fields_mut()` iteration
+- [ ] `field("skipped_field_name")` returns `None` for skipped fields
+- [ ] Zero-sized type fields: `FieldInfo::offset` is valid, reads succeed, writes are no-ops
+- [ ] `get_reflected` for an unregistered type returns `None`
+- [ ] `get_reflected` for an entity that does not have the component returns `None`
+- [ ] `apply_patch` with 3 fields where only 2 names match applies those 2 and returns `2`
+- [ ] `apply_patch` with no matching fields returns `0`
+
+#### Ordering Guarantees
+- [ ] `fields()` and `fields_mut()` return fields in source declaration order
+- [ ] `TypeRegistry::iter()` returns types in registration order
+
+#### Feature Gating
+- [ ] All reflection functionality is gated behind the `reflect` feature flag
+- [ ] When `reflect` feature is off, no runtime cost is incurred
+
+### Quality Gates
+- [ ] `cargo check --workspace` compiles without errors
+- [ ] `cargo test --workspace` — all tests pass
+- [ ] `cargo clippy --workspace -- -D warnings` — no warnings
+- [ ] `cargo fmt --all --check` — correctly formatted
+- [ ] New public API has at least one test per method
+- [ ] No `unwrap()` in library code
+- [ ] No `todo!()` or `unimplemented!()` in committed code
+
+### Convention Compliance
+- [ ] Crate is named `amigo_reflect` (amigo_ prefix, snake_case)
+- [ ] Derive macro crate is named `amigo_reflect_derive` (amigo_ prefix, snake_case)
+- [ ] Traits use PascalCase (`Reflect`, `TypeRegistry`)
+- [ ] Logging uses `tracing` crate with structured logging (warnings for type mismatches, unregistered types)
+- [ ] Error handling uses `thiserror` for any error types
+- [ ] No `Result` in hot paths; reflection methods return `Option` for fallible lookups
+- [ ] `TypeRegistry` backed by `rustc_hash::FxHashMap` for O(1) lookup
+- [ ] Proc-macro crate is a separate crate with `proc-macro = true`
