@@ -297,8 +297,8 @@ impl HighContrastTheme {
             name: "White on Black".into(),
             background: Color::BLACK,
             foreground: Color::WHITE,
-            accent: Color::new(0.0, 1.0, 1.0, 1.0),     // cyan
-            interactive: Color::new(1.0, 1.0, 0.0, 1.0),  // yellow
+            accent: Color::new(0.0, 1.0, 1.0, 1.0), // cyan
+            interactive: Color::new(1.0, 1.0, 0.0, 1.0), // yellow
             interactive_hover: Color::new(1.0, 0.65, 0.0, 1.0), // orange
             border_width: 3.0,
             text_shadow: true,
@@ -311,8 +311,8 @@ impl HighContrastTheme {
             name: "Black on White".into(),
             background: Color::WHITE,
             foreground: Color::BLACK,
-            accent: Color::new(0.0, 0.0, 0.8, 1.0),     // dark blue
-            interactive: Color::new(0.0, 0.5, 0.0, 1.0),  // dark green
+            accent: Color::new(0.0, 0.0, 0.8, 1.0), // dark blue
+            interactive: Color::new(0.0, 0.5, 0.0, 1.0), // dark green
             interactive_hover: Color::new(0.0, 0.3, 0.8, 1.0), // blue
             border_width: 3.0,
             text_shadow: false,
@@ -323,10 +323,10 @@ impl HighContrastTheme {
     pub fn yellow_on_blue() -> Self {
         Self {
             name: "Yellow on Blue".into(),
-            background: Color::new(0.0, 0.0, 0.5, 1.0),  // dark blue
-            foreground: Color::new(1.0, 1.0, 0.0, 1.0),   // yellow
+            background: Color::new(0.0, 0.0, 0.5, 1.0), // dark blue
+            foreground: Color::new(1.0, 1.0, 0.0, 1.0), // yellow
             accent: Color::WHITE,
-            interactive: Color::new(0.0, 1.0, 0.0, 1.0),  // green
+            interactive: Color::new(0.0, 1.0, 0.0, 1.0), // green
             interactive_hover: Color::new(0.5, 1.0, 0.5, 1.0), // light green
             border_width: 3.0,
             text_shadow: true,
@@ -435,13 +435,7 @@ impl InputAssistSettings {
     /// - `dt`: frame delta time.
     ///
     /// Returns `true` if the action should be considered active this frame.
-    pub fn filter(
-        &self,
-        action: &str,
-        raw_pressed: bool,
-        held_duration: f32,
-        dt: f32,
-    ) -> bool {
+    pub fn filter(&self, action: &str, raw_pressed: bool, held_duration: f32, dt: f32) -> bool {
         // Hold-to-activate: require held for `duration` before activating.
         if let Some(&required) = self.hold_to_activate.get(action) {
             if raw_pressed && held_duration < required {
@@ -622,10 +616,8 @@ impl AccessibilityManager {
 
     /// Create a manager from an existing config.
     pub fn from_config(config: AccessibilityConfig) -> Self {
-        let filter = ColorBlindFilter::with_strength(
-            config.color_blind_mode,
-            config.colorblind_strength,
-        );
+        let filter =
+            ColorBlindFilter::with_strength(config.color_blind_mode, config.colorblind_strength);
         let active_theme = config
             .high_contrast_theme
             .as_deref()
@@ -691,8 +683,8 @@ impl AccessibilityManager {
             Some(n) => {
                 self.config.high_contrast_theme = Some(n.to_string());
                 self.config.high_contrast_mode = true;
-                self.active_theme = HighContrastTheme::builtin(n)
-                    .or_else(|| self.custom_themes.get(n).cloned());
+                self.active_theme =
+                    HighContrastTheme::builtin(n).or_else(|| self.custom_themes.get(n).cloned());
             }
             None => {
                 self.config.high_contrast_theme = None;
@@ -985,9 +977,7 @@ mod tests {
     #[test]
     fn input_assist_hold_to_activate() {
         let mut assist = InputAssistSettings::default();
-        assist
-            .hold_to_activate
-            .insert("heavy_attack".into(), 0.5);
+        assist.hold_to_activate.insert("heavy_attack".into(), 0.5);
 
         // Not held long enough
         assert!(!assist.filter("heavy_attack", true, 0.3, 0.016));

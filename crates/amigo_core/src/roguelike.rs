@@ -949,13 +949,10 @@ impl ItemSystem {
     }
 
     /// Roll N items for a shop or treasure room.
-    pub fn roll_shop(
-        &self,
-        rng: &mut XorShift64,
-        count: usize,
-        luck: i32,
-    ) -> Vec<ItemDef> {
-        (0..count).filter_map(|_| self.roll_drop(rng, luck)).collect()
+    pub fn roll_shop(&self, rng: &mut XorShift64, count: usize, luck: i32) -> Vec<ItemDef> {
+        (0..count)
+            .filter_map(|_| self.roll_drop(rng, luck))
+            .collect()
     }
 
     /// Check which synergies are active given the player's current items.
@@ -1247,7 +1244,11 @@ impl RunManager {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos() as u64;
-            if t == 0 { 0xCAFE_BABE } else { t }
+            if t == 0 {
+                0xCAFE_BABE
+            } else {
+                t
+            }
         });
 
         let stats = config.base_stats.clone();
@@ -1418,12 +1419,7 @@ impl MetaManager {
     }
 
     /// Attempt to purchase an unlock. Returns `false` if insufficient currency.
-    pub fn purchase_unlock(
-        &mut self,
-        unlock_id: &str,
-        cost: u64,
-        currency: &str,
-    ) -> bool {
+    pub fn purchase_unlock(&mut self, unlock_id: &str, cost: u64, currency: &str) -> bool {
         let balance = self
             .progression
             .currencies
@@ -1438,7 +1434,11 @@ impl MetaManager {
             .currencies
             .entry(currency.to_string())
             .or_insert(0) -= cost;
-        if !self.progression.unlocked_items.contains(&unlock_id.to_string()) {
+        if !self
+            .progression
+            .unlocked_items
+            .contains(&unlock_id.to_string())
+        {
             self.progression.unlocked_items.push(unlock_id.to_string());
         }
         true
@@ -1462,8 +1462,7 @@ impl MetaManager {
         let dominated = match &self.progression.best_run {
             None => true,
             Some(prev) => {
-                stats.floor_reached > prev.floor_reached
-                    || (stats.completed && !prev.completed)
+                stats.floor_reached > prev.floor_reached || (stats.completed && !prev.completed)
             }
         };
         if dominated {
@@ -1835,10 +1834,7 @@ mod tests {
         let config = DungeonConfig::default();
         let floor = DungeonGenerator::generate(42, 1, &config);
 
-        let has_spawn = floor
-            .rooms
-            .iter()
-            .any(|r| r.room_type == RoomType::Spawn);
+        let has_spawn = floor.rooms.iter().any(|r| r.room_type == RoomType::Spawn);
         let has_boss = floor.rooms.iter().any(|r| r.room_type == RoomType::Boss);
         assert!(has_spawn, "floor should have a spawn room");
         assert!(has_boss, "floor should have a boss room");

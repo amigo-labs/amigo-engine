@@ -432,10 +432,7 @@ impl AchievementTracker {
     /// Snapshot the results of all custom conditions referenced by `cond`.
     /// This evaluates callback functions while `&self` is still available,
     /// producing a map of key -> bool that the static evaluator can use.
-    fn snapshot_custom_results(
-        &self,
-        cond: &AchievementCondition,
-    ) -> FxHashMap<String, bool> {
+    fn snapshot_custom_results(&self, cond: &AchievementCondition) -> FxHashMap<String, bool> {
         let mut results = FxHashMap::default();
         Self::collect_custom_keys(cond, &mut results);
         for (key, val) in results.iter_mut() {
@@ -475,15 +472,13 @@ impl AchievementTracker {
             AchievementCondition::StatReached { stat, threshold } => {
                 stats.get(stat).copied().unwrap_or(0.0) >= *threshold
             }
-            AchievementCondition::All(subs) => subs
-                .iter()
-                .all(|c| Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)),
-            AchievementCondition::Any(subs) => subs
-                .iter()
-                .any(|c| Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)),
-            AchievementCondition::Custom(key) => {
-                custom_results.get(key).copied().unwrap_or(false)
-            }
+            AchievementCondition::All(subs) => subs.iter().all(|c| {
+                Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)
+            }),
+            AchievementCondition::Any(subs) => subs.iter().any(|c| {
+                Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)
+            }),
+            AchievementCondition::Custom(key) => custom_results.get(key).copied().unwrap_or(false),
         }
     }
 
@@ -515,10 +510,9 @@ impl AchievementTracker {
                 })
                 .count() as u32,
             AchievementCondition::Any(subs) => {
-                if subs
-                    .iter()
-                    .any(|c| Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results))
-                {
+                if subs.iter().any(|c| {
+                    Self::evaluate_condition_with(c, event_counts, flags, stats, custom_results)
+                }) {
                     1
                 } else {
                     0
@@ -738,8 +732,7 @@ impl AchievementToastRenderer {
                 None => continue,
             };
             let x = screen_width - TOAST_WIDTH - TOAST_MARGIN_RIGHT;
-            let y =
-                TOAST_MARGIN_TOP + (i as f32) * (TOAST_HEIGHT + TOAST_SPACING);
+            let y = TOAST_MARGIN_TOP + (i as f32) * (TOAST_HEIGHT + TOAST_SPACING);
             let rect = Rect::new(x, y, TOAST_WIDTH, TOAST_HEIGHT);
             draw_fn(rect, alpha, &def.icon_sprite, &def.name, &def.description);
         }
@@ -765,12 +758,7 @@ impl AchievementToastRenderer {
             let text_a = alpha;
             let text_color = Color::new(1.0, 1.0, 1.0, text_a);
             text_fn(name, text_x, rect.y + TOAST_PADDING, text_color);
-            text_fn(
-                desc,
-                text_x,
-                rect.y + TOAST_PADDING + 20.0,
-                text_color,
-            );
+            text_fn(desc, text_x, rect.y + TOAST_PADDING + 20.0, text_color);
         });
     }
 
@@ -778,9 +766,7 @@ impl AchievementToastRenderer {
         match toast.phase {
             ToastPhase::FadeIn => (toast.elapsed / self.fade_duration).min(1.0),
             ToastPhase::Hold => 1.0,
-            ToastPhase::FadeOut => {
-                (1.0 - toast.elapsed / self.fade_duration).max(0.0)
-            }
+            ToastPhase::FadeOut => (1.0 - toast.elapsed / self.fade_duration).max(0.0),
         }
     }
 }
@@ -1145,10 +1131,7 @@ mod tests {
 
         // Update through fade-in.
         renderer.update(DEFAULT_FADE_DURATION + 0.01);
-        assert!(matches!(
-            renderer.active_toasts[0].phase,
-            ToastPhase::Hold
-        ));
+        assert!(matches!(renderer.active_toasts[0].phase, ToastPhase::Hold));
 
         // Update through hold.
         renderer.update(DEFAULT_DISPLAY_DURATION + 0.01);

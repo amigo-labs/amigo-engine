@@ -257,10 +257,11 @@ impl SfxManager {
 
         match kira.play(data) {
             Ok(handle) => {
-                let ret = handle.clone();
-                rt.active_handles.push(handle);
+                // Note: the handle is returned to the caller (SpatialAudioSystem)
+                // and NOT stored in active_handles, because StaticSoundHandle
+                // does not implement Clone. The spatial system owns the handle.
                 rt.last_played = Some(now);
-                Some(ret)
+                Some(handle)
             }
             Err(e) => {
                 warn!("Failed to play SFX '{name}': {e}");

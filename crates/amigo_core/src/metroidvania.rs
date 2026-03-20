@@ -463,8 +463,7 @@ impl MapRevealer {
                         for tx in nx0..nx1 {
                             // Only upgrade Hidden -> Explored; don't downgrade Visible.
                             if self.fog.visibility_at(tx, ty) == TileVisibility::Hidden {
-                                self.fog
-                                    .set_visibility(tx, ty, TileVisibility::Explored);
+                                self.fog.set_visibility(tx, ty, TileVisibility::Explored);
                             }
                         }
                     }
@@ -567,12 +566,7 @@ impl BossRoomSystem {
         // Return arena camera parameters.
         let center_x = boss.arena_bounds.x + boss.arena_bounds.w * 0.5;
         let center_y = boss.arena_bounds.y + boss.arena_bounds.h * 0.5;
-        (
-            center_x,
-            center_y,
-            boss.arena_bounds.w,
-            boss.arena_bounds.h,
-        )
+        (center_x, center_y, boss.arena_bounds.w, boss.arena_bounds.h)
     }
 
     /// End boss fight: unseal doors, mark boss as defeated.
@@ -639,10 +633,7 @@ pub enum BossMovement {
         speed: I16F16,
     },
     /// Chase the player.
-    Chase {
-        speed: I16F16,
-        min_distance: I16F16,
-    },
+    Chase { speed: I16F16, min_distance: I16F16 },
     /// Jump to random positions in arena.
     Teleport { cooldown: u32 },
 }
@@ -1171,26 +1162,17 @@ mod tests {
         let mut revealer = MapRevealer::new(&graph);
 
         // Before entering, all tiles are Hidden.
-        assert_eq!(
-            revealer.fog.visibility_at(12, 12),
-            TileVisibility::Hidden
-        );
+        assert_eq!(revealer.fog.visibility_at(12, 12), TileVisibility::Hidden);
 
         // Enter room 1.
         let room1 = graph.room(RoomId(1)).unwrap().clone();
         revealer.on_room_enter(&room1, &graph);
 
         // Room 1 tiles should be Visible.
-        assert_eq!(
-            revealer.fog.visibility_at(12, 12),
-            TileVisibility::Visible
-        );
+        assert_eq!(revealer.fog.visibility_at(12, 12), TileVisibility::Visible);
 
         // Adjacent room 2 tiles should be Explored (silhouette).
-        assert_eq!(
-            revealer.fog.visibility_at(22, 12),
-            TileVisibility::Explored
-        );
+        assert_eq!(revealer.fog.visibility_at(22, 12), TileVisibility::Explored);
     }
 
     #[test]

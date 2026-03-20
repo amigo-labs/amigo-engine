@@ -492,7 +492,10 @@ impl World {
 
         // Check built-in sparse sets
         if type_id == TypeId::of::<Health>() {
-            return self.healths.get(entity).map(|v| v as &dyn amigo_reflect::Reflect);
+            return self
+                .healths
+                .get(entity)
+                .map(|v| v as &dyn amigo_reflect::Reflect);
         }
 
         // Check dynamic components via stored accessor functions
@@ -521,7 +524,10 @@ impl World {
         let _reg = registry.get(type_id)?;
 
         if type_id == TypeId::of::<Health>() {
-            return self.healths.get_mut(entity).map(|v| v as &mut dyn amigo_reflect::Reflect);
+            return self
+                .healths
+                .get_mut(entity)
+                .map(|v| v as &mut dyn amigo_reflect::Reflect);
         }
 
         // For dynamic components, use stored accessor
@@ -595,4 +601,3 @@ impl World {
         );
     }
 }
-

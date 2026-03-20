@@ -570,10 +570,22 @@ impl GridPos {
     /// Return the adjacent position in the given direction.
     pub fn neighbor(self, dir: GridDir) -> GridPos {
         match dir {
-            GridDir::Up => GridPos { x: self.x, y: self.y - 1 },
-            GridDir::Down => GridPos { x: self.x, y: self.y + 1 },
-            GridDir::Left => GridPos { x: self.x - 1, y: self.y },
-            GridDir::Right => GridPos { x: self.x + 1, y: self.y },
+            GridDir::Up => GridPos {
+                x: self.x,
+                y: self.y - 1,
+            },
+            GridDir::Down => GridPos {
+                x: self.x,
+                y: self.y + 1,
+            },
+            GridDir::Left => GridPos {
+                x: self.x - 1,
+                y: self.y,
+            },
+            GridDir::Right => GridPos {
+                x: self.x + 1,
+                y: self.y,
+            },
         }
     }
 
@@ -661,8 +673,7 @@ impl PuzzleState {
 
     /// Convert grid position to flat index, returning None if out of bounds.
     fn pos_to_idx(&self, pos: GridPos) -> Option<usize> {
-        if pos.x >= 0 && pos.y >= 0 && (pos.x as u32) < self.width && (pos.y as u32) < self.height
-        {
+        if pos.x >= 0 && pos.y >= 0 && (pos.x as u32) < self.width && (pos.y as u32) < self.height {
             Some((pos.y as u32 * self.width + pos.x as u32) as usize)
         } else {
             None
@@ -713,10 +724,7 @@ impl PuzzleState {
 
     /// Check if a position is within the grid bounds.
     pub fn in_bounds(&self, pos: GridPos) -> bool {
-        pos.x >= 0
-            && pos.y >= 0
-            && (pos.x as u32) < self.width
-            && (pos.y as u32) < self.height
+        pos.x >= 0 && pos.y >= 0 && (pos.x as u32) < self.width && (pos.y as u32) < self.height
     }
 }
 
@@ -795,7 +803,9 @@ impl PuzzleCommand for MoveCommand {
         let mut check_pos = to;
         loop {
             // Is there an entity at check_pos?
-            let blocker = state.entity_at(check_pos).map(|e| (e.id, e.pos, e.pushable));
+            let blocker = state
+                .entity_at(check_pos)
+                .map(|e| (e.id, e.pos, e.pushable));
             match blocker {
                 Some((bid, bpos, true)) => {
                     // Pushable — record it and check the next tile.
@@ -1044,11 +1054,7 @@ impl UndoStack {
 /// A single constraint rule for pre-move validation.
 pub trait Constraint: Send + Sync {
     /// Check if the proposed command is valid in the current state.
-    fn validate(
-        &self,
-        command: &dyn PuzzleCommand,
-        state: &PuzzleState,
-    ) -> Result<(), MoveError>;
+    fn validate(&self, command: &dyn PuzzleCommand, state: &PuzzleState) -> Result<(), MoveError>;
 }
 
 /// Pre-move validation. Checks whether a proposed action is legal
@@ -1187,7 +1193,10 @@ impl WinCondition {
     /// Internal recursive satisfaction check.
     fn is_satisfied(&self, state: &PuzzleState) -> bool {
         match self {
-            WinCondition::AllOnTarget { entity_type, target_tile } => {
+            WinCondition::AllOnTarget {
+                entity_type,
+                target_tile,
+            } => {
                 let matching: Vec<_> = state
                     .entities
                     .iter()
@@ -1196,18 +1205,20 @@ impl WinCondition {
                 if matching.is_empty() {
                     return false;
                 }
-                matching.iter().all(|e| {
-                    state.tile_at(e.pos) == Some(*target_tile)
-                })
+                matching
+                    .iter()
+                    .all(|e| state.tile_at(e.pos) == Some(*target_tile))
             }
-            WinCondition::AllFlagsSet(flags) => {
-                flags.iter().all(|f| state.flags.get(f).copied().unwrap_or(false))
-            }
-            WinCondition::EntityAtPosition { entity_type, target } => {
-                state.entities.iter().any(|e| {
-                    e.entity_type == *entity_type && e.pos == *target
-                })
-            }
+            WinCondition::AllFlagsSet(flags) => flags
+                .iter()
+                .all(|f| state.flags.get(f).copied().unwrap_or(false)),
+            WinCondition::EntityAtPosition {
+                entity_type,
+                target,
+            } => state
+                .entities
+                .iter()
+                .any(|e| e.entity_type == *entity_type && e.pos == *target),
             WinCondition::NoneRemaining(entity_type) => {
                 !state.entities.iter().any(|e| e.entity_type == *entity_type)
             }
@@ -1215,12 +1226,8 @@ impl WinCondition {
                 // Custom conditions must be evaluated by game-specific code.
                 false
             }
-            WinCondition::All(conditions) => {
-                conditions.iter().all(|c| c.is_satisfied(state))
-            }
-            WinCondition::Any(conditions) => {
-                conditions.iter().any(|c| c.is_satisfied(state))
-            }
+            WinCondition::All(conditions) => conditions.iter().all(|c| c.is_satisfied(state)),
+            WinCondition::Any(conditions) => conditions.iter().any(|c| c.is_satisfied(state)),
         }
     }
 }
@@ -1411,8 +1418,7 @@ pub struct LevelLoader;
 impl LevelLoader {
     /// Load a level from a RON file path.
     pub fn load(path: &str) -> Result<LevelDef, LoadError> {
-        let contents = std::fs::read_to_string(path)
-            .map_err(|e| LoadError::Io(e.to_string()))?;
+        let contents = std::fs::read_to_string(path).map_err(|e| LoadError::Io(e.to_string()))?;
         let def: LevelDef =
             ron::from_str(&contents).map_err(|e| LoadError::Parse(e.to_string()))?;
 
@@ -1433,8 +1439,7 @@ impl LevelLoader {
 
     /// Load a level definition from a RON string (no filesystem access).
     pub fn load_from_str(ron_str: &str) -> Result<LevelDef, LoadError> {
-        let def: LevelDef =
-            ron::from_str(ron_str).map_err(|e| LoadError::Parse(e.to_string()))?;
+        let def: LevelDef = ron::from_str(ron_str).map_err(|e| LoadError::Parse(e.to_string()))?;
 
         let expected = (def.width * def.height) as usize;
         if def.tiles.len() != expected {
@@ -1889,11 +1894,17 @@ mod tests {
         // Move player right: (1,1) -> (2,1) — no obstacle
         let mut cmd = MoveCommand::new(player_id, GridDir::Right);
         assert!(cmd.execute(&mut state).is_ok());
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 1));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(2, 1)
+        );
 
         // Undo
         cmd.undo(&mut state);
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(1, 1)
+        );
     }
 
     #[test]
@@ -1909,12 +1920,18 @@ mod tests {
         // Move player down to (2,2) — pushes box from (2,2) to (2,3)
         let mut cmd2 = MoveCommand::new(player_id, GridDir::Down);
         cmd2.execute(&mut state).unwrap();
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 2));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(2, 2)
+        );
         assert_eq!(state.entity_by_id(box_id).unwrap().pos, GridPos::new(2, 3));
 
         // Undo — box returns to (2,2), player to (2,1)
         cmd2.undo(&mut state);
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 1));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(2, 1)
+        );
         assert_eq!(state.entity_by_id(box_id).unwrap().pos, GridPos::new(2, 2));
     }
 
@@ -1927,7 +1944,10 @@ mod tests {
         let mut cmd = MoveCommand::new(player_id, GridDir::Up);
         assert!(cmd.execute(&mut state).is_err());
         // Player didn't move
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(1, 1)
+        );
     }
 
     // ── PlaceCommand ─────────────────────────────────────────
@@ -1960,7 +1980,10 @@ mod tests {
         assert!(composite.execute(&mut state).is_err());
 
         // Player should be back at original position due to rollback.
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(1, 1)
+        );
     }
 
     // ── UndoStack ────────────────────────────────────────────
@@ -1985,21 +2008,33 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stack.move_count(), 2);
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 2));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(2, 2)
+        );
 
         // Undo one
         assert!(stack.undo(&mut state));
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 1));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(2, 1)
+        );
         assert!(stack.can_redo());
 
         // Redo
         assert!(stack.redo(&mut state));
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(2, 2));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(2, 2)
+        );
         assert!(!stack.can_redo());
 
         // Undo all
         stack.undo_all(&mut state);
-        assert_eq!(state.entity_by_id(player_id).unwrap().pos, GridPos::new(1, 1));
+        assert_eq!(
+            state.entity_by_id(player_id).unwrap().pos,
+            GridPos::new(1, 1)
+        );
         assert_eq!(stack.move_count(), 0);
     }
 
@@ -2035,13 +2070,22 @@ mod tests {
         let player_id = EntityId::from_raw(0, 0);
 
         stack
-            .execute(Box::new(MoveCommand::new(player_id, GridDir::Right)), &mut state)
+            .execute(
+                Box::new(MoveCommand::new(player_id, GridDir::Right)),
+                &mut state,
+            )
             .unwrap();
         stack
-            .execute(Box::new(MoveCommand::new(player_id, GridDir::Down)), &mut state)
+            .execute(
+                Box::new(MoveCommand::new(player_id, GridDir::Down)),
+                &mut state,
+            )
             .unwrap();
         stack
-            .execute(Box::new(MoveCommand::new(player_id, GridDir::Left)), &mut state)
+            .execute(
+                Box::new(MoveCommand::new(player_id, GridDir::Left)),
+                &mut state,
+            )
             .unwrap();
 
         // Only 2 moves retained
@@ -2144,7 +2188,7 @@ mod tests {
         // Tick animation 3 times
         assert!(!tick.tick_animation()); // frame 2 remaining
         assert!(!tick.tick_animation()); // frame 1 remaining
-        assert!(tick.tick_animation());  // done
+        assert!(tick.tick_animation()); // done
         assert!(tick.ready_for_input());
     }
 

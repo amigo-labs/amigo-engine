@@ -66,14 +66,14 @@ pub mod tower;
 pub mod waves;
 
 // -- Core re-exports (always available) -------------------------------------
-pub use achievements::{
-    AchievementCondition, AchievementDef, AchievementError, AchievementProgress,
-    AchievementSaveData, AchievementToastRenderer, AchievementTracker,
-};
 pub use accessibility::{
     AccessibilityConfig, AccessibilityFeature, AccessibilityManager, ColorBlindFilter,
     ColorBlindMode, HighContrastTheme, InputAssistSettings, ShakeSettings, Subtitle,
     SubtitleCategory, SubtitleDirection, SubtitleManager, TextScaleSettings,
+};
+pub use achievements::{
+    AchievementCondition, AchievementDef, AchievementError, AchievementProgress,
+    AchievementSaveData, AchievementToastRenderer, AchievementTracker,
 };
 pub use collision::{
     CapsuleShape, CollisionShape, CollisionWorld, ContactInfo, SpatialHash, SweptContact,
