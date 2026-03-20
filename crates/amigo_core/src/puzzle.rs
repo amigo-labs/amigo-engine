@@ -2289,8 +2289,16 @@ mod tests {
             target_tile: 2, // target tile at (3,3)
         };
 
-        // Move player: right, down, right, down — push box to (3,3)
-        let moves = [GridDir::Right, GridDir::Down, GridDir::Right, GridDir::Down];
+        // Move player: right, down (pushes box down to 2,3), then
+        // navigate around the box to push it right: left, down, down, right, right
+        // (1,1)->R(2,1)->D(2,2 push box to 2,3)->L(1,2)->D(1,3)->R(2,3 push box to 3,3)
+        let moves = [
+            GridDir::Right, // (1,1)->(2,1)
+            GridDir::Down,  // (2,1)->(2,2), pushes box (2,2)->(2,3)
+            GridDir::Left,  // (2,2)->(1,2)
+            GridDir::Down,  // (1,2)->(1,3)
+            GridDir::Right, // (1,3)->(2,3), pushes box (2,3)->(3,3)
+        ];
         for dir in moves {
             assert!(tick.ready_for_input());
             let cmd = Box::new(MoveCommand::new(player_id, dir));
@@ -2304,12 +2312,12 @@ mod tests {
         );
         assert_eq!(
             win.check(&state, stack.move_count() as u32),
-            PuzzleResult::Solved { moves: 4 }
+            PuzzleResult::Solved { moves: 5 }
         );
 
         // Record progress
         let mut progress = LevelProgress::default();
         progress.mark_complete("sokoban_1", stack.move_count() as u32);
-        assert_eq!(progress.best_score("sokoban_1"), Some(4));
+        assert_eq!(progress.best_score("sokoban_1"), Some(5));
     }
 }

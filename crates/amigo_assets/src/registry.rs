@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn style_ron_roundtrip() {
-        let ron_text = r#"StyleDef(
+        let ron_text = r##"StyleDef(
     name: "test",
     checkpoint: "test.safetensors",
     lora: None,
@@ -552,7 +552,7 @@ mod tests {
         tile_edge_check: false,
     ),
     reference_images: [],
-)"#;
+)"##;
         let def: StyleDef = ron::from_str(ron_text).unwrap();
         assert_eq!(def.name, "test");
         assert_eq!(def.palette.len(), 2);
@@ -641,7 +641,7 @@ mod tests {
 
         fs::write(
             tmp.join("styles/test.style.ron"),
-            r#"StyleDef(
+            r##"StyleDef(
     name: "test",
     checkpoint: "test.safetensors",
     lora: None,
@@ -661,7 +661,7 @@ mod tests {
         tile_edge_check: false,
     ),
     reference_images: [],
-)"#,
+)"##,
         )
         .unwrap();
 

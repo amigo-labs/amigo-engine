@@ -1015,4 +1015,203 @@ mod tests {
         tracker.report_event("enemy_killed");
         assert!(tracker.is_unlocked("first_kill"));
     }
+
+    #[test]
+    fn custom_condition_unlock() {
+        let mut tracker = AchievementTracker::new();
+        tracker.register(AchievementDef {
+            id: "custom_ach".into(),
+            name: "Custom".into(),
+            description: "A custom condition.".into(),
+            icon_sprite: "star".into(),
+            hidden: false,
+            condition: AchievementCondition::Custom("is_awesome".into()),
+            category: None,
+            sort_order: 0,
+        });
+        // Register a custom condition that checks a flag on the tracker.
+        tracker.register_custom_condition("is_awesome", |t| t.is_flag_set("awesome"));
+        // Trigger check via an event that causes condition re-evaluation.
+        // Custom conditions are checked when any related achievement is checked.
+        // Since custom conditions aren't indexed to events, manually set a flag
+        // and use the flag_index path. We need to combine with something indexable.
+        // Instead, let's use an All condition that includes a flag + custom.
+        // Actually the custom is standalone, so we need to trigger check_and_unlock directly.
+        // In practice, custom conditions are evaluated when "check_custom" event fires
+        // or at frame end. Let's test by registering with a combo condition.
+
+        // Reset and test with a combo approach.
+        let mut tracker = AchievementTracker::new();
+        tracker.register(AchievementDef {
+            id: "combo_custom".into(),
+            name: "Custom Combo".into(),
+            description: "Flag and custom.".into(),
+            icon_sprite: "star".into(),
+            hidden: false,
+            condition: AchievementCondition::All(vec![
+                AchievementCondition::FlagSet("ready".into()),
+                AchievementCondition::Custom("is_awesome".into()),
+            ]),
+            category: None,
+            sort_order: 0,
+        });
+        tracker.register_custom_condition("is_awesome", |t| t.stat_value("power") >= 9000.0);
+
+        tracker.set_flag("ready");
+        assert!(!tracker.is_unlocked("combo_custom"));
+
+        tracker.set_stat("power", 9001.0);
+        // stat change doesn't trigger re-check for this achievement because the
+        // stat_index maps "power" but not to "combo_custom" (the stat is inside custom).
+        // Trigger re-check via the flag path.
+        tracker.set_flag("ready");
+        assert!(tracker.is_unlocked("combo_custom"));
+    }
+
+    #[test]
+    fn load_definitions_from_ron() {
+        let ron_content = r#"[
+            AchievementDef(
+                id: "test_ach",
+                name: "Test",
+                description: "A test achievement.",
+                icon_sprite: "icon_test",
+                hidden: false,
+                condition: EventCount(event: "test_event", threshold: 5),
+                category: Some("Testing"),
+                sort_order: 1,
+            ),
+        ]"#;
+        let dir = std::env::temp_dir().join("amigo_ach_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test_achievements.ron");
+        std::fs::write(&path, ron_content).unwrap();
+
+        let mut tracker = AchievementTracker::new();
+        tracker.load_definitions(&path).unwrap();
+
+        assert_eq!(tracker.total_count(), 1);
+        assert!(!tracker.is_unlocked("test_ach"));
+        tracker.report_event_count("test_event", 5);
+        assert!(tracker.is_unlocked("test_ach"));
+
+        // Clean up.
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_definitions_duplicate_error() {
+        let ron_content = r#"[
+            AchievementDef(
+                id: "dup",
+                name: "Dup",
+                description: "Dup.",
+                icon_sprite: "icon",
+                hidden: false,
+                condition: FlagSet("x"),
+                category: None,
+                sort_order: 0,
+            ),
+            AchievementDef(
+                id: "dup",
+                name: "Dup2",
+                description: "Dup2.",
+                icon_sprite: "icon",
+                hidden: false,
+                condition: FlagSet("y"),
+                category: None,
+                sort_order: 1,
+            ),
+        ]"#;
+        let dir = std::env::temp_dir().join("amigo_ach_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dup_achievements.ron");
+        std::fs::write(&path, ron_content).unwrap();
+
+        let mut tracker = AchievementTracker::new();
+        let result = tracker.load_definitions(&path);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("Duplicate"),
+            "Expected duplicate error"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn toast_renderer_lifecycle() {
+        let mut renderer = AchievementToastRenderer::new();
+        let mut tracker = AchievementTracker::new();
+        tracker.register(kill_achievement());
+        tracker.register(collector_achievement());
+        tracker.report_event("enemy_killed");
+
+        // Queue toast.
+        renderer.queue("first_kill".into());
+        assert_eq!(renderer.active_toasts.len(), 1);
+
+        // Update through fade-in.
+        renderer.update(DEFAULT_FADE_DURATION + 0.01);
+        assert!(matches!(
+            renderer.active_toasts[0].phase,
+            ToastPhase::Hold
+        ));
+
+        // Update through hold.
+        renderer.update(DEFAULT_DISPLAY_DURATION + 0.01);
+        assert!(matches!(
+            renderer.active_toasts[0].phase,
+            ToastPhase::FadeOut
+        ));
+
+        // Update through fade-out -- toast should be removed.
+        renderer.update(DEFAULT_FADE_DURATION + 0.01);
+        assert!(renderer.active_toasts.is_empty());
+    }
+
+    #[test]
+    fn toast_renderer_max_visible() {
+        let mut renderer = AchievementToastRenderer::new();
+
+        // Queue 5 toasts -- only 3 should be active.
+        for i in 0..5 {
+            renderer.queue(format!("ach_{i}"));
+        }
+        assert_eq!(renderer.active_toasts.len(), MAX_VISIBLE_TOASTS);
+        assert_eq!(renderer.queued.len(), 2);
+
+        // Expire all 3 active toasts in one big step.
+        let total_time = DEFAULT_FADE_DURATION + DEFAULT_DISPLAY_DURATION + DEFAULT_FADE_DURATION;
+        renderer.update(total_time + 0.1);
+        // All 3 originals finished, 2 promoted from queue, now in FadeIn.
+        // The queued ones are promoted in the same update call.
+        assert!(renderer.queued.is_empty());
+        // The 2 promoted toasts are now active.
+        assert_eq!(renderer.active_toasts.len(), 2);
+
+        // Expire the remaining 2.
+        renderer.update(total_time + 0.1);
+        assert!(renderer.active_toasts.is_empty());
+    }
+
+    #[test]
+    fn toast_renderer_draw_with() {
+        let mut renderer = AchievementToastRenderer::new();
+        let mut tracker = AchievementTracker::new();
+        tracker.register(kill_achievement());
+
+        renderer.queue("first_kill".into());
+        renderer.update(0.01); // small step into fade-in
+
+        let mut draw_count = 0;
+        renderer.draw_with(&tracker, 800.0, |rect, alpha, icon, name, _desc| {
+            draw_count += 1;
+            assert!(alpha > 0.0);
+            assert!(rect.x > 0.0);
+            assert_eq!(icon, "sword");
+            assert_eq!(name, "First Blood");
+        });
+        assert_eq!(draw_count, 1);
+    }
 }
