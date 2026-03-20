@@ -69,6 +69,15 @@ impl SpriteComp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StateScoped(pub u32);
 
+/// Stored accessor function pointers for reflection on dynamic components.
+#[cfg(feature = "reflect")]
+#[derive(Clone)]
+struct ReflectAccessor {
+    get_fn: fn(&dyn AnyStorage, EntityId) -> Option<*const dyn amigo_reflect::Reflect>,
+    get_mut_fn: fn(&mut dyn AnyStorage, EntityId) -> Option<*mut dyn amigo_reflect::Reflect>,
+    contains_fn: fn(&dyn AnyStorage, EntityId) -> bool,
+}
+
 /// Trait for type-erased SparseSet storage.
 trait AnyStorage: Any {
     fn as_any(&self) -> &dyn Any;
@@ -119,7 +128,7 @@ pub struct World {
 
     // Reflection accessor functions for dynamic components (behind `reflect` feature)
     #[cfg(feature = "reflect")]
-    reflect_accessors: FxHashMap<TypeId, reflect_impl::ReflectAccessor>,
+    reflect_accessors: FxHashMap<TypeId, ReflectAccessor>,
 }
 
 impl World {
