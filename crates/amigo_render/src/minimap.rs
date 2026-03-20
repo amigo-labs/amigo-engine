@@ -9,6 +9,9 @@ use amigo_core::ecs::EntityId;
 use amigo_core::fog_of_war::{FogOfWarGrid, TileVisibility};
 use amigo_core::math::{RenderVec2, SimVec2};
 use amigo_core::rect::Rect;
+use rustc_hash::FxHashMap;
+
+use crate::camera::Camera;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -149,6 +152,80 @@ pub struct MinimapPixel {
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic icon system for Sprite pins
+// ---------------------------------------------------------------------------
+
+/// A small icon definition for sprite-type pins.
+/// Icons are defined as a grid of colored pixels relative to the pin center.
+#[derive(Clone, Debug)]
+pub struct SpriteIcon {
+    /// Width of the icon in pixels.
+    pub width: u32,
+    /// Height of the icon in pixels.
+    pub height: u32,
+    /// Row-major RGBA pixel data. Length must equal `width * height`.
+    /// Use `Color::TRANSPARENT` for empty pixels.
+    pub pixels: Vec<Color>,
+}
+
+impl SpriteIcon {
+    /// Create a new sprite icon from pixel data.
+    pub fn new(width: u32, height: u32, pixels: Vec<Color>) -> Self {
+        debug_assert_eq!(
+            pixels.len(),
+            (width * height) as usize,
+            "SpriteIcon pixel data must match width*height"
+        );
+        Self {
+            width,
+            height,
+            pixels,
+        }
+    }
+
+    /// Create a simple single-color diamond icon (good for generic markers).
+    pub fn diamond(color: Color) -> Self {
+        // 3x3 diamond:  .#.
+        //               ###
+        //               .#.
+        let t = Color::TRANSPARENT;
+        Self::new(
+            3,
+            3,
+            vec![t, color, t, color, color, color, t, color, t],
+        )
+    }
+
+    /// Create a single-color square icon.
+    pub fn square(size: u32, color: Color) -> Self {
+        Self::new(size, size, vec![color; (size * size) as usize])
+    }
+}
+
+/// Registry mapping sprite names to icon definitions.
+#[derive(Clone, Debug, Default)]
+pub struct IconRegistry {
+    icons: FxHashMap<String, SpriteIcon>,
+}
+
+impl IconRegistry {
+    /// Create an empty icon registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a named icon.
+    pub fn register(&mut self, name: impl Into<String>, icon: SpriteIcon) {
+        self.icons.insert(name.into(), icon);
+    }
+
+    /// Look up an icon by name.
+    pub fn get(&self, name: &str) -> Option<&SpriteIcon> {
+        self.icons.get(name)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Minimap
 // ---------------------------------------------------------------------------
 
@@ -160,6 +237,8 @@ pub struct Minimap {
     pins: Vec<MinimapPin>,
     /// Active pings.
     pings: Vec<MinimapPing>,
+    /// Icon registry for sprite-type pins.
+    icon_registry: IconRegistry,
 }
 
 impl Minimap {
@@ -169,7 +248,18 @@ impl Minimap {
             config,
             pins: Vec::new(),
             pings: Vec::new(),
+            icon_registry: IconRegistry::new(),
         }
+    }
+
+    /// Returns a mutable reference to the icon registry for registering sprite icons.
+    pub fn icon_registry_mut(&mut self) -> &mut IconRegistry {
+        &mut self.icon_registry
+    }
+
+    /// Returns a reference to the icon registry.
+    pub fn icon_registry(&self) -> &IconRegistry {
+        &self.icon_registry
     }
 
     /// Add a pin.
