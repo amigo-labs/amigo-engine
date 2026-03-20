@@ -873,4 +873,324 @@ mod tests {
         assert!((w - 20.0).abs() < 1.0); // 10/50 * 100 = 20
         let _ = (y, h);
     }
+
+    #[test]
+    fn fog_hides_non_always_visible_pins() {
+        use amigo_core::fog_of_war::FogOfWarGrid;
+
+        let mut mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (10, 10),
+            world_bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            style: MinimapStyle::default(),
+            click_to_jump: false,
+        });
+
+        let e1 = EntityId::from_raw(1, 0);
+        let mut pin = MinimapPin::unit(e1, 0);
+        pin.world_pos = RenderVec2::new(5.0, 5.0);
+        pin.always_visible = false;
+        mm.add_pin(pin);
+
+        // All tiles hidden — pin should not appear
+        let fog = FogOfWarGrid::new(10, 10);
+        let tiles = vec![0u32; 100];
+        let pixels = mm.generate_pixels(&tiles, 10, 10, &|_| Color::BLACK, Some(&fog));
+        // All pixels should be fog_hidden_color (black) — no green pin
+        let has_green = pixels.iter().any(|p| p.color.g > 0.5 && p.color.r < 0.5);
+        assert!(!has_green, "Pin should be hidden in fog");
+    }
+
+    #[test]
+    fn fog_explored_pin_half_opacity() {
+        use amigo_core::fog_of_war::{update_visibility, FogOfWarGrid};
+        use amigo_core::math::IVec2;
+
+        let mut mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (20, 20),
+            world_bounds: Rect::new(0.0, 0.0, 20.0, 20.0),
+            style: MinimapStyle::default(),
+            click_to_jump: false,
+        });
+
+        let e1 = EntityId::from_raw(1, 0);
+        let mut pin = MinimapPin::unit(e1, 0); // Green team
+        pin.world_pos = RenderVec2::new(5.0, 5.0);
+        pin.always_visible = false;
+        mm.add_pin(pin);
+
+        // Make (5,5) explored: first reveal, then move observer away
+        let mut fog = FogOfWarGrid::new(20, 20);
+        update_visibility(IVec2::new(5, 5), 2, &mut fog);
+        update_visibility(IVec2::new(15, 15), 2, &mut fog);
+
+        let opacity = mm.pin_fog_opacity(&mm.pins[0], Some(&fog));
+        assert_eq!(opacity, Some(0.5), "Explored pin should have 0.5 opacity");
+    }
+
+    #[test]
+    fn always_visible_pin_ignores_fog() {
+        use amigo_core::fog_of_war::FogOfWarGrid;
+
+        let mut mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (10, 10),
+            world_bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            style: MinimapStyle::default(),
+            click_to_jump: false,
+        });
+
+        let e1 = EntityId::from_raw(1, 0);
+        let mut pin = MinimapPin::unit(e1, 0);
+        pin.world_pos = RenderVec2::new(5.0, 5.0);
+        pin.always_visible = true;
+        mm.add_pin(pin);
+
+        let fog = FogOfWarGrid::new(10, 10); // All hidden
+        let opacity = mm.pin_fog_opacity(&mm.pins[0], Some(&fog));
+        assert_eq!(opacity, Some(1.0), "Always-visible pin should have full opacity");
+    }
+
+    #[test]
+    fn sprite_icon_renders_pixels() {
+        let mut mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (10, 10),
+            world_bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            style: MinimapStyle {
+                border_color: None, // no border for simpler counting
+                ..MinimapStyle::default()
+            },
+            click_to_jump: false,
+        });
+
+        // Register a 3x3 diamond icon
+        mm.icon_registry_mut()
+            .register("diamond", SpriteIcon::diamond(Color::RED));
+
+        let pin = MinimapPin {
+            entity: None,
+            static_pos: None,
+            world_pos: RenderVec2::new(5.0, 5.0),
+            pin_type: PinType::Sprite {
+                name: "diamond".into(),
+            },
+            always_visible: true,
+        };
+        mm.add_pin(pin);
+
+        let tiles = vec![0u32; 100];
+        let pixels = mm.generate_pixels(&tiles, 10, 10, &|_| Color::BLACK, None);
+
+        // Should have tile pixels (100) + diamond pixels (5 non-transparent in a 3x3 diamond)
+        let red_pixels = pixels.iter().filter(|p| p.color.r > 0.5 && p.color.g < 0.1).count();
+        assert_eq!(red_pixels, 5, "Diamond icon should produce 5 red pixels");
+    }
+
+    #[test]
+    fn arrow_pin_offscreen_clamps_to_edge() {
+        let mut mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (10, 10),
+            world_bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            style: MinimapStyle {
+                border_color: None,
+                ..MinimapStyle::default()
+            },
+            click_to_jump: false,
+        });
+
+        // Pin far off to the right (world_pos beyond world_bounds)
+        let pin = MinimapPin {
+            entity: None,
+            static_pos: None,
+            world_pos: RenderVec2::new(20.0, 5.0), // Off right edge
+            pin_type: PinType::Arrow { color: Color::YELLOW },
+            always_visible: true,
+        };
+        mm.add_pin(pin);
+
+        let tiles = vec![0u32; 100];
+        let pixels = mm.generate_pixels(&tiles, 10, 10, &|_| Color::BLACK, None);
+
+        // Arrow should be clamped to right edge (x = 9)
+        let yellow_pixels: Vec<_> = pixels
+            .iter()
+            .filter(|p| p.color.r > 0.5 && p.color.g > 0.5 && p.color.b < 0.1)
+            .collect();
+        assert!(!yellow_pixels.is_empty(), "Arrow pin should produce pixels at edge");
+        assert!(
+            yellow_pixels.iter().all(|p| p.x == 9),
+            "All arrow pixels should be at right edge (x=9)"
+        );
+    }
+
+    #[test]
+    fn border_renders_pixels() {
+        let mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (10, 10),
+            world_bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            style: MinimapStyle {
+                border_color: Some(Color::RED),
+                border_width: 1,
+                ..MinimapStyle::default()
+            },
+            click_to_jump: false,
+        });
+
+        let mut pixels = Vec::new();
+        mm.render_border_to_pixels(&mut pixels);
+
+        // Border should form a 1px rectangle around the 10x10 minimap
+        // Top row: 10, bottom row: 10, left column: 8, right column: 8 = 36
+        assert_eq!(pixels.len(), 36, "1px border on 10x10 should produce 36 pixels");
+        assert!(pixels.iter().all(|p| p.color.r > 0.9), "All border pixels should be red");
+    }
+
+    #[test]
+    fn no_border_when_none() {
+        let mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (10, 10),
+            world_bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            style: MinimapStyle {
+                border_color: None,
+                ..MinimapStyle::default()
+            },
+            click_to_jump: false,
+        });
+
+        let mut pixels = Vec::new();
+        mm.render_border_to_pixels(&mut pixels);
+        assert!(pixels.is_empty(), "No border pixels when border_color is None");
+    }
+
+    #[test]
+    fn viewport_indicator_renders_outline() {
+        let mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (20, 20),
+            world_bounds: Rect::new(0.0, 0.0, 20.0, 20.0),
+            style: MinimapStyle::default(),
+            click_to_jump: false,
+        });
+
+        let mut pixels = Vec::new();
+        mm.render_viewport_to_pixels(
+            &mut pixels,
+            RenderVec2::new(10.0, 10.0),
+            RenderVec2::new(6.0, 6.0),
+        );
+
+        // Viewport should be a rect from (7,7) to (13,13) in minimap coords
+        assert!(!pixels.is_empty(), "Viewport should produce pixels");
+        // All pixels should be on edges of the rect
+        for p in &pixels {
+            let on_edge = p.x == 7 || p.x == 13 || p.y == 7 || p.y == 13;
+            assert!(on_edge, "Viewport pixel ({},{}) should be on the rect edge", p.x, p.y);
+        }
+    }
+
+    #[test]
+    fn pixels_to_rgba_basic() {
+        let mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (2, 2),
+            world_bounds: Rect::new(0.0, 0.0, 2.0, 2.0),
+            style: MinimapStyle::default(),
+            click_to_jump: false,
+        });
+
+        let pixels = vec![
+            MinimapPixel { x: 0, y: 0, color: Color::RED },
+            MinimapPixel { x: 1, y: 0, color: Color::GREEN },
+            MinimapPixel { x: 0, y: 1, color: Color::BLUE },
+            MinimapPixel { x: 1, y: 1, color: Color::WHITE },
+        ];
+        let rgba = mm.pixels_to_rgba(&pixels);
+        assert_eq!(rgba.len(), 16); // 2x2x4
+        // First pixel: red (255,0,0,255)
+        assert_eq!(rgba[0], 255);
+        assert_eq!(rgba[1], 0);
+        assert_eq!(rgba[2], 0);
+        assert_eq!(rgba[3], 255);
+    }
+
+    #[test]
+    fn pixels_to_rgba_alpha_blend() {
+        let mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (1, 1),
+            world_bounds: Rect::new(0.0, 0.0, 1.0, 1.0),
+            style: MinimapStyle::default(),
+            click_to_jump: false,
+        });
+
+        // White base, then 50% red overlay
+        let pixels = vec![
+            MinimapPixel { x: 0, y: 0, color: Color::WHITE },
+            MinimapPixel { x: 0, y: 0, color: Color::new(1.0, 0.0, 0.0, 0.5) },
+        ];
+        let rgba = mm.pixels_to_rgba(&pixels);
+        // Result: r = 1.0*0.5 + 1.0*0.5 = 1.0, g = 0.0*0.5 + 1.0*0.5 = 0.5
+        assert_eq!(rgba[0], 255); // r
+        assert_eq!(rgba[1], 127); // g (0.5 * 255 = 127)
+        assert_eq!(rgba[2], 127); // b
+    }
+
+    #[test]
+    fn contains_screen_pos_inside_and_outside() {
+        let mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::new(10.0, 20.0),
+            size: (50, 50),
+            world_bounds: Rect::new(0.0, 0.0, 50.0, 50.0),
+            style: MinimapStyle::default(),
+            click_to_jump: true,
+        });
+
+        assert!(mm.contains_screen_pos(RenderVec2::new(35.0, 45.0)));
+        assert!(!mm.contains_screen_pos(RenderVec2::new(5.0, 45.0)));
+        assert!(!mm.contains_screen_pos(RenderVec2::new(35.0, 75.0)));
+    }
+
+    #[test]
+    fn team_colors_correct() {
+        assert_eq!(TEAM_COLORS[0], Color::GREEN);
+        assert_eq!(TEAM_COLORS[1], Color::RED);
+        assert_eq!(TEAM_COLORS[2], Color::BLUE);
+        assert_eq!(TEAM_COLORS[3], Color::YELLOW);
+    }
+
+    #[test]
+    fn icon_registry_lookup() {
+        let mut registry = IconRegistry::new();
+        registry.register("tower", SpriteIcon::square(2, Color::WHITE));
+        assert!(registry.get("tower").is_some());
+        assert!(registry.get("missing").is_none());
+    }
+
+    #[test]
+    fn render_integrates_all_layers() {
+        let mm = Minimap::new(MinimapConfig {
+            screen_pos: RenderVec2::ZERO,
+            size: (10, 10),
+            world_bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            style: MinimapStyle {
+                border_color: Some(Color::WHITE),
+                border_width: 1,
+                viewport_indicator_color: Color::RED,
+                ..MinimapStyle::default()
+            },
+            click_to_jump: false,
+        });
+
+        let camera = Camera::new(4.0, 4.0);
+        let tiles = vec![0u32; 100];
+        let pixels = mm.render(&tiles, 10, 10, &|_| Color::GREEN, None, &camera);
+
+        // Should contain tile pixels + viewport indicator + border
+        assert!(pixels.len() > 100, "render() should produce more than just tile pixels");
+    }
 }

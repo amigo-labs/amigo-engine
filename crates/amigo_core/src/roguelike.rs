@@ -1635,4 +1635,453 @@ mod tests {
         assert_eq!(meta.total_runs, 2);
         assert_eq!(meta.total_wins, 1);
     }
+
+    // ── XorShift64 ─────────────────────────────────────────
+
+    #[test]
+    fn xorshift_deterministic() {
+        let mut a = XorShift64::new(42);
+        let mut b = XorShift64::new(42);
+        for _ in 0..100 {
+            assert_eq!(a.next_u64(), b.next_u64());
+        }
+    }
+
+    #[test]
+    fn xorshift_fork_does_not_advance_parent() {
+        let rng = XorShift64::new(42);
+        let state_before = rng.state;
+        let _child = rng.fork(1);
+        assert_eq!(rng.state, state_before);
+    }
+
+    #[test]
+    fn xorshift_fork_different_domains() {
+        let rng = XorShift64::new(42);
+        let mut a = rng.fork(1);
+        let mut b = rng.fork(2);
+        assert_ne!(a.next_u64(), b.next_u64());
+    }
+
+    #[test]
+    fn xorshift_peek_does_not_advance() {
+        let mut rng = XorShift64::new(42);
+        let peeked = rng.peek(3);
+        // The actual next values should match the peeked values.
+        for expected in peeked {
+            assert_eq!(rng.next_u64(), expected);
+        }
+    }
+
+    #[test]
+    fn xorshift_zero_seed_handled() {
+        let rng = XorShift64::new(0);
+        assert_ne!(rng.state, 0, "zero seed should be replaced");
+    }
+
+    // ── PlayerStats / StatModifier ─────────────────────────
+
+    #[test]
+    fn player_stats_apply_remove_modifier() {
+        let mut stats = PlayerStats::default();
+        let original_hp = stats.max_hp;
+        let original_attack = stats.attack;
+
+        let modifier = StatModifier {
+            max_hp: 20,
+            attack: 5,
+            defense: 3,
+            ..Default::default()
+        };
+
+        stats.apply_modifier(&modifier);
+        assert_eq!(stats.max_hp, original_hp + 20);
+        assert_eq!(stats.attack, original_attack + 5);
+
+        stats.remove_modifier(&modifier);
+        assert_eq!(stats.max_hp, original_hp);
+        assert_eq!(stats.attack, original_attack);
+    }
+
+    // ── ItemSystem ─────────────────────────────────────────
+
+    fn make_test_item(id: &str, rarity: Rarity, tags: Vec<&str>) -> ItemDef {
+        ItemDef {
+            id: id.to_string(),
+            name: id.to_string(),
+            description: String::new(),
+            rarity,
+            sprite: String::new(),
+            modifiers: StatModifier::default(),
+            tags: tags.into_iter().map(String::from).collect(),
+            cursed: false,
+            consumable: false,
+        }
+    }
+
+    #[test]
+    fn item_system_roll_drop() {
+        let items = vec![
+            make_test_item("sword", Rarity::Common, vec!["melee"]),
+            make_test_item("bow", Rarity::Uncommon, vec!["ranged"]),
+            make_test_item("staff", Rarity::Rare, vec!["magic"]),
+        ];
+        let system = ItemSystem::new(items, vec![]);
+        let mut rng = XorShift64::new(42);
+
+        let drop = system.roll_drop(&mut rng, 0);
+        assert!(drop.is_some());
+    }
+
+    #[test]
+    fn item_system_roll_shop() {
+        let items = vec![
+            make_test_item("a", Rarity::Common, vec![]),
+            make_test_item("b", Rarity::Common, vec![]),
+            make_test_item("c", Rarity::Uncommon, vec![]),
+        ];
+        let system = ItemSystem::new(items, vec![]);
+        let mut rng = XorShift64::new(99);
+
+        let shop = system.roll_shop(&mut rng, 3, 0);
+        assert_eq!(shop.len(), 3);
+    }
+
+    #[test]
+    fn item_system_synergies() {
+        let items = vec![
+            make_test_item("fire_sword", Rarity::Common, vec!["fire", "melee"]),
+            make_test_item("fire_ring", Rarity::Common, vec!["fire"]),
+        ];
+        let synergies = vec![SynergyDef {
+            id: "fire_mastery".into(),
+            name: "Fire Mastery".into(),
+            description: "Bonus for fire items".into(),
+            required_tags: vec!["fire".into()],
+            min_items: 2,
+            bonus: StatModifier {
+                attack: 10,
+                ..Default::default()
+            },
+        }];
+
+        let mut system = ItemSystem::new(items.clone(), synergies);
+
+        let item_a = system.instantiate(items[0].clone());
+        let item_b = system.instantiate(items[1].clone());
+
+        // With both fire items, synergy should be active.
+        let active = system.active_synergies(&[item_a.clone(), item_b.clone()]);
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, "fire_mastery");
+
+        // With only one, synergy should NOT be active.
+        let active = system.active_synergies(&[item_a]);
+        assert!(active.is_empty());
+    }
+
+    #[test]
+    fn item_system_instantiate_unique_ids() {
+        let def = make_test_item("test", Rarity::Common, vec![]);
+        let mut system = ItemSystem::new(vec![def.clone()], vec![]);
+
+        let a = system.instantiate(def.clone());
+        let b = system.instantiate(def);
+        assert_ne!(a.instance_id, b.instance_id);
+    }
+
+    // ── FloorEscalation ────────────────────────────────────
+
+    #[test]
+    fn floor_escalation_hp_scales() {
+        let esc = FloorEscalation::default();
+        let hp_1 = esc.hp_at_floor(1);
+        let hp_5 = esc.hp_at_floor(5);
+        assert!((hp_1 - 1.0).abs() < 0.001);
+        assert!(hp_5 > hp_1, "later floors should have higher HP scaling");
+    }
+
+    #[test]
+    fn floor_escalation_boss_floors() {
+        let esc = FloorEscalation::default();
+        assert!(esc.is_boss_floor(5));
+        assert!(esc.is_boss_floor(10));
+        assert!(!esc.is_boss_floor(3));
+    }
+
+    #[test]
+    fn floor_escalation_elite_chance() {
+        let esc = FloorEscalation::default();
+        assert_eq!(esc.elite_chance_at_floor(1), 0.0);
+        assert_eq!(esc.elite_chance_at_floor(2), 0.0);
+        assert!(esc.elite_chance_at_floor(5) > 0.0);
+    }
+
+    // ── DungeonGenerator / DungeonFloor ────────────────────
+
+    #[test]
+    fn dungeon_generator_produces_floor() {
+        let config = DungeonConfig::default();
+        let floor = DungeonGenerator::generate(42, 1, &config);
+
+        assert!(!floor.rooms.is_empty());
+        assert!(floor.tilemap_width > 0);
+        assert!(floor.tilemap_height > 0);
+        assert!(!floor.tile_data.is_empty());
+    }
+
+    #[test]
+    fn dungeon_floor_has_start_and_boss() {
+        let config = DungeonConfig::default();
+        let floor = DungeonGenerator::generate(42, 1, &config);
+
+        let has_spawn = floor
+            .rooms
+            .iter()
+            .any(|r| r.room_type == RoomType::Spawn);
+        let has_boss = floor.rooms.iter().any(|r| r.room_type == RoomType::Boss);
+        assert!(has_spawn, "floor should have a spawn room");
+        assert!(has_boss, "floor should have a boss room");
+    }
+
+    #[test]
+    fn dungeon_generator_deterministic() {
+        let config = DungeonConfig::default();
+        let a = DungeonGenerator::generate(42, 3, &config);
+        let b = DungeonGenerator::generate(42, 3, &config);
+        assert_eq!(a.rooms.len(), b.rooms.len());
+        assert_eq!(a.tile_data, b.tile_data);
+    }
+
+    // ── RunManager ─────────────────────────────────────────
+
+    fn make_run_config() -> RunConfig {
+        RunConfig {
+            death_mode: DeathMode::Hard,
+            floor_count: 5,
+            seed: Some(42),
+            starting_items: vec![],
+            base_stats: PlayerStats::default(),
+        }
+    }
+
+    #[test]
+    fn run_manager_floor_progression() {
+        let mut rm = RunManager::new(make_run_config());
+        assert!(rm.run_active);
+        assert_eq!(rm.current_floor, 0);
+
+        // Advance to floor 1.
+        assert_eq!(rm.advance_floor(), Some(1));
+        assert_eq!(rm.current_floor, 1);
+
+        // Cannot advance without clearing.
+        assert_eq!(rm.advance_floor(), None);
+
+        // Clear and advance.
+        rm.clear_floor();
+        assert_eq!(rm.advance_floor(), Some(2));
+    }
+
+    #[test]
+    fn run_manager_completion() {
+        let mut rm = RunManager::new(RunConfig {
+            floor_count: 2,
+            seed: Some(42),
+            death_mode: DeathMode::Hard,
+            starting_items: vec![],
+            base_stats: PlayerStats::default(),
+        });
+
+        rm.advance_floor(); // floor 1
+        rm.clear_floor();
+        rm.advance_floor(); // floor 2
+        rm.clear_floor(); // completes the run
+
+        assert!(!rm.run_active);
+        assert!(rm.run_stats.completed);
+    }
+
+    #[test]
+    fn run_manager_death() {
+        let mut rm = RunManager::new(make_run_config());
+        rm.advance_floor();
+
+        let stats = rm.die(DeathCause::Environmental);
+        assert!(!rm.run_active);
+        assert!(stats.death_cause.is_some());
+        assert_eq!(stats.floor_reached, 1);
+    }
+
+    #[test]
+    fn run_manager_add_remove_item() {
+        let mut rm = RunManager::new(make_run_config());
+        let original_attack = rm.stats.attack;
+
+        let def = ItemDef {
+            id: "test_sword".into(),
+            name: "Test Sword".into(),
+            description: String::new(),
+            rarity: Rarity::Common,
+            sprite: String::new(),
+            modifiers: StatModifier {
+                attack: 5,
+                ..Default::default()
+            },
+            tags: vec![],
+            cursed: false,
+            consumable: false,
+        };
+
+        let item = Item {
+            def: def.clone(),
+            instance_id: 1,
+            stacks: 0,
+        };
+
+        rm.add_item(item);
+        assert_eq!(rm.stats.attack, original_attack + 5);
+        assert_eq!(rm.inventory.len(), 1);
+
+        let removed = rm.remove_item("test_sword");
+        assert!(removed.is_some());
+        assert_eq!(rm.stats.attack, original_attack);
+        assert!(rm.inventory.is_empty());
+    }
+
+    #[test]
+    fn run_manager_effective_stats_consistent() {
+        let mut rm = RunManager::new(make_run_config());
+        let def = ItemDef {
+            id: "ring".into(),
+            name: "Ring".into(),
+            description: String::new(),
+            rarity: Rarity::Uncommon,
+            sprite: String::new(),
+            modifiers: StatModifier {
+                max_hp: 10,
+                luck: 3,
+                ..Default::default()
+            },
+            tags: vec![],
+            cursed: false,
+            consumable: false,
+        };
+        let item = Item {
+            def,
+            instance_id: 1,
+            stacks: 0,
+        };
+        rm.add_item(item);
+
+        let eff = rm.effective_stats();
+        assert_eq!(eff.max_hp, rm.config.base_stats.max_hp + 10);
+        assert_eq!(eff.luck, rm.config.base_stats.luck + 3);
+    }
+
+    #[test]
+    fn run_manager_floor_rng_deterministic() {
+        let rm = RunManager::new(make_run_config());
+        let a = rm.floor_rng();
+        let b = rm.floor_rng();
+        assert_eq!(a.state, b.state);
+    }
+
+    #[test]
+    fn run_manager_peek_rng() {
+        let rm = RunManager::new(make_run_config());
+        let peeked = rm.peek_rng(5);
+        assert_eq!(peeked.len(), 5);
+        // Peeking again should give the same result.
+        let peeked2 = rm.peek_rng(5);
+        assert_eq!(peeked, peeked2);
+    }
+
+    #[test]
+    fn run_manager_boss_floor() {
+        let mut rm = RunManager::new(RunConfig {
+            floor_count: 10,
+            seed: Some(42),
+            death_mode: DeathMode::Hard,
+            starting_items: vec![],
+            base_stats: PlayerStats::default(),
+        });
+
+        rm.advance_floor(); // floor 1
+        assert!(!rm.is_boss_floor());
+
+        // Advance to floor 5.
+        rm.clear_floor();
+        rm.advance_floor(); // 2
+        rm.clear_floor();
+        rm.advance_floor(); // 3
+        rm.clear_floor();
+        rm.advance_floor(); // 4
+        rm.clear_floor();
+        rm.advance_floor(); // 5
+        assert!(rm.is_boss_floor());
+    }
+
+    // ── RunStats ───────────────────────────────────────────
+
+    #[test]
+    fn run_stats_default() {
+        let stats = RunStats::default();
+        assert_eq!(stats.floor_reached, 0);
+        assert!(!stats.completed);
+        assert!(stats.death_cause.is_none());
+    }
+
+    // ── MetaProgression (spec version) ─────────────────────
+
+    #[test]
+    fn meta_progression_currencies() {
+        let mut meta = MetaProgression::default();
+        *meta.currencies.entry("souls".into()).or_insert(0) += 100;
+        assert_eq!(meta.currencies["souls"], 100);
+    }
+
+    #[test]
+    fn meta_progression_best_run_tracking() {
+        let mut meta = MetaProgression::default();
+
+        let stats_a = RunStats {
+            floor_reached: 3,
+            completed: false,
+            ..Default::default()
+        };
+        // Simulate MetaManager::record_run logic.
+        meta.total_runs += 1;
+        meta.best_run = Some(stats_a);
+
+        let stats_b = RunStats {
+            floor_reached: 5,
+            completed: true,
+            ..Default::default()
+        };
+        meta.total_runs += 1;
+        meta.best_run = Some(stats_b);
+
+        assert_eq!(meta.total_runs, 2);
+        assert_eq!(meta.best_run.as_ref().unwrap().floor_reached, 5);
+        assert!(meta.best_run.as_ref().unwrap().completed);
+    }
+
+    // ── DeathMode ──────────────────────────────────────────
+
+    #[test]
+    fn death_mode_variants() {
+        let hard = DeathMode::Hard;
+        let soft = DeathMode::Soft {
+            currency_retain_pct: 50,
+        };
+        assert_eq!(hard, DeathMode::Hard);
+        assert_ne!(hard, soft);
+        if let DeathMode::Soft {
+            currency_retain_pct,
+        } = soft
+        {
+            assert_eq!(currency_retain_pct, 50);
+        }
+    }
 }
