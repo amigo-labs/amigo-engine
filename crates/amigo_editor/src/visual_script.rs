@@ -35,8 +35,9 @@ pub struct Connection {
 }
 
 /// Data that flows through pins.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum PinValue {
+    #[default]
     None,
     Bool(bool),
     Int(i32),
@@ -44,12 +45,6 @@ pub enum PinValue {
     String(String),
     Entity(u32),
     Vec2(f32, f32),
-}
-
-impl Default for PinValue {
-    fn default() -> Self {
-        PinValue::None
-    }
 }
 
 /// Type of a pin (for validation).

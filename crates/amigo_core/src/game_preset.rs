@@ -516,7 +516,7 @@ pub fn project_templates() -> Vec<ProjectTemplate> {
 /// Serialize a project to RON and write to disk.
 pub fn save_project(path: &std::path::Path, project: &GameProject) -> Result<(), std::io::Error> {
     let ron_string = ron::ser::to_string_pretty(project, ron::ser::PrettyConfig::default())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     std::fs::write(path, ron_string)
 }
 

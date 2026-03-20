@@ -76,6 +76,7 @@ impl BulletPool {
     }
 
     /// Spawn a bullet. Returns the index, or None if pool is full.
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         &mut self,
         x: f32,

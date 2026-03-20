@@ -127,21 +127,21 @@ impl GamepadState {
     pub fn pressed(&self, id: GamepadId, button: Button) -> bool {
         self.pads
             .get(&id)
-            .map_or(false, |p| p.buttons_pressed.contains(&button))
+            .is_some_and(|p| p.buttons_pressed.contains(&button))
     }
 
     /// Returns `true` if the button is currently held down on the given gamepad.
     pub fn held(&self, id: GamepadId, button: Button) -> bool {
         self.pads
             .get(&id)
-            .map_or(false, |p| p.buttons_down.contains(&button))
+            .is_some_and(|p| p.buttons_down.contains(&button))
     }
 
     /// Returns `true` if the button was just released this frame on the given gamepad.
     pub fn released(&self, id: GamepadId, button: Button) -> bool {
         self.pads
             .get(&id)
-            .map_or(false, |p| p.buttons_released.contains(&button))
+            .is_some_and(|p| p.buttons_released.contains(&button))
     }
 
     /// Get the current value of an axis on the given gamepad, with deadzone applied.

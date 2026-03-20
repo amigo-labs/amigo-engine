@@ -43,7 +43,7 @@ impl PostProcessor {
     }
 
     /// Normalize all velocities to 0.0-1.0 range.
-    fn normalize_velocity(&self, notes: &mut Vec<RawNote>) {
+    fn normalize_velocity(&self, notes: &mut [RawNote]) {
         let max_vel = notes.iter().map(|n| n.velocity).fold(0.0_f64, f64::max);
         if max_vel > 0.0 {
             for note in notes.iter_mut() {

@@ -5,7 +5,7 @@
 
 use crate::comfyui::ComfyPrompt;
 use crate::{ArtRequest, AssetType, WorldStyle};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 
 /// Build a ComfyUI workflow prompt from an art request.

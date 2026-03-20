@@ -158,8 +158,11 @@ pub enum Transform {
 }
 
 /// Chiptune instrument type for playback.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum Instrument {
+    #[default]
     SquareWave,
     Pulse25,
     Pulse12,
@@ -167,12 +170,6 @@ pub enum Instrument {
     SawtoothWave,
     NoiseChannel,
     SineWave,
-}
-
-impl Default for Instrument {
-    fn default() -> Self {
-        Self::SquareWave
-    }
 }
 
 #[cfg(test)]

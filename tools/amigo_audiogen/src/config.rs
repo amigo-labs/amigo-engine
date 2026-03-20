@@ -48,7 +48,9 @@ pub fn save_audio_defaults(project_dir: &Path, updates: &HashMap<String, serde_j
     let section = table
         .entry("audio_defaults")
         .or_insert_with(|| toml::Value::Table(Default::default()));
-    let section_table = section.as_table_mut().expect("[audio_defaults] must be table");
+    let section_table = section
+        .as_table_mut()
+        .expect("[audio_defaults] must be table");
 
     for (key, value) in updates {
         let toml_val = json_to_toml(value);

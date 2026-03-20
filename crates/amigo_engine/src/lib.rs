@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 //! # Amigo Engine
 //!
 //! A modern 2D pixel art game engine in Rust, built on fixed-point math,

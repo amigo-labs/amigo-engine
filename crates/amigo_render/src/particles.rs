@@ -46,34 +46,32 @@ impl Rng {
 // BlendMode
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BlendMode {
+    #[default]
     Normal,
     Additive,
-}
-
-impl Default for BlendMode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 // ---------------------------------------------------------------------------
 // EmitterShape
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub enum EmitterShape {
+    #[default]
     Point,
-    Circle { radius: f32 },
-    Line { length: f32, angle: f32 },
-    Rect { width: f32, height: f32 },
-}
-
-impl Default for EmitterShape {
-    fn default() -> Self {
-        Self::Point
-    }
+    Circle {
+        radius: f32,
+    },
+    Line {
+        length: f32,
+        angle: f32,
+    },
+    Rect {
+        width: f32,
+        height: f32,
+    },
 }
 
 // ---------------------------------------------------------------------------

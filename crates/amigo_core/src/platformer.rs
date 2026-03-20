@@ -277,7 +277,7 @@ impl PlatformerController {
                 .config
                 .dash
                 .as_ref()
-                .map_or(false, |d| d.refresh_on_ground)
+                .is_some_and(|d| d.refresh_on_ground)
             {
                 self.can_dash = true;
             }
@@ -592,14 +592,12 @@ impl MovingPlatform {
                     PathMode::PingPong | PathMode::Once => self.current_index,
                 }
             }
+        } else if self.current_index > 0 {
+            self.current_index - 1
         } else {
-            if self.current_index > 0 {
-                self.current_index - 1
-            } else {
-                match self.mode {
-                    PathMode::Loop => self.waypoints.len() - 1,
-                    PathMode::PingPong | PathMode::Once => 0,
-                }
+            match self.mode {
+                PathMode::Loop => self.waypoints.len() - 1,
+                PathMode::PingPong | PathMode::Once => 0,
             }
         }
     }
@@ -620,20 +618,18 @@ impl MovingPlatform {
                     PathMode::Once => {} // stay
                 }
             }
+        } else if self.current_index > 0 {
+            self.current_index -= 1;
         } else {
-            if self.current_index > 0 {
-                self.current_index -= 1;
-            } else {
-                match self.mode {
-                    PathMode::Loop => self.current_index = self.waypoints.len() - 1,
-                    PathMode::PingPong => {
-                        self.forward = true;
-                        if self.current_index + 1 < self.waypoints.len() {
-                            self.current_index += 1;
-                        }
+            match self.mode {
+                PathMode::Loop => self.current_index = self.waypoints.len() - 1,
+                PathMode::PingPong => {
+                    self.forward = true;
+                    if self.current_index + 1 < self.waypoints.len() {
+                        self.current_index += 1;
                     }
-                    PathMode::Once => {} // stay
                 }
+                PathMode::Once => {} // stay
             }
         }
     }

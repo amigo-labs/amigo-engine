@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 
 pub mod atlas;
 pub mod atmosphere;

@@ -217,6 +217,7 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
     let mut corridors = Vec::new();
     connected.insert(0);
 
+    #[allow(clippy::needless_range_loop)]
     while connected.len() < rooms.len() {
         let mut best_from = 0;
         let mut best_to = 0;
@@ -285,6 +286,7 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
         rooms[boss_idx].room_type = RoomType::Boss;
 
         // Random treasure rooms
+        #[allow(clippy::needless_range_loop)]
         for i in 1..rooms.len() {
             if i == boss_idx {
                 continue;
@@ -430,7 +432,7 @@ impl Run {
     }
 
     pub fn is_boss_floor(&self) -> bool {
-        self.floor == self.max_floor || self.floor % 5 == 0
+        self.floor == self.max_floor || self.floor.is_multiple_of(5)
     }
 }
 

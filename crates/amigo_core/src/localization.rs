@@ -233,7 +233,7 @@ impl LocaleManager {
     pub fn has_key(&self, key: &str) -> bool {
         self.tables
             .get(&self.current_locale)
-            .map_or(false, |t| t.contains_key(key))
+            .is_some_and(|t| t.contains_key(key))
     }
 
     // -- loading ------------------------------------------------------------

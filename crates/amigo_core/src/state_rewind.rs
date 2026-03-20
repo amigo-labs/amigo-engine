@@ -109,7 +109,7 @@ impl<T: Clone + Serialize + DeserializeOwned + PartialEq> RewindBuffer<T> {
         let is_keyframe = match self.compression {
             CompressionMode::None => true,
             CompressionMode::Delta { keyframe_interval } => {
-                tick % keyframe_interval as u64 == 0 || self.len == 0
+                tick.is_multiple_of(keyframe_interval as u64) || self.len == 0
             }
         };
 

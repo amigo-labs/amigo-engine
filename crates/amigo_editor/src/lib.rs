@@ -270,7 +270,7 @@ pub struct AmigoLevel {
 /// Serialize a level to RON and write it to the given path.
 pub fn save_level(path: &std::path::Path, level: &AmigoLevel) -> Result<(), std::io::Error> {
     let ron_string = ron::ser::to_string_pretty(level, ron::ser::PrettyConfig::default())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     std::fs::write(path, ron_string)
 }
 

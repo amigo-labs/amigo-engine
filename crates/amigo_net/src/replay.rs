@@ -30,8 +30,7 @@ pub struct ReplayData {
 impl ReplayData {
     /// Save the replay to a file as JSON.
     pub fn save(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
-        let json = serde_json::to_vec(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_vec(self).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 

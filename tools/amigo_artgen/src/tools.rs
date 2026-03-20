@@ -498,7 +498,11 @@ mod tests {
     #[test]
     fn dispatch_set_and_get_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("amigo.toml"), "[window]\ntitle = \"Test\"\n").unwrap();
+        std::fs::write(
+            dir.path().join("amigo.toml"),
+            "[window]\ntitle = \"Test\"\n",
+        )
+        .unwrap();
 
         let result = dispatch_tool(
             "amigo_artgen_set_defaults",

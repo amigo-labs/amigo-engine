@@ -7,20 +7,15 @@
 /// Allows toggling between editing a level and play-testing it in real time.
 /// When entering play mode, the editor state is snapshot so it can be
 /// restored when returning to edit mode.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum PlayState {
     /// The editor is active, game simulation paused.
+    #[default]
     Editing,
     /// Game is running as a play-test.
     Playing,
     /// Game is paused during a play-test (can inspect state).
     Paused,
-}
-
-impl Default for PlayState {
-    fn default() -> Self {
-        Self::Editing
-    }
 }
 
 /// Manages the edit/play lifecycle including state snapshots.

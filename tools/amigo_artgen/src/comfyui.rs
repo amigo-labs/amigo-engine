@@ -96,7 +96,7 @@ impl ComfyUiClient {
             .send_json(body)
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
-            .map_err(|e| ComfyError::Io(e))?;
+            .map_err(ComfyError::Io)?;
 
         let prompt_id = resp["prompt_id"]
             .as_str()
@@ -117,7 +117,7 @@ impl ComfyUiClient {
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
-            .map_err(|e| ComfyError::Io(e))?;
+            .map_err(ComfyError::Io)?;
 
         let entry = &resp[prompt_id];
         if entry.is_null() {
@@ -154,7 +154,7 @@ impl ComfyUiClient {
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
-            .map_err(|e| ComfyError::Io(e))?;
+            .map_err(ComfyError::Io)?;
 
         let mut images = Vec::new();
         if let Some(outputs) = resp[prompt_id]["outputs"].as_object() {
@@ -202,7 +202,7 @@ impl ComfyUiClient {
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
-            .map_err(|e| ComfyError::Io(e))?;
+            .map_err(ComfyError::Io)?;
 
         let mut models = Vec::new();
         if let Some(names) =
@@ -228,7 +228,7 @@ impl ComfyUiClient {
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
-            .map_err(|e| ComfyError::Io(e))?;
+            .map_err(ComfyError::Io)?;
         Ok(resp)
     }
 

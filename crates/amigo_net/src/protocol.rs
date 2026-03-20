@@ -70,6 +70,7 @@ impl Packet {
 pub struct SeqNum(pub u16);
 
 impl SeqNum {
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> u16 {
         let val = self.0;
         self.0 = self.0.wrapping_add(1);

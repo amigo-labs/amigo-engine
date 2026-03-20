@@ -10,20 +10,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Stem separation model to use.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StemModel {
     /// Demucs (4 stems: drums, bass, vocals, other)
+    #[default]
     Demucs,
     /// Demucs with 6-stem fine-tuned model
     Demucs6,
     /// Custom model path
     Custom(String),
-}
-
-impl Default for StemModel {
-    fn default() -> Self {
-        Self::Demucs
-    }
 }
 
 /// Configuration for stem splitting.

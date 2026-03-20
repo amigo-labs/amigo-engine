@@ -50,9 +50,10 @@ pub enum SlideDir {
 }
 
 /// Transition effect used when switching backgrounds.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum BgTransition {
     /// Instant cut — no animation.
+    #[default]
     Cut,
     /// Crossfade between old and new background.
     Fade {
@@ -73,20 +74,15 @@ pub enum BgTransition {
     },
 }
 
-impl Default for BgTransition {
-    fn default() -> Self {
-        Self::Cut
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Emotion
 // ---------------------------------------------------------------------------
 
 /// Character emotion — determines which face sprite variant to display.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Emotion {
     /// Default expression.
+    #[default]
     Neutral,
     /// Smiling, cheerful.
     Happy,
@@ -108,12 +104,6 @@ pub enum Emotion {
     Crying,
     /// Custom emotion identified by a numeric index (for game-specific expressions).
     Custom(u16),
-}
-
-impl Default for Emotion {
-    fn default() -> Self {
-        Self::Neutral
-    }
 }
 
 // ---------------------------------------------------------------------------

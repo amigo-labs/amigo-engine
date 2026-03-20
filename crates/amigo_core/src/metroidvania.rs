@@ -110,6 +110,7 @@ pub struct SkillUnlockSystem {
     prerequisites: FxHashMap<Ability, Vec<Ability>>,
 }
 
+#[allow(clippy::new_without_default)]
 impl SkillUnlockSystem {
     /// Create a new skill unlock system with no abilities unlocked.
     pub fn new() -> Self {
@@ -302,6 +303,7 @@ pub struct CheckpointSystem {
     last_checkpoint: Option<RoomId>,
 }
 
+#[allow(clippy::new_without_default)]
 impl CheckpointSystem {
     /// Create a new checkpoint system with no active checkpoint.
     pub fn new() -> Self {

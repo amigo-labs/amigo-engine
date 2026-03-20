@@ -80,10 +80,13 @@ impl SelectionSystem {
         let existing: FxHashSet<EntityId> = self.selected.iter().copied().collect();
 
         for &(entity, sx, sy) in units {
-            if sx >= min_x && sx <= max_x && sy >= min_y && sy <= max_y {
-                if !existing.contains(&entity) {
-                    self.selected.push(entity);
-                }
+            if sx >= min_x
+                && sx <= max_x
+                && sy >= min_y
+                && sy <= max_y
+                && !existing.contains(&entity)
+            {
+                self.selected.push(entity);
             }
         }
 
@@ -170,7 +173,7 @@ impl SelectionSystem {
             return None;
         }
 
-        self.subgroup_index = self.subgroup_index % types.len();
+        self.subgroup_index %= types.len();
         let chosen = types[self.subgroup_index];
         self.subgroup_index = (self.subgroup_index + 1) % types.len();
 
@@ -409,7 +412,7 @@ impl FormationSystem {
                 // Line perpendicular to the facing direction.
                 // Max 12 per row; wrap to multiple rows if needed.
                 let max_per_row: usize = 12;
-                let rows = (unit_count + max_per_row - 1) / max_per_row;
+                let rows = unit_count.div_ceil(max_per_row);
                 let mut placed = 0usize;
                 for row in 0..rows {
                     let remaining = unit_count - placed;
@@ -429,7 +432,7 @@ impl FormationSystem {
                 // V-shape: leader at front, alternating left and right.
                 slots.push(SimVec2::ZERO); // leader at center
                 for i in 1..unit_count {
-                    let rank = ((i + 1) / 2) as i32;
+                    let rank = i.div_ceil(2) as i32;
                     let side = if i % 2 == 1 { 1 } else { -1 };
                     let lateral = Fix::from_num(side * rank) * spacing;
                     let depth = Fix::from_num(-rank) * spacing;
