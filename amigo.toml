@@ -20,3 +20,10 @@ hot_reload = true
 debug_overlay = true
 api_server = false
 api_port = 9999
+
+[art]
+backend = "qwen-image"
+art_mode = "pixel"
+default_sprite_size = 32
+default_style = "caribbean"
+default_palette = "standard"

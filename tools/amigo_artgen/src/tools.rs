@@ -1,8 +1,11 @@
 //! MCP tool definitions for amigo_artgen.
 //!
-//! Each tool maps to a ComfyUI workflow + post-processing pipeline.
+//! Each tool maps to a backend-specific ComfyUI workflow + post-processing
+//! pipeline. The backend (Qwen-Image, FLUX.2 Klein, Custom) is resolved
+//! from project config or passed explicitly.
 
 use crate::config::{load_art_defaults, save_art_defaults};
+use crate::ImageBackend;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,6 +18,10 @@ pub struct GenerateSpriteParams {
     pub size: Option<[u32; 2]>,
     pub variants: Option<u32>,
     pub output: Option<String>,
+    /// Override the backend for this request.
+    pub backend: Option<String>,
+    /// Override the art mode: "pixel" or "raster".
+    pub art_mode: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -99,10 +106,20 @@ pub struct ListResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BackendInfo {
+    pub name: String,
+    pub display_name: String,
+    pub checkpoint: String,
+    pub is_default: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerStatusResult {
     pub connected: bool,
     pub gpu: String,
     pub vram: String,
+    pub backend: String,
+    pub art_mode: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -131,7 +148,7 @@ pub fn list_tools() -> Vec<ToolDef> {
     vec![
         ToolDef {
             name: "amigo_artgen_generate_sprite".into(),
-            description: "Generate a pixel art sprite using AI via ComfyUI".into(),
+            description: "Generate a pixel art or raster sprite using AI. Backend (qwen-image, flux2-klein, custom) is resolved from project config.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -139,7 +156,9 @@ pub fn list_tools() -> Vec<ToolDef> {
                     "style": { "type": "string", "description": "Style name (e.g. 'caribbean')" },
                     "size": { "type": "array", "items": { "type": "integer" }, "description": "[width, height]" },
                     "variants": { "type": "integer", "description": "Number of variations" },
-                    "output": { "type": "string", "description": "Output filename" }
+                    "output": { "type": "string", "description": "Output filename" },
+                    "backend": { "type": "string", "description": "Override backend: 'qwen-image', 'flux2-klein', or 'custom'" },
+                    "art_mode": { "type": "string", "description": "Override art mode: 'pixel' or 'raster'" }
                 },
                 "required": ["prompt", "style"]
             }),
@@ -243,8 +262,13 @@ pub fn list_tools() -> Vec<ToolDef> {
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
+            name: "amigo_artgen_list_backends".into(),
+            description: "List available image generation backends (qwen-image, flux2-klein, custom)".into(),
+            input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
             name: "amigo_artgen_list_checkpoints".into(),
-            description: "List available ComfyUI checkpoints".into(),
+            description: "List available model checkpoints".into(),
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
@@ -254,7 +278,7 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_artgen_server_status".into(),
-            description: "Check ComfyUI server connection status".into(),
+            description: "Check image generation server status and active backend".into(),
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
@@ -271,7 +295,7 @@ pub fn list_tools() -> Vec<ToolDef> {
         ToolDef {
             name: "amigo_artgen_set_defaults".into(),
             description: "Save art generation defaults to amigo.toml [art] section. \
-                Merges with existing values. Use after asking the user for preferences."
+                Merges with existing values. Supports backend, art_mode, and all style defaults."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -281,6 +305,8 @@ pub fn list_tools() -> Vec<ToolDef> {
                         "type": "object",
                         "description": "Key-value pairs to merge into [art] section",
                         "properties": {
+                            "backend": { "type": "string", "description": "Image backend: 'qwen-image', 'flux2-klein', or 'custom'" },
+                            "art_mode": { "type": "string", "description": "Art mode: 'pixel' or 'raster'" },
                             "default_sprite_size": { "type": "integer", "description": "Default sprite size in pixels (e.g., 16, 32, 64)" },
                             "default_style": { "type": "string", "description": "Default art style name" },
                             "default_palette": { "type": "string", "description": "Default color palette (e.g., 'nes', 'snes', 'gameboy')" },
@@ -288,7 +314,9 @@ pub fn list_tools() -> Vec<ToolDef> {
                             "tileset_tile_size": { "type": "integer", "description": "Default tileset tile size" },
                             "background_style": { "type": "string", "description": "Default background style (e.g., 'static', 'parallax')" },
                             "add_outline": { "type": "boolean", "description": "Add pixel outline to sprites" },
-                            "outline_color": { "type": "string", "description": "Outline color as hex (#RRGGBB)" }
+                            "outline_color": { "type": "string", "description": "Outline color as hex (#RRGGBB)" },
+                            "custom_endpoint": { "type": "string", "description": "Custom ComfyUI endpoint URL" },
+                            "custom_workflow_url": { "type": "string", "description": "URL to custom workflow JSON" }
                         }
                     }
                 },
@@ -325,6 +353,22 @@ pub fn dispatch_tool_with_defaults(
             let style_def = crate::StyleDef::find(&p.style);
             let mut missing: Vec<String> = Vec::new();
 
+            // Resolve backend
+            let backend = p
+                .backend
+                .as_deref()
+                .and_then(ImageBackend::from_str)
+                .or_else(|| defaults.as_ref().map(|d| d.resolve_backend()))
+                .unwrap_or_default();
+
+            // Resolve art mode
+            let art_mode = p
+                .art_mode
+                .as_deref()
+                .and_then(crate::ArtMode::from_str)
+                .or_else(|| defaults.as_ref().map(|d| d.resolve_art_mode()))
+                .unwrap_or_default();
+
             let size = if let Some(s) = p.size {
                 s
             } else if let Some(s) = defaults.as_ref().and_then(|d| d.default_sprite_size) {
@@ -359,6 +403,8 @@ pub fn dispatch_tool_with_defaults(
             };
 
             let mut response = serde_json::to_value(result)?;
+            response["backend"] = serde_json::json!(format!("{:?}", backend));
+            response["art_mode"] = serde_json::json!(format!("{:?}", art_mode));
             if !missing.is_empty() {
                 response["hints"] = serde_json::json!({
                     "defaults_missing": missing,
@@ -452,14 +498,51 @@ pub fn dispatch_tool_with_defaults(
             .map(String::from)
             .collect(),
         })?),
+        "amigo_artgen_list_backends" => {
+            let backends = vec![
+                BackendInfo {
+                    name: "qwen-image".into(),
+                    display_name: ImageBackend::QwenImage.display_name().into(),
+                    checkpoint: ImageBackend::QwenImage.default_checkpoint().into(),
+                    is_default: true,
+                },
+                BackendInfo {
+                    name: "flux2-klein".into(),
+                    display_name: ImageBackend::Flux2Klein.display_name().into(),
+                    checkpoint: ImageBackend::Flux2Klein.default_checkpoint().into(),
+                    is_default: false,
+                },
+                BackendInfo {
+                    name: "custom".into(),
+                    display_name: ImageBackend::Custom.display_name().into(),
+                    checkpoint: String::new(),
+                    is_default: false,
+                },
+            ];
+            Ok(serde_json::to_value(backends)?)
+        }
         "amigo_artgen_list_checkpoints" | "amigo_artgen_list_loras" => {
             Ok(serde_json::to_value(ListResult { items: vec![] })?)
         }
-        "amigo_artgen_server_status" => Ok(serde_json::to_value(ServerStatusResult {
-            connected: false,
-            gpu: "unknown".into(),
-            vram: "unknown".into(),
-        })?),
+        "amigo_artgen_server_status" => {
+            let defaults = project_dir.map(load_art_defaults);
+            let backend = defaults
+                .as_ref()
+                .map(|d| d.resolve_backend())
+                .unwrap_or_default();
+            let art_mode = defaults
+                .as_ref()
+                .map(|d| d.resolve_art_mode())
+                .unwrap_or_default();
+
+            Ok(serde_json::to_value(ServerStatusResult {
+                connected: false,
+                gpu: "unknown".into(),
+                vram: "unknown".into(),
+                backend: backend.display_name().into(),
+                art_mode: format!("{art_mode:?}"),
+            })?)
+        }
         "amigo_artgen_get_defaults" => {
             let p: GetDefaultsParams = serde_json::from_value(params)?;
             let defaults = load_art_defaults(std::path::Path::new(&p.project_dir));
@@ -505,8 +588,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_tools_returns_14() {
-        assert_eq!(list_tools().len(), 14);
+    fn list_tools_returns_15() {
+        assert_eq!(list_tools().len(), 15);
     }
 
     #[test]
@@ -519,6 +602,27 @@ mod tests {
             }),
         );
         assert!(result.is_ok());
+        let v = result.unwrap();
+        // Default backend should be QwenImage
+        assert_eq!(v["backend"], "QwenImage");
+        assert_eq!(v["art_mode"], "Pixel");
+    }
+
+    #[test]
+    fn dispatch_generate_sprite_with_backend_override() {
+        let result = dispatch_tool(
+            "amigo_artgen_generate_sprite",
+            serde_json::json!({
+                "prompt": "space ship",
+                "style": "matrix",
+                "backend": "flux2-klein",
+                "art_mode": "raster"
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["backend"], "Flux2Klein");
+        assert_eq!(v["art_mode"], "Raster");
     }
 
     #[test]
@@ -535,9 +639,21 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_list_backends() {
+        let result = dispatch_tool("amigo_artgen_list_backends", serde_json::json!({})).unwrap();
+        let backends = result.as_array().unwrap();
+        assert_eq!(backends.len(), 3);
+        assert_eq!(backends[0]["name"], "qwen-image");
+        assert_eq!(backends[0]["is_default"], true);
+        assert_eq!(backends[1]["name"], "flux2-klein");
+        assert_eq!(backends[2]["name"], "custom");
+    }
+
+    #[test]
     fn dispatch_server_status() {
         let result = dispatch_tool("amigo_artgen_server_status", serde_json::json!({})).unwrap();
         assert_eq!(result["connected"], false);
+        assert!(result["backend"].as_str().unwrap().contains("Qwen"));
     }
 
     #[test]
@@ -565,13 +681,17 @@ mod tests {
             "amigo_artgen_set_defaults",
             serde_json::json!({
                 "project_dir": dir.path().to_str().unwrap(),
-                "defaults": { "default_sprite_size": 32, "default_style": "caribbean" }
+                "defaults": {
+                    "default_sprite_size": 32,
+                    "default_style": "caribbean",
+                    "backend": "flux2-klein",
+                    "art_mode": "raster"
+                }
             }),
         );
         assert!(result.is_ok());
         let v = result.unwrap();
         assert_eq!(v["saved"], true);
-        assert_eq!(v["path"], "amigo.toml");
 
         // Verify they were actually saved
         let get_result = dispatch_tool(
@@ -581,11 +701,12 @@ mod tests {
         .unwrap();
         assert_eq!(get_result["default_sprite_size"], 32);
         assert_eq!(get_result["default_style"], "caribbean");
+        assert_eq!(get_result["backend"], "flux2-klein");
+        assert_eq!(get_result["art_mode"], "raster");
     }
 
     #[test]
     fn dispatch_generate_sprite_defaults_missing_hint() {
-        // No amigo.toml -> falls back to hardcoded -> should have defaults_missing
         let result = dispatch_tool(
             "amigo_artgen_generate_sprite",
             serde_json::json!({

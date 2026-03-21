@@ -16,6 +16,32 @@ pub struct ArtDefaults {
     pub background_style: Option<String>,
     pub add_outline: Option<bool>,
     pub outline_color: Option<String>,
+    /// Image generation backend: "qwen-image", "flux2-klein", or "custom".
+    pub backend: Option<String>,
+    /// Art output mode: "pixel" (default) or "raster".
+    pub art_mode: Option<String>,
+    /// Custom ComfyUI endpoint URL (only used when backend = "custom").
+    pub custom_endpoint: Option<String>,
+    /// URL to a ComfyUI workflow JSON (only used when backend = "custom").
+    pub custom_workflow_url: Option<String>,
+}
+
+impl ArtDefaults {
+    /// Resolve the `ImageBackend` from config, falling back to default.
+    pub fn resolve_backend(&self) -> crate::ImageBackend {
+        self.backend
+            .as_deref()
+            .and_then(crate::ImageBackend::from_str)
+            .unwrap_or_default()
+    }
+
+    /// Resolve the `ArtMode` from config, falling back to default.
+    pub fn resolve_art_mode(&self) -> crate::ArtMode {
+        self.art_mode
+            .as_deref()
+            .and_then(crate::ArtMode::from_str)
+            .unwrap_or_default()
+    }
 }
 
 /// Load [art] defaults from amigo.toml in the given project directory.

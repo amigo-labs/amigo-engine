@@ -1,7 +1,12 @@
 //! amigo_artgen — AI art generation pipeline for Amigo Engine.
 //!
-//! Provides a ComfyUI client, pixel-art post-processing, and an MCP tool
-//! interface so Claude Code can generate and refine sprite assets.
+//! Provides a backend-agnostic image generation pipeline (Qwen-Image,
+//! FLUX.2 Klein, or custom endpoint), pixel-art and raster-art
+//! post-processing, and an MCP tool interface so Claude Code can
+//! generate and refine sprite assets.
+//!
+//! ComfyUI is used as the inference orchestrator under the hood but is
+//! fully managed by the engine — users only pick a model in `amigo.toml`.
 
 pub mod comfyui;
 pub mod config;
@@ -16,10 +21,79 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
+// Backend + art mode enums
+// ---------------------------------------------------------------------------
+
+/// Which image generation model to use.
+///
+/// Each backend produces a different ComfyUI workflow graph under the hood.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ImageBackend {
+    /// Qwen-Image 7B — best quality/size ratio, Apache 2.0. Default.
+    #[default]
+    QwenImage,
+    /// FLUX.2 Klein 4B — compact, fast, large LoRA ecosystem.
+    Flux2Klein,
+    /// User-provided ComfyUI-compatible endpoint or workflow URL.
+    Custom,
+}
+
+impl ImageBackend {
+    /// Human-readable display name.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::QwenImage => "Qwen-Image (7B)",
+            Self::Flux2Klein => "FLUX.2 Klein (4B)",
+            Self::Custom => "Custom endpoint",
+        }
+    }
+
+    /// Default checkpoint filename for this backend.
+    pub fn default_checkpoint(&self) -> &'static str {
+        match self {
+            Self::QwenImage => "qwen-image-7b-Q4_K_M.gguf",
+            Self::Flux2Klein => "flux2-klein-4b-fp8.safetensors",
+            Self::Custom => "",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "qwen-image" => Some(Self::QwenImage),
+            "flux2-klein" => Some(Self::Flux2Klein),
+            "custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
+
+/// Whether to apply pixel-art post-processing or output raw raster art.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ArtMode {
+    /// Full pixel-art pipeline: remove AA, palette clamp, outline, etc.
+    #[default]
+    Pixel,
+    /// Raster output: only dimensions/transparency cleanup, no palette clamping.
+    Raster,
+}
+
+impl ArtMode {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pixel" => Some(Self::Pixel),
+            "raster" => Some(Self::Raster),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Core types
 // ---------------------------------------------------------------------------
 
-/// A request to generate pixel art.
+/// A request to generate art (pixel or raster).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ArtRequest {
     /// What to generate: "sprite", "tileset", "portrait", "background".
@@ -39,6 +113,10 @@ pub struct ArtRequest {
     pub postprocess: Vec<PostProcessStep>,
     /// Extra key-value options passed to the workflow.
     pub extra: HashMap<String, serde_json::Value>,
+    /// Which generation backend to use.
+    pub backend: ImageBackend,
+    /// Pixel art or raster art output mode.
+    pub art_mode: ArtMode,
 }
 
 impl Default for ArtRequest {
@@ -56,6 +134,8 @@ impl Default for ArtRequest {
                 PostProcessStep::PaletteClamp { max_colors: 32 },
             ],
             extra: HashMap::new(),
+            backend: ImageBackend::default(),
+            art_mode: ArtMode::default(),
         }
     }
 }
