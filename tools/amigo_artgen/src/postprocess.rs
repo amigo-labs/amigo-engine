@@ -731,11 +731,7 @@ mod tests {
             *pixel = [v, 255 - v, v / 2, 200];
         }
 
-        let original_colors: Vec<[u8; 3]> = buf
-            .data
-            .iter()
-            .map(|p| [p[0], p[1], p[2]])
-            .collect();
+        let original_colors: Vec<[u8; 3]> = buf.data.iter().map(|p| [p[0], p[1], p[2]]).collect();
 
         buf.apply_style_pipeline_for_mode(&style, &ArtMode::Raster);
 
