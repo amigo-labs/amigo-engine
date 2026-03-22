@@ -44,7 +44,7 @@ impl ToolGroup {
     fn display_name(self) -> &'static str {
         match self {
             Self::Audio => "Audio (Demucs, Basic Pitch)",
-            Self::ArtGen => "ArtGen (ComfyUI)",
+            Self::ArtGen => "ArtGen (Qwen-Image, FLUX.2 Klein, ComfyUI)",
             Self::MusicGen => "MusicGen (ACE-Step, AudioGen)",
             Self::All => "All Tools",
         }
@@ -695,6 +695,12 @@ soundfile>=0.12.0
 
 const REQUIREMENTS_ARTGEN: &str = r#"-r core.txt
 comfyui>=0.2.0
+# Qwen-Image support
+transformers>=4.40.0
+accelerate>=0.30.0
+# FLUX.2 Klein support (uses diffusers pipeline)
+diffusers>=0.28.0
+safetensors>=0.4.0
 "#;
 
 const REQUIREMENTS_MUSICGEN: &str = r#"-r core.txt

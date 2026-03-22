@@ -1,7 +1,10 @@
-//! ComfyUI HTTP client.
+//! ComfyUI HTTP client and lifecycle management.
 //!
 //! Communicates with a local ComfyUI instance to queue image generation
 //! prompts, poll for completion, and retrieve output images.
+//!
+//! `ComfyUiLifecycle` manages ComfyUI as a child process — auto-starting
+//! it when needed and shutting it down cleanly on drop.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -272,6 +275,149 @@ pub enum ComfyError {
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("ComfyUI not found — run `amigo setup artgen` first")]
+    NotInstalled,
+    #[error("ComfyUI failed to start: {0}")]
+    StartFailed(String),
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle management
+// ---------------------------------------------------------------------------
+
+/// Manages a ComfyUI process as a child of the artgen server.
+///
+/// On `ensure_running()`, checks if the port is already reachable.
+/// If not, starts ComfyUI as a subprocess. On `Drop`, shuts it down.
+pub struct ComfyUiLifecycle {
+    process: Option<std::process::Child>,
+    config: ComfyUiConfig,
+}
+
+impl ComfyUiLifecycle {
+    pub fn new(config: ComfyUiConfig) -> Self {
+        Self {
+            process: None,
+            config,
+        }
+    }
+
+    /// Check if ComfyUI is reachable at the configured host:port.
+    pub fn is_running(&self) -> bool {
+        let url = format!("{}/system_stats", self.config.base_url());
+        ureq::get(&url)
+            .timeout(std::time::Duration::from_secs(2))
+            .call()
+            .is_ok()
+    }
+
+    /// Ensure ComfyUI is running. If the port is already reachable
+    /// (e.g. user started it manually), this is a no-op. Otherwise,
+    /// starts ComfyUI as a child process.
+    pub fn ensure_running(&mut self) -> Result<(), ComfyError> {
+        if self.is_running() {
+            tracing::info!("ComfyUI already running at {}", self.config.base_url());
+            return Ok(());
+        }
+
+        // Already started by us but not yet responding — wait a bit
+        if self.process.is_some() {
+            return self.wait_for_startup();
+        }
+
+        tracing::info!("Starting ComfyUI on port {}...", self.config.port);
+
+        // Try to find comfyui in PATH or common locations
+        let comfyui_cmd = self.find_comfyui_binary()?;
+
+        let child = std::process::Command::new(&comfyui_cmd)
+            .args([
+                "--listen",
+                &self.config.host,
+                "--port",
+                &self.config.port.to_string(),
+                "--preview-method",
+                "none",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| ComfyError::StartFailed(format!("{comfyui_cmd}: {e}")))?;
+
+        self.process = Some(child);
+        self.wait_for_startup()
+    }
+
+    /// Shut down the managed ComfyUI process (if we started it).
+    pub fn shutdown(&mut self) {
+        if let Some(mut child) = self.process.take() {
+            tracing::info!("Shutting down ComfyUI...");
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    /// Returns the config (for creating a `ComfyUiClient`).
+    pub fn config(&self) -> &ComfyUiConfig {
+        &self.config
+    }
+
+    // -- private --
+
+    fn find_comfyui_binary(&self) -> Result<String, ComfyError> {
+        // Check common locations
+        let candidates = [
+            "comfyui",
+            "python -m comfy",
+            // ~/.amigo/venv/bin/python -m comfyui
+        ];
+
+        for cmd in &candidates {
+            let parts: Vec<&str> = cmd.split_whitespace().collect();
+            if let Ok(output) = std::process::Command::new(parts[0])
+                .args(&["--version"])
+                .output()
+            {
+                if output.status.success() {
+                    return Ok(cmd.to_string());
+                }
+            }
+        }
+
+        // Check amigo venv
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+        let venv_python = format!("{home}/.amigo/venv/bin/python");
+        if std::path::Path::new(&venv_python).exists() {
+            return Ok(format!("{venv_python} -m comfyui"));
+        }
+
+        Err(ComfyError::NotInstalled)
+    }
+
+    fn wait_for_startup(&self) -> Result<(), ComfyError> {
+        let max_wait = std::time::Duration::from_secs(30);
+        let poll_interval = std::time::Duration::from_millis(500);
+        let start = std::time::Instant::now();
+
+        while start.elapsed() < max_wait {
+            if self.is_running() {
+                tracing::info!("ComfyUI is ready at {}", self.config.base_url());
+                return Ok(());
+            }
+            std::thread::sleep(poll_interval);
+        }
+
+        Err(ComfyError::StartFailed(format!(
+            "ComfyUI did not become ready within {}s",
+            max_wait.as_secs()
+        )))
+    }
+}
+
+impl Drop for ComfyUiLifecycle {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -308,5 +454,29 @@ mod tests {
     fn check_status_empty_id() {
         let client = ComfyUiClient::new(ComfyUiConfig::default());
         assert!(client.check_status("").is_err());
+    }
+
+    // ── Lifecycle ──────────────────────────────────────────────
+
+    #[test]
+    fn lifecycle_new_has_no_process() {
+        let lc = ComfyUiLifecycle::new(ComfyUiConfig::default());
+        assert!(lc.process.is_none());
+    }
+
+    #[test]
+    fn lifecycle_is_running_returns_false_without_server() {
+        let lc = ComfyUiLifecycle::new(ComfyUiConfig {
+            host: "127.0.0.1".into(),
+            port: 59999, // unlikely to be in use
+        });
+        assert!(!lc.is_running());
+    }
+
+    #[test]
+    fn lifecycle_shutdown_is_safe_when_not_started() {
+        let mut lc = ComfyUiLifecycle::new(ComfyUiConfig::default());
+        lc.shutdown(); // should not panic
+        assert!(lc.process.is_none());
     }
 }

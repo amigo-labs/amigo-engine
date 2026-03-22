@@ -1,10 +1,11 @@
-//! Pixel art post-processing pipeline.
+//! Art post-processing pipeline.
 //!
-//! Transforms raw AI-generated images into clean pixel art by removing
-//! anti-aliasing, clamping palettes, adding outlines, and downscaling.
+//! Transforms raw AI-generated images into clean pixel art (or raster art)
+//! by removing anti-aliasing, clamping palettes, adding outlines, and
+//! downscaling. The pipeline switches behavior based on `ArtMode`.
 
 use crate::style::{OutlineMode, StyleDef};
-use crate::PostProcessStep;
+use crate::{ArtMode, PostProcessStep};
 
 /// RGBA pixel buffer for processing.
 #[derive(Clone, Debug)]
@@ -361,6 +362,47 @@ impl PixelBuffer {
 
         // 6. Tile Edge Check (informational — callers invoke tile_edge_check() separately)
     }
+
+    /// Apply post-processing based on art mode.
+    ///
+    /// - **Pixel mode**: Full pipeline — palette clamp, remove AA, outline, etc.
+    /// - **Raster mode**: Only dimension/transparency steps — no palette clamping,
+    ///   no AA removal, no outlines.
+    pub fn apply_pipeline_for_mode(&mut self, steps: &[PostProcessStep], mode: &ArtMode) {
+        match mode {
+            ArtMode::Pixel => self.apply_pipeline(steps),
+            ArtMode::Raster => {
+                // Raster mode: only apply dimension and transparency steps
+                for step in steps {
+                    match step {
+                        PostProcessStep::ForceDimensions { width, height } => {
+                            force_dimensions(self, *width, *height);
+                        }
+                        PostProcessStep::CleanupTransparency => cleanup_transparency(self),
+                        PostProcessStep::Downscale { factor } => downscale(self, *factor),
+                        // Skip pixel-art-specific steps in raster mode
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Apply style-based post-processing with art mode awareness.
+    ///
+    /// In raster mode, skips palette clamping, AA removal, and outlines.
+    pub fn apply_style_pipeline_for_mode(&mut self, style: &StyleDef, mode: &ArtMode) {
+        match mode {
+            ArtMode::Pixel => self.apply_style_pipeline(style),
+            ArtMode::Raster => {
+                // Raster mode: only cleanup transparency
+                let config = &style.post_processing;
+                if config.cleanup_transparency {
+                    cleanup_transparency(self);
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -616,6 +658,94 @@ mod tests {
                 "expected fully transparent or opaque, got alpha={}",
                 pixel[3]
             );
+        }
+    }
+
+    // ── Art mode pipeline ─────────────────────────────────────
+
+    #[test]
+    fn raster_mode_skips_pixel_art_steps() {
+        let mut buf = PixelBuffer::new(2, 1);
+        buf.data[0] = [255, 0, 0, 100]; // semi-transparent
+        buf.data[1] = [0, 255, 0, 200]; // semi-transparent
+
+        let steps = vec![
+            PostProcessStep::RemoveAntiAliasing,
+            PostProcessStep::PaletteClamp { max_colors: 2 },
+        ];
+
+        // Raster mode should skip RemoveAntiAliasing and PaletteClamp
+        buf.apply_pipeline_for_mode(&steps, &ArtMode::Raster);
+
+        // Alpha should be UNCHANGED (not snapped)
+        assert_eq!(buf.data[0][3], 100);
+        assert_eq!(buf.data[1][3], 200);
+    }
+
+    #[test]
+    fn raster_mode_applies_dimensions_and_transparency() {
+        let mut buf = PixelBuffer::new(2, 2);
+        buf.data[0] = [255, 0, 0, 50]; // below threshold
+        buf.data[1] = [0, 255, 0, 200]; // above threshold
+        buf.data[2] = [0, 0, 255, 255];
+        buf.data[3] = [128, 128, 0, 255];
+
+        let steps = vec![
+            PostProcessStep::CleanupTransparency,
+            PostProcessStep::ForceDimensions {
+                width: 4,
+                height: 4,
+            },
+        ];
+
+        buf.apply_pipeline_for_mode(&steps, &ArtMode::Raster);
+
+        // Should have been resized
+        assert_eq!(buf.width, 4);
+        assert_eq!(buf.height, 4);
+    }
+
+    #[test]
+    fn pixel_mode_applies_all_steps() {
+        let mut buf = PixelBuffer::new(2, 1);
+        buf.data[0] = [255, 0, 0, 100]; // semi-transparent
+        buf.data[1] = [0, 255, 0, 200]; // semi-transparent
+
+        let steps = vec![PostProcessStep::RemoveAntiAliasing];
+
+        buf.apply_pipeline_for_mode(&steps, &ArtMode::Pixel);
+
+        // Alpha should be snapped (pixel mode applies RemoveAntiAliasing)
+        assert_eq!(buf.data[0][3], 0); // below threshold
+        assert_eq!(buf.data[1][3], 255); // above threshold
+    }
+
+    #[test]
+    fn raster_style_pipeline_only_cleans_transparency() {
+        use crate::style::StyleDef;
+
+        let style = StyleDef::find("caribbean").unwrap();
+        let mut buf = PixelBuffer::new(4, 4);
+        for (i, pixel) in buf.data.iter_mut().enumerate() {
+            let v = (i * 17) as u8;
+            *pixel = [v, 255 - v, v / 2, 200];
+        }
+
+        let original_colors: Vec<[u8; 3]> = buf
+            .data
+            .iter()
+            .map(|p| [p[0], p[1], p[2]])
+            .collect();
+
+        buf.apply_style_pipeline_for_mode(&style, &ArtMode::Raster);
+
+        // Colors should be unchanged (no palette clamping in raster mode)
+        // but alpha should be cleaned up (200 >= 128 → 255)
+        for (i, pixel) in buf.data.iter().enumerate() {
+            assert_eq!(pixel[0], original_colors[i][0]);
+            assert_eq!(pixel[1], original_colors[i][1]);
+            assert_eq!(pixel[2], original_colors[i][2]);
+            assert_eq!(pixel[3], 255); // cleaned up
         }
     }
 }

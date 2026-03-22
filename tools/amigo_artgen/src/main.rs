@@ -1,7 +1,11 @@
 //! amigo_artgen MCP server.
 //!
 //! Speaks MCP protocol on stdio, dispatching tool calls to the artgen pipeline.
+//! ComfyUI is managed automatically — started on first generation request
+//! and shut down when the server exits.
 
+use amigo_artgen::comfyui::{ComfyUiConfig, ComfyUiLifecycle};
+use amigo_artgen::config::load_art_defaults;
 use amigo_artgen::tools;
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
@@ -36,15 +40,32 @@ struct JsonRpcError {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    // Parse --server flag for ComfyUI URL
-    let _server_url = args
+    // Parse --server flag for custom ComfyUI endpoint
+    let server_url = args
         .iter()
         .position(|a| a == "--server")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
         .unwrap_or("http://localhost:8188");
 
-    eprintln!("amigo-artgen MCP server starting...");
+    // Parse ComfyUI config from URL
+    let comfy_config = parse_comfy_url(server_url);
+
+    // Load project defaults to determine backend
+    let project_dir = std::env::current_dir().unwrap_or_default();
+    let defaults = load_art_defaults(&project_dir);
+    let backend = defaults.resolve_backend();
+    let art_mode = defaults.resolve_art_mode();
+
+    eprintln!(
+        "amigo-artgen MCP server starting (backend: {}, mode: {:?})",
+        backend.display_name(),
+        art_mode
+    );
+
+    // ComfyUI lifecycle — will auto-start on first ensure_running() call
+    // and auto-shutdown on drop.
+    let _lifecycle = ComfyUiLifecycle::new(comfy_config);
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -152,4 +173,20 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
             }),
         },
     }
+}
+
+/// Parse a URL like "http://localhost:8188" into a ComfyUiConfig.
+fn parse_comfy_url(url: &str) -> ComfyUiConfig {
+    let stripped = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+
+    let (host, port) = if let Some((h, p)) = stripped.split_once(':') {
+        (h.to_string(), p.parse().unwrap_or(8188))
+    } else {
+        (stripped.to_string(), 8188)
+    };
+
+    ComfyUiConfig { host, port }
 }
