@@ -1,6 +1,9 @@
 use amigo_core::{Color, Rect};
 use amigo_input::InputState;
 
+#[cfg(feature = "retained_layout")]
+pub mod layout;
+
 /// Pixel UI context for immediate-mode UI rendering.
 /// Tier 1: Game HUD (always available).
 pub struct UiContext {
