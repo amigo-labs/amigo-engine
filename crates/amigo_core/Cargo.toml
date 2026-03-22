@@ -8,9 +8,11 @@ default = []
 td = []
 reflect = ["amigo_reflect"]
 change_detection = []
+system_graph = ["rayon"]
 
 [dependencies]
 amigo_reflect = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
 fixed = { workspace = true }
 serde = { workspace = true }
 rustc-hash = { workspace = true }
