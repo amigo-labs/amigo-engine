@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: amigo_cli, amigo_api, amigo_engine
 depends_on: ["engine/core", "tooling/cli", "ai-pipelines/agent-api"]
 last_updated: 2026-03-19
