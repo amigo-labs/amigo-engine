@@ -5,6 +5,7 @@ edition.workspace = true
 
 [features]
 default = []
+asset_streaming = []
 editor = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit"]
 
 [dependencies]

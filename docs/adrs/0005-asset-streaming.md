@@ -1,7 +1,7 @@
 ---
 number: "0005"
 title: Streaming Asset Pipeline
-status: proposed
+status: done
 date: 2026-03-20
 ---
 
@@ -9,7 +9,7 @@ date: 2026-03-20
 
 ## Status
 
-proposed
+done
 
 ## Context
 
@@ -77,6 +77,4 @@ The system has three layers:
 
 ## Updates
 
-<!-- Append entries during implementation:
-- YYYY-MM-DD: Discovered X, updated step N to account for Y.
--->
+- 2026-03-22: Implemented TextureRegistry (streaming.rs) and DynamicAtlas (dynamic_atlas.rs) behind `asset_streaming` feature flag. Used std::sync::mpsc + background thread instead of AP-04 async task system (not yet available). LRU eviction implemented. Dynamic atlas uses shelf-packing with multi-page support.
