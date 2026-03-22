@@ -1,3 +1,6 @@
+#[cfg(feature = "rollback_net")]
+pub mod rollback;
+
 pub mod checksum;
 pub mod client;
 pub mod lobby;

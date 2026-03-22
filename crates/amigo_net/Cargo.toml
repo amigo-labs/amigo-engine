@@ -3,6 +3,10 @@ name = "amigo_net"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+rollback_net = []
+
 [dependencies]
 amigo_core = { workspace = true }
 serde = { workspace = true }
