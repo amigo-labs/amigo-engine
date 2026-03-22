@@ -53,6 +53,7 @@ pub mod timeline;
 pub mod turn_combat;
 pub mod tween;
 pub mod visual_novel;
+pub mod world_context;
 
 // -- Tower Defense genre modules (feature-gated) ----------------------------
 #[cfg(feature = "td")]
@@ -119,6 +120,10 @@ pub use visual_novel::{
     AutoRead, BacklogEntry, BacklogSystem, BgTransition, BranchingSystem, CharacterDisplay,
     ChoiceMenu, ChoiceOption, ChoiceRecord, Emotion, NameLabelConfig, SlideDir, SlotPosition,
     TextboxBackground, TextboxConfig, TextboxMode, TextboxState, TypewriterEffect, VnScene,
+};
+pub use world_context::{
+    ArtType, Biome, Era, Lighting, Mood, MusicGenre, MusicKey, MusicStyle, Palette, VisualStyle,
+    Weather, WorldContext,
 };
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------

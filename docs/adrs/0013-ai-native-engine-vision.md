@@ -1,7 +1,7 @@
 ---
 number: "0013"
 title: AI-Native Engine Vision & Public API Strategy
-status: proposed
+status: done
 date: 2026-03-20
 ---
 
@@ -9,7 +9,7 @@ date: 2026-03-20
 
 ## Status
 
-proposed
+done
 
 ## Context
 
@@ -260,6 +260,4 @@ This ADR covers vision and architecture direction. Implementation is broken into
 
 ## Updates
 
-<!-- Append entries during implementation:
-- YYYY-MM-DD: Discovered X, updated step N to account for Y.
--->
+- 2026-03-22: Implemented initial structures — WorldContext in amigo_core, MetricsCollector in amigo_api, preview/metrics MCP tool definitions in amigo_mcp, public API stability markers in amigo_engine.
