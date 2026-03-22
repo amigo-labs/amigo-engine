@@ -9,3 +9,6 @@ amigo_render = { workspace = true }
 amigo_input = { workspace = true }
 tracing = { workspace = true }
 winit = { workspace = true }
+
+[features]
+retained_layout = []
