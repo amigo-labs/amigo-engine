@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 depends_on: ["config/amigo-toml", "ai-pipelines/artgen", "ai-pipelines/audiogen"]
 last_updated: 2026-03-19
 ---
