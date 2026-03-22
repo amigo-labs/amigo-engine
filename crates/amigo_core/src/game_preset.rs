@@ -45,6 +45,14 @@ pub enum ScenePreset {
     GodSim,
     /// Custom — game defines its own systems.
     Custom,
+    /// Social deduction (Among Us, Werewolf, Town of Salem).
+    SocialDeduction,
+    /// Deckbuilder roguelike (Slay the Spire, Balatro, Inscryption).
+    Deckbuilder,
+    /// Auto-battler (Super Auto Pets, TFT, Dota Underlords).
+    AutoBattler,
+    /// Idle / incremental (Cookie Clicker, Melvor Idle).
+    Idle,
 }
 
 impl ScenePreset {
@@ -68,6 +76,10 @@ impl ScenePreset {
             Self::Sandbox => "Sandbox / Survival",
             Self::GodSim => "God Sim",
             Self::Custom => "Custom",
+            Self::SocialDeduction => "Social Deduction",
+            Self::Deckbuilder => "Deckbuilder",
+            Self::AutoBattler => "Auto-Battler",
+            Self::Idle => "Idle / Incremental",
         }
     }
 
@@ -93,6 +105,12 @@ impl ScenePreset {
             Self::Sandbox => "Dynamic world, mining, building, crafting. Terraria, Starbound.",
             Self::GodSim => "Autonomous agents, simulation, world management. WorldBox, RimWorld.",
             Self::Custom => "Start from scratch, pick your own systems.",
+            Self::SocialDeduction => "Tasks, voting, sabotage, hidden roles. Among Us, Werewolf.",
+            Self::Deckbuilder => "Card combat with deck building between fights. Slay the Spire.",
+            Self::AutoBattler => {
+                "Buy units, place on grid, watch them fight. Super Auto Pets, TFT."
+            }
+            Self::Idle => "Resources, generators, upgrades, prestige. Cookie Clicker.",
         }
     }
 
@@ -149,6 +167,10 @@ impl ScenePreset {
                 "collision",
             ],
             Self::Custom => vec![],
+            Self::SocialDeduction => vec!["navigation", "collision", "physics", "dialog"],
+            Self::Deckbuilder => vec!["turn_combat", "inventory"],
+            Self::AutoBattler => vec!["combat", "economy"],
+            Self::Idle => vec!["economy"],
         }
     }
 
@@ -172,6 +194,10 @@ impl ScenePreset {
             Self::Sandbox,
             Self::GodSim,
             Self::Custom,
+            Self::SocialDeduction,
+            Self::Deckbuilder,
+            Self::AutoBattler,
+            Self::Idle,
         ]
     }
 
@@ -192,6 +218,10 @@ impl ScenePreset {
             Self::VisualNovel,
             Self::Sandbox,
             Self::GodSim,
+            Self::SocialDeduction,
+            Self::Deckbuilder,
+            Self::AutoBattler,
+            Self::Idle,
         ]
     }
 }
@@ -505,6 +535,30 @@ pub fn project_templates() -> Vec<ProjectTemplate> {
             description: "Empty project. Pick your own systems.",
             primary_preset: ScenePreset::Custom,
             resolution: (320, 180),
+        },
+        ProjectTemplate {
+            name: "Social Deduction",
+            description: "Hidden roles, tasks, voting, sabotage. Among Us, Werewolf.",
+            primary_preset: ScenePreset::SocialDeduction,
+            resolution: (480, 270),
+        },
+        ProjectTemplate {
+            name: "Deckbuilder",
+            description: "Card combat with deck building between fights. Slay the Spire.",
+            primary_preset: ScenePreset::Deckbuilder,
+            resolution: (480, 270),
+        },
+        ProjectTemplate {
+            name: "Auto-Battler",
+            description: "Buy units, place on grid, auto-fight. Super Auto Pets, TFT.",
+            primary_preset: ScenePreset::AutoBattler,
+            resolution: (480, 270),
+        },
+        ProjectTemplate {
+            name: "Idle Game",
+            description: "Resources, generators, upgrades, prestige loops.",
+            primary_preset: ScenePreset::Idle,
+            resolution: (320, 480),
         },
     ]
 }

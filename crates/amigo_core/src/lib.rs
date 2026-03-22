@@ -53,6 +53,19 @@ pub mod turn_combat;
 pub mod tween;
 pub mod visual_novel;
 
+// -- New building blocks -----------------------------------------------------
+pub mod card;
+pub mod door;
+pub mod task_system;
+pub mod vision_ray;
+pub mod voting;
+
+// -- New genre modules -------------------------------------------------------
+pub mod auto_battler;
+pub mod deckbuilder;
+pub mod idle;
+pub mod social_deduction;
+
 // -- Tower Defense genre modules (feature-gated) ----------------------------
 #[cfg(feature = "td")]
 pub mod enemy;
