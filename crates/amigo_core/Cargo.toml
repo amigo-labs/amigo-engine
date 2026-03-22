@@ -8,6 +8,7 @@ default = []
 td = []
 reflect = ["amigo_reflect"]
 change_detection = []
+ecs_archetypes = []
 system_graph = ["rayon"]
 
 [dependencies]
