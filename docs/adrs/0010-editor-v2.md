@@ -1,7 +1,7 @@
 ---
 number: "0010"
 title: Editor V2 — Reflection-Based Inspector and Live Editing
-status: proposed
+status: done
 date: 2026-03-20
 ---
 
@@ -9,7 +9,7 @@ date: 2026-03-20
 
 ## Status
 
-proposed
+done
 
 ## Context
 

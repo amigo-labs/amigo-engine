@@ -254,6 +254,7 @@ version = "0.1.0"
 dependencies = [
  "amigo_core",
  "amigo_input",
+ "amigo_reflect",
  "amigo_render",
  "amigo_tidal_parser",
  "amigo_tilemap",
