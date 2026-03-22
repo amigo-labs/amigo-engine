@@ -645,6 +645,57 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }),
         ),
+        // ── Preview (ADR-0013) ──
+        tool(
+            "amigo_preview_level",
+            "Render a preview screenshot of a proposed level configuration without committing changes. Returns a temporary screenshot path.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "config": {"type": "object", "description": "Level configuration (width, height, tiles, entities, paths)"},
+                    "world_context": {"type": "string", "description": "Path to a WorldContext RON file for palette/style constraints"}
+                },
+                "required": ["config"]
+            }),
+        ),
+        tool(
+            "amigo_preview_palette",
+            "Render sample sprites using a proposed colour palette to verify visual coherence.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "primary": {"type": "string", "description": "Primary hex colour (e.g. #1a1a2e)"},
+                    "secondary": {"type": "string", "description": "Secondary hex colour"},
+                    "accent": {"type": "string", "description": "Accent hex colour"},
+                    "danger": {"type": "string", "description": "Danger hex colour"},
+                    "sample_sprites": {"type": "array", "items": {"type": "string"}, "description": "Sprite asset paths to render with palette"}
+                },
+                "required": ["primary", "secondary", "accent"]
+            }),
+        ),
+        tool(
+            "amigo_diff_levels",
+            "Produce a side-by-side visual comparison of two level versions.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "description": "Path to first level file"},
+                    "b": {"type": "string", "description": "Path to second level file"}
+                },
+                "required": ["a", "b"]
+            }),
+        ),
+        // ── Metrics (ADR-0013) ──
+        tool(
+            "amigo_metrics_snapshot",
+            "Retrieve collected gameplay metrics (death positions, completion times, counters) from the current or most recent headless simulation run.",
+            json!({"type": "object", "properties": {}}),
+        ),
+        tool(
+            "amigo_metrics_clear",
+            "Clear all collected metrics to start a fresh measurement.",
+            json!({"type": "object", "properties": {}}),
+        ),
         // ── Dev workflow ──
         tool(
             "amigo_dev_save_snapshot",
