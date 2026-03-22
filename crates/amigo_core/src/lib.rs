@@ -5,6 +5,7 @@ pub mod achievements;
 pub mod agents;
 pub mod ai;
 pub mod behavior_tree;
+pub mod broad_phase;
 pub mod bullet_pattern;
 pub mod city_builder;
 pub mod collision;
@@ -75,6 +76,7 @@ pub use achievements::{
     AchievementCondition, AchievementDef, AchievementError, AchievementProgress,
     AchievementSaveData, AchievementToastRenderer, AchievementTracker,
 };
+pub use broad_phase::{Aabb, BroadPhase, CollisionPair, CpuBroadPhase, GpuBroadPhase};
 pub use collision::{
     CapsuleShape, CollisionShape, CollisionWorld, ContactInfo, SpatialHash, SweptContact,
     TriggerEvent, TriggerZone,
