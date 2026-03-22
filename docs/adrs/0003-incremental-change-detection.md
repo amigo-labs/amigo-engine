@@ -1,7 +1,7 @@
 ---
 number: "0003"
 title: Echtes Strukturelles Change-Detection
-status: proposed
+status: done
 date: 2026-03-20
 ---
 
@@ -78,6 +78,4 @@ The approach:
 
 ## Updates
 
-<!-- Append entries during implementation:
-- YYYY-MM-DD: Discovered X, updated step N to account for Y.
--->
+- 2026-03-22: Implemented behind `change_detection` feature flag in `crates/amigo_core/src/ecs/change_detection.rs`. Tick type, Mut<T> wrapper, Added<T>/Changed<T> filters, TickStorage, and World-level tick advancement.

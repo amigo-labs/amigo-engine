@@ -129,6 +129,10 @@ pub struct World {
     // Reflection accessor functions for dynamic components (behind `reflect` feature)
     #[cfg(feature = "reflect")]
     reflect_accessors: FxHashMap<TypeId, ReflectAccessor>,
+
+    // Monotonic world tick for incremental change detection (ADR-0003)
+    #[cfg(feature = "change_detection")]
+    world_tick: super::change_detection::Tick,
 }
 
 impl World {
@@ -144,6 +148,8 @@ impl World {
             pending_despawn: Vec::new(),
             #[cfg(feature = "reflect")]
             reflect_accessors: FxHashMap::default(),
+            #[cfg(feature = "change_detection")]
+            world_tick: super::change_detection::Tick::ZERO,
         }
     }
 
@@ -266,6 +272,20 @@ impl World {
         for storage in self.dynamic.values_mut() {
             storage.flush();
         }
+    }
+
+    // ── Tick-based change detection (ADR-0003) ──
+
+    /// Advance the world tick by one. Call once per frame / schedule run.
+    #[cfg(feature = "change_detection")]
+    pub fn increment_tick(&mut self) {
+        self.world_tick = super::change_detection::Tick::new(self.world_tick.get().wrapping_add(1));
+    }
+
+    /// Get the current world tick.
+    #[cfg(feature = "change_detection")]
+    pub fn current_tick(&self) -> super::change_detection::Tick {
+        self.world_tick
     }
 }
 
