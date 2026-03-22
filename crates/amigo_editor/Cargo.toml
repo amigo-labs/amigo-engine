@@ -7,6 +7,7 @@ edition.workspace = true
 default = []
 td = ["amigo_core/td"]
 egui = ["dep:egui"]
+editor_v2 = ["egui", "amigo_reflect", "amigo_core/reflect"]
 
 [dependencies]
 amigo_core = { workspace = true }
@@ -21,3 +22,4 @@ ron = { workspace = true }
 serde_json = { workspace = true }
 winit = { workspace = true }
 egui = { workspace = true, optional = true }
+amigo_reflect = { workspace = true, optional = true }
