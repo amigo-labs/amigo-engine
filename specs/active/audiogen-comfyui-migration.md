@@ -1,7 +1,7 @@
 ---
 number: "0014"
 title: "AudioGen auf ComfyUI migrieren — Qwen3-TTS als einziges TTS-Modell"
-status: proposed
+status: implementing
 date: 2026-03-22
 type: adr
 crate: amigo_audiogen
@@ -13,7 +13,7 @@ last_updated: 2026-03-22
 
 ## Status
 
-proposed
+implementing
 
 ## Context
 
@@ -343,6 +343,9 @@ pub struct OutputAudio {
 
 ## Updates
 
-<!-- Append entries during implementation:
-- YYYY-MM-DD: Discovered X, updated step N to account for Y.
--->
+- 2026-03-22: Extracted ComfyUiClient into shared `amigo_comfyui` crate. Added OutputAudio + ComfyOutput types. Artgen re-exports from shared crate.
+- 2026-03-22: Added TTS types (TtsRequest, TtsResult, AudioFormat, VoiceProfile, CreateVoiceRequest, CreateVoiceResult, AudioBackend) to audiogen lib.rs.
+- 2026-03-22: Created workflow builders: tts.rs (Qwen3-TTS), music.rs (ACE-Step), sfx.rs (Stable Audio).
+- 2026-03-22: Added 5 TTS MCP tools: generate_tts, create_voice, list_voices, preview_voice, delete_voice.
+- 2026-03-22: Implemented VoiceRegistry with RON persistence under assets/voices/voices.ron.
+- 2026-03-22: All 156 tests pass across amigo_comfyui, amigo_artgen, amigo_audiogen. Tool dispatch uses placeholder implementations (no live ComfyUI needed).

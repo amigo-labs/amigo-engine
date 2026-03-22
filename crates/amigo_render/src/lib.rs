@@ -13,8 +13,6 @@ pub mod renderer;
 pub mod sprite_batcher;
 pub mod texture;
 pub mod vertex;
-#[cfg(feature = "asset_streaming")]
-pub mod dynamic_atlas;
 
 #[cfg(feature = "editor")]
 pub mod egui_integration;
@@ -33,8 +31,6 @@ pub use renderer::Renderer;
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance, SpriteShader};
 pub use texture::{Texture, TextureId};
 pub use vertex::Vertex;
-#[cfg(feature = "asset_streaming")]
-pub use dynamic_atlas::{DynamicAtlas, InsertResult};
 
 // ---------------------------------------------------------------------------
 // Art style configuration

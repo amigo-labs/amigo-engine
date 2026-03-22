@@ -3,10 +3,6 @@ name = "amigo_assets"
 version.workspace = true
 edition.workspace = true
 
-[features]
-default = []
-asset_streaming = []
-
 [dependencies]
 amigo_core = { workspace = true }
 image = { workspace = true }

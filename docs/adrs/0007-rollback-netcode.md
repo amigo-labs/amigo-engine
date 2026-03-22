@@ -1,7 +1,7 @@
 ---
 number: "0007"
 title: Rollback Netcode
-status: done
+status: proposed
 date: 2026-03-20
 ---
 
@@ -9,7 +9,7 @@ date: 2026-03-20
 
 ## Status
 
-done
+proposed
 
 ## Context
 

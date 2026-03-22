@@ -8,8 +8,6 @@ pub mod import;
 pub mod modding;
 pub mod pak;
 pub mod registry;
-#[cfg(feature = "asset_streaming")]
-pub mod streaming;
 
 pub use aseprite::{load_aseprite, AsepriteData};
 pub use asset_manager::{AssetManager, SpriteData};
@@ -22,8 +20,6 @@ pub use registry::{
     MusicTransition, PostProcessConfig, SectionDef, SfxBundle, SfxCategory, SfxDef, StingerDef,
     StingerQuantize, StyleDef, WorldAudioStyle,
 };
-#[cfg(feature = "asset_streaming")]
-pub use streaming::{AtlasRegion, StreamingConfig, TextureRegistry, TextureSlotState};
 
 use thiserror::Error;
 

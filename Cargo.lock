@@ -107,6 +107,7 @@ dependencies = [
 name = "amigo_artgen"
 version = "0.1.0"
 dependencies = [
+ "amigo_comfyui",
  "ron",
  "serde",
  "serde_json",
@@ -170,6 +171,8 @@ dependencies = [
 name = "amigo_audiogen"
 version = "0.1.0"
 dependencies = [
+ "amigo_comfyui",
+ "ron",
  "serde",
  "serde_json",
  "tempfile",
@@ -194,6 +197,17 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "amigo_comfyui"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "ureq",
 ]
 
 [[package]]
