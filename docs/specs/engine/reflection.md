@@ -1,5 +1,5 @@
 ---
-status: spec
+status: done
 crate: amigo_reflect
 depends_on: []
 last_updated: 2026-03-20

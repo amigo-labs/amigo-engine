@@ -21,6 +21,7 @@ members = [
     "crates/amigo_reflect",
     "crates/amigo_reflect_derive",
     "tools/amigo_mcp",
+    "tools/amigo_comfyui",
     "tools/amigo_artgen",
     "tools/amigo_audiogen",
     "tools/amigo_cli",
@@ -61,6 +62,7 @@ amigo_tidal_parser = { path = "crates/amigo_tidal_parser" }
 amigo_audio_pipeline = { path = "crates/amigo_audio_pipeline" }
 amigo_reflect = { path = "crates/amigo_reflect" }
 amigo_reflect_derive = { path = "crates/amigo_reflect_derive" }
+amigo_comfyui = { path = "tools/amigo_comfyui" }
 
 # External dependencies
 wgpu = "24"
@@ -92,6 +94,7 @@ ctrlc = "3"
 ureq = { version = "2", features = ["json"] }
 tracing-tracy = { version = "0.11", default-features = false }
 tracy-client = { version = "0.18", default-features = false }
+rayon = "1"
 
 [profile.dev]
 opt-level = 1

@@ -3,6 +3,9 @@ name = "amigo_scene"
 version.workspace = true
 edition.workspace = true
 
+[features]
+hierarchical_scenes = []
+
 [dependencies]
 amigo_core = { workspace = true }
 tracing = { workspace = true }

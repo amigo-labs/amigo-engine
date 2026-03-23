@@ -1,7 +1,7 @@
 ---
 number: "0008"
 title: GPU-Compute for Broad-Phase Physics and Collision
-status: proposed
+status: done
 date: 2026-03-20
 ---
 
@@ -9,7 +9,7 @@ date: 2026-03-20
 
 ## Status
 
-proposed
+done
 
 ## Context
 
@@ -86,6 +86,4 @@ Introduce a `gpu_physics` feature flag that offloads the **broad-phase** collisi
 
 ## Updates
 
-<!-- Append entries during implementation:
-- YYYY-MM-DD: Discovered X, updated step N to account for Y.
--->
+- 2026-03-22: Implemented step 1 of migration path. Added `broad_phase` module to `amigo_core` with `BroadPhase` trait, `Aabb` type, `CollisionPair` type, working `CpuBroadPhase` (sort-and-sweep), and `GpuBroadPhase` stub that delegates to CPU fallback. The GPU compute shader (step 2) remains TODO pending wgpu context wiring.

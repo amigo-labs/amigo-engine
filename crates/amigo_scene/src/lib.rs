@@ -1,5 +1,8 @@
 #![allow(missing_docs)]
 
+#[cfg(feature = "hierarchical_scenes")]
+pub mod hierarchical;
+
 pub mod transition;
 
 /// Action returned by a scene's update method to control scene transitions.

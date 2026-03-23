@@ -1,7 +1,7 @@
 ---
 number: "0012"
 title: Hierarchische Szenen-Komposition
-status: proposed
+status: done
 date: 2026-03-20
 ---
 
@@ -9,7 +9,7 @@ date: 2026-03-20
 
 ## Status
 
-proposed
+done
 
 ## Context
 

@@ -1,12 +1,13 @@
 //! amigo_audiogen — AI audio generation pipeline for Amigo Engine.
 //!
-//! Dual-mode audio generation:
+//! Triple-mode audio generation via ComfyUI:
 //! - **ACE-Step**: Full music tracks with lyrics/melody conditioning, then stem
 //!   splitting for adaptive music layers.
-//! - **AudioGen**: Short SFX clips (impacts, UI sounds, ambient loops).
+//! - **Stable Audio Open**: Short SFX clips (impacts, UI sounds, ambient loops).
+//! - **Qwen3-TTS 1.7B**: Text-to-speech with voice cloning and emotion control.
 //!
-//! Both backends run locally on GPU. This crate provides the client libraries,
-//! audio processing utilities, and MCP tool interface.
+//! All backends run through a single ComfyUI instance. This crate provides
+//! workflow builders, audio processing utilities, and MCP tool interface.
 
 pub mod config;
 
@@ -16,6 +17,8 @@ pub mod clean_mode;
 pub mod processing;
 pub mod stems;
 pub mod tools;
+pub mod voice_registry;
+pub mod workflows;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -279,6 +282,135 @@ impl WorldAudioStyle {
 }
 
 // ---------------------------------------------------------------------------
+// Audio backend selection
+// ---------------------------------------------------------------------------
+
+/// Audio backend selection (replaces the implicit Gradio clients).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AudioBackend {
+    /// ACE-Step via ComfyUI for music generation.
+    AceStep,
+    /// Stable Audio Open via ComfyUI for SFX generation.
+    StableAudio,
+    /// Qwen3-TTS 1.7B via ComfyUI for speech synthesis.
+    Qwen3Tts,
+}
+
+// ---------------------------------------------------------------------------
+// TTS types
+// ---------------------------------------------------------------------------
+
+/// A request to generate speech via Qwen3-TTS.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TtsRequest {
+    /// The text to speak.
+    pub text: String,
+    /// Language (BCP-47). Default: "de-DE".
+    pub language: String,
+    /// Delivery instruction for emotion/style.
+    /// e.g. "speak with anger", "whisper softly", "excited and fast".
+    pub delivery: Option<String>,
+    /// Path to reference audio for voice cloning (10s is enough).
+    /// If None, the model's default voice is used.
+    pub reference_audio: Option<String>,
+    /// Speaker name for consistent assignment (e.g. "narrator", "npc_guard").
+    pub speaker_id: Option<String>,
+    /// Output format.
+    pub format: AudioFormat,
+}
+
+impl Default for TtsRequest {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            language: "de-DE".into(),
+            delivery: None,
+            reference_audio: None,
+            speaker_id: None,
+            format: AudioFormat::default(),
+        }
+    }
+}
+
+/// Audio output format.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub enum AudioFormat {
+    #[default]
+    Wav,
+    Ogg,
+}
+
+/// TTS generation result.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TtsResult {
+    /// Path to the generated audio file.
+    pub output_path: String,
+    /// Duration in seconds.
+    pub duration_secs: f32,
+    /// Generation time in milliseconds.
+    pub generation_time_ms: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Voice creation and management
+// ---------------------------------------------------------------------------
+
+/// A saved voice profile for TTS voice cloning.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VoiceProfile {
+    /// Unique name (e.g. "old_wizard", "young_princess", "narrator_de").
+    pub name: String,
+    /// Path to reference audio (WAV, 10-30s recommended).
+    pub reference_audio: String,
+    /// Default language for this voice.
+    pub default_language: String,
+    /// Default delivery instruction (e.g. "speak slowly with gravitas").
+    pub default_delivery: Option<String>,
+    /// Description of the voice (for MCP tool display).
+    pub description: Option<String>,
+}
+
+/// Request to create a voice profile.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateVoiceRequest {
+    /// Name for the new voice.
+    pub name: String,
+    /// Reference audio: either a path to an existing file or "record"
+    /// for microphone recording.
+    pub reference_audio: String,
+    /// Language. Default: "de-DE".
+    pub language: String,
+    /// Default delivery for this voice.
+    pub default_delivery: Option<String>,
+    /// Description.
+    pub description: Option<String>,
+    /// Optional test text -- spoken after creation to validate the voice.
+    pub test_text: Option<String>,
+}
+
+impl Default for CreateVoiceRequest {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            reference_audio: String::new(),
+            language: "de-DE".into(),
+            default_delivery: None,
+            description: None,
+            test_text: None,
+        }
+    }
+}
+
+/// Result of voice profile creation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateVoiceResult {
+    /// The saved profile.
+    pub profile: VoiceProfile,
+    /// Path to test audio file (if test_text was set).
+    pub test_audio: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -314,5 +446,30 @@ mod tests {
         let style = WorldAudioStyle::find("caribbean").unwrap();
         assert!(style.genre.contains("shanty"));
         assert_eq!(style.default_bpm, 130);
+    }
+
+    #[test]
+    fn default_tts_request() {
+        let req = TtsRequest::default();
+        assert_eq!(req.language, "de-DE");
+        assert!(matches!(req.format, AudioFormat::Wav));
+        assert!(req.text.is_empty());
+    }
+
+    #[test]
+    fn default_create_voice_request() {
+        let req = CreateVoiceRequest::default();
+        assert_eq!(req.language, "de-DE");
+        assert!(req.name.is_empty());
+    }
+
+    #[test]
+    fn audio_backend_variants() {
+        let be = AudioBackend::AceStep;
+        assert!(matches!(be, AudioBackend::AceStep));
+        let be = AudioBackend::StableAudio;
+        assert!(matches!(be, AudioBackend::StableAudio));
+        let be = AudioBackend::Qwen3Tts;
+        assert!(matches!(be, AudioBackend::Qwen3Tts));
     }
 }

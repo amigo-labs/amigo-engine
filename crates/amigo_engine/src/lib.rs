@@ -1,4 +1,18 @@
 #![allow(missing_docs)]
+// ---------------------------------------------------------------------------
+// Public API stability markers (ADR-0013)
+// ---------------------------------------------------------------------------
+// Types and functions re-exported through `amigo_engine::prelude` are
+// considered **stable public API**.  Breaking changes to these require a
+// major version bump.
+//
+// Items behind `#[doc(hidden)]` or in modules *not* listed in the prelude
+// are **internal** and may change without notice between minor versions.
+//
+// Feature-gated modules (`audio`, `editor`, `api`) follow the same contract
+// once enabled — their public surface is stable within a major version.
+// ---------------------------------------------------------------------------
+
 //! # Amigo Engine
 //!
 //! A modern 2D pixel art game engine in Rust, built on fixed-point math,
@@ -122,6 +136,7 @@ pub mod prelude {
         SpatialHash, Walkable, WaypointPath,
     };
     pub use amigo_core::{Color, EntityId, Fix, Rect, RenderVec2, SimVec2, TimeInfo, World};
+    pub use amigo_core::{WorldContext, Biome, Era, Mood, Palette, MusicStyle, VisualStyle};
     pub use amigo_debug::DebugOverlay;
     pub use amigo_input::InputState;
     pub use amigo_net::checksum::StateHasher;

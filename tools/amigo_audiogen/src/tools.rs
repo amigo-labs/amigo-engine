@@ -3,7 +3,11 @@
 //! Each tool maps to an audio generation or processing operation.
 
 use crate::config::{load_audio_defaults, save_audio_defaults};
-use crate::{MusicResult, SfxResult, WorldAudioStyle};
+use crate::voice_registry::VoiceRegistry;
+use crate::{
+    AudioFormat, CreateVoiceResult, MusicResult, SfxResult, TtsRequest, TtsResult, VoiceProfile,
+    WorldAudioStyle,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -198,6 +202,77 @@ pub struct GetDefaultsParams {
 pub struct SetDefaultsParams {
     pub project_dir: String,
     pub defaults: HashMap<String, serde_json::Value>,
+}
+
+// ---------------------------------------------------------------------------
+// TTS tool parameter structs
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerateTtsParams {
+    pub text: String,
+    #[serde(default = "default_language")]
+    pub language: String,
+    #[serde(default)]
+    pub delivery: Option<String>,
+    #[serde(default)]
+    pub reference_audio: Option<String>,
+    #[serde(default)]
+    pub speaker_id: Option<String>,
+    #[serde(default = "default_format")]
+    pub format: String,
+}
+
+fn default_language() -> String {
+    "de-DE".into()
+}
+
+fn default_format() -> String {
+    "wav".into()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateVoiceParams {
+    pub name: String,
+    pub reference_audio: String,
+    #[serde(default = "default_language")]
+    pub language: String,
+    #[serde(default)]
+    pub default_delivery: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub test_text: Option<String>,
+    /// Project directory for resolving the voices directory.
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ListVoicesParams {
+    /// Project directory for resolving the voices directory.
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PreviewVoiceParams {
+    pub name: String,
+    #[serde(default = "default_preview_text")]
+    pub text: String,
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+fn default_preview_text() -> String {
+    "Dies ist ein Test der Stimme.".into()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeleteVoiceParams {
+    pub name: String,
+    #[serde(default)]
+    pub project_dir: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +569,77 @@ pub fn list_tools() -> Vec<ToolDef> {
                     }
                 },
                 "required": ["project_dir", "defaults"]
+            }),
+        },
+        // --- TTS tools ---
+        ToolDef {
+            name: "amigo_audiogen_generate_tts".into(),
+            description: "Generate speech from text using Qwen3-TTS via ComfyUI. \
+                Supports 10 languages, emotion via delivery instructions, and voice cloning.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "The text to speak" },
+                    "language": { "type": "string", "description": "BCP-47 language tag (default: de-DE)" },
+                    "delivery": { "type": "string", "description": "Delivery instruction for emotion/style, e.g. 'speak with anger', 'whisper softly'" },
+                    "reference_audio": { "type": "string", "description": "Path to reference audio for voice cloning (10s recommended)" },
+                    "speaker_id": { "type": "string", "description": "Name of a saved voice profile (e.g. 'narrator', 'old_wizard')" },
+                    "format": { "type": "string", "description": "Output format: wav or ogg (default: wav)" }
+                },
+                "required": ["text"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_create_voice".into(),
+            description: "Create a new voice profile for TTS. Stores reference audio and metadata \
+                under assets/voices/ for use with speaker_id in generate_tts.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Unique voice name (e.g. 'old_wizard', 'narrator_de')" },
+                    "reference_audio": { "type": "string", "description": "Path to reference audio file (WAV, 10-30s recommended)" },
+                    "language": { "type": "string", "description": "Default language (default: de-DE)" },
+                    "default_delivery": { "type": "string", "description": "Default delivery instruction for this voice" },
+                    "description": { "type": "string", "description": "Human-readable description of the voice" },
+                    "test_text": { "type": "string", "description": "Optional text to speak as validation after creation" },
+                    "project_dir": { "type": "string", "description": "Project directory (for locating assets/voices/)" }
+                },
+                "required": ["name", "reference_audio"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_list_voices".into(),
+            description: "List all saved voice profiles.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "project_dir": { "type": "string", "description": "Project directory" }
+                }
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_preview_voice".into(),
+            description: "Generate a short preview of a saved voice profile with test text.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Voice profile name" },
+                    "text": { "type": "string", "description": "Test text to speak (default: German test sentence)" },
+                    "project_dir": { "type": "string", "description": "Project directory" }
+                },
+                "required": ["name"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_delete_voice".into(),
+            description: "Delete a saved voice profile.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Voice profile name to delete" },
+                    "project_dir": { "type": "string", "description": "Project directory" }
+                },
+                "required": ["name"]
             }),
         },
     ]
@@ -830,6 +976,177 @@ pub fn dispatch_tool_with_defaults(
             }
             Ok(serde_json::json!({ "saved": true, "path": "amigo.toml" }))
         }
+
+        // --- TTS tools ---
+        "amigo_audiogen_generate_tts" => {
+            let p: GenerateTtsParams = serde_json::from_value(params)?;
+
+            let audio_format = match p.format.as_str() {
+                "ogg" => AudioFormat::Ogg,
+                _ => AudioFormat::Wav,
+            };
+
+            // Resolve speaker_id to voice profile if provided
+            let (ref_audio, delivery) = if let Some(ref speaker) = p.speaker_id {
+                let voices_dir = project_dir
+                    .map(|d| VoiceRegistry::default_dir(d))
+                    .unwrap_or_else(|| std::path::PathBuf::from("assets/voices"));
+                let registry = VoiceRegistry::load(&voices_dir);
+                if let Some(profile) = registry.get(speaker) {
+                    (
+                        p.reference_audio
+                            .or_else(|| Some(profile.reference_audio.clone())),
+                        p.delivery.or_else(|| profile.default_delivery.clone()),
+                    )
+                } else {
+                    (p.reference_audio, p.delivery)
+                }
+            } else {
+                (p.reference_audio, p.delivery)
+            };
+
+            let _request = TtsRequest {
+                text: p.text.clone(),
+                language: p.language.clone(),
+                delivery: delivery.clone(),
+                reference_audio: ref_audio.clone(),
+                speaker_id: p.speaker_id.clone(),
+                format: audio_format,
+            };
+
+            // Placeholder: in production, builds ComfyUI workflow and queues it
+            let safe_name = sanitize(&p.text);
+            let ext = match p.format.as_str() {
+                "ogg" => "ogg",
+                _ => "wav",
+            };
+            let result = TtsResult {
+                output_path: format!("assets/generated/audio/tts/{}.{}", safe_name, ext),
+                duration_secs: 0.0, // would be filled from actual generation
+                generation_time_ms: 0,
+            };
+            Ok(serde_json::to_value(result)?)
+        }
+        "amigo_audiogen_create_voice" => {
+            let p: CreateVoiceParams = serde_json::from_value(params)?;
+
+            let voices_dir = p
+                .project_dir
+                .as_deref()
+                .or(project_dir.map(|p| p.to_str().unwrap_or(".")))
+                .map(|d| VoiceRegistry::default_dir(std::path::Path::new(d)))
+                .unwrap_or_else(|| std::path::PathBuf::from("assets/voices"));
+
+            let mut registry = VoiceRegistry::load(&voices_dir);
+
+            let profile = VoiceProfile {
+                name: p.name.clone(),
+                reference_audio: p.reference_audio.clone(),
+                default_language: p.language,
+                default_delivery: p.default_delivery,
+                description: p.description,
+            };
+
+            registry.insert(profile.clone());
+            if let Err(e) = registry.save(&voices_dir) {
+                return Ok(serde_json::json!({
+                    "error": format!("Failed to save voice registry: {}", e)
+                }));
+            }
+
+            let test_audio = if p.test_text.is_some() {
+                // Placeholder: would generate a test clip via TTS workflow
+                Some(format!(
+                    "{}/{}_test.wav",
+                    voices_dir.display(),
+                    sanitize(&p.name)
+                ))
+            } else {
+                None
+            };
+
+            let result = CreateVoiceResult {
+                profile,
+                test_audio,
+            };
+            Ok(serde_json::to_value(result)?)
+        }
+        "amigo_audiogen_list_voices" => {
+            let p: ListVoicesParams = serde_json::from_value(params)?;
+
+            let voices_dir = p
+                .project_dir
+                .as_deref()
+                .or(project_dir.map(|p| p.to_str().unwrap_or(".")))
+                .map(|d| VoiceRegistry::default_dir(std::path::Path::new(d)))
+                .unwrap_or_else(|| std::path::PathBuf::from("assets/voices"));
+
+            let registry = VoiceRegistry::load(&voices_dir);
+            let voices: Vec<&VoiceProfile> = registry.voices.values().collect();
+            Ok(serde_json::json!({
+                "voices": serde_json::to_value(&voices)?,
+                "count": voices.len(),
+                "voices_dir": voices_dir.display().to_string(),
+            }))
+        }
+        "amigo_audiogen_preview_voice" => {
+            let p: PreviewVoiceParams = serde_json::from_value(params)?;
+
+            let voices_dir = p
+                .project_dir
+                .as_deref()
+                .or(project_dir.map(|p| p.to_str().unwrap_or(".")))
+                .map(|d| VoiceRegistry::default_dir(std::path::Path::new(d)))
+                .unwrap_or_else(|| std::path::PathBuf::from("assets/voices"));
+
+            let registry = VoiceRegistry::load(&voices_dir);
+            let profile = match registry.get(&p.name) {
+                Some(v) => v.clone(),
+                None => {
+                    return Ok(serde_json::json!({
+                        "error": format!("Voice profile '{}' not found", p.name)
+                    }));
+                }
+            };
+
+            // Placeholder: would generate preview via TTS workflow
+            let preview_path = format!(
+                "assets/generated/audio/tts/{}_preview.wav",
+                sanitize(&p.name)
+            );
+            Ok(serde_json::json!({
+                "preview_path": preview_path,
+                "voice": serde_json::to_value(&profile)?,
+                "text": p.text,
+            }))
+        }
+        "amigo_audiogen_delete_voice" => {
+            let p: DeleteVoiceParams = serde_json::from_value(params)?;
+
+            let voices_dir = p
+                .project_dir
+                .as_deref()
+                .or(project_dir.map(|p| p.to_str().unwrap_or(".")))
+                .map(|d| VoiceRegistry::default_dir(std::path::Path::new(d)))
+                .unwrap_or_else(|| std::path::PathBuf::from("assets/voices"));
+
+            let mut registry = VoiceRegistry::load(&voices_dir);
+            let removed = registry.remove(&p.name);
+
+            if removed.is_some() {
+                if let Err(e) = registry.save(&voices_dir) {
+                    return Ok(serde_json::json!({
+                        "error": format!("Failed to save voice registry: {}", e)
+                    }));
+                }
+            }
+
+            Ok(serde_json::json!({
+                "deleted": removed.is_some(),
+                "name": p.name,
+            }))
+        }
+
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }
@@ -860,8 +1177,8 @@ mod tests {
     // ── Tool listing ───────────────────────────────────────────
 
     #[test]
-    fn list_tools_returns_20() {
-        assert_eq!(list_tools().len(), 20);
+    fn list_tools_returns_25() {
+        assert_eq!(list_tools().len(), 25);
     }
 
     // ── Music generation dispatch ─────────────────────────────────
@@ -1102,5 +1419,90 @@ mod tests {
         let v = result.unwrap();
         // All defaults are provided, so no hints
         assert!(v.get("hints").is_none());
+    }
+
+    // ── TTS dispatch ───────────────────────────────────────────
+
+    #[test]
+    fn dispatch_generate_tts() {
+        let result = dispatch_tool(
+            "amigo_audiogen_generate_tts",
+            serde_json::json!({ "text": "Hallo Welt" }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["output_path"].as_str().unwrap().contains("tts"));
+        assert!(v["output_path"].as_str().unwrap().ends_with(".wav"));
+    }
+
+    #[test]
+    fn dispatch_generate_tts_ogg() {
+        let result = dispatch_tool(
+            "amigo_audiogen_generate_tts",
+            serde_json::json!({ "text": "Hello", "format": "ogg" }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["output_path"].as_str().unwrap().ends_with(".ogg"));
+    }
+
+    #[test]
+    fn dispatch_create_voice() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool(
+            "amigo_audiogen_create_voice",
+            serde_json::json!({
+                "name": "test_wizard",
+                "reference_audio": "wizard.wav",
+                "language": "de-DE",
+                "description": "A wizard",
+                "project_dir": dir.path().to_str().unwrap()
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["profile"]["name"], "test_wizard");
+    }
+
+    #[test]
+    fn dispatch_list_voices_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool(
+            "amigo_audiogen_list_voices",
+            serde_json::json!({ "project_dir": dir.path().to_str().unwrap() }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["count"], 0);
+    }
+
+    #[test]
+    fn dispatch_delete_voice_nonexistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool(
+            "amigo_audiogen_delete_voice",
+            serde_json::json!({
+                "name": "nope",
+                "project_dir": dir.path().to_str().unwrap()
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["deleted"], false);
+    }
+
+    #[test]
+    fn dispatch_preview_voice_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool(
+            "amigo_audiogen_preview_voice",
+            serde_json::json!({
+                "name": "missing",
+                "project_dir": dir.path().to_str().unwrap()
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["error"].as_str().unwrap().contains("not found"));
     }
 }

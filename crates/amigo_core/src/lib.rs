@@ -5,6 +5,7 @@ pub mod achievements;
 pub mod agents;
 pub mod ai;
 pub mod behavior_tree;
+pub mod broad_phase;
 pub mod bullet_pattern;
 pub mod city_builder;
 pub mod collision;
@@ -52,6 +53,7 @@ pub mod timeline;
 pub mod turn_combat;
 pub mod tween;
 pub mod visual_novel;
+pub mod world_context;
 
 // -- New building blocks -----------------------------------------------------
 pub mod card;
@@ -88,6 +90,7 @@ pub use achievements::{
     AchievementCondition, AchievementDef, AchievementError, AchievementProgress,
     AchievementSaveData, AchievementToastRenderer, AchievementTracker,
 };
+pub use broad_phase::{Aabb, BroadPhase, CollisionPair, CpuBroadPhase, GpuBroadPhase};
 pub use collision::{
     CapsuleShape, CollisionShape, CollisionWorld, ContactInfo, SpatialHash, SweptContact,
     TriggerEvent, TriggerZone,
@@ -130,6 +133,10 @@ pub use visual_novel::{
     AutoRead, BacklogEntry, BacklogSystem, BgTransition, BranchingSystem, CharacterDisplay,
     ChoiceMenu, ChoiceOption, ChoiceRecord, Emotion, NameLabelConfig, SlideDir, SlotPosition,
     TextboxBackground, TextboxConfig, TextboxMode, TextboxState, TypewriterEffect, VnScene,
+};
+pub use world_context::{
+    ArtType, Biome, Era, Lighting, Mood, MusicGenre, MusicKey, MusicStyle, Palette, VisualStyle,
+    Weather, WorldContext,
 };
 
 // -- Tower Defense re-exports (feature-gated) -------------------------------
