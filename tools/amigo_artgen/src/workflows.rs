@@ -910,10 +910,7 @@ mod tests {
         let prompt = build_workflow(&req, &style);
 
         let unet = &prompt.prompt["1"];
-        assert_eq!(
-            unet["inputs"]["unet_name"],
-            "qwen-image-7b-Q4_K_M.gguf"
-        );
+        assert_eq!(unet["inputs"]["unet_name"], "qwen-image-7b-Q4_K_M.gguf");
     }
 
     #[test]
@@ -940,7 +937,7 @@ mod tests {
         let prompt = build_workflow(&req, &style);
 
         assert!(prompt.prompt.contains_key("10")); // LoRA loader
-        // Sampler should reference LoRA output
+                                                   // Sampler should reference LoRA output
         let sampler = &prompt.prompt["7"];
         assert_eq!(sampler["inputs"]["model"], json!(["10", 0]));
     }
@@ -1095,13 +1092,25 @@ mod tests {
     #[test]
     fn img2img_clamps_strength() {
         let style = WorldStyle::find("dune").unwrap();
-        let prompt =
-            build_img2img_workflow("input.png", "test", "", 1.5, &style, &ImageBackend::QwenImage);
+        let prompt = build_img2img_workflow(
+            "input.png",
+            "test",
+            "",
+            1.5,
+            &style,
+            &ImageBackend::QwenImage,
+        );
         let denoise = prompt.prompt["24"]["inputs"]["denoise"].as_f64().unwrap();
         assert!((denoise - 1.0).abs() < 0.001);
 
-        let prompt =
-            build_img2img_workflow("input.png", "test", "", -0.5, &style, &ImageBackend::QwenImage);
+        let prompt = build_img2img_workflow(
+            "input.png",
+            "test",
+            "",
+            -0.5,
+            &style,
+            &ImageBackend::QwenImage,
+        );
         let denoise = prompt.prompt["24"]["inputs"]["denoise"].as_f64().unwrap();
         assert!((denoise - 0.0).abs() < 0.001);
     }
