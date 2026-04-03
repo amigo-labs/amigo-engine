@@ -4,8 +4,7 @@
 /// oscillators, with per-stem mute/solo/instrument/volume controls, BPM
 /// adjustment, and pattern transformations.
 use amigo_tidal_parser::{
-    apply_transform, evaluate_pattern, Composition, Instrument, NoteEvent, NoteValue, PitchClass,
-    Transform,
+    apply_transform, evaluate_pattern, Composition, Instrument, NoteEvent, Transform,
 };
 
 // ---------------------------------------------------------------------------
@@ -220,7 +219,7 @@ impl TidalPlayground {
 
     /// Set BPM (immediate, no glitch).
     pub fn set_bpm(&mut self, bpm: f64) {
-        self.global_bpm = bpm.max(20.0).min(300.0);
+        self.global_bpm = bpm.clamp(20.0, 300.0);
     }
 
     /// Set or clear transform.
@@ -256,7 +255,7 @@ impl TidalPlayground {
             stems,
         };
 
-        let yaml = serde_json::to_string_pretty(&preset).map_err(|e| std::io::Error::other(e))?;
+        let yaml = serde_json::to_string_pretty(&preset).map_err(std::io::Error::other)?;
         std::fs::write(path, yaml)
     }
 

@@ -8,8 +8,8 @@ pub mod layout;
 /// Tier 1: Game HUD (always available).
 pub struct UiContext {
     draw_commands: Vec<UiDrawCommand>,
-    hot_id: Option<u64>,
-    active_id: Option<u64>,
+    _hot_id: Option<u64>,
+    _active_id: Option<u64>,
     next_id: u64,
 }
 
@@ -45,8 +45,8 @@ impl UiContext {
     pub fn new() -> Self {
         Self {
             draw_commands: Vec::new(),
-            hot_id: None,
-            active_id: None,
+            _hot_id: None,
+            _active_id: None,
             next_id: 1,
         }
     }

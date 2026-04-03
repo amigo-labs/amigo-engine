@@ -302,7 +302,7 @@ fn save_manifest(manifest: &ProjectManifest) {
     std::fs::write(&path, contents).expect("Failed to write amigo.toml");
 }
 
-fn project_from_manifest(manifest: &ProjectManifest) -> GameProject {
+fn _project_from_manifest(manifest: &ProjectManifest) -> GameProject {
     let mut project = GameProject::new(&manifest.name);
     project.version = manifest.version.clone();
     project.virtual_width = manifest.render.virtual_width;
@@ -820,7 +820,7 @@ fn cmd_pack(_args: &[String]) {
     }
 
     // ── Write game.pak ──────────────────────────────────────────────
-    if pak.len() == 0 {
+    if pak.is_empty() {
         println!("  No assets found. Nothing to pack.");
         return;
     }
@@ -1438,7 +1438,7 @@ fn cmd_publish_itch(args: &[String]) {
     let butler = dist.butler_path.as_deref().unwrap_or("butler");
     let channel = find_flag(args, "--channel")
         .or_else(|| dist.channel.clone())
-        .unwrap_or_else(|| detect_platform_channel());
+        .unwrap_or_else(detect_platform_channel);
 
     // Check butler is available
     let check = std::process::Command::new(butler)
@@ -1459,7 +1459,7 @@ fn cmd_publish_itch(args: &[String]) {
 
     // Step 2: Push via butler
     println!("\n[2/2] Uploading to itch.io...");
-    let target_dir = format!("target/release/");
+    let target_dir = "target/release/".to_string();
     let push_target = format!("{}:{}", dist.project, channel);
 
     println!("  {} push {} {}", butler, target_dir, push_target);
@@ -1524,6 +1524,6 @@ fn parse_preset(name: &str) -> ScenePreset {
         "visual_novel" | "visualnovel" | "vn" => ScenePreset::VisualNovel,
         "menu" => ScenePreset::Menu,
         "world_map" | "worldmap" => ScenePreset::WorldMap,
-        "custom" | _ => ScenePreset::Custom,
+        _ => ScenePreset::Custom,
     }
 }

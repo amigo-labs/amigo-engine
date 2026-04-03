@@ -17,12 +17,18 @@ pub struct SplashState {
     pub finished: bool,
 }
 
-impl SplashState {
-    pub fn new() -> Self {
+impl Default for SplashState {
+    fn default() -> Self {
         Self {
             elapsed: 0.0,
             finished: false,
         }
+    }
+}
+
+impl SplashState {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Advance the splash timer. Returns `true` once the duration is over.

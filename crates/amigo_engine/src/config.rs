@@ -112,11 +112,7 @@ impl EngineConfig {
         let path = std::path::Path::new("amigo.toml");
         let mut config = if path.exists() {
             if let Ok(contents) = std::fs::read_to_string(path) {
-                if let Ok(config) = toml::from_str(&contents) {
-                    config
-                } else {
-                    Self::default()
-                }
+                toml::from_str(&contents).unwrap_or_default()
             } else {
                 Self::default()
             }

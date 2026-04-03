@@ -29,11 +29,14 @@ pub trait Plugin: 'static {
 }
 
 /// Context passed to Plugin::build() for registration.
+type EventRegistration = Box<dyn FnOnce(&mut amigo_core::events::EventHub)>;
+type ResourceInsertion = Box<dyn FnOnce(&mut amigo_core::resources::Resources)>;
+
 pub struct PluginContext {
     /// Event registrations to apply when GameContext is created.
-    pub(crate) event_registrations: Vec<Box<dyn FnOnce(&mut amigo_core::events::EventHub)>>,
+    pub(crate) event_registrations: Vec<EventRegistration>,
     /// Resource insertions to apply when GameContext is created.
-    pub(crate) resource_insertions: Vec<Box<dyn FnOnce(&mut amigo_core::resources::Resources)>>,
+    pub(crate) resource_insertions: Vec<ResourceInsertion>,
 }
 
 impl PluginContext {
@@ -374,7 +377,7 @@ struct EngineState {
     renderer: Renderer,
     game_ctx: GameContext,
     debug: DebugOverlay,
-    assets: AssetManager,
+    _assets: AssetManager,
     hot_reloader: Option<HotReloader>,
     sprite_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
@@ -514,7 +517,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             renderer,
             game_ctx,
             debug: DebugOverlay::new(),
-            assets,
+            _assets: assets,
             hot_reloader,
             sprite_draw_list: Vec::new(),
             last_frame: Instant::now(),
@@ -710,12 +713,9 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     };
                     state.game_ctx.time.tick += 1;
 
-                    match action {
-                        amigo_scene::SceneAction::Quit => {
-                            event_loop.exit();
-                            return;
-                        }
-                        _ => {}
+                    if let amigo_scene::SceneAction::Quit = action {
+                        event_loop.exit();
+                        return;
                     }
 
                     // Plugin per-frame update (after game systems, before render)
