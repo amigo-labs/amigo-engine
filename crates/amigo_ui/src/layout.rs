@@ -327,7 +327,7 @@ impl UiTree {
 
         for &ci in &children {
             let cs = &self.nodes[ci].style;
-            let cm = cs.margin.clone();
+            let cm = cs.margin;
 
             let (main_avail, cross_avail) = if is_row {
                 (inner_w, inner_h)
