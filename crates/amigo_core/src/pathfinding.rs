@@ -66,9 +66,14 @@ const DIRS_8: [(i32, i32); 8] = [
 ];
 
 fn heuristic(a: IVec2, b: IVec2) -> u32 {
-    // Scale by cardinal move cost (10) so the heuristic is comparable to g_cost.
-    // This keeps A* admissible for both cardinal-only and diagonal movement.
-    10 * ((a.x - b.x).unsigned_abs() + (a.y - b.y).unsigned_abs())
+    // Use octile distance with cardinal cost 10 and diagonal cost 14.
+    // This is admissible when diagonal movement is enabled, and remains
+    // admissible (though less tight) for cardinal-only movement.
+    let dx = (a.x - b.x).unsigned_abs();
+    let dy = (a.y - b.y).unsigned_abs();
+    let diagonal = dx.min(dy);
+    let straight = dx.max(dy) - diagonal;
+    14 * diagonal + 10 * straight
 }
 
 /// Find a path using A* on a tile grid.
