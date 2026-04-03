@@ -241,8 +241,8 @@ fn levenshtein(a: &str, b: &str) -> usize {
     for (i, row) in matrix.iter_mut().enumerate() {
         row[0] = i;
     }
-    for j in 0..=b.len() {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate().take(b.len() + 1) {
+        *cell = j;
     }
 
     for i in 1..=a.len() {

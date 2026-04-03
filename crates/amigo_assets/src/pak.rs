@@ -148,6 +148,11 @@ impl PakWriter {
         self.entries.len()
     }
 
+    /// Check if no entries have been added.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// Write the pak file to disk.
     ///
     /// V2 format:
@@ -433,6 +438,11 @@ impl PakReader {
     /// Number of entries.
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Check if the pak file has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     /// Total size in bytes of the pak file.

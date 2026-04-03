@@ -31,7 +31,7 @@ impl ArtDefaults {
     pub fn resolve_backend(&self) -> crate::ImageBackend {
         self.backend
             .as_deref()
-            .and_then(crate::ImageBackend::from_str)
+            .and_then(crate::ImageBackend::parse)
             .unwrap_or_default()
     }
 
@@ -39,7 +39,7 @@ impl ArtDefaults {
     pub fn resolve_art_mode(&self) -> crate::ArtMode {
         self.art_mode
             .as_deref()
-            .and_then(crate::ArtMode::from_str)
+            .and_then(crate::ArtMode::parse)
             .unwrap_or_default()
     }
 }

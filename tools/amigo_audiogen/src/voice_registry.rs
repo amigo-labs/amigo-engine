@@ -14,17 +14,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// The on-disk registry of voice profiles.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct VoiceRegistry {
     pub voices: HashMap<String, VoiceProfile>,
-}
-
-impl Default for VoiceRegistry {
-    fn default() -> Self {
-        Self {
-            voices: HashMap::new(),
-        }
-    }
 }
 
 impl VoiceRegistry {

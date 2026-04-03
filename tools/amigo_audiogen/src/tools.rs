@@ -989,7 +989,7 @@ pub fn dispatch_tool_with_defaults(
             // Resolve speaker_id to voice profile if provided
             let (ref_audio, delivery) = if let Some(ref speaker) = p.speaker_id {
                 let voices_dir = project_dir
-                    .map(|d| VoiceRegistry::default_dir(d))
+                    .map(VoiceRegistry::default_dir)
                     .unwrap_or_else(|| std::path::PathBuf::from("assets/voices"));
                 let registry = VoiceRegistry::load(&voices_dir);
                 if let Some(profile) = registry.get(speaker) {

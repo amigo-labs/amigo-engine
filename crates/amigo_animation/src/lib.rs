@@ -1089,10 +1089,8 @@ impl AnimStateMachine {
                 TransitionCondition::Always => true,
             };
 
-            if condition_met {
-                if best.is_none() || rule.priority > best.unwrap().0 {
-                    best = Some((rule.priority, i));
-                }
+            if condition_met && (best.is_none() || rule.priority > best.unwrap().0) {
+                best = Some((rule.priority, i));
             }
         }
 
