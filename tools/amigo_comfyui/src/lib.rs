@@ -235,9 +235,7 @@ impl ComfyUiClient {
                                 .as_str()
                                 .or_else(|| {
                                     // Infer format from filename extension
-                                    a["filename"]
-                                        .as_str()
-                                        .and_then(|f| f.rsplit('.').next())
+                                    a["filename"].as_str().and_then(|f| f.rsplit('.').next())
                                 })
                                 .unwrap_or("wav")
                                 .to_string(),
@@ -265,11 +263,7 @@ impl ComfyUiClient {
     }
 
     /// Download an output image to a local path via `GET /view`.
-    pub fn download_image(
-        &self,
-        image: &OutputImage,
-        output_path: &str,
-    ) -> Result<(), ComfyError> {
+    pub fn download_image(&self, image: &OutputImage, output_path: &str) -> Result<(), ComfyError> {
         let url = format!(
             "{}/view?filename={}&subfolder={}&type={}",
             self.config.base_url(),
@@ -291,11 +285,7 @@ impl ComfyUiClient {
     }
 
     /// Download an output audio file to a local path via `GET /view`.
-    pub fn download_audio(
-        &self,
-        audio: &OutputAudio,
-        output_path: &str,
-    ) -> Result<(), ComfyError> {
+    pub fn download_audio(&self, audio: &OutputAudio, output_path: &str) -> Result<(), ComfyError> {
         let url = format!(
             "{}/view?filename={}&subfolder={}&type=output",
             self.config.base_url(),

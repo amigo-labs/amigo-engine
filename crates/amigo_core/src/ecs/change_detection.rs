@@ -119,7 +119,11 @@ pub struct Mut<'a, T> {
 impl<'a, T> Mut<'a, T> {
     /// Create a new `Mut` wrapper.
     #[inline]
-    pub fn new(value: &'a mut T, component_ticks: &'a mut ComponentTicks, world_tick: Tick) -> Self {
+    pub fn new(
+        value: &'a mut T,
+        component_ticks: &'a mut ComponentTicks,
+        world_tick: Tick,
+    ) -> Self {
         Self {
             value,
             ticks: Ticks {

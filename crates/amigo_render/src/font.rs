@@ -486,8 +486,7 @@ impl FontAtlas {
         let line_count = line_widths.len() as u32;
 
         // Apply horizontal alignment
-        if params.align != TextAlign::Left && params.max_width.is_some() {
-            let max_w = params.max_width.unwrap();
+        if let Some(max_w) = params.max_width.filter(|_| params.align != TextAlign::Left) {
             let mut current_line = 0usize;
             for g in &mut glyphs {
                 // Detect line change by y position

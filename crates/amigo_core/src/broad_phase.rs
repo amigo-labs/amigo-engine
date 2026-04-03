@@ -107,9 +107,7 @@ pub struct CpuBroadPhase {
 
 impl CpuBroadPhase {
     pub fn new() -> Self {
-        Self {
-            sorted: Vec::new(),
-        }
+        Self { sorted: Vec::new() }
     }
 }
 

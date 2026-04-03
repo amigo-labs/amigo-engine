@@ -162,11 +162,7 @@ fn draw_entity_list_panel(egui_ctx: &egui::Context, ctx: &mut EditorContext) {
                     let is_selected = ctx.selected_entity == Some(*entity);
                     let label = format!("{}", entity);
                     if ui.selectable_label(is_selected, &label).clicked() {
-                        ctx.selected_entity = if is_selected {
-                            None
-                        } else {
-                            Some(*entity)
-                        };
+                        ctx.selected_entity = if is_selected { None } else { Some(*entity) };
                     }
                 }
             });

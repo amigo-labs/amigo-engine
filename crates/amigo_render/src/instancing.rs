@@ -31,6 +31,7 @@ pub struct InstanceData {
 
 impl InstanceData {
     /// Create instance data for a sprite.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         x: f32,
         y: f32,

@@ -235,11 +235,7 @@ mod tests {
                 genre: MusicGenre::Orchestral,
                 tempo_range: (80, 110),
                 key: MusicKey::Minor,
-                instruments: vec![
-                    "strings".into(),
-                    "choir".into(),
-                    "timpani".into(),
-                ],
+                instruments: vec!["strings".into(), "choir".into(), "timpani".into()],
             },
             visual_style: VisualStyle {
                 art_type: ArtType::PixelArt,

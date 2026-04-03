@@ -28,9 +28,8 @@ pub struct AtmospherePreset {
     pub particle_tint: [f32; 4],
 }
 
-impl AtmospherePreset {
-    /// Neutral daytime atmosphere.
-    pub fn default() -> Self {
+impl Default for AtmospherePreset {
+    fn default() -> Self {
         Self {
             name: "default".to_string(),
             ambient_color: [1.0, 1.0, 1.0, 1.0],
@@ -43,7 +42,9 @@ impl AtmospherePreset {
             particle_tint: [1.0, 1.0, 1.0, 1.0],
         }
     }
+}
 
+impl AtmospherePreset {
     /// Warm sunset pirate theme.
     pub fn pirate() -> Self {
         Self {
