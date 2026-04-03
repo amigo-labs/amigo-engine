@@ -151,7 +151,13 @@ jobs:
             -p amigo_audio_pipeline \
             -p amigo_editor \
             -p amigo_assets \
-            -p amigo_audio
+            -p amigo_audio \
+            -p amigo_animation \
+            -p amigo_net \
+            -p amigo_reflect \
+            -p amigo_steering \
+            -p amigo_tilemap \
+            -p amigo_scene
       - name: Doc tests
         run: |
           cargo test --doc \

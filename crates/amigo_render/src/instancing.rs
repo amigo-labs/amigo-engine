@@ -96,7 +96,7 @@ pub fn partition_batches(
 
     let mut i = 0;
     while i < sprites.len() {
-        let (tex, has_shader, _) = &sprites[i];
+        let (tex, _has_shader, _) = &sprites[i];
 
         // Collect contiguous sprites with the same texture
         let batch_start = i;

@@ -6,6 +6,7 @@
 //! Communicates with a local ComfyUI instance to queue generation prompts,
 //! poll for completion, and retrieve output images or audio.
 
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -272,9 +273,9 @@ impl ComfyUiClient {
         let url = format!(
             "{}/view?filename={}&subfolder={}&type={}",
             self.config.base_url(),
-            image.filename,
-            image.subfolder,
-            image.image_type,
+            utf8_percent_encode(&image.filename, NON_ALPHANUMERIC),
+            utf8_percent_encode(&image.subfolder, NON_ALPHANUMERIC),
+            utf8_percent_encode(&image.image_type, NON_ALPHANUMERIC),
         );
 
         let mut bytes = Vec::new();
@@ -298,8 +299,8 @@ impl ComfyUiClient {
         let url = format!(
             "{}/view?filename={}&subfolder={}&type=output",
             self.config.base_url(),
-            audio.filename,
-            audio.subfolder,
+            utf8_percent_encode(&audio.filename, NON_ALPHANUMERIC),
+            utf8_percent_encode(&audio.subfolder, NON_ALPHANUMERIC),
         );
 
         let mut bytes = Vec::new();
@@ -494,7 +495,8 @@ impl ComfyUiLifecycle {
         for cmd in &candidates {
             let parts: Vec<&str> = cmd.split_whitespace().collect();
             if let Ok(output) = std::process::Command::new(parts[0])
-                .args(&["--version"])
+                .args(&parts[1..])
+                .arg("--version")
                 .output()
             {
                 if output.status.success() {
