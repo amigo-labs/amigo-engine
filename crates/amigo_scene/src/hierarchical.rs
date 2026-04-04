@@ -148,7 +148,8 @@ impl HierarchicalSceneManager {
             top.config.draw_mode = DrawMode::Hidden;
         }
         scene.on_enter();
-        self.nodes.push(SceneNode::new(scene, SceneConfig::default()));
+        self.nodes
+            .push(SceneNode::new(scene, SceneConfig::default()));
     }
 
     /// Pop the top-level scene.
@@ -355,27 +356,19 @@ mod tests {
 
     impl Scene for TestScene {
         fn on_enter(&mut self) {
-            self.log
-                .borrow_mut()
-                .push(format!("{}:enter", self.name));
+            self.log.borrow_mut().push(format!("{}:enter", self.name));
         }
         fn on_pause(&mut self) {
-            self.log
-                .borrow_mut()
-                .push(format!("{}:pause", self.name));
+            self.log.borrow_mut().push(format!("{}:pause", self.name));
         }
         fn on_resume(&mut self) {
-            self.log
-                .borrow_mut()
-                .push(format!("{}:resume", self.name));
+            self.log.borrow_mut().push(format!("{}:resume", self.name));
         }
         fn on_exit(&mut self) {
             self.log.borrow_mut().push(format!("{}:exit", self.name));
         }
         fn update(&mut self) -> SceneAction {
-            self.log
-                .borrow_mut()
-                .push(format!("{}:update", self.name));
+            self.log.borrow_mut().push(format!("{}:update", self.name));
             self.next_action.replace(SceneAction::Continue)
         }
         fn draw(&self) {
@@ -446,10 +439,7 @@ mod tests {
         let mut menu = TestScene::new("menu", log.clone());
         // Set the menu to pop itself on next update.
         *menu.next_action.get_mut() = SceneAction::Pop;
-        mgr.push_overlay(
-            Box::new(menu),
-            SceneConfig::default(),
-        );
+        mgr.push_overlay(Box::new(menu), SceneConfig::default());
 
         assert_eq!(mgr.nodes.last().unwrap().children.len(), 1);
 

@@ -135,8 +135,8 @@ pub mod prelude {
         find_path, CollisionShape, CollisionWorld, FlowField, PathFollower, PathRequest,
         SpatialHash, Walkable, WaypointPath,
     };
+    pub use amigo_core::{Biome, Era, Mood, MusicStyle, Palette, VisualStyle, WorldContext};
     pub use amigo_core::{Color, EntityId, Fix, Rect, RenderVec2, SimVec2, TimeInfo, World};
-    pub use amigo_core::{WorldContext, Biome, Era, Mood, Palette, MusicStyle, VisualStyle};
     pub use amigo_debug::DebugOverlay;
     pub use amigo_input::InputState;
     pub use amigo_net::checksum::StateHasher;

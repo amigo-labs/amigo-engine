@@ -123,7 +123,7 @@ impl ActionBindings {
 
     /// Bind a gamepad button to an action using a string name (e.g. "South", "A", "DPadUp").
     pub fn bind_gamepad(&mut self, action: &str, button_name: &str) {
-        if let Some(idx) = super::gamepad::str_to_button(button_name).map(|b| button_to_index(b)) {
+        if let Some(idx) = super::gamepad::str_to_button(button_name).map(button_to_index) {
             self.bindings
                 .entry(action.to_string())
                 .or_default()

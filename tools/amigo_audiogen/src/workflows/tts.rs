@@ -135,7 +135,7 @@ mod tests {
 
         let wf = build_tts_workflow(&req);
         assert!(wf.prompt.contains_key("4")); // Reference audio loader
-        // Verify generate node references the loader
+                                              // Verify generate node references the loader
         let gen_node = &wf.prompt["2"];
         assert!(gen_node["inputs"]["reference_audio"].is_array());
         assert!(gen_node["inputs"]["delivery_instruction"].is_string());

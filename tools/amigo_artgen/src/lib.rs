@@ -58,7 +58,7 @@ impl ImageBackend {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "qwen-image" => Some(Self::QwenImage),
             "flux2-klein" => Some(Self::Flux2Klein),
@@ -80,7 +80,7 @@ pub enum ArtMode {
 }
 
 impl ArtMode {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "pixel" => Some(Self::Pixel),
             "raster" => Some(Self::Raster),

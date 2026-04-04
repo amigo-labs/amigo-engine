@@ -71,22 +71,15 @@ pub struct SfxDefinition {
 }
 
 /// Tracks runtime state for a single SFX name: cooldown timer and live handles.
+#[derive(Default)]
 struct SfxRuntimeState {
     last_played: Option<Instant>,
     active_handles: Vec<StaticSoundHandle>,
 }
 
-impl Default for SfxRuntimeState {
-    fn default() -> Self {
-        Self {
-            last_played: None,
-            active_handles: Vec::new(),
-        }
-    }
-}
-
 /// Improved SFX manager with per-sound cooldowns, concurrency limits, and pitch
 /// variance. Works alongside [`AudioManager`] by sharing the same kira manager.
+#[derive(Default)]
 pub struct SfxManager {
     definitions: FxHashMap<String, SfxDefinition>,
     loaded_data: FxHashMap<String, Vec<StaticSoundData>>,
@@ -95,11 +88,7 @@ pub struct SfxManager {
 
 impl SfxManager {
     pub fn new() -> Self {
-        Self {
-            definitions: FxHashMap::default(),
-            loaded_data: FxHashMap::default(),
-            runtime: FxHashMap::default(),
-        }
+        Self::default()
     }
 
     /// Register an SFX definition. Call [`load`] afterwards to load the actual
@@ -846,6 +835,7 @@ struct PendingStinger {
 // Transition state machine
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::large_enum_variant)]
 enum TransitionState {
     None,
     /// Cross-fading: old section fading out, new section fading in.

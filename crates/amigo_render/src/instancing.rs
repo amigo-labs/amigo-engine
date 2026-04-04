@@ -31,6 +31,7 @@ pub struct InstanceData {
 
 impl InstanceData {
     /// Create instance data for a sprite.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         x: f32,
         y: f32,
@@ -96,7 +97,7 @@ pub fn partition_batches(
 
     let mut i = 0;
     while i < sprites.len() {
-        let (tex, has_shader, _) = &sprites[i];
+        let (tex, _has_shader, _) = &sprites[i];
 
         // Collect contiguous sprites with the same texture
         let batch_start = i;

@@ -1,5 +1,5 @@
 use crate::camera::Camera;
-use crate::sprite_batcher::{SpriteBatch, SpriteBatcher};
+use crate::sprite_batcher::SpriteBatcher;
 use crate::texture::{Texture, TextureId};
 use crate::vertex::Vertex;
 use crate::{ArtStyle, SamplerMode};

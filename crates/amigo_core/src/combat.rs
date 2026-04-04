@@ -404,6 +404,10 @@ pub fn point_in_aoe(
             if dist > *radius {
                 return false;
             }
+            // Point at the cone origin is always inside
+            if dist < 1e-4 {
+                return true;
+            }
             let dir_len = (direction.x * direction.x + direction.y * direction.y).sqrt();
             if dir_len < 0.01 {
                 return false;
@@ -479,6 +483,35 @@ mod tests {
         ));
         assert!(!point_in_aoe(
             RenderVec2::new(60.0, 0.0),
+            RenderVec2::ZERO,
+            RenderVec2::new(1.0, 0.0),
+            &shape,
+        ));
+    }
+
+    #[test]
+    fn aoe_cone_at_origin() {
+        let shape = AoeShape::Cone {
+            radius: 50.0,
+            half_angle: std::f32::consts::FRAC_PI_4,
+        };
+        // Point exactly at the cone origin should be inside
+        assert!(point_in_aoe(
+            RenderVec2::ZERO,
+            RenderVec2::ZERO,
+            RenderVec2::new(1.0, 0.0),
+            &shape,
+        ));
+        // Point within cone angle and range
+        assert!(point_in_aoe(
+            RenderVec2::new(30.0, 0.0),
+            RenderVec2::ZERO,
+            RenderVec2::new(1.0, 0.0),
+            &shape,
+        ));
+        // Point outside cone angle
+        assert!(!point_in_aoe(
+            RenderVec2::new(0.0, 40.0),
             RenderVec2::ZERO,
             RenderVec2::new(1.0, 0.0),
             &shape,

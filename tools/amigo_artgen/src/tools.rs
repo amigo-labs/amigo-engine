@@ -357,7 +357,7 @@ pub fn dispatch_tool_with_defaults(
             let backend = p
                 .backend
                 .as_deref()
-                .and_then(ImageBackend::from_str)
+                .and_then(ImageBackend::parse)
                 .or_else(|| defaults.as_ref().map(|d| d.resolve_backend()))
                 .unwrap_or_default();
 
@@ -365,7 +365,7 @@ pub fn dispatch_tool_with_defaults(
             let art_mode = p
                 .art_mode
                 .as_deref()
-                .and_then(crate::ArtMode::from_str)
+                .and_then(crate::ArtMode::parse)
                 .or_else(|| defaults.as_ref().map(|d| d.resolve_art_mode()))
                 .unwrap_or_default();
 

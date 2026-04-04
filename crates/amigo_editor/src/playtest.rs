@@ -3,7 +3,6 @@
 //! Runs a simulation without rendering to collect statistics about
 //! level difficulty, balance, and player experience.
 
-use crate::heatmap::{Heatmap, HeatmapCollection, HeatmapType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

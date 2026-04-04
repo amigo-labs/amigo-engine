@@ -76,7 +76,11 @@ impl Column {
         if self.len < self.capacity {
             return;
         }
-        let new_cap = if self.capacity == 0 { 8 } else { self.capacity * 2 };
+        let new_cap = if self.capacity == 0 {
+            8
+        } else {
+            self.capacity * 2
+        };
         let size = self.item_layout.size();
         if size == 0 {
             self.capacity = new_cap;
@@ -341,17 +345,13 @@ impl ArchetypeMap {
     }
 
     /// Get or create an archetype for the given component set.
-    pub fn get_or_create(
-        &mut self,
-        descriptors: &[ComponentDescriptor],
-    ) -> ArchetypeId {
+    pub fn get_or_create(&mut self, descriptors: &[ComponentDescriptor]) -> ArchetypeId {
         let mut sorted: Vec<TypeId> = descriptors.iter().map(|d| d.type_id).collect();
         sorted.sort();
         let id = ArchetypeId::from_type_ids(&sorted);
 
         if !self.archetypes.contains_key(&id) {
-            self.archetypes
-                .insert(id, Archetype::new(id, descriptors));
+            self.archetypes.insert(id, Archetype::new(id, descriptors));
         }
         id
     }
@@ -391,13 +391,7 @@ impl ArchetypeMap {
     ) -> u32 {
         let archetype = self.archetypes.get_mut(&archetype_id).unwrap();
         let row = archetype.push_entity(entity, components);
-        self.set_entity_location(
-            entity,
-            Some(ArchetypeLocation {
-                archetype_id,
-                row,
-            }),
-        );
+        self.set_entity_location(entity, Some(ArchetypeLocation { archetype_id, row }));
         row
     }
 
@@ -423,23 +417,13 @@ impl ArchetypeMap {
     }
 
     /// Cache an "add component" edge.
-    pub fn cache_add_edge(
-        &mut self,
-        from: ArchetypeId,
-        component: TypeId,
-        to: ArchetypeId,
-    ) {
+    pub fn cache_add_edge(&mut self, from: ArchetypeId, component: TypeId, to: ArchetypeId) {
         self.add_edges.insert((from, component), to);
     }
 
     /// Cache a "remove component" edge.
     #[allow(dead_code)]
-    pub fn cache_remove_edge(
-        &mut self,
-        from: ArchetypeId,
-        component: TypeId,
-        to: ArchetypeId,
-    ) {
+    pub fn cache_remove_edge(&mut self, from: ArchetypeId, component: TypeId, to: ArchetypeId) {
         self.remove_edges.insert((from, component), to);
     }
 
@@ -450,11 +434,7 @@ impl ArchetypeMap {
 
     /// Look up a cached remove edge.
     #[allow(dead_code)]
-    pub fn lookup_remove_edge(
-        &self,
-        from: ArchetypeId,
-        component: TypeId,
-    ) -> Option<ArchetypeId> {
+    pub fn lookup_remove_edge(&self, from: ArchetypeId, component: TypeId) -> Option<ArchetypeId> {
         self.remove_edges.get(&(from, component)).copied()
     }
 
@@ -468,9 +448,9 @@ impl ArchetypeMap {
         &'a self,
         required: &'a [TypeId],
     ) -> impl Iterator<Item = &'a Archetype> + 'a {
-        self.archetypes.values().filter(move |arch| {
-            required.iter().all(|tid| arch.has_component(*tid))
-        })
+        self.archetypes
+            .values()
+            .filter(move |arch| required.iter().all(|tid| arch.has_component(*tid)))
     }
 }
 
@@ -658,7 +638,9 @@ mod tests {
         let from = ArchetypeId::empty();
         let to = ArchetypeId::from_type_ids(&[TypeId::of::<Position>()]);
 
-        assert!(map.lookup_add_edge(from, TypeId::of::<Position>()).is_none());
+        assert!(map
+            .lookup_add_edge(from, TypeId::of::<Position>())
+            .is_none());
         map.cache_add_edge(from, TypeId::of::<Position>(), to);
         assert_eq!(
             map.lookup_add_edge(from, TypeId::of::<Position>()),
@@ -689,15 +671,9 @@ mod tests {
             };
 
             let ptrs = if pos_first {
-                vec![
-                    &pos as *const _ as *const u8,
-                    &vel as *const _ as *const u8,
-                ]
+                vec![&pos as *const _ as *const u8, &vel as *const _ as *const u8]
             } else {
-                vec![
-                    &vel as *const _ as *const u8,
-                    &pos as *const _ as *const u8,
-                ]
+                vec![&vel as *const _ as *const u8, &pos as *const _ as *const u8]
             };
             unsafe { map.insert_entity(arch_id, entity, &ptrs) };
         }

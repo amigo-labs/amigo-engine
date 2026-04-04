@@ -236,7 +236,10 @@ impl SystemGraph {
     /// Panics if [`build`](Self::build) has not been called (or was invalidated
     /// by adding new systems).
     pub fn run(&mut self, world: &mut super::world::World) {
-        assert!(self.built, "SystemGraph::build() must be called before run()");
+        assert!(
+            self.built,
+            "SystemGraph::build() must be called before run()"
+        );
 
         for stage in SystemStage::ALL {
             let schedule = match self.schedules.get(&stage) {

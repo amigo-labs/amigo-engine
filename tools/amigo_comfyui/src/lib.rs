@@ -6,6 +6,7 @@
 //! Communicates with a local ComfyUI instance to queue generation prompts,
 //! poll for completion, and retrieve output images or audio.
 
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -234,9 +235,7 @@ impl ComfyUiClient {
                                 .as_str()
                                 .or_else(|| {
                                     // Infer format from filename extension
-                                    a["filename"]
-                                        .as_str()
-                                        .and_then(|f| f.rsplit('.').next())
+                                    a["filename"].as_str().and_then(|f| f.rsplit('.').next())
                                 })
                                 .unwrap_or("wav")
                                 .to_string(),
@@ -264,17 +263,13 @@ impl ComfyUiClient {
     }
 
     /// Download an output image to a local path via `GET /view`.
-    pub fn download_image(
-        &self,
-        image: &OutputImage,
-        output_path: &str,
-    ) -> Result<(), ComfyError> {
+    pub fn download_image(&self, image: &OutputImage, output_path: &str) -> Result<(), ComfyError> {
         let url = format!(
             "{}/view?filename={}&subfolder={}&type={}",
             self.config.base_url(),
-            image.filename,
-            image.subfolder,
-            image.image_type,
+            utf8_percent_encode(&image.filename, NON_ALPHANUMERIC),
+            utf8_percent_encode(&image.subfolder, NON_ALPHANUMERIC),
+            utf8_percent_encode(&image.image_type, NON_ALPHANUMERIC),
         );
 
         let mut bytes = Vec::new();
@@ -290,16 +285,12 @@ impl ComfyUiClient {
     }
 
     /// Download an output audio file to a local path via `GET /view`.
-    pub fn download_audio(
-        &self,
-        audio: &OutputAudio,
-        output_path: &str,
-    ) -> Result<(), ComfyError> {
+    pub fn download_audio(&self, audio: &OutputAudio, output_path: &str) -> Result<(), ComfyError> {
         let url = format!(
             "{}/view?filename={}&subfolder={}&type=output",
             self.config.base_url(),
-            audio.filename,
-            audio.subfolder,
+            utf8_percent_encode(&audio.filename, NON_ALPHANUMERIC),
+            utf8_percent_encode(&audio.subfolder, NON_ALPHANUMERIC),
         );
 
         let mut bytes = Vec::new();
@@ -494,7 +485,8 @@ impl ComfyUiLifecycle {
         for cmd in &candidates {
             let parts: Vec<&str> = cmd.split_whitespace().collect();
             if let Ok(output) = std::process::Command::new(parts[0])
-                .args(&["--version"])
+                .args(&parts[1..])
+                .arg("--version")
                 .output()
             {
                 if output.status.success() {

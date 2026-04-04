@@ -1,6 +1,6 @@
-mod bitset;
 #[cfg(feature = "ecs_archetypes")]
 pub mod archetype;
+mod bitset;
 #[cfg(feature = "change_detection")]
 pub mod change_detection;
 mod entity;
@@ -13,13 +13,13 @@ pub mod schedule;
 #[cfg(feature = "system_graph")]
 pub mod system;
 
+#[cfg(feature = "ecs_archetypes")]
+pub use archetype::{Archetype, ArchetypeId, ArchetypeLocation, ArchetypeMap, ComponentDescriptor};
 pub use bitset::BitSet;
 #[cfg(feature = "change_detection")]
 pub use change_detection::{Added, Changed, ComponentTicks, Mut, Tick, TickStorage};
 pub use entity::EntityId;
 pub use query::{join, join3, join4, join_ids, join_mut, Component};
-#[cfg(feature = "ecs_archetypes")]
-pub use archetype::{Archetype, ArchetypeId, ArchetypeLocation, ArchetypeMap, ComponentDescriptor};
 pub use sparse_set::SparseSet;
 pub use world::{Health, Position, SpriteComp, StateScoped, Velocity, World};
 

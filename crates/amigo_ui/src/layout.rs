@@ -171,9 +171,7 @@ pub enum NodeKind {
         bg: Color,
     },
     /// A sprite reference.
-    Image {
-        sprite_name: String,
-    },
+    Image { sprite_name: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -273,14 +271,7 @@ impl UiTree {
         }
     }
 
-    fn layout_node(
-        &mut self,
-        idx: usize,
-        x: f32,
-        y: f32,
-        available_w: f32,
-        available_h: f32,
-    ) {
+    fn layout_node(&mut self, idx: usize, x: f32, y: f32, available_w: f32, available_h: f32) {
         // 1. Resolve own size.
         let style = self.nodes[idx].style.clone();
 
@@ -336,7 +327,7 @@ impl UiTree {
 
         for &ci in &children {
             let cs = &self.nodes[ci].style;
-            let cm = cs.margin.clone();
+            let cm = cs.margin;
 
             let (main_avail, cross_avail) = if is_row {
                 (inner_w, inner_h)
@@ -345,13 +336,9 @@ impl UiTree {
             };
 
             let child_main = if is_row {
-                self.resolve_size(cs.width, main_avail)
-                    .unwrap_or(0.0)
-                    + cm.horizontal()
+                self.resolve_size(cs.width, main_avail).unwrap_or(0.0) + cm.horizontal()
             } else {
-                self.resolve_size(cs.height, main_avail)
-                    .unwrap_or(0.0)
-                    + cm.vertical()
+                self.resolve_size(cs.height, main_avail).unwrap_or(0.0) + cm.vertical()
             };
 
             let child_cross = if is_row {
@@ -436,12 +423,7 @@ impl UiTree {
                 } else {
                     cc
                 };
-                (
-                    inner_x + main_cursor,
-                    inner_y + cross_offset,
-                    cw,
-                    ch,
-                )
+                (inner_x + main_cursor, inner_y + cross_offset, cw, ch)
             } else {
                 let ch = cm;
                 let cw = if style.align_items == AlignItems::Stretch {
@@ -449,12 +431,7 @@ impl UiTree {
                 } else {
                     cc
                 };
-                (
-                    inner_x + cross_offset,
-                    inner_y + main_cursor,
-                    cw,
-                    ch,
-                )
+                (inner_x + cross_offset, inner_y + main_cursor, cw, ch)
             };
 
             // Recurse into the child.
@@ -697,8 +674,16 @@ impl UiTreeBuilder {
 // ---------------------------------------------------------------------------
 
 fn clamp_size(value: f32, min: Option<f32>, max: Option<f32>) -> f32 {
-    let v = if let Some(mn) = min { value.max(mn) } else { value };
-    if let Some(mx) = max { v.min(mx) } else { v }
+    let v = if let Some(mn) = min {
+        value.max(mn)
+    } else {
+        value
+    };
+    if let Some(mx) = max {
+        v.min(mx)
+    } else {
+        v
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -824,16 +809,8 @@ mod tests {
                             ..Default::default()
                         },
                         |b| {
-                            b.button(
-                                "OK",
-                                Color::WHITE,
-                                Color::new(0.3, 0.5, 0.3, 1.0),
-                            );
-                            b.button(
-                                "Cancel",
-                                Color::WHITE,
-                                Color::new(0.5, 0.3, 0.3, 1.0),
-                            );
+                            b.button("OK", Color::WHITE, Color::new(0.3, 0.5, 0.3, 1.0));
+                            b.button("Cancel", Color::WHITE, Color::new(0.5, 0.3, 0.3, 1.0));
                         },
                     );
                 },
@@ -866,7 +843,11 @@ mod tests {
         let cmds = ctx.end();
 
         // Should have at least a filled rect (bg) + text.
-        assert!(cmds.len() >= 2, "expected >= 2 commands, got {}", cmds.len());
+        assert!(
+            cmds.len() >= 2,
+            "expected >= 2 commands, got {}",
+            cmds.len()
+        );
     }
 
     #[test]

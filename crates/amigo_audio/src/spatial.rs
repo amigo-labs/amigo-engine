@@ -334,7 +334,7 @@ impl SpatialAudioSystem {
     /// Stop a spatial sound immediately.
     pub fn stop(&mut self, id: SpatialSoundId) {
         if let Some(mut instance) = self.active.remove(&id) {
-            let _ = instance.handle.stop(Tween::default());
+            instance.handle.stop(Tween::default());
             debug!("SpatialAudioSystem: stopped {id:?}");
         }
     }
@@ -350,7 +350,7 @@ impl SpatialAudioSystem {
 
         for id in to_remove {
             if let Some(mut instance) = self.active.remove(&id) {
-                let _ = instance.handle.stop(Tween::default());
+                instance.handle.stop(Tween::default());
             }
         }
     }

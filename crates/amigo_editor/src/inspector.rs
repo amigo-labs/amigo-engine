@@ -152,7 +152,7 @@ fn draw_field_widget(
                 let mut as_i64 = *val as i64;
                 let drag = egui::DragValue::new(&mut as_i64).range(0..=u32::MAX as i64);
                 if ui.add(drag).changed() {
-                    *val = as_i64 as u32;
+                    *val = as_i64.clamp(0, u32::MAX as i64) as u32;
                     undo_stack.record_change(label, old, *val);
                 }
             }

@@ -478,6 +478,7 @@ fn version_lt(actual: &str, required: &str) -> bool {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::Path;
 
     fn setup_mods_dir() -> PathBuf {
         let id = std::time::SystemTime::now()

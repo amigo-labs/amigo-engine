@@ -395,7 +395,6 @@ impl FontAtlas {
         let mut glyphs: Vec<LayoutGlyph> = Vec::new();
         let mut cursor_x = 0.0_f32;
         let mut cursor_y = 0.0_f32;
-        let mut line_start_idx = 0usize;
         let mut last_space_idx: Option<usize> = None;
         let mut line_widths: Vec<f32> = Vec::new();
         let mut max_width_seen = 0.0_f32;
@@ -416,7 +415,6 @@ impl FontAtlas {
                     }
                     cursor_x = 0.0;
                     cursor_y += line_h;
-                    line_start_idx = glyphs.len();
                     last_space_idx = None;
                     continue;
                 }
@@ -448,12 +446,10 @@ impl FontAtlas {
                                 g.y = cursor_y;
                             }
                             cursor_x -= shift;
-                            line_start_idx = space_idx + 1;
                         } else {
                             line_widths.push(cursor_x);
                             cursor_x = 0.0;
                             cursor_y += line_h;
-                            line_start_idx = glyphs.len();
                         }
                         if cursor_x > max_width_seen {
                             max_width_seen = cursor_x;
@@ -490,9 +486,7 @@ impl FontAtlas {
         let line_count = line_widths.len() as u32;
 
         // Apply horizontal alignment
-        if params.align != TextAlign::Left && params.max_width.is_some() {
-            let max_w = params.max_width.unwrap();
-            let mut line_idx = 0usize;
+        if let Some(max_w) = params.max_width.filter(|_| params.align != TextAlign::Left) {
             let mut current_line = 0usize;
             for g in &mut glyphs {
                 // Detect line change by y position
@@ -508,7 +502,6 @@ impl FontAtlas {
                 };
                 g.x += shift;
             }
-            let _ = line_idx;
         }
 
         let bounds_w = params.max_width.unwrap_or(max_width_seen);

@@ -192,7 +192,7 @@ impl Camera {
                 lookahead,
                 smoothing,
             } => {
-                let deadzone = deadzone.clone();
+                let deadzone = *deadzone;
                 let lookahead = *lookahead;
                 let smoothing = *smoothing;
 
@@ -526,6 +526,6 @@ fn ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> [
 
 /// Simple pseudo-random for shake (no determinism requirement for visual effects).
 fn pseudo_random_f32(seed: f32) -> f32 {
-    let s = (seed * 12.9898).sin() * 43758.5453;
+    let s = (seed * 12.9898).sin() * 43758.546;
     (s - s.floor()) * 2.0 - 1.0
 }

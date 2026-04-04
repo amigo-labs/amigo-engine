@@ -425,10 +425,8 @@ fn draw_nav_buttons(
     }
 
     // Back (center-left) — not on first step
-    if wizard.step != WizardStep::ChooseTemplate {
-        if ui.text_button("< Back", px + 70.0, y, input) {
-            wizard.back();
-        }
+    if wizard.step != WizardStep::ChooseTemplate && ui.text_button("< Back", px + 70.0, y, input) {
+        wizard.back();
     }
 
     // Next / Create (right)

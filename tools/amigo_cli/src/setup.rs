@@ -32,7 +32,7 @@ impl ToolGroup {
         }
     }
 
-    fn requirement_file(self) -> &'static str {
+    fn _requirement_file(self) -> &'static str {
         match self {
             Self::Audio => REQUIREMENTS_AUDIO,
             Self::ArtGen => REQUIREMENTS_ARTGEN,
@@ -106,9 +106,9 @@ pub struct ToolStatus {
 
 #[derive(Debug, Clone)]
 pub struct SetupResult {
-    pub tools: Vec<ToolStatus>,
-    pub venv_path: PathBuf,
-    pub python_version: String,
+    pub _tools: Vec<ToolStatus>,
+    pub _venv_path: PathBuf,
+    pub _python_version: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -423,9 +423,9 @@ impl SetupManager {
         println!("  venv: {}", self.venv_path().display());
 
         Ok(SetupResult {
-            tools,
-            venv_path: self.venv_path(),
-            python_version: self.config.python_version.clone(),
+            _tools: tools,
+            _venv_path: self.venv_path(),
+            _python_version: self.config.python_version.clone(),
         })
     }
 
@@ -569,7 +569,7 @@ music_gen = {has_musicgen}
     }
 
     /// Run a command inside the venv using uv run.
-    pub fn run_in_venv(&self, cmd: &str, args: &[&str]) -> Result<std::process::Output, String> {
+    pub fn _run_in_venv(&self, cmd: &str, args: &[&str]) -> Result<std::process::Output, String> {
         if !self.has_venv() {
             return Err("Python venv not found. Run `amigo setup` first.".into());
         }
