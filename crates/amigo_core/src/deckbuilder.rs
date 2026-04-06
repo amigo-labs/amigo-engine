@@ -12,6 +12,8 @@ pub struct DeckbuilderConfig {
     pub max_energy: u8,
     pub hand_size: u8,
     pub starting_deck: Vec<CardId>,
+    pub starting_hp: i32,
+    pub starting_max_hp: i32,
     pub seed: u64,
 }
 
@@ -22,6 +24,8 @@ impl Default for DeckbuilderConfig {
             max_energy: 3,
             hand_size: 5,
             starting_deck: Vec::new(),
+            starting_hp: 50,
+            starting_max_hp: 50,
             seed: 0,
         }
     }
@@ -227,6 +231,8 @@ pub struct DbState {
     pub combat: Option<CombatState>,
     pub gold: u32,
     pub floor: u32,
+    pub player_hp: i32,
+    pub player_max_hp: i32,
     pub relics: Vec<RelicId>,
     pub map: Vec<Vec<MapNode>>,
     pub reward_choices: Vec<RewardChoice>,
@@ -239,6 +245,8 @@ impl DbState {
         let map = generate_map(15, 3, config.seed);
 
         Self {
+            player_hp: config.starting_hp,
+            player_max_hp: config.starting_max_hp,
             phase: DbPhase::MapSelect,
             deck,
             hand,
@@ -284,8 +292,8 @@ pub fn start_combat(state: &mut DbState, enemies: Vec<EnemyState>) -> Vec<DbEven
     state.phase = DbPhase::Combat;
 
     state.combat = Some(CombatState {
-        player_hp: 50, // TODO: track persistent HP
-        player_max_hp: 50,
+        player_hp: state.player_hp,
+        player_max_hp: state.player_max_hp,
         player_block: 0,
         energy: state.config.starting_energy,
         max_energy: state.config.max_energy,
@@ -347,6 +355,8 @@ pub fn play_card(
     // Check if all enemies dead.
     if let Some(ref combat) = state.combat {
         if combat.enemies.iter().all(|e| e.hp <= 0) {
+            // Persist HP back to run state.
+            state.player_hp = combat.player_hp;
             events.push(DbEvent::CombatWon);
             state.phase = DbPhase::Reward;
         }
@@ -479,6 +489,36 @@ mod tests {
         let state = DbState::new(DeckbuilderConfig::default());
         assert_eq!(state.phase, DbPhase::MapSelect);
         assert_eq!(state.floor, 0);
+        assert_eq!(state.player_hp, 50);
+        assert_eq!(state.player_max_hp, 50);
         assert!(!state.map.is_empty());
+    }
+
+    #[test]
+    fn persistent_hp_across_combats() {
+        let config = DeckbuilderConfig {
+            starting_deck: (0..10).map(CardId).collect(),
+            starting_hp: 40,
+            starting_max_hp: 50,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut state = DbState::new(config);
+        assert_eq!(state.player_hp, 40);
+
+        let enemies = vec![EnemyState {
+            id: 0,
+            name: "Slime".into(),
+            hp: 20,
+            max_hp: 20,
+            block: 0,
+            intent: EnemyIntent::Attack(6),
+        }];
+        start_combat(&mut state, enemies);
+
+        // Combat should use the persistent HP.
+        let combat = state.combat.as_ref().unwrap();
+        assert_eq!(combat.player_hp, 40);
+        assert_eq!(combat.player_max_hp, 50);
     }
 }

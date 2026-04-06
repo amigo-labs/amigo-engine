@@ -5,6 +5,7 @@ pub mod spatial;
 use kira::manager::backend::DefaultBackend;
 use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
+use kira::sound::PlaybackRate;
 use kira::Volume;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -140,7 +141,7 @@ impl SfxManager {
         let now = Instant::now();
 
         // -- Look up definition (optional) for cooldown / concurrency / pitch --
-        let (cooldown, max_concurrent, _pitch_variance) =
+        let (cooldown, max_concurrent, pitch_variance) =
             if let Some(def) = self.definitions.get(name) {
                 (def.cooldown, def.max_concurrent, def.pitch_variance)
             } else {
@@ -178,7 +179,18 @@ impl SfxManager {
         let idx = (now.elapsed().subsec_nanos() as usize) % variants.len();
         let data = variants[idx].clone();
 
-        // TODO: apply pitch_variance via kira's PlaybackRate when kira 0.9 settings support it
+        // Apply random pitch variance via PlaybackRate.
+        let data = if pitch_variance > 0.0 {
+            let nanos = now.elapsed().subsec_nanos();
+            let t = (nanos as f32 / u32::MAX as f32) * 2.0 - 1.0; // -1..1
+            let rate = 1.0 + t * pitch_variance;
+            data.with_settings(
+                StaticSoundSettings::new()
+                    .playback_rate(PlaybackRate::Factor(rate as f64)),
+            )
+        } else {
+            data
+        };
         match kira.play(data) {
             Ok(handle) => {
                 rt.active_handles.push(handle);
