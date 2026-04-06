@@ -183,13 +183,17 @@ impl SfxManager {
         let data = variants[idx].clone();
 
         // Apply random pitch variance via PlaybackRate.
+        // Use a simple hash of the play count + subsec_nanos for cheap entropy.
         let data = if pitch_variance > 0.0 {
-            let nanos = now.elapsed().subsec_nanos();
-            let t = (nanos as f32 / u32::MAX as f32) * 2.0 - 1.0; // -1..1
-            let rate = 1.0 + t * pitch_variance;
+            let seed = rt
+                .active_handles
+                .len()
+                .wrapping_mul(2654435761)
+                .wrapping_add(now.elapsed().subsec_nanos() as usize);
+            let t = ((seed & 0xFFFF) as f32 / 0xFFFF as f32) * 2.0 - 1.0; // -1..1
+            let rate = (1.0 + t * pitch_variance).max(0.1); // clamp to positive
             data.with_settings(
-                StaticSoundSettings::new()
-                    .playback_rate(PlaybackRate::Factor(rate as f64)),
+                StaticSoundSettings::new().playback_rate(PlaybackRate::Factor(rate as f64)),
             )
         } else {
             data
@@ -448,7 +452,11 @@ impl AudioManager {
         self.music_handles.clear();
     }
 
-    /// Set volume for a channel and push to active Kira handles.
+    /// Set volume for a channel and push to active Kira music handles.
+    ///
+    /// Note: SFX are fire-and-forget (no persistent handles to update).
+    /// Ambient handles are not currently tracked individually.
+    /// Only `"music"` propagates to live handles immediately.
     pub fn set_volume(&mut self, channel: &str, volume: f32) {
         let vol = volume.clamp(0.0, 1.0);
         match channel {

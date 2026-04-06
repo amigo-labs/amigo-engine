@@ -270,7 +270,10 @@ mod tests {
         let input = Fix::from_num(0.25f32);
         let result = sqrt_fix(input);
         let diff = (result - Fix::from_num(0.5f32)).abs();
-        assert!(diff <= Fix::from_bits(1), "sqrt(0.25) = {result}, expected ~0.5");
+        assert!(
+            diff <= Fix::from_bits(1),
+            "sqrt(0.25) = {result}, expected ~0.5"
+        );
     }
 
     #[test]
@@ -300,7 +303,10 @@ mod tests {
         // Smallest positive Q16.16: 1/65536 ≈ 0.0000153
         let tiny = Fix::from_bits(1);
         let result = sqrt_fix(tiny);
-        assert!(result > Fix::ZERO, "sqrt of smallest positive should be positive");
+        assert!(
+            result > Fix::ZERO,
+            "sqrt of smallest positive should be positive"
+        );
         // sqrt(1/65536) = 1/256 = Fix::from_bits(256)
         assert_eq!(result, Fix::from_bits(256));
     }
@@ -320,7 +326,7 @@ mod tests {
         // Hardcoded .to_bits() results — must be identical on all platforms.
         let cases: &[(i32, i32)] = &[
             (Fix::from_num(1).to_bits(), Fix::from_num(1).to_bits()),
-            (Fix::from_num(2).to_bits(), 92681),  // sqrt(2) ≈ 1.41421 (floor)
+            (Fix::from_num(2).to_bits(), 92681), // sqrt(2) ≈ 1.41421 (floor)
             (Fix::from_num(4).to_bits(), Fix::from_num(2).to_bits()),
         ];
         for &(input_bits, expected_bits) in cases {
@@ -338,12 +344,18 @@ mod tests {
         let v = SimVec2::from_f32(3.0, 4.0);
         let len = v.length();
         let diff = (len - Fix::from_num(5)).abs();
-        assert!(diff <= Fix::from_bits(1), "length(3,4) should be 5, got {len}");
+        assert!(
+            diff <= Fix::from_bits(1),
+            "length(3,4) should be 5, got {len}"
+        );
 
         let n = v.normalize();
         let n_len = n.length();
         let err = (n_len - Fix::from_num(1)).abs();
-        assert!(err <= Fix::from_bits(2), "normalized length should be ~1, got {n_len}");
+        assert!(
+            err <= Fix::from_bits(2),
+            "normalized length should be ~1, got {n_len}"
+        );
     }
 
     #[test]
@@ -353,6 +365,9 @@ mod tests {
         let len = v.length();
         let expected = Fix::from_num(250); // 200^2+150^2=62500, sqrt=250
         let diff = (len - expected).abs();
-        assert!(diff <= Fix::from_bits(4), "length(200,150) should be 250, got {len}");
+        assert!(
+            diff <= Fix::from_bits(4),
+            "length(200,150) should be 250, got {len}"
+        );
     }
 }

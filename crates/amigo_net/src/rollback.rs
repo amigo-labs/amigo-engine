@@ -17,9 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct RollbackConfig {
     /// Maximum number of frames we are willing to roll back.
     pub max_rollback_frames: u32,
-    /// Frames of local input delay (smooths out prediction).
-    pub input_delay: u32,
-    /// Capacity of the snapshot ring buffer.
+    /// Capacity of the snapshot ring buffer. Must be > `max_rollback_frames`.
     pub snapshot_buffer_size: usize,
 }
 
@@ -27,7 +25,6 @@ impl Default for RollbackConfig {
     fn default() -> Self {
         Self {
             max_rollback_frames: 8,
-            input_delay: 2,
             snapshot_buffer_size: 16,
         }
     }
@@ -101,11 +98,7 @@ pub struct RollbackSession<S: RollbackState> {
 
 impl<S: RollbackState> RollbackSession<S> {
     /// Create a new rollback session.
-    pub fn new(
-        config: RollbackConfig,
-        local_player: PlayerId,
-        players: Vec<PlayerId>,
-    ) -> Self {
+    pub fn new(config: RollbackConfig, local_player: PlayerId, players: Vec<PlayerId>) -> Self {
         let snapshot_buf = vec![None; config.snapshot_buffer_size];
         let mut confirmed_inputs = FxHashMap::default();
         let mut predicted_inputs = FxHashMap::default();
@@ -149,8 +142,7 @@ impl<S: RollbackState> RollbackSession<S> {
             .entry(self.local_player)
             .or_default()
             .insert(tick, local_input.clone());
-        self.last_known_input
-            .insert(self.local_player, local_input);
+        self.last_known_input.insert(self.local_player, local_input);
 
         // 2. Process remote inputs — store as confirmed.
         for (pid, remote_tick, input) in &remote_inputs {
@@ -246,15 +238,30 @@ impl<S: RollbackState> RollbackSession<S> {
     }
 
     /// Save a snapshot into the ring buffer at the given tick.
+    /// Stores `(tick_le_bytes ++ data)` so we can validate on restore.
     pub fn save_snapshot(&mut self, state: &S, tick: u64) {
         let idx = tick as usize % self.config.snapshot_buffer_size;
-        self.snapshots[idx] = Some(state.snapshot());
+        let data = state.snapshot();
+        let mut stored = Vec::with_capacity(8 + data.len());
+        stored.extend_from_slice(&tick.to_le_bytes());
+        stored.extend_from_slice(&data);
+        self.snapshots[idx] = Some(stored);
     }
 
-    /// Retrieve a snapshot from the ring buffer.
+    /// Retrieve a snapshot from the ring buffer, verifying the tick matches.
+    /// Returns `None` if the slot was overwritten by a newer tick.
     pub fn restore_snapshot(&self, tick: u64) -> Option<&[u8]> {
         let idx = tick as usize % self.config.snapshot_buffer_size;
-        self.snapshots[idx].as_deref()
+        let stored = self.snapshots[idx].as_deref()?;
+        if stored.len() < 8 {
+            return None;
+        }
+        let mut tick_bytes = [0u8; 8];
+        tick_bytes.copy_from_slice(&stored[..8]);
+        if u64::from_le_bytes(tick_bytes) != tick {
+            return None;
+        }
+        Some(&stored[8..])
     }
 
     /// The current simulation tick.
@@ -276,11 +283,7 @@ impl<S: RollbackState> RollbackSession<S> {
         let players = self.players.clone();
         let mut result = Vec::with_capacity(players.len());
         for &pid in &players {
-            if let Some(input) = self
-                .confirmed_inputs
-                .get(&pid)
-                .and_then(|m| m.get(&tick))
-            {
+            if let Some(input) = self.confirmed_inputs.get(&pid).and_then(|m| m.get(&tick)) {
                 result.push((pid, input.clone()));
             } else {
                 let predicted = self.predict_input(pid);
@@ -356,7 +359,7 @@ mod tests {
         // Two players, feed confirmed inputs immediately every tick.
         let config = RollbackConfig {
             max_rollback_frames: 8,
-            input_delay: 0,
+
             snapshot_buffer_size: 16,
         };
         let players = vec![p(1), p(2)];
@@ -395,7 +398,7 @@ mod tests {
     fn test_rollback_on_mismatch() {
         let config = RollbackConfig {
             max_rollback_frames: 64,
-            input_delay: 0,
+
             snapshot_buffer_size: 128,
         };
         let players = vec![p(1), p(2)];
@@ -443,7 +446,7 @@ mod tests {
     fn test_stats_tracking() {
         let config = RollbackConfig {
             max_rollback_frames: 64,
-            input_delay: 0,
+
             snapshot_buffer_size: 128,
         };
         let players = vec![p(1), p(2)];

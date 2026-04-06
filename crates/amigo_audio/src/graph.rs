@@ -52,10 +52,7 @@ pub enum AudioNode {
     /// Standard mixer bus.
     Mixer(AudioBus),
     /// Bus with a filter effect applied.
-    Filter {
-        bus: AudioBus,
-        params: FilterParams,
-    },
+    Filter { bus: AudioBus, params: FilterParams },
     /// Ducking (side-chain compression) node.
     Ducking {
         bus: AudioBus,

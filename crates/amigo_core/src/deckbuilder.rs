@@ -355,8 +355,10 @@ pub fn play_card(
     // Check if all enemies dead.
     if let Some(ref combat) = state.combat {
         if combat.enemies.iter().all(|e| e.hp <= 0) {
-            // Persist HP back to run state.
+            // Persist HP back to run state (both current and max, in case
+            // relics/upgrades changed max_hp during combat).
             state.player_hp = combat.player_hp;
+            state.player_max_hp = combat.player_max_hp;
             events.push(DbEvent::CombatWon);
             state.phase = DbPhase::Reward;
         }

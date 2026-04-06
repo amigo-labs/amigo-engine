@@ -149,13 +149,19 @@ impl DynamicAtlas {
 
     /// Insert a sprite into the atlas.
     ///
-    /// Returns `(page_index, rect)` on success.
+    /// If a sprite with the same name already exists, returns its existing rect
+    /// without allocating new space. Returns `(page_index, rect)` on success.
     pub fn insert(
         &mut self,
         name: &str,
         width: u32,
         height: u32,
     ) -> Result<(u32, AtlasRect), DynamicAtlasError> {
+        // Return existing entry if already inserted (idempotent).
+        if let Some((page_idx, rect)) = self.lookup(name) {
+            return Ok((page_idx, *rect));
+        }
+
         if width > self.max_page_size || height > self.max_page_size {
             return Err(DynamicAtlasError::SpriteTooLarge);
         }
@@ -220,7 +226,15 @@ mod tests {
         let mut atlas = DynamicAtlas::new(256, 0);
         let (page, rect) = atlas.insert("hero", 64, 64).unwrap();
         assert_eq!(page, 0);
-        assert_eq!(rect, AtlasRect { x: 0, y: 0, w: 64, h: 64 });
+        assert_eq!(
+            rect,
+            AtlasRect {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 64
+            }
+        );
         assert_eq!(atlas.page_count(), 1);
     }
 

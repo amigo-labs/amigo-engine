@@ -61,7 +61,11 @@ fn run_comfyui_audio_workflow(
         .map_err(|e| format!("Failed to queue prompt: {}", e))?;
 
     let status = client
-        .wait_for_completion(&queue_resp.prompt_id, GENERATION_TIMEOUT_MS, POLL_INTERVAL_MS)
+        .wait_for_completion(
+            &queue_resp.prompt_id,
+            GENERATION_TIMEOUT_MS,
+            POLL_INTERVAL_MS,
+        )
         .map_err(|e| format!("Generation failed: {}", e))?;
 
     match status {
@@ -84,7 +88,12 @@ fn run_comfyui_audio_workflow(
 
     // Ensure parent directory exists
     if let Some(parent) = std::path::Path::new(output_path).parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "Failed to create output directory {}: {e}",
+                parent.display()
+            )
+        })?;
     }
 
     client
@@ -829,16 +838,17 @@ pub fn dispatch_tool_with_defaults(
             let start = std::time::Instant::now();
             let client = create_comfyui_client();
 
-            let generation_time_ms = match run_comfyui_audio_workflow(&client, &workflow, &output_path) {
-                Ok(_) => start.elapsed().as_millis() as u64,
-                Err(e) => {
-                    return Ok(serde_json::json!({
-                        "error": e,
-                        "output_path": output_path,
-                        "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                    }));
-                }
-            };
+            let generation_time_ms =
+                match run_comfyui_audio_workflow(&client, &workflow, &output_path) {
+                    Ok(_) => start.elapsed().as_millis() as u64,
+                    Err(e) => {
+                        return Ok(serde_json::json!({
+                            "error": e,
+                            "output_path": output_path,
+                            "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                        }));
+                    }
+                };
 
             let mut stem_paths = HashMap::new();
             if p.split_stems {
@@ -947,7 +957,8 @@ pub fn dispatch_tool_with_defaults(
             }
             if let Some(e) = gen_error {
                 response["warning"] = serde_json::json!(format!(
-                    "Only generated {} of {} variants: {}", generated_count, count, e
+                    "Only generated {} of {} variants: {}",
+                    generated_count, count, e
                 ));
             }
             Ok(response)
@@ -1279,11 +1290,7 @@ pub fn dispatch_tool_with_defaults(
 
             let test_audio = if let Some(ref test_text) = p.test_text {
                 // Generate a test clip via TTS workflow to validate the voice
-                let test_path = format!(
-                    "{}/{}_test.wav",
-                    voices_dir.display(),
-                    sanitize(&p.name)
-                );
+                let test_path = format!("{}/{}_test.wav", voices_dir.display(), sanitize(&p.name));
                 let test_request = TtsRequest {
                     text: test_text.clone(),
                     language: profile.default_language.clone(),

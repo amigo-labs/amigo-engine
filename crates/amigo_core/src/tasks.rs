@@ -24,7 +24,8 @@ impl TaskPool {
 
     /// Create a new `TaskPool` with exactly `n` worker threads.
     pub fn with_threads(n: usize) -> Self {
-        let (sender, receiver) = crossbeam_channel::unbounded::<Box<dyn FnOnce() + Send + 'static>>();
+        let (sender, receiver) =
+            crossbeam_channel::unbounded::<Box<dyn FnOnce() + Send + 'static>>();
         let mut workers = Vec::with_capacity(n);
         for _ in 0..n {
             let rx = receiver.clone();
@@ -52,9 +53,11 @@ impl TaskPool {
             let _ = tx.send(result);
         });
         if let Some(ref sender) = self.sender {
-            sender.send(boxed).expect("TaskPool worker threads have shut down");
+            sender
+                .send(boxed)
+                .expect("TaskPool worker threads have shut down");
         }
-        Task { rx }
+        Task { rx, cached: None }
     }
 
     /// Shut down the pool: drop the sender so workers finish, then join all threads.
@@ -85,31 +88,42 @@ impl Drop for TaskPool {
 /// A handle to the result of a spawned task.
 pub struct Task<T> {
     rx: mpsc::Receiver<T>,
+    cached: Option<T>,
 }
 
 impl<T> Task<T> {
-    /// Non-blocking poll for the result.
-    pub fn try_recv(&self) -> Option<T> {
+    /// Non-blocking poll for the result. Returns `Some` exactly once.
+    pub fn try_recv(&mut self) -> Option<T> {
+        if self.cached.is_some() {
+            return self.cached.take();
+        }
         self.rx.try_recv().ok()
     }
 
     /// Returns `true` if the task has completed and a result is available.
-    ///
-    /// Note: after `is_done()` returns `true`, `try_recv()` will return `Some`.
-    pub fn is_done(&self) -> bool {
-        // Peek without consuming: we check if the channel has a message or is disconnected.
-        // Unfortunately std mpsc doesn't have peek, so we use try_recv is destructive.
-        // Instead we rely on try_recv + re-wrapping, but that's complex.
-        // A simpler approach: just check if we can receive (non-blocking).
-        // Since is_done is informational, we'll note this is a best-effort check.
-        // Actually, let's do it properly: we can't peek with std mpsc, but we can
-        // use the fact that try_recv returns Err(Empty) vs Err(Disconnected).
-        matches!(self.rx.try_recv(), Ok(_) | Err(mpsc::TryRecvError::Disconnected))
+    /// Safe to call multiple times — does not consume the result.
+    pub fn is_done(&mut self) -> bool {
+        if self.cached.is_some() {
+            return true;
+        }
+        match self.rx.try_recv() {
+            Ok(val) => {
+                self.cached = Some(val);
+                true
+            }
+            Err(mpsc::TryRecvError::Empty) => false,
+            Err(mpsc::TryRecvError::Disconnected) => true,
+        }
     }
 
     /// Block until the task completes and return the result.
-    pub fn block(self) -> T {
-        self.rx.recv().expect("Task sender dropped without sending a result")
+    pub fn block(mut self) -> T {
+        if let Some(val) = self.cached.take() {
+            return val;
+        }
+        self.rx
+            .recv()
+            .expect("Task sender dropped without sending a result")
     }
 }
 
@@ -139,7 +153,7 @@ mod tests {
         let pool = TaskPool::with_threads(1);
         // Use a channel to coordinate: the task blocks until we signal it.
         let (signal_tx, signal_rx) = std::sync::mpsc::channel::<()>();
-        let task = pool.spawn(move || {
+        let mut task = pool.spawn(move || {
             signal_rx.recv().unwrap();
             99
         });

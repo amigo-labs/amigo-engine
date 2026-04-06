@@ -17,8 +17,14 @@ pub struct Rect {
 #[derive(Debug)]
 pub enum TextureSlot {
     NotLoaded,
-    Loading { task_id: u64 },
-    Resident { atlas_page: u32, uv: Rect, last_used_tick: u64 },
+    Loading {
+        task_id: u64,
+    },
+    Resident {
+        atlas_page: u32,
+        uv: Rect,
+        last_used_tick: u64,
+    },
     Failed,
 }
 
@@ -54,7 +60,8 @@ impl TextureRegistry {
 
     /// Mark a texture as loading with the given task id.
     pub fn mark_loading(&mut self, name: &str, task_id: u64) {
-        self.slots.insert(name.to_string(), TextureSlot::Loading { task_id });
+        self.slots
+            .insert(name.to_string(), TextureSlot::Loading { task_id });
     }
 
     /// Mark a texture as resident in the atlas.
@@ -162,7 +169,12 @@ mod tests {
         let mut reg = TextureRegistry::new(1024);
         reg.request("hero");
         reg.mark_loading("hero", 1);
-        let uv = Rect { x: 0.0, y: 0.0, w: 0.5, h: 0.5 };
+        let uv = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 0.5,
+            h: 0.5,
+        };
         reg.mark_resident("hero", 0, uv);
         assert!(reg.is_loaded("hero"));
         assert!(matches!(
@@ -186,7 +198,12 @@ mod tests {
     #[test]
     fn evict_lru_evicts_oldest() {
         let mut reg = TextureRegistry::new(1024);
-        let uv = Rect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+        let uv = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
 
         // Insert three textures at different ticks.
         reg.mark_resident("old", 0, uv);
@@ -211,7 +228,12 @@ mod tests {
     #[test]
     fn evict_lru_no_eviction_needed() {
         let mut reg = TextureRegistry::new(1024);
-        let uv = Rect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+        let uv = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
         reg.mark_resident("a", 0, uv);
         let evicted = reg.evict_lru(10);
         assert!(evicted.is_empty());
@@ -240,7 +262,12 @@ mod tests {
         reg.mark_loading("tex", 1);
         assert!(!reg.is_loaded("tex"));
 
-        let uv = Rect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+        let uv = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
         reg.mark_resident("tex", 0, uv);
         assert!(reg.is_loaded("tex"));
 
@@ -251,7 +278,12 @@ mod tests {
     #[test]
     fn request_touches_resident_entry() {
         let mut reg = TextureRegistry::new(1024);
-        let uv = Rect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+        let uv = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
 
         reg.mark_resident("a", 0, uv);
         // tick = 0 for "a"
@@ -260,7 +292,7 @@ mod tests {
         // "b" at tick 1
 
         reg.tick(); // tick = 2
-        // Touch "a" so it becomes more recent than "b"
+                    // Touch "a" so it becomes more recent than "b"
         reg.request("a");
 
         // Now evict down to 1: "b" should be evicted (tick 1), "a" was touched at tick 2
