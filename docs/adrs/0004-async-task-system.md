@@ -1,7 +1,7 @@
 ---
 number: "0004"
 title: Async Task-System
-status: proposed
+status: done
 date: 2026-03-20
 ---
 

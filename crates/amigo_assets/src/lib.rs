@@ -9,6 +9,9 @@ pub mod modding;
 pub mod pak;
 pub mod registry;
 
+#[cfg(feature = "asset_streaming")]
+pub mod streaming;
+
 pub use aseprite::{load_aseprite, AsepriteData};
 pub use asset_manager::{AssetManager, SpriteData};
 pub use descriptors::{EntityDescriptor, MapDescriptor, SpriteDescriptor, TilesetDescriptor};

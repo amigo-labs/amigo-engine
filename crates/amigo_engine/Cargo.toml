@@ -10,6 +10,7 @@ editor = ["dep:amigo_editor", "amigo_render/editor", "amigo_editor/egui"]
 api = ["dep:amigo_api", "dep:ctrlc"]
 tracy = ["amigo_debug/tracy"]
 input = []
+async_tasks = ["amigo_core/async_tasks"]
 
 [dependencies]
 amigo_core = { workspace = true }

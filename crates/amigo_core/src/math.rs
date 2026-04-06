@@ -136,23 +136,38 @@ impl SimVec2 {
     }
 }
 
-/// Fixed-point square root via Newton-Raphson.
-/// Initial estimate from f32 (IEEE 754 sqrt is correctly rounded — deterministic).
-/// Subsequent iterations are pure Fix arithmetic.
+/// Pure-integer fixed-point square root (bit-by-bit algorithm on Q16.16).
+///
+/// Operates entirely on integer arithmetic — no floating-point at any stage.
+/// This guarantees cross-platform determinism (x86, ARM, WASM produce identical
+/// results). The input Q16.16 raw bits are shifted left by 16 into a u64, then
+/// the standard non-restoring integer square root is computed. The result maps
+/// back to Q16.16.
+#[inline]
 pub fn sqrt_fix(x: Fix) -> Fix {
-    if x <= Fix::ZERO {
+    let bits = x.to_bits();
+    if bits <= 0 {
         return Fix::ZERO;
     }
-    let approx: f32 = x.to_num::<f32>().sqrt();
-    let mut g = Fix::from_num(approx.max(f32::MIN_POSITIVE));
-    for _ in 0..8 {
-        let g_next = (g + x / g) / Fix::from_num(2_i32);
-        if g_next == g {
-            break;
-        }
-        g = g_next;
+    // Shift into u64 to get Q32.32-equivalent so the integer sqrt yields Q16.16.
+    let mut n = (bits as u64) << 16;
+    let mut result: u64 = 0;
+    // Start with the highest even bit that doesn't exceed n.
+    let mut bit: u64 = 1u64 << 46;
+    while bit > n {
+        bit >>= 2;
     }
-    g
+    while bit != 0 {
+        let rb = result + bit;
+        if n >= rb {
+            n -= rb;
+            result = (result >> 1) + bit;
+        } else {
+            result >>= 1;
+        }
+        bit >>= 2;
+    }
+    Fix::from_bits(result as i32)
 }
 
 /// Rendering vector using f32. Used only for rendering: screen positions,
@@ -233,5 +248,111 @@ impl IVec2 {
 
     pub fn new(x: i32, y: i32) -> Self {
         Self { x, y }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqrt_fix_perfect_squares() {
+        for n in [0, 1, 4, 9, 16, 25, 100, 400, 10000] {
+            let input = Fix::from_num(n);
+            let result = sqrt_fix(input);
+            let expected = Fix::from_num((n as f64).sqrt() as i32);
+            assert_eq!(result, expected, "sqrt({n}) failed");
+        }
+    }
+
+    #[test]
+    fn sqrt_fix_fractional() {
+        let input = Fix::from_num(0.25f32);
+        let result = sqrt_fix(input);
+        let diff = (result - Fix::from_num(0.5f32)).abs();
+        assert!(diff <= Fix::from_bits(1), "sqrt(0.25) = {result}, expected ~0.5");
+    }
+
+    #[test]
+    fn sqrt_fix_accuracy_sweep() {
+        // Verify sqrt(x)^2 ≈ x within 2 ULP for many values.
+        for i in 1..5000 {
+            let x = Fix::from_bits(i * 13); // scattered values
+            let s = sqrt_fix(x);
+            let s_sq = s * s;
+            let err = (s_sq - x).abs().to_bits();
+            assert!(
+                err <= 2,
+                "sqrt({x})^2 = {s_sq}, expected {x}, error = {err} ULP"
+            );
+        }
+    }
+
+    #[test]
+    fn sqrt_fix_zero_and_negative() {
+        assert_eq!(sqrt_fix(Fix::ZERO), Fix::ZERO);
+        assert_eq!(sqrt_fix(Fix::from_num(-1)), Fix::ZERO);
+        assert_eq!(sqrt_fix(Fix::from_num(-100)), Fix::ZERO);
+    }
+
+    #[test]
+    fn sqrt_fix_small_values() {
+        // Smallest positive Q16.16: 1/65536 ≈ 0.0000153
+        let tiny = Fix::from_bits(1);
+        let result = sqrt_fix(tiny);
+        assert!(result > Fix::ZERO, "sqrt of smallest positive should be positive");
+        // sqrt(1/65536) = 1/256 = Fix::from_bits(256)
+        assert_eq!(result, Fix::from_bits(256));
+    }
+
+    #[test]
+    fn sqrt_fix_large_values() {
+        // Max safe value: 32767
+        let large = Fix::from_num(32000);
+        let s = sqrt_fix(large);
+        let expected = Fix::from_num(178); // floor(sqrt(32000)) ≈ 178.88
+        let diff = (s - expected).abs();
+        assert!(diff < Fix::from_num(1), "sqrt(32000) ≈ 178.88, got {s}");
+    }
+
+    #[test]
+    fn sqrt_fix_deterministic_golden_values() {
+        // Hardcoded .to_bits() results — must be identical on all platforms.
+        let cases: &[(i32, i32)] = &[
+            (Fix::from_num(1).to_bits(), Fix::from_num(1).to_bits()),
+            (Fix::from_num(2).to_bits(), 92681),  // sqrt(2) ≈ 1.41421 (floor)
+            (Fix::from_num(4).to_bits(), Fix::from_num(2).to_bits()),
+        ];
+        for &(input_bits, expected_bits) in cases {
+            let result = sqrt_fix(Fix::from_bits(input_bits));
+            assert_eq!(
+                result.to_bits(),
+                expected_bits,
+                "golden value mismatch for input bits {input_bits}"
+            );
+        }
+    }
+
+    #[test]
+    fn simvec2_length_normalize_deterministic() {
+        let v = SimVec2::from_f32(3.0, 4.0);
+        let len = v.length();
+        let diff = (len - Fix::from_num(5)).abs();
+        assert!(diff <= Fix::from_bits(1), "length(3,4) should be 5, got {len}");
+
+        let n = v.normalize();
+        let n_len = n.length();
+        let err = (n_len - Fix::from_num(1)).abs();
+        assert!(err <= Fix::from_bits(2), "normalized length should be ~1, got {n_len}");
+    }
+
+    #[test]
+    fn simvec2_length_large() {
+        // Test the pre-scaling path (components > 100).
+        let v = SimVec2::from_f32(200.0, 150.0);
+        let len = v.length();
+        let expected = Fix::from_num(250); // 200^2+150^2=62500, sqrt=250
+        let diff = (len - expected).abs();
+        assert!(diff <= Fix::from_bits(4), "length(200,150) should be 250, got {len}");
     }
 }

@@ -30,6 +30,8 @@ pub struct GameContext {
     pub resources: Resources,
     #[cfg(feature = "audio")]
     pub audio: AudioManager,
+    #[cfg(feature = "async_tasks")]
+    pub tasks: amigo_core::tasks::TaskPool,
     // Texture mapping for sprites (name -> TextureId + dimensions)
     sprite_textures: Vec<(String, TextureId, u32, u32)>,
 }
@@ -55,6 +57,8 @@ impl GameContext {
             resources: Resources::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
+            #[cfg(feature = "async_tasks")]
+            tasks: amigo_core::tasks::TaskPool::new(),
             sprite_textures: Vec::new(),
         }
     }

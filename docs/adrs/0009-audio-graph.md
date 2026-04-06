@@ -1,7 +1,7 @@
 ---
 number: "0009"
 title: Node-Based Audio Graph Replacing Linear Playback
-status: proposed
+status: done
 date: 2026-03-20
 ---
 

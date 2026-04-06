@@ -8,6 +8,9 @@ pub mod stats;
 pub mod sync;
 pub mod udp;
 
+#[cfg(feature = "rollback_net")]
+pub mod rollback;
+
 use serde::{Deserialize, Serialize};
 
 /// Player identifier for multiplayer.

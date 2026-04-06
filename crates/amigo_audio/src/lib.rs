@@ -1,11 +1,14 @@
 #![allow(missing_docs)]
 
+#[cfg(feature = "audio_graph")]
+pub mod graph;
 pub mod spatial;
 
 use kira::manager::backend::DefaultBackend;
 use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
 use kira::sound::PlaybackRate;
+use kira::tween::Tween;
 use kira::Volume;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -445,12 +448,18 @@ impl AudioManager {
         self.music_handles.clear();
     }
 
-    /// Set volume for a channel.
+    /// Set volume for a channel and push to active Kira handles.
     pub fn set_volume(&mut self, channel: &str, volume: f32) {
         let vol = volume.clamp(0.0, 1.0);
         match channel {
             "master" => self.volumes.master = vol,
-            "music" => self.volumes.music = vol,
+            "music" => {
+                self.volumes.music = vol;
+                let effective = (self.volumes.master * vol) as f64;
+                for handle in self.music_handles.values_mut() {
+                    handle.set_volume(Volume::Amplitude(effective), Tween::default());
+                }
+            }
             "sfx" => self.volumes.sfx = vol,
             "ambient" => self.volumes.ambient = vol,
             _ => warn!("Unknown audio channel: {}", channel),
@@ -788,10 +797,16 @@ impl MusicSection {
         }
     }
 
-    /// Tick all layer volumes.
+    /// Tick all layer volumes and push changes to Kira handles.
     pub fn update_volumes(&mut self, dt: f32) {
         for layer in &mut self.layers {
             layer.update_volume(dt);
+            if let Some(handle) = &mut layer.handle {
+                handle.set_volume(
+                    Volume::Amplitude(layer.effective_volume() as f64),
+                    Tween::default(),
+                );
+            }
         }
     }
 

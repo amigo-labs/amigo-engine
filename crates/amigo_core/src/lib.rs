@@ -68,6 +68,10 @@ pub mod deckbuilder;
 pub mod idle;
 pub mod social_deduction;
 
+// -- Async task system (feature-gated) --------------------------------------
+#[cfg(feature = "async_tasks")]
+pub mod tasks;
+
 // -- Tower Defense genre modules (feature-gated) ----------------------------
 #[cfg(feature = "td")]
 pub mod enemy;

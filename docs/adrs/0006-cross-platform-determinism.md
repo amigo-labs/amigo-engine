@@ -1,7 +1,7 @@
 ---
 number: "0006"
 title: Cross-Platform Determinism
-status: proposed
+status: done
 date: 2026-03-20
 ---
 

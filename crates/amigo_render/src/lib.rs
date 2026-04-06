@@ -17,6 +17,9 @@ pub mod vertex;
 #[cfg(feature = "editor")]
 pub mod egui_integration;
 
+#[cfg(feature = "asset_streaming")]
+pub mod dynamic_atlas;
+
 pub use atmosphere::{AtmosphereManager, AtmospherePreset};
 pub use camera::{Camera, CameraMode, Easing};
 pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};

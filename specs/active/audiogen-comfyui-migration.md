@@ -1,7 +1,7 @@
 ---
 number: "0014"
 title: "AudioGen auf ComfyUI migrieren — Qwen3-TTS als einziges TTS-Modell"
-status: implementing
+status: done
 date: 2026-03-22
 type: adr
 crate: amigo_audiogen

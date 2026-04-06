@@ -1,7 +1,7 @@
 ---
 number: "0007"
 title: Rollback Netcode
-status: proposed
+status: done
 date: 2026-03-20
 ---
 

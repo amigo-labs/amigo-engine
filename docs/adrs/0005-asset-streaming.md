@@ -1,7 +1,7 @@
 ---
 number: "0005"
 title: Streaming Asset Pipeline
-status: proposed
+status: done
 date: 2026-03-20
 ---
 
