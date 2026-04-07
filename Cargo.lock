@@ -381,6 +381,7 @@ dependencies = [
  "fontdue",
  "glam",
  "image 0.25.9",
+ "pollster",
  "rustc-hash 2.1.1",
  "serde",
  "tracing",

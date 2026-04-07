@@ -20,6 +20,9 @@ pub mod egui_integration;
 #[cfg(feature = "asset_streaming")]
 pub mod dynamic_atlas;
 
+#[cfg(feature = "gpu_physics")]
+pub mod gpu_broad_phase;
+
 pub use atmosphere::{AtmosphereManager, AtmospherePreset};
 pub use camera::{Camera, CameraMode, Easing};
 pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};

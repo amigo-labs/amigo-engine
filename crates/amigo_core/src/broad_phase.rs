@@ -157,21 +157,12 @@ impl BroadPhase for CpuBroadPhase {
 // GPU Broad-Phase (stub)
 // ---------------------------------------------------------------------------
 
-/// GPU broad-phase placeholder.
+/// CPU-only GPU broad-phase fallback.
 ///
-/// The intended implementation performs a radix sort on the X-axis min
-/// coordinate followed by a sweep pass in a wgpu compute shader, reading
-/// candidate pairs back via a staging buffer.
-///
-/// **Current state**: the compute shader is not yet implemented.  This struct
-/// falls back to [`CpuBroadPhase`] so the rest of the engine can be wired up
-/// and tested before the shader lands.
-///
-/// # Future work
-/// - Accept `&wgpu::Device` and `&wgpu::Queue` at construction.
-/// - Upload body AABBs to a `StorageBuffer`.
-/// - Dispatch radix-sort + sweep compute pipeline.
-/// - Read back `CollisionPair` results via double-buffered staging buffer.
+/// This stub delegates to [`CpuBroadPhase`] and exists for use when
+/// the `gpu_physics` feature is not enabled. For the real GPU compute
+/// shader implementation, see `amigo_render::gpu_broad_phase::GpuBroadPhase`
+/// (enabled via the `gpu_physics` feature flag on the `amigo_render` crate).
 pub struct GpuBroadPhase {
     /// Fallback used until the compute shader is implemented.
     fallback: CpuBroadPhase,
