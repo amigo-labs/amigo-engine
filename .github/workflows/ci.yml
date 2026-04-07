@@ -121,6 +121,13 @@ jobs:
             -p amigo_artgen \
             -p amigo_audiogen \
             -- -D warnings
+      - name: Clippy feature flags
+        run: |
+          cargo clippy -p amigo_core --features async_tasks -- -D warnings
+          cargo clippy -p amigo_assets --features asset_streaming -- -D warnings
+          cargo clippy -p amigo_render --features asset_streaming -- -D warnings
+          cargo clippy -p amigo_net --features rollback_net -- -D warnings
+          cargo clippy -p amigo_audio --features audio_graph -- -D warnings
 
   test:
     name: Test
@@ -158,6 +165,13 @@ jobs:
             -p amigo_steering \
             -p amigo_tilemap \
             -p amigo_scene
+      - name: Test feature flags
+        run: |
+          cargo test -p amigo_core --features async_tasks
+          cargo test -p amigo_assets --features asset_streaming
+          cargo test -p amigo_render --features asset_streaming
+          cargo test -p amigo_net --features rollback_net
+          cargo test -p amigo_audio --features audio_graph
       - name: Doc tests
         run: |
           cargo test --doc \

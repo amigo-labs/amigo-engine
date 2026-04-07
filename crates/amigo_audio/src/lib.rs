@@ -809,11 +809,9 @@ impl MusicSection {
     pub fn update_volumes(&mut self, dt: f32) {
         for layer in &mut self.layers {
             layer.update_volume(dt);
+            let vol = layer.effective_volume();
             if let Some(handle) = &mut layer.handle {
-                handle.set_volume(
-                    Volume::Amplitude(layer.effective_volume() as f64),
-                    Tween::default(),
-                );
+                handle.set_volume(Volume::Amplitude(vol as f64), Tween::default());
             }
         }
     }
