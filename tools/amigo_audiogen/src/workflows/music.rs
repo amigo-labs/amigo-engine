@@ -32,7 +32,7 @@ pub fn build_music_workflow(request: &MusicRequest) -> ComfyPrompt {
 
     // Build genre/style conditioning string
     let genre = if request.genre.is_empty() {
-        crate::WorldAudioStyle::find(&request.world)
+        crate::WorldAudioStyle::find(&request.world, None)
             .map(|s| s.genre.clone())
             .unwrap_or_else(|| "ambient".into())
     } else {
@@ -60,6 +60,11 @@ pub fn build_music_workflow(request: &MusicRequest) -> ComfyPrompt {
 
     if let Some(ref lyrics) = request.lyrics {
         generate_inputs["lyrics"] = json!(lyrics);
+    }
+
+    // Pass through extra fields (e.g. conditioning_strength from from_reference)
+    for (key, value) in &request.extra {
+        generate_inputs[key] = value.clone();
     }
 
     prompt.insert(
