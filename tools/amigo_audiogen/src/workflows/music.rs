@@ -62,6 +62,11 @@ pub fn build_music_workflow(request: &MusicRequest) -> ComfyPrompt {
         generate_inputs["lyrics"] = json!(lyrics);
     }
 
+    // Pass through extra fields (e.g. conditioning_strength from from_reference)
+    for (key, value) in &request.extra {
+        generate_inputs[key] = value.clone();
+    }
+
     prompt.insert(
         "2".into(),
         json!({

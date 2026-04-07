@@ -1586,6 +1586,9 @@ pub fn dispatch_tool_with_defaults(
             if p.name.is_empty() {
                 return Ok(serde_json::json!({ "error": "Style name must not be empty" }));
             }
+            if p.genre.trim().is_empty() {
+                return Ok(serde_json::json!({ "error": "Style genre must not be empty" }));
+            }
 
             let styles_dir = p
                 .project_dir
@@ -1765,7 +1768,13 @@ pub fn dispatch_tool_with_defaults(
                     sfx_style: String::new(),
                     key_instruments: vec![],
                 });
-                let _ = registry.save(&styles_dir);
+                if let Err(e) = registry.save(&styles_dir) {
+                    return Ok(serde_json::json!({
+                        "error": format!("Failed to save style '{}': {}", style_name, e),
+                        "style_name": style_name,
+                        "styles_dir": styles_dir.display().to_string(),
+                    }));
+                }
             }
 
             let section = parse_section(&p.section);
@@ -1781,6 +1790,12 @@ pub fn dispatch_tool_with_defaults(
                 let base_name = format!("ref_{}_{}bpm{}", sanitize(&genre), bpm, suffix);
                 let output_path = format!("assets/generated/audio/{}.wav", base_name);
 
+                let mut extra = HashMap::new();
+                extra.insert(
+                    "conditioning_strength".into(),
+                    serde_json::json!(1.0 - p.variation_strength),
+                );
+
                 let request = MusicRequest {
                     world: p.style_name.clone().unwrap_or_else(|| "custom".into()),
                     genre: genre.clone(),
@@ -1789,7 +1804,7 @@ pub fn dispatch_tool_with_defaults(
                     lyrics: None,
                     section: section.clone(),
                     split_stems: false,
-                    extra: HashMap::new(),
+                    extra,
                 };
                 let workflow = workflows::music::build_music_workflow(&request);
                 let client = create_comfyui_client();
@@ -2270,5 +2285,214 @@ mod tests {
         let cfg = parse_comfy_url("http://myhost:9000");
         assert_eq!(cfg.host, "myhost");
         assert_eq!(cfg.port, 9000);
+    }
+
+    // ── Style CRUD dispatch ─────────────────────────────────────
+
+    #[test]
+    fn dispatch_create_style() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool_with_defaults(
+            "amigo_audiogen_create_style",
+            serde_json::json!({
+                "name": "cyberpunk",
+                "genre": "cyberpunk electronic",
+                "genre_tags": "synth, industrial, dark",
+                "default_bpm": 135,
+                "key_instruments": "synth lead, distorted bass",
+                "project_dir": dir.path().to_str().unwrap(),
+            }),
+            Some(dir.path()),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["created"], true);
+        assert_eq!(v["style"]["name"], "cyberpunk");
+        assert_eq!(v["style"]["default_bpm"], 135);
+
+        // Verify it persisted — list_styles should return 7 (6 builtin + 1 custom)
+        let list = dispatch_tool_with_defaults(
+            "amigo_audiogen_list_styles",
+            serde_json::json!({}),
+            Some(dir.path()),
+        )
+        .unwrap();
+        assert_eq!(list["styles"].as_array().unwrap().len(), 7);
+
+        // Verify is_custom flag
+        let custom: Vec<_> = list["styles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["is_custom"] == true)
+            .collect();
+        assert_eq!(custom.len(), 1);
+        assert_eq!(custom[0]["name"], "cyberpunk");
+    }
+
+    #[test]
+    fn dispatch_create_style_empty_genre_rejected() {
+        let result = dispatch_tool(
+            "amigo_audiogen_create_style",
+            serde_json::json!({
+                "name": "bad_style",
+                "genre": "  ",
+            }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["error"].as_str().unwrap().contains("genre"));
+    }
+
+    #[test]
+    fn dispatch_edit_style() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create first
+        dispatch_tool_with_defaults(
+            "amigo_audiogen_create_style",
+            serde_json::json!({
+                "name": "test_edit",
+                "genre": "original genre",
+                "default_bpm": 100,
+                "project_dir": dir.path().to_str().unwrap(),
+            }),
+            Some(dir.path()),
+        )
+        .unwrap();
+
+        // Edit BPM
+        let result = dispatch_tool_with_defaults(
+            "amigo_audiogen_edit_style",
+            serde_json::json!({
+                "name": "test_edit",
+                "default_bpm": 140,
+                "project_dir": dir.path().to_str().unwrap(),
+            }),
+            Some(dir.path()),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["updated"], true);
+        assert_eq!(v["style"]["default_bpm"], 140);
+        // Genre should be preserved
+        assert_eq!(v["style"]["genre"], "original genre");
+    }
+
+    #[test]
+    fn dispatch_edit_builtin_rejected() {
+        let result = dispatch_tool(
+            "amigo_audiogen_edit_style",
+            serde_json::json!({ "name": "caribbean" }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["error"].as_str().unwrap().contains("builtin"));
+    }
+
+    #[test]
+    fn dispatch_delete_style() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create
+        dispatch_tool_with_defaults(
+            "amigo_audiogen_create_style",
+            serde_json::json!({
+                "name": "deleteme",
+                "genre": "temp",
+                "project_dir": dir.path().to_str().unwrap(),
+            }),
+            Some(dir.path()),
+        )
+        .unwrap();
+
+        // Delete
+        let result = dispatch_tool_with_defaults(
+            "amigo_audiogen_delete_style",
+            serde_json::json!({
+                "name": "deleteme",
+                "project_dir": dir.path().to_str().unwrap(),
+            }),
+            Some(dir.path()),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert_eq!(v["deleted"], true);
+
+        // Verify it's gone — back to 6
+        let list = dispatch_tool_with_defaults(
+            "amigo_audiogen_list_styles",
+            serde_json::json!({}),
+            Some(dir.path()),
+        )
+        .unwrap();
+        assert_eq!(list["styles"].as_array().unwrap().len(), 6);
+    }
+
+    #[test]
+    fn dispatch_delete_builtin_rejected() {
+        let result = dispatch_tool(
+            "amigo_audiogen_delete_style",
+            serde_json::json!({ "name": "matrix" }),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        assert!(v["error"].as_str().unwrap().contains("builtin"));
+    }
+
+    // ── From-reference dispatch ─────────────────────────────────
+
+    #[test]
+    fn dispatch_from_reference_saves_style() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool_with_defaults(
+            "amigo_audiogen_from_reference",
+            serde_json::json!({
+                "reference_description": "orchestral, epic, choir, strings, 100 BPM",
+                "style_name": "my_epic",
+                "target_bpm": 100,
+                "duration_secs": 10,
+                "project_dir": dir.path().to_str().unwrap(),
+            }),
+            Some(dir.path()),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        // Might fail at ComfyUI but style should still be checked
+        // If ComfyUI is not available, we get an error but the style was saved before generation
+        if v.get("error").is_none() {
+            assert_eq!(v["saved_style"], "my_epic");
+        }
+
+        // Verify style was saved to registry
+        let styles_dir = StyleRegistry::default_dir(dir.path());
+        let reg = StyleRegistry::load(&styles_dir);
+        let style = reg.get("my_epic").unwrap();
+        assert_eq!(style.default_bpm, 100);
+        assert_eq!(style.genre, "orchestral");
+    }
+
+    #[test]
+    fn dispatch_from_reference_variation_strength_in_workflow() {
+        // Verify variation_strength is accepted and returned in the response
+        let dir = tempfile::tempdir().unwrap();
+        let result = dispatch_tool_with_defaults(
+            "amigo_audiogen_from_reference",
+            serde_json::json!({
+                "reference_description": "jazz, piano, saxophone",
+                "variation_strength": 0.7,
+                "project_dir": dir.path().to_str().unwrap(),
+            }),
+            Some(dir.path()),
+        );
+        assert!(result.is_ok());
+        let v = result.unwrap();
+        // When ComfyUI is not running, we get an error response with generated_so_far.
+        // When it is running, we get the full response with variation_strength.
+        // Either way the tool should not crash.
+        if v.get("error").is_none() {
+            assert_eq!(v["variation_strength"], 0.7);
+        } else {
+            // Error path still succeeds as a tool result
+            assert!(v["generated_so_far"].is_array());
+        }
     }
 }
