@@ -14,8 +14,8 @@ pub mod config;
 pub mod clean_mode;
 pub mod processing;
 pub mod stems;
-pub mod tools;
 pub mod style_registry;
+pub mod tools;
 pub mod voice_registry;
 pub mod workflows;
 
@@ -281,8 +281,9 @@ impl WorldAudioStyle {
     pub fn find(name: &str, project_dir: Option<&Path>) -> Option<WorldAudioStyle> {
         // Check custom styles first
         if let Some(dir) = project_dir {
-            let registry =
-                style_registry::StyleRegistry::load(&style_registry::StyleRegistry::default_dir(dir));
+            let registry = style_registry::StyleRegistry::load(
+                &style_registry::StyleRegistry::default_dir(dir),
+            );
             if let Some(s) = registry.get(name) {
                 return Some(s.clone());
             }
@@ -298,8 +299,9 @@ impl WorldAudioStyle {
             by_name.insert(s.name.clone(), s);
         }
         if let Some(dir) = project_dir {
-            let registry =
-                style_registry::StyleRegistry::load(&style_registry::StyleRegistry::default_dir(dir));
+            let registry = style_registry::StyleRegistry::load(
+                &style_registry::StyleRegistry::default_dir(dir),
+            );
             for (_, s) in registry.styles {
                 by_name.insert(s.name.clone(), s);
             }

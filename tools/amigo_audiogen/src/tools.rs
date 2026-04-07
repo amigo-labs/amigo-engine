@@ -1738,10 +1738,12 @@ pub fn dispatch_tool_with_defaults(
                 .filter(|t| !t.is_empty())
                 .collect();
 
-            let genre = p
-                .target_genre
-                .clone()
-                .unwrap_or_else(|| genre_tags.first().cloned().unwrap_or_else(|| "ambient".into()));
+            let genre = p.target_genre.clone().unwrap_or_else(|| {
+                genre_tags
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "ambient".into())
+            });
 
             let bpm = p.target_bpm.unwrap_or(120);
 
@@ -1776,12 +1778,7 @@ pub fn dispatch_tool_with_defaults(
                 } else {
                     String::new()
                 };
-                let base_name = format!(
-                    "ref_{}_{}bpm{}",
-                    sanitize(&genre),
-                    bpm,
-                    suffix
-                );
+                let base_name = format!("ref_{}_{}bpm{}", sanitize(&genre), bpm, suffix);
                 let output_path = format!("assets/generated/audio/{}.wav", base_name);
 
                 let request = MusicRequest {
