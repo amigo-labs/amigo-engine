@@ -175,11 +175,32 @@ mod tests {
     }
 
     #[test]
-    fn test_send_types() {
-        let pool = TaskPool::with_threads(2);
-        let task_vec = pool.spawn(|| vec![1u8, 2, 3]);
-        let task_string = pool.spawn(|| String::from("hello"));
-        assert_eq!(task_vec.block(), vec![1u8, 2, 3]);
-        assert_eq!(task_string.block(), "hello");
+    fn is_done_then_block() {
+        let pool = TaskPool::with_threads(1);
+        let mut task = pool.spawn(|| 42);
+        // Wait for completion
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(task.is_done()); // caches result
+        assert_eq!(task.block(), 42); // must read from cache
+    }
+
+    #[test]
+    fn is_done_idempotent() {
+        let pool = TaskPool::with_threads(1);
+        let mut task = pool.spawn(|| 99);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(task.is_done());
+        assert!(task.is_done()); // second call should still be true (reads from cache)
+        assert_eq!(task.block(), 99);
+    }
+
+    #[test]
+    fn panic_in_task_does_not_hang() {
+        let pool = TaskPool::with_threads(1);
+        let task = pool.spawn(|| -> i32 { panic!("oops") });
+        // The sender is dropped when the task panics, so block() should panic
+        // (not hang). We use catch_unwind to verify.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task.block()));
+        assert!(result.is_err());
     }
 }

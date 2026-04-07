@@ -431,6 +431,7 @@ fn xorshift64(mut s: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::card::CardDef;
 
     #[test]
     fn map_generation_deterministic() {
@@ -522,5 +523,94 @@ mod tests {
         let combat = state.combat.as_ref().unwrap();
         assert_eq!(combat.player_hp, 40);
         assert_eq!(combat.player_max_hp, 50);
+    }
+
+    fn make_registry_with_cost(id: u32, cost: u8) -> CardRegistry {
+        let mut reg = CardRegistry::new();
+        reg.register(CardDef {
+            id: CardId(id),
+            name: format!("Card{}", id),
+            cost,
+            rarity: crate::card::Rarity::Common,
+            effects: vec![],
+            tags: vec![],
+            upgraded: false,
+            target: crate::card::TargetKind::SingleEnemy,
+        });
+        reg
+    }
+
+    #[test]
+    fn play_card_insufficient_energy() {
+        // Card costs 5, but starting energy is 3
+        let registry = make_registry_with_cost(0, 5);
+        let config = DeckbuilderConfig {
+            starting_deck: vec![CardId(0)],
+            hand_size: 5,
+            starting_energy: 3,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut state = DbState::new(config);
+
+        let enemies = vec![EnemyState {
+            id: 0,
+            name: "Slime".into(),
+            hp: 20,
+            max_hp: 20,
+            block: 0,
+            intent: EnemyIntent::Attack(6),
+        }];
+        start_combat(&mut state, enemies);
+
+        let hand_before = state.hand.cards.clone();
+        let events = play_card(&mut state, 0, Some(0), &registry);
+
+        // No events emitted (card too expensive)
+        assert!(events.is_empty());
+        // Hand unchanged
+        assert_eq!(state.hand.cards, hand_before);
+        // Energy unchanged
+        assert_eq!(state.combat.as_ref().unwrap().energy, 3);
+    }
+
+    #[test]
+    fn combat_won_persists_hp_and_max_hp() {
+        // Card costs 0 so we can always play it
+        let registry = make_registry_with_cost(0, 0);
+        let config = DeckbuilderConfig {
+            starting_deck: vec![CardId(0)],
+            hand_size: 5,
+            starting_energy: 3,
+            starting_hp: 35,
+            starting_max_hp: 45,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut state = DbState::new(config);
+
+        // Enemy already dead (hp = 0)
+        let enemies = vec![EnemyState {
+            id: 0,
+            name: "Dead Slime".into(),
+            hp: 0,
+            max_hp: 20,
+            block: 0,
+            intent: EnemyIntent::Unknown,
+        }];
+        start_combat(&mut state, enemies);
+
+        // Modify combat HP to simulate damage taken during combat
+        state.combat.as_mut().unwrap().player_hp = 30;
+        state.combat.as_mut().unwrap().player_max_hp = 45;
+
+        // Playing a card triggers the "all enemies dead" check
+        let events = play_card(&mut state, 0, None, &registry);
+
+        assert!(events.iter().any(|e| matches!(e, DbEvent::CombatWon)));
+        assert_eq!(state.phase, DbPhase::Reward);
+        // HP persisted from combat back to run state
+        assert_eq!(state.player_hp, 30);
+        assert_eq!(state.player_max_hp, 45);
     }
 }

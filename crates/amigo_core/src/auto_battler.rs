@@ -507,10 +507,43 @@ mod tests {
 
     #[test]
     fn combat_deterministic() {
-        let mut team_a = vec![test_unit(1, 50, 10)];
-        let mut team_b = vec![test_unit(2, 30, 5)];
-        let result = resolve_combat(&mut team_a, &mut team_b, 42);
-        assert!(result.won);
+        // Run combat twice with the same seed and verify identical results.
+        let mut team_a1 = vec![test_unit(1, 50, 10), test_unit(1, 60, 8)];
+        let mut team_b1 = vec![test_unit(2, 30, 5), test_unit(2, 40, 7)];
+        let result1 = resolve_combat(&mut team_a1, &mut team_b1, 42);
+
+        let mut team_a2 = vec![test_unit(1, 50, 10), test_unit(1, 60, 8)];
+        let mut team_b2 = vec![test_unit(2, 30, 5), test_unit(2, 40, 7)];
+        let result2 = resolve_combat(&mut team_a2, &mut team_b2, 42);
+
+        // Same winner
+        assert_eq!(
+            result1.won, result2.won,
+            "Same seed should produce same winner"
+        );
+        // Same damage taken
+        assert_eq!(
+            result1.damage_taken, result2.damage_taken,
+            "Same seed should produce same damage_taken"
+        );
+        // Same surviving units
+        assert_eq!(
+            result1.surviving_units, result2.surviving_units,
+            "Same seed should produce same surviving_units"
+        );
+        // Same remaining HP on all units
+        for (a1, a2) in team_a1.iter().zip(team_a2.iter()) {
+            assert_eq!(
+                a1.current_hp, a2.current_hp,
+                "Team A unit HP should match across identical runs"
+            );
+        }
+        for (b1, b2) in team_b1.iter().zip(team_b2.iter()) {
+            assert_eq!(
+                b1.current_hp, b2.current_hp,
+                "Team B unit HP should match across identical runs"
+            );
+        }
     }
 
     #[test]

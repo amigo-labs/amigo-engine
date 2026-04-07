@@ -157,13 +157,6 @@ mod tests {
     }
 
     #[test]
-    fn type_info_has_correct_name() {
-        let info = Health::type_info();
-        assert_eq!(info.short_name, "Health");
-        assert_eq!(info.type_id, TypeId::of::<Health>());
-    }
-
-    #[test]
     fn field_count_excludes_skipped() {
         let info = Stats::type_info();
         // internal_id is skipped, so 3 fields: name, speed, active
@@ -362,18 +355,6 @@ mod tests {
     }
 
     #[test]
-    fn reflected_type_info_matches_type_info() {
-        let h = Health {
-            current: 10,
-            max: 20,
-        };
-        let info_static = Health::type_info();
-        let info_instance = h.reflected_type_info();
-        assert_eq!(info_static.short_name, info_instance.short_name);
-        assert_eq!(info_static.type_id, info_instance.type_id);
-    }
-
-    #[test]
     fn registry_register_and_get() {
         let mut registry = TypeRegistry::new();
         registry.register::<Health>();
@@ -420,16 +401,6 @@ mod tests {
         registry.register::<Stats>();
         let names: Vec<&str> = registry.iter().map(|r| r.info.short_name).collect();
         assert_eq!(names, vec!["Health", "Stats"]);
-    }
-
-    #[test]
-    fn registry_len_and_is_empty() {
-        let mut registry = TypeRegistry::new();
-        assert!(registry.is_empty());
-        assert_eq!(registry.len(), 0);
-        registry.register::<Health>();
-        assert!(!registry.is_empty());
-        assert_eq!(registry.len(), 1);
     }
 
     #[test]

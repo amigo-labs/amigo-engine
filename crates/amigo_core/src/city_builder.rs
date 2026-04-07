@@ -1927,12 +1927,44 @@ mod tests {
     #[test]
     fn road_flow_field() {
         let mut roads = RoadNetwork::new(5, 5);
+        // Place a horizontal road from (0,2) to (4,2)
         for x in 0..5 {
             roads.place_road(GridPos::new(x, 2));
         }
-        let _field = roads.flow_field_to(GridPos::new(4, 2));
-        // Just verify it doesn't panic and is cached.
-        assert!(roads.flow_cache.contains_key(&GridPos::new(4, 2)));
+        let goal = GridPos::new(4, 2);
+
+        // Compute the flow field and collect costs while the borrow is active
+        let field = roads.flow_field_to(goal);
+        let goal_cost = field.cost_at(4, 2);
+        let costs: Vec<u32> = (0..5).map(|x| field.cost_at(x, 2)).collect();
+        let non_road_cost = field.cost_at(0, 0);
+
+        // Verify caching works (no longer borrowing the field)
+        assert!(roads.flow_cache.contains_key(&goal));
+
+        // Goal should have cost 0
+        assert_eq!(goal_cost, 0, "Goal tile should have cost 0");
+
+        // Verify costs decrease monotonically toward the goal along the road
+        // Road tiles: (0,2), (1,2), (2,2), (3,2), (4,2)
+        assert_ne!(costs[0], u32::MAX, "Start of road should be reachable");
+        for x in 1..5usize {
+            assert!(
+                costs[x] < costs[x - 1],
+                "Cost should decrease toward goal: cost_at({},2)={} should be < cost_at({},2)={}",
+                x,
+                costs[x],
+                x - 1,
+                costs[x - 1]
+            );
+        }
+
+        // Non-road tiles should be unreachable (cost == u32::MAX)
+        assert_eq!(
+            non_road_cost,
+            u32::MAX,
+            "Non-road tile (0,0) should be unreachable"
+        );
     }
 
     // ── ZoneSystem growth ───────────────────────────────────

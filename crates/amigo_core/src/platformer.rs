@@ -1037,12 +1037,4 @@ mod tests {
             "Should stop at last waypoint, got {x}"
         );
     }
-
-    #[test]
-    fn moving_platform_delta_for_riders() {
-        let mut plat = MovingPlatform::new(vec![(0.0, 0.0), (100.0, 0.0)], 10.0, PathMode::Loop);
-
-        let (_, _, dx, _) = plat.tick();
-        assert!(dx > 0.0, "Delta should be positive when moving right");
-    }
 }

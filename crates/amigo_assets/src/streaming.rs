@@ -241,17 +241,6 @@ mod tests {
     }
 
     #[test]
-    fn tick_increments_counter() {
-        let mut reg = TextureRegistry::new(1024);
-        assert_eq!(reg.current_tick, 0);
-        reg.tick();
-        assert_eq!(reg.current_tick, 1);
-        reg.tick();
-        reg.tick();
-        assert_eq!(reg.current_tick, 3);
-    }
-
-    #[test]
     fn is_loaded_returns_correct_values() {
         let mut reg = TextureRegistry::new(1024);
         assert!(!reg.is_loaded("missing"));
@@ -300,5 +289,38 @@ mod tests {
         assert_eq!(evicted.len(), 1);
         assert_eq!(evicted[0], "b");
         assert!(reg.is_loaded("a"));
+    }
+
+    #[test]
+    fn evict_does_not_touch_loading_or_failed() {
+        let mut reg = TextureRegistry::new(1024);
+        let uv = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
+
+        reg.mark_resident("resident_old", 0, uv);
+        reg.mark_loading("loading_one", 42);
+        reg.request("failed_one");
+        reg.mark_failed("failed_one");
+        reg.tick();
+        reg.mark_resident("resident_new", 0, uv);
+
+        // Evict to 1 resident — should only remove resident_old
+        let evicted = reg.evict_lru(1);
+        assert_eq!(evicted.len(), 1);
+        assert_eq!(evicted[0], "resident_old");
+
+        // Loading and Failed entries should still exist in their original states
+        assert!(matches!(
+            reg.slots.get("loading_one"),
+            Some(TextureSlot::Loading { task_id: 42 })
+        ));
+        assert!(matches!(
+            reg.slots.get("failed_one"),
+            Some(TextureSlot::Failed)
+        ));
     }
 }

@@ -327,4 +327,16 @@ mod tests {
         // "b" should start at x = 32 + 2 = 34 (after padding)
         assert_eq!(rect_b.x, 34);
     }
+
+    #[test]
+    fn insert_duplicate_returns_existing() {
+        let mut atlas = DynamicAtlas::new(256, 0);
+        let (page1, rect1) = atlas.insert("hero", 32, 32).unwrap();
+        let (page2, rect2) = atlas.insert("hero", 32, 32).unwrap();
+        assert_eq!(page1, page2);
+        assert_eq!(rect1.x, rect2.x);
+        assert_eq!(rect1.y, rect2.y);
+        assert_eq!(rect1, rect2); // exact same rect returned
+        assert_eq!(atlas.page_count(), 1); // no extra page created
+    }
 }

@@ -469,4 +469,71 @@ mod tests {
         // Should have recorded a rollback.
         assert!(session.stats().rollbacks_this_second > 0);
     }
+
+    #[test]
+    fn snapshot_buffer_wraparound() {
+        let config = RollbackConfig {
+            max_rollback_frames: 4,
+            snapshot_buffer_size: 8,
+        };
+        let players = vec![p(1)];
+        let mut session = RollbackSession::<MockState>::new(config, p(1), players);
+        let mut state = MockState::default();
+
+        // Run 20 ticks — buffer wraps around at size 8
+        for tick in 0..20u64 {
+            session.advance_tick(&mut state, 1, vec![]);
+        }
+
+        // Recent snapshot should exist (tick 19 was saved during tick 19's advance)
+        assert!(session.restore_snapshot(19).is_some());
+        // Old snapshot (tick 3) should be overwritten by a later tick
+        assert!(session.restore_snapshot(3).is_none());
+    }
+
+    #[test]
+    fn stale_snapshot_returns_none() {
+        let config = RollbackConfig {
+            max_rollback_frames: 4,
+            snapshot_buffer_size: 4,
+        };
+        let players = vec![p(1)];
+        let mut session = RollbackSession::<MockState>::new(config, p(1), players);
+        let mut state = MockState::default();
+
+        // Tick 0 snapshot saved in slot 0
+        session.advance_tick(&mut state, 1, vec![]);
+        assert!(session.restore_snapshot(0).is_some());
+
+        // Run 4 more ticks — slot 0 now holds tick 4, not tick 0
+        for _ in 1..5 {
+            session.advance_tick(&mut state, 1, vec![]);
+        }
+        assert!(session.restore_snapshot(0).is_none()); // stale — overwritten
+        assert!(session.restore_snapshot(4).is_some()); // current occupant of slot 0
+    }
+
+    #[test]
+    fn rollback_depth_limited() {
+        // If mismatch tick is too old (snapshot overwritten), no crash
+        let config = RollbackConfig {
+            max_rollback_frames: 4,
+            snapshot_buffer_size: 4,
+        };
+        let players = vec![p(1), p(2)];
+        let mut session = RollbackSession::<MockState>::new(config, p(1), players);
+        let mut state = MockState::default();
+
+        // Run 20 ticks with confirmed inputs
+        for tick in 0..20u64 {
+            session.advance_tick(&mut state, 1, vec![(p(2), tick, 2)]);
+        }
+
+        // Deliver a correction for tick 2 (way too old, snapshot gone).
+        // This should NOT crash — rollback_to is clamped by max_rollback_frames
+        // and the snapshot for that tick is gone, so rollback is skipped.
+        session.advance_tick(&mut state, 1, vec![(p(2), 2, 999)]);
+        // Session should still be functional
+        assert_eq!(session.current_tick(), 21);
+    }
 }

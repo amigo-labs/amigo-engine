@@ -205,31 +205,54 @@ mod tests {
     // device. We test the non-Kira parts here and use structural assertions.
 
     #[test]
-    fn bus_id_and_filter_kind() {
-        let id = BusId(3);
-        assert_eq!(id.0, 3);
-        assert_eq!(FilterKind::LowPass, FilterKind::LowPass);
-        assert_ne!(FilterKind::LowPass, FilterKind::HighPass);
+    fn bus_id_equality_and_hashing() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(BusId(0));
+        set.insert(BusId(1));
+        set.insert(BusId(0)); // duplicate
+        assert_eq!(set.len(), 2); // BusId hashing deduplicates correctly
     }
 
     #[test]
-    fn filter_params() {
-        let p = FilterParams {
+    fn filter_kind_all_variants_distinct() {
+        let kinds = [
+            FilterKind::LowPass,
+            FilterKind::HighPass,
+            FilterKind::BandPass,
+        ];
+        for i in 0..kinds.len() {
+            for j in (i + 1)..kinds.len() {
+                assert_ne!(kinds[i], kinds[j]);
+            }
+        }
+    }
+
+    #[test]
+    fn filter_params_cutoff_range() {
+        let low = FilterParams {
             kind: FilterKind::LowPass,
-            cutoff_hz: 800.0,
+            cutoff_hz: 20.0,
         };
-        assert_eq!(p.cutoff_hz, 800.0);
+        let high = FilterParams {
+            kind: FilterKind::LowPass,
+            cutoff_hz: 20000.0,
+        };
+        assert!(low.cutoff_hz < high.cutoff_hz);
+        // Verify no NaN or negative frequencies
+        assert!(low.cutoff_hz > 0.0);
+        assert!(!high.cutoff_hz.is_nan());
     }
 
     #[test]
-    fn audio_node_bus_accessors() {
-        // This test verifies the AudioNode::bus() accessor pattern compiles
-        // and works with a mock-style construction. Since we can't create a
-        // real TrackHandle without Kira, we just verify the enum structure.
-        let _kind = FilterKind::BandPass;
-        let _params = FilterParams {
-            kind: FilterKind::HighPass,
-            cutoff_hz: 2000.0,
-        };
+    fn bus_id_as_map_key() {
+        // Verify BusId works correctly as a FxHashMap key (used by AudioGraph internals)
+        let mut map = FxHashMap::default();
+        map.insert(BusId(0), "master");
+        map.insert(BusId(1), "sfx");
+        map.insert(BusId(0), "master_updated"); // overwrite
+        assert_eq!(map.len(), 2);
+        assert_eq!(map[&BusId(0)], "master_updated");
+        assert_eq!(map[&BusId(1)], "sfx");
     }
 }

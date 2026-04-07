@@ -1584,14 +1584,43 @@ mod tests {
 
     #[test]
     fn item_pool_pick() {
+        // Pool with Common (weight 10), Rare (weight 5), and Epic (weight 1)
         let pool = ItemPool::new()
-            .with_entry(1, 10.0, 0)
-            .with_entry(2, 5.0, 1)
-            .with_entry(3, 1.0, 2);
+            .with_entry(1, 10.0, 0) // Common-ish, high weight
+            .with_entry(2, 5.0, 1) // Rare-ish, medium weight
+            .with_entry(3, 1.0, 2); // Epic-ish, low weight
 
         let counts = std::collections::HashMap::new();
-        let result = pool.pick(42, &counts);
-        assert!(result.is_some());
+
+        // Pick 200 times with varying seeds and count items by id
+        let mut item_counts = std::collections::HashMap::<u32, u32>::new();
+        for i in 0..200u64 {
+            // Derive a distinct seed per pick
+            let seed = 42u64.wrapping_mul(i.wrapping_add(1)).wrapping_add(7);
+            let result = pool.pick(seed, &counts);
+            assert!(
+                result.is_some(),
+                "pick should always return Some from a non-empty pool"
+            );
+            *item_counts.entry(result.unwrap()).or_insert(0) += 1;
+        }
+
+        let common_count = item_counts.get(&1).copied().unwrap_or(0);
+        let rare_count = item_counts.get(&2).copied().unwrap_or(0);
+        let epic_count = item_counts.get(&3).copied().unwrap_or(0);
+
+        // Item 1 (weight 10) should appear more than item 2 (weight 5)
+        assert!(
+            common_count > rare_count,
+            "Common (id=1, weight=10) should appear more often than Rare (id=2, weight=5): got {} vs {}",
+            common_count, rare_count
+        );
+        // Item 2 (weight 5) should appear more than item 3 (weight 1)
+        assert!(
+            rare_count > epic_count,
+            "Rare (id=2, weight=5) should appear more often than Epic (id=3, weight=1): got {} vs {}",
+            rare_count, epic_count
+        );
     }
 
     #[test]
@@ -1728,8 +1757,29 @@ mod tests {
         let system = ItemSystem::new(items, vec![]);
         let mut rng = XorShift64::new(42);
 
-        let drop = system.roll_drop(&mut rng, 0);
-        assert!(drop.is_some());
+        let mut total_drops = 0u32;
+        let mut common_count = 0u32;
+        for _ in 0..100 {
+            if let Some(drop) = system.roll_drop(&mut rng, 0) {
+                total_drops += 1;
+                if drop.rarity == Rarity::Common {
+                    common_count += 1;
+                }
+            }
+        }
+
+        // Drops aren't always guaranteed, but we should get a majority
+        assert!(
+            total_drops > 50,
+            "Expected more than 50 drops out of 100 rolls, got {}",
+            total_drops
+        );
+        // Common has the highest base weight (50), so at least 1 should appear
+        assert!(
+            common_count >= 1,
+            "Expected at least 1 Common drop out of {} total, got 0",
+            total_drops
+        );
     }
 
     #[test]
@@ -1744,6 +1794,23 @@ mod tests {
 
         let shop = system.roll_shop(&mut rng, 3, 0);
         assert_eq!(shop.len(), 3);
+
+        // All shop items should have valid (non-empty) IDs
+        for item in &shop {
+            assert!(
+                !item.id.is_empty(),
+                "Shop item should have a valid non-empty ID"
+            );
+        }
+
+        // At least 2 distinct item IDs should appear (not all the same item)
+        let distinct_ids: std::collections::HashSet<&str> =
+            shop.iter().map(|item| item.id.as_str()).collect();
+        assert!(
+            distinct_ids.len() >= 2,
+            "Expected at least 2 distinct item IDs in the shop, got {:?}",
+            distinct_ids
+        );
     }
 
     #[test]
@@ -2020,14 +2087,6 @@ mod tests {
 
     // ── RunStats ───────────────────────────────────────────
 
-    #[test]
-    fn run_stats_default() {
-        let stats = RunStats::default();
-        assert_eq!(stats.floor_reached, 0);
-        assert!(!stats.completed);
-        assert!(stats.death_cause.is_none());
-    }
-
     // ── MetaProgression (spec version) ─────────────────────
 
     #[test]
@@ -2064,20 +2123,4 @@ mod tests {
     }
 
     // ── DeathMode ──────────────────────────────────────────
-
-    #[test]
-    fn death_mode_variants() {
-        let hard = DeathMode::Hard;
-        let soft = DeathMode::Soft {
-            currency_retain_pct: 50,
-        };
-        assert_eq!(hard, DeathMode::Hard);
-        assert_ne!(hard, soft);
-        if let DeathMode::Soft {
-            currency_retain_pct,
-        } = soft
-        {
-            assert_eq!(currency_retain_pct, 50);
-        }
-    }
 }

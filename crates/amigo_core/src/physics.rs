@@ -453,11 +453,32 @@ mod tests {
         let id = make_id(1);
         world.add_body(id, body);
 
-        world.step();
+        // Run multiple ticks and verify position and velocity remain unchanged.
+        for tick in 0..10 {
+            world.step();
 
-        let body = world.get_body(id).unwrap();
-        assert_eq!(body.position.x, 100.0);
-        assert_eq!(body.position.y, 100.0);
+            let body = world.get_body(id).unwrap();
+            assert_eq!(
+                body.position.x, 100.0,
+                "Static body X should not change after tick {}",
+                tick
+            );
+            assert_eq!(
+                body.position.y, 100.0,
+                "Static body Y should not change after tick {}",
+                tick
+            );
+            assert_eq!(
+                body.velocity.x, 0.0,
+                "Static body velocity.x should remain 0 after tick {}",
+                tick
+            );
+            assert_eq!(
+                body.velocity.y, 0.0,
+                "Static body velocity.y should remain 0 after tick {}",
+                tick
+            );
+        }
     }
 
     // ── Collision response ──────────────────────────────────
