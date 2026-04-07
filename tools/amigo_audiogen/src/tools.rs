@@ -4,6 +4,7 @@
 //! Audio generation tools call ComfyUI via the shared `amigo_comfyui` client.
 
 use crate::config::{load_audio_defaults, save_audio_defaults};
+use crate::style_registry::StyleRegistry;
 use crate::voice_registry::VoiceRegistry;
 use crate::workflows;
 use crate::{
@@ -395,6 +396,75 @@ pub struct DeleteVoiceParams {
 }
 
 // ---------------------------------------------------------------------------
+// Style tool parameter structs
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateStyleParams {
+    pub name: String,
+    pub genre: String,
+    #[serde(default)]
+    pub genre_tags: String,
+    #[serde(default = "default_bpm")]
+    pub default_bpm: u32,
+    #[serde(default)]
+    pub sfx_style: String,
+    #[serde(default)]
+    pub key_instruments: String,
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EditStyleParams {
+    pub name: String,
+    #[serde(default)]
+    pub genre: Option<String>,
+    #[serde(default)]
+    pub genre_tags: Option<String>,
+    #[serde(default)]
+    pub default_bpm: Option<u32>,
+    #[serde(default)]
+    pub sfx_style: Option<String>,
+    #[serde(default)]
+    pub key_instruments: Option<String>,
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeleteStyleParams {
+    pub name: String,
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FromReferenceParams {
+    pub reference_description: String,
+    #[serde(default)]
+    pub style_name: Option<String>,
+    #[serde(default)]
+    pub target_genre: Option<String>,
+    #[serde(default)]
+    pub target_bpm: Option<u32>,
+    #[serde(default = "default_duration")]
+    pub duration_secs: f32,
+    #[serde(default = "default_section")]
+    pub section: String,
+    #[serde(default = "default_variation_strength")]
+    pub variation_strength: f32,
+    #[serde(default = "default_one")]
+    pub num_variations: u32,
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+fn default_one() -> u32 {
+    1
+}
+
+// ---------------------------------------------------------------------------
 // Tool result structs
 // ---------------------------------------------------------------------------
 
@@ -422,6 +492,10 @@ pub struct StyleInfo {
     pub name: String,
     pub genre: String,
     pub default_bpm: u32,
+    pub genre_tags: Vec<String>,
+    pub sfx_style: String,
+    pub key_instruments: Vec<String>,
+    pub is_custom: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -452,7 +526,7 @@ pub fn list_tools() -> Vec<ToolDef> {
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "world": { "type": "string", "description": "World style (caribbean, lotr, dune, matrix, got, stranger_things)" },
+                    "world": { "type": "string", "description": "World style (builtin: caribbean, lotr, dune, matrix, got, stranger_things — or any custom style name)" },
                     "genre": { "type": "string", "description": "Genre override" },
                     "bpm": { "type": "integer", "description": "Target BPM" },
                     "duration_secs": { "type": "number", "description": "Track duration in seconds" },
@@ -511,8 +585,73 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_audiogen_list_styles".into(),
-            description: "List available world audio styles".into(),
+            description: "List available world audio styles (builtin + custom)".into(),
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_create_style".into(),
+            description: "Create a custom audio style preset".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Unique style name (e.g. cyberpunk, anime_ost)" },
+                    "genre": { "type": "string", "description": "Primary music genre (e.g. cyberpunk electronic)" },
+                    "genre_tags": { "type": "string", "description": "Comma-separated genre descriptors for conditioning (e.g. synth, industrial, dark)" },
+                    "default_bpm": { "type": "integer", "description": "Default BPM for this style" },
+                    "sfx_style": { "type": "string", "description": "SFX style prefix (e.g. digital, neon, electric, )" },
+                    "key_instruments": { "type": "string", "description": "Comma-separated instruments (e.g. synth lead, distorted bass, drum machine)" },
+                    "project_dir": { "type": "string", "description": "Project directory (optional)" }
+                },
+                "required": ["name", "genre"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_edit_style".into(),
+            description: "Edit an existing custom audio style preset".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Name of the custom style to edit" },
+                    "genre": { "type": "string", "description": "New primary genre" },
+                    "genre_tags": { "type": "string", "description": "New comma-separated genre tags" },
+                    "default_bpm": { "type": "integer", "description": "New default BPM" },
+                    "sfx_style": { "type": "string", "description": "New SFX style prefix" },
+                    "key_instruments": { "type": "string", "description": "New comma-separated instruments" },
+                    "project_dir": { "type": "string", "description": "Project directory (optional)" }
+                },
+                "required": ["name"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_delete_style".into(),
+            description: "Delete a custom audio style preset".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Name of the custom style to delete" },
+                    "project_dir": { "type": "string", "description": "Project directory (optional)" }
+                },
+                "required": ["name"]
+            }),
+        },
+        ToolDef {
+            name: "amigo_audiogen_from_reference".into(),
+            description: "Generate music inspired by a reference song description. Describe the vibe, genre, instruments, tempo — the system generates original music with that feel.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "reference_description": { "type": "string", "description": "Text description of the reference song's characteristics: genre, instruments, tempo, mood, dynamics (e.g. 'Orchestral, piano-driven, dramatic dynamics, 72 BPM, major to minor shifts, operatic elements')" },
+                    "style_name": { "type": "string", "description": "If set, saves the derived parameters as a reusable custom style with this name" },
+                    "target_genre": { "type": "string", "description": "Genre override (if you want to shift the genre away from the reference)" },
+                    "target_bpm": { "type": "integer", "description": "BPM override" },
+                    "duration_secs": { "type": "number", "description": "Track duration in seconds (default 30)" },
+                    "section": { "type": "string", "description": "Music section: calm, tense, battle, boss, victory, menu (default calm)" },
+                    "variation_strength": { "type": "number", "description": "How far to deviate from the reference vibe (0.0 = very close, 1.0 = very different, default 0.3)" },
+                    "num_variations": { "type": "integer", "description": "Number of variations to generate (default 1)" },
+                    "project_dir": { "type": "string", "description": "Project directory (optional)" }
+                },
+                "required": ["reference_description"]
+            }),
         },
         ToolDef {
             name: "amigo_audiogen_server_status".into(),
@@ -796,7 +935,7 @@ pub fn dispatch_tool_with_defaults(
     match name {
         "amigo_audiogen_generate_music" => {
             let p: GenerateMusicParams = serde_json::from_value(params)?;
-            let style = WorldAudioStyle::find(&p.world);
+            let style = WorldAudioStyle::find(&p.world, project_dir);
             let defaults = project_dir.map(load_audio_defaults);
             let mut missing: Vec<String> = Vec::new();
 
@@ -1007,14 +1146,42 @@ pub fn dispatch_tool_with_defaults(
             })?)
         }
         "amigo_audiogen_list_styles" => {
-            let styles: Vec<StyleInfo> = WorldAudioStyle::builtin_styles()
+            let custom_registry = {
+                let styles_dir = project_dir
+                    .map(StyleRegistry::default_dir)
+                    .unwrap_or_else(|| std::path::PathBuf::from("assets/audio"));
+                StyleRegistry::load(&styles_dir)
+            };
+            let custom_names: std::collections::HashSet<String> =
+                custom_registry.styles.keys().cloned().collect();
+
+            let mut styles: Vec<StyleInfo> = WorldAudioStyle::builtin_styles()
                 .into_iter()
+                .filter(|s| !custom_names.contains(&s.name))
                 .map(|s| StyleInfo {
                     name: s.name,
                     genre: s.genre,
                     default_bpm: s.default_bpm,
+                    genre_tags: s.genre_tags,
+                    sfx_style: s.sfx_style,
+                    key_instruments: s.key_instruments,
+                    is_custom: false,
                 })
                 .collect();
+
+            for (_, s) in custom_registry.styles {
+                styles.push(StyleInfo {
+                    name: s.name,
+                    genre: s.genre,
+                    default_bpm: s.default_bpm,
+                    genre_tags: s.genre_tags,
+                    sfx_style: s.sfx_style,
+                    key_instruments: s.key_instruments,
+                    is_custom: true,
+                });
+            }
+
+            styles.sort_by(|a, b| a.name.cmp(&b.name));
             Ok(serde_json::to_value(StylesResult { styles })?)
         }
         "amigo_audiogen_server_status" => {
@@ -1030,7 +1197,7 @@ pub fn dispatch_tool_with_defaults(
         }
         "amigo_audiogen_generate_core_melody" => {
             let p: GenerateCoreMelodyParams = serde_json::from_value(params)?;
-            let style = WorldAudioStyle::find(&p.world);
+            let style = WorldAudioStyle::find(&p.world, project_dir);
             let bpm = if p.bpm == 0 {
                 style.as_ref().map(|s| s.default_bpm).unwrap_or(120)
             } else {
@@ -1412,6 +1579,247 @@ pub fn dispatch_tool_with_defaults(
             }))
         }
 
+        // --- Style CRUD tools ---
+        "amigo_audiogen_create_style" => {
+            let p: CreateStyleParams = serde_json::from_value(params)?;
+
+            if p.name.is_empty() {
+                return Ok(serde_json::json!({ "error": "Style name must not be empty" }));
+            }
+
+            let styles_dir = p
+                .project_dir
+                .as_deref()
+                .or(project_dir.map(|d| d.to_str().unwrap_or(".")))
+                .map(|d| StyleRegistry::default_dir(std::path::Path::new(d)))
+                .unwrap_or_else(|| std::path::PathBuf::from("assets/audio"));
+
+            let mut registry = StyleRegistry::load(&styles_dir);
+
+            let parse_csv = |s: &str| -> Vec<String> {
+                s.split(',')
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty())
+                    .collect()
+            };
+
+            let style = WorldAudioStyle {
+                name: p.name.clone(),
+                genre: p.genre,
+                genre_tags: parse_csv(&p.genre_tags),
+                default_bpm: p.default_bpm,
+                sfx_style: p.sfx_style,
+                key_instruments: parse_csv(&p.key_instruments),
+            };
+
+            registry.insert(style.clone());
+            if let Err(e) = registry.save(&styles_dir) {
+                return Ok(serde_json::json!({
+                    "error": format!("Failed to save style registry: {}", e)
+                }));
+            }
+
+            Ok(serde_json::json!({
+                "created": true,
+                "style": serde_json::to_value(&style)?,
+                "styles_dir": styles_dir.display().to_string(),
+            }))
+        }
+        "amigo_audiogen_edit_style" => {
+            let p: EditStyleParams = serde_json::from_value(params)?;
+
+            let styles_dir = p
+                .project_dir
+                .as_deref()
+                .or(project_dir.map(|d| d.to_str().unwrap_or(".")))
+                .map(|d| StyleRegistry::default_dir(std::path::Path::new(d)))
+                .unwrap_or_else(|| std::path::PathBuf::from("assets/audio"));
+
+            let mut registry = StyleRegistry::load(&styles_dir);
+
+            let existing = match registry.get(&p.name) {
+                Some(s) => s.clone(),
+                None => {
+                    // Check if it's a builtin
+                    if WorldAudioStyle::builtin_styles()
+                        .iter()
+                        .any(|s| s.name == p.name)
+                    {
+                        return Ok(serde_json::json!({
+                            "error": format!("'{}' is a builtin style. To customize it, create a custom style with the same name using amigo_audiogen_create_style.", p.name)
+                        }));
+                    }
+                    return Ok(serde_json::json!({
+                        "error": format!("Custom style '{}' not found", p.name)
+                    }));
+                }
+            };
+
+            let parse_csv = |s: &str| -> Vec<String> {
+                s.split(',')
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty())
+                    .collect()
+            };
+
+            let updated = WorldAudioStyle {
+                name: existing.name,
+                genre: p.genre.unwrap_or(existing.genre),
+                genre_tags: p
+                    .genre_tags
+                    .map(|t| parse_csv(&t))
+                    .unwrap_or(existing.genre_tags),
+                default_bpm: p.default_bpm.unwrap_or(existing.default_bpm),
+                sfx_style: p.sfx_style.unwrap_or(existing.sfx_style),
+                key_instruments: p
+                    .key_instruments
+                    .map(|t| parse_csv(&t))
+                    .unwrap_or(existing.key_instruments),
+            };
+
+            registry.insert(updated.clone());
+            if let Err(e) = registry.save(&styles_dir) {
+                return Ok(serde_json::json!({
+                    "error": format!("Failed to save style registry: {}", e)
+                }));
+            }
+
+            Ok(serde_json::json!({
+                "updated": true,
+                "style": serde_json::to_value(&updated)?,
+            }))
+        }
+        "amigo_audiogen_delete_style" => {
+            let p: DeleteStyleParams = serde_json::from_value(params)?;
+
+            let styles_dir = p
+                .project_dir
+                .as_deref()
+                .or(project_dir.map(|d| d.to_str().unwrap_or(".")))
+                .map(|d| StyleRegistry::default_dir(std::path::Path::new(d)))
+                .unwrap_or_else(|| std::path::PathBuf::from("assets/audio"));
+
+            let mut registry = StyleRegistry::load(&styles_dir);
+
+            if WorldAudioStyle::builtin_styles()
+                .iter()
+                .any(|s| s.name == p.name)
+                && registry.get(&p.name).is_none()
+            {
+                return Ok(serde_json::json!({
+                    "error": format!("'{}' is a builtin style and cannot be deleted", p.name)
+                }));
+            }
+
+            let removed = registry.remove(&p.name);
+            if removed.is_some() {
+                if let Err(e) = registry.save(&styles_dir) {
+                    return Ok(serde_json::json!({
+                        "error": format!("Failed to save style registry: {}", e)
+                    }));
+                }
+            }
+
+            Ok(serde_json::json!({
+                "deleted": removed.is_some(),
+                "name": p.name,
+            }))
+        }
+
+        // --- Song reference tool ---
+        "amigo_audiogen_from_reference" => {
+            let p: FromReferenceParams = serde_json::from_value(params)?;
+
+            // Use the reference description as genre tags for conditioning
+            let genre_tags: Vec<String> = p
+                .reference_description
+                .split(',')
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect();
+
+            let genre = p
+                .target_genre
+                .clone()
+                .unwrap_or_else(|| genre_tags.first().cloned().unwrap_or_else(|| "ambient".into()));
+
+            let bpm = p.target_bpm.unwrap_or(120);
+
+            // Optionally save as a custom style
+            if let Some(ref style_name) = p.style_name {
+                let styles_dir = p
+                    .project_dir
+                    .as_deref()
+                    .or(project_dir.map(|d| d.to_str().unwrap_or(".")))
+                    .map(|d| StyleRegistry::default_dir(std::path::Path::new(d)))
+                    .unwrap_or_else(|| std::path::PathBuf::from("assets/audio"));
+
+                let mut registry = StyleRegistry::load(&styles_dir);
+                registry.insert(WorldAudioStyle {
+                    name: style_name.clone(),
+                    genre: genre.clone(),
+                    genre_tags: genre_tags.clone(),
+                    default_bpm: bpm,
+                    sfx_style: String::new(),
+                    key_instruments: vec![],
+                });
+                let _ = registry.save(&styles_dir);
+            }
+
+            let section = parse_section(&p.section);
+            let num_variations = p.num_variations.max(1);
+
+            let mut outputs = Vec::new();
+            for i in 0..num_variations {
+                let suffix = if num_variations > 1 {
+                    format!("_v{}", i + 1)
+                } else {
+                    String::new()
+                };
+                let base_name = format!(
+                    "ref_{}_{}bpm{}",
+                    sanitize(&genre),
+                    bpm,
+                    suffix
+                );
+                let output_path = format!("assets/generated/audio/{}.wav", base_name);
+
+                let request = MusicRequest {
+                    world: p.style_name.clone().unwrap_or_else(|| "custom".into()),
+                    genre: genre.clone(),
+                    bpm,
+                    duration_secs: p.duration_secs,
+                    lyrics: None,
+                    section: section.clone(),
+                    split_stems: false,
+                    extra: HashMap::new(),
+                };
+                let workflow = workflows::music::build_music_workflow(&request);
+                let client = create_comfyui_client();
+
+                match run_comfyui_audio_workflow(&client, &workflow, &output_path) {
+                    Ok(_) => outputs.push(output_path),
+                    Err(e) => {
+                        return Ok(serde_json::json!({
+                            "error": e,
+                            "generated_so_far": outputs,
+                            "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                        }));
+                    }
+                }
+            }
+
+            Ok(serde_json::json!({
+                "outputs": outputs,
+                "genre": genre,
+                "genre_tags": genre_tags,
+                "bpm": bpm,
+                "variation_strength": p.variation_strength,
+                "num_variations": num_variations,
+                "saved_style": p.style_name,
+            }))
+        }
+
         _ => Err(ToolError::UnknownTool(name.to_string())),
     }
 }
@@ -1452,8 +1860,8 @@ mod tests {
     // ── Tool listing ───────────────────────────────────────────
 
     #[test]
-    fn list_tools_returns_25() {
-        assert_eq!(list_tools().len(), 25);
+    fn list_tools_returns_29() {
+        assert_eq!(list_tools().len(), 29);
     }
 
     // ── Music generation dispatch ─────────────────────────────────

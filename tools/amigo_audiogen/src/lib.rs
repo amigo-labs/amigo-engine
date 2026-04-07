@@ -15,11 +15,13 @@ pub mod clean_mode;
 pub mod processing;
 pub mod stems;
 pub mod tools;
+pub mod style_registry;
 pub mod voice_registry;
 pub mod workflows;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -274,8 +276,37 @@ impl WorldAudioStyle {
         ]
     }
 
-    pub fn find(name: &str) -> Option<WorldAudioStyle> {
+    /// Find a style by name. Custom styles (from project registry) take
+    /// precedence over builtins.
+    pub fn find(name: &str, project_dir: Option<&Path>) -> Option<WorldAudioStyle> {
+        // Check custom styles first
+        if let Some(dir) = project_dir {
+            let registry =
+                style_registry::StyleRegistry::load(&style_registry::StyleRegistry::default_dir(dir));
+            if let Some(s) = registry.get(name) {
+                return Some(s.clone());
+            }
+        }
         Self::builtin_styles().into_iter().find(|s| s.name == name)
+    }
+
+    /// Return all styles (builtins + custom). Custom styles override builtins
+    /// with the same name.
+    pub fn all_styles(project_dir: Option<&Path>) -> Vec<WorldAudioStyle> {
+        let mut by_name: HashMap<String, WorldAudioStyle> = HashMap::new();
+        for s in Self::builtin_styles() {
+            by_name.insert(s.name.clone(), s);
+        }
+        if let Some(dir) = project_dir {
+            let registry =
+                style_registry::StyleRegistry::load(&style_registry::StyleRegistry::default_dir(dir));
+            for (_, s) in registry.styles {
+                by_name.insert(s.name.clone(), s);
+            }
+        }
+        let mut styles: Vec<_> = by_name.into_values().collect();
+        styles.sort_by(|a, b| a.name.cmp(&b.name));
+        styles
     }
 }
 
@@ -435,13 +466,13 @@ mod tests {
     fn world_audio_styles() {
         let styles = WorldAudioStyle::builtin_styles();
         assert_eq!(styles.len(), 6);
-        assert!(WorldAudioStyle::find("matrix").is_some());
-        assert!(WorldAudioStyle::find("nonexistent").is_none());
+        assert!(WorldAudioStyle::find("matrix", None).is_some());
+        assert!(WorldAudioStyle::find("nonexistent", None).is_none());
     }
 
     #[test]
     fn caribbean_is_shanty() {
-        let style = WorldAudioStyle::find("caribbean").unwrap();
+        let style = WorldAudioStyle::find("caribbean", None).unwrap();
         assert!(style.genre.contains("shanty"));
         assert_eq!(style.default_bpm, 130);
     }

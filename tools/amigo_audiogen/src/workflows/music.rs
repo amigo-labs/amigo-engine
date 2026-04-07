@@ -32,7 +32,7 @@ pub fn build_music_workflow(request: &MusicRequest) -> ComfyPrompt {
 
     // Build genre/style conditioning string
     let genre = if request.genre.is_empty() {
-        crate::WorldAudioStyle::find(&request.world)
+        crate::WorldAudioStyle::find(&request.world, None)
             .map(|s| s.genre.clone())
             .unwrap_or_else(|| "ambient".into())
     } else {
