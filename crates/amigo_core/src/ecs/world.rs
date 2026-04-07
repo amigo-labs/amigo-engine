@@ -334,6 +334,106 @@ impl Default for World {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::query::join;
+    use crate::math::{Fix, SimVec2};
+
+    #[test]
+    fn spawn_add_get_components() {
+        let mut world = World::new();
+        let e = world.spawn();
+
+        world.positions.insert(e, Position(SimVec2::ZERO));
+        world.healths.insert(e, Health::new(100));
+
+        let pos = world.positions.get(e);
+        assert!(pos.is_some());
+
+        let hp = world.healths.get(e).unwrap();
+        assert_eq!(hp.current, 100);
+        assert_eq!(hp.max, 100);
+    }
+
+    #[test]
+    fn despawn_removes_entity_and_components() {
+        let mut world = World::new();
+        let e = world.spawn();
+        world.positions.insert(e, Position(SimVec2::ZERO));
+        world.healths.insert(e, Health::new(50));
+
+        assert!(world.is_alive(e));
+        assert_eq!(world.entity_count(), 1);
+
+        world.despawn(e);
+        world.flush();
+
+        assert!(!world.is_alive(e));
+        assert_eq!(world.entity_count(), 0);
+        assert!(world.positions.get(e).is_none());
+        assert!(world.healths.get(e).is_none());
+    }
+
+    #[test]
+    fn query_entities_by_component_join() {
+        let mut world = World::new();
+        let a = world.spawn();
+        let b = world.spawn();
+        let c = world.spawn();
+
+        // a has position + health
+        world
+            .positions
+            .insert(a, Position(SimVec2::new(Fix::from_num(1), Fix::ZERO)));
+        world.healths.insert(a, Health::new(100));
+
+        // b has position only
+        world
+            .positions
+            .insert(b, Position(SimVec2::new(Fix::from_num(2), Fix::ZERO)));
+
+        // c has position + health
+        world
+            .positions
+            .insert(c, Position(SimVec2::new(Fix::from_num(3), Fix::ZERO)));
+        world.healths.insert(c, Health::new(50));
+
+        let results: Vec<_> = join(&world.positions, &world.healths).collect();
+        assert_eq!(results.len(), 2);
+
+        // Verify we got the right entities (a and c)
+        let ids: Vec<_> = results.iter().map(|(id, _, _)| *id).collect();
+        assert!(ids.contains(&a));
+        assert!(ids.contains(&c));
+        assert!(!ids.contains(&b));
+    }
+
+    #[test]
+    fn entity_id_generation_reuse_safety() {
+        let mut world = World::new();
+
+        // Spawn and despawn an entity
+        let e1 = world.spawn();
+        world.healths.insert(e1, Health::new(100));
+        world.despawn(e1);
+        world.flush();
+
+        // Spawn a new entity — may reuse the same index but with bumped generation
+        let e2 = world.spawn();
+
+        // e1 and e2 must not be equal (different generation)
+        assert_ne!(e1, e2);
+        // The old ID should not be alive
+        assert!(!world.is_alive(e1));
+        assert!(world.is_alive(e2));
+
+        // Component from e1 was cleaned up; e2 has none yet
+        assert!(world.healths.get(e1).is_none());
+        assert!(world.healths.get(e2).is_none());
+    }
+}
+
 // ── Reflect impls for built-in components (behind `reflect` feature) ──
 
 #[cfg(feature = "reflect")]

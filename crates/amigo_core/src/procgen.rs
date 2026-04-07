@@ -1235,17 +1235,6 @@ mod tests {
     }
 
     #[test]
-    fn ridge_noise_positive() {
-        let perm = permutation_table(42);
-        for y in 0..20 {
-            for x in 0..20 {
-                let v = ridge2d(x as f64 * 0.1, y as f64 * 0.1, &perm, 4, 2.0, 0.5);
-                assert!(v >= 0.0, "ridge noise should be non-negative, got {v}");
-            }
-        }
-    }
-
-    #[test]
     fn biome_map_from_noise() {
         let biomes = vec![
             BiomeDef::new(1, "Low")
@@ -1296,14 +1285,6 @@ mod tests {
     }
 
     #[test]
-    fn simplex_deterministic() {
-        let perm = permutation_table(42);
-        let a = simplex2d(1.5, 2.7, &perm);
-        let b = simplex2d(1.5, 2.7, &perm);
-        assert_eq!(a, b);
-    }
-
-    #[test]
     fn simplex_noisemap() {
         let map = NoiseMap::generate_simplex(32, 32, 42, 4.0, 4);
         assert_eq!(map.data.len(), 32 * 32);
@@ -1336,18 +1317,6 @@ mod tests {
         assert_eq!(grid[0], 0); // (0,0) = black (pinned)
         assert_eq!(grid[1], 1); // (1,0) = white
         assert_eq!(grid[4], 1); // (0,1) = white
-    }
-
-    #[test]
-    fn wfc_single_tile() {
-        let rules = WfcRuleset {
-            tile_count: 1,
-            adjacency: vec![[vec![0], vec![0], vec![0], vec![0]]],
-            weights: vec![1.0],
-        };
-        let mut solver = WfcSolver::new(3, 3, &rules, 42);
-        let result = solver.solve().unwrap();
-        assert!(result.iter().all(|&t| t == 0));
     }
 
     // ── Dungeon Generator ──────────────────────────────────

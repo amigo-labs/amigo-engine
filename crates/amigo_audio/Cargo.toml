@@ -3,6 +3,10 @@ name = "amigo_audio"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+audio_graph = []
+
 [dependencies]
 amigo_core = { workspace = true }
 kira = { workspace = true }

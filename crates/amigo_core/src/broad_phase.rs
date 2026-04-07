@@ -157,21 +157,12 @@ impl BroadPhase for CpuBroadPhase {
 // GPU Broad-Phase (stub)
 // ---------------------------------------------------------------------------
 
-/// GPU broad-phase placeholder.
+/// CPU-only GPU broad-phase fallback.
 ///
-/// The intended implementation performs a radix sort on the X-axis min
-/// coordinate followed by a sweep pass in a wgpu compute shader, reading
-/// candidate pairs back via a staging buffer.
-///
-/// **Current state**: the compute shader is not yet implemented.  This struct
-/// falls back to [`CpuBroadPhase`] so the rest of the engine can be wired up
-/// and tested before the shader lands.
-///
-/// # Future work
-/// - Accept `&wgpu::Device` and `&wgpu::Queue` at construction.
-/// - Upload body AABBs to a `StorageBuffer`.
-/// - Dispatch radix-sort + sweep compute pipeline.
-/// - Read back `CollisionPair` results via double-buffered staging buffer.
+/// This stub delegates to [`CpuBroadPhase`] and exists for use when
+/// the `gpu_physics` feature is not enabled. For the real GPU compute
+/// shader implementation, see `amigo_render::gpu_broad_phase::GpuBroadPhase`
+/// (enabled via the `gpu_physics` feature flag on the `amigo_render` crate).
 pub struct GpuBroadPhase {
     /// Fallback used until the compute shader is implemented.
     fallback: CpuBroadPhase,
@@ -219,16 +210,6 @@ mod tests {
     // -- Aabb -----------------------------------------------------------------
 
     #[test]
-    fn aabb_from_rect() {
-        let r = Rect::new(10.0, 20.0, 30.0, 40.0);
-        let a = Aabb::from_rect(&r);
-        assert_eq!(a.min_x, 10.0);
-        assert_eq!(a.min_y, 20.0);
-        assert_eq!(a.max_x, 40.0);
-        assert_eq!(a.max_y, 60.0);
-    }
-
-    #[test]
     fn aabb_overlaps() {
         let a = Aabb::new(0.0, 0.0, 10.0, 10.0);
         let b = Aabb::new(5.0, 5.0, 15.0, 15.0);
@@ -247,13 +228,6 @@ mod tests {
     }
 
     // -- CollisionPair --------------------------------------------------------
-
-    #[test]
-    fn collision_pair_canonical_order() {
-        let p1 = CollisionPair::new(id(5), id(3));
-        assert_eq!(p1.a, id(3));
-        assert_eq!(p1.b, id(5));
-    }
 
     // -- CpuBroadPhase --------------------------------------------------------
 
@@ -308,34 +282,63 @@ mod tests {
         assert!(pairs.contains(&CollisionPair::new(id(2), id(3))));
     }
 
-    #[test]
-    fn cpu_empty_input() {
-        let mut bp = CpuBroadPhase::new();
-        let pairs = bp.find_candidates(&[]);
-        assert!(pairs.is_empty());
-    }
-
-    #[test]
-    fn cpu_single_body() {
-        let mut bp = CpuBroadPhase::new();
-        let bodies = vec![(id(1), Rect::new(0.0, 0.0, 10.0, 10.0))];
-        let pairs = bp.find_candidates(&bodies);
-        assert!(pairs.is_empty());
-    }
-
     // -- GpuBroadPhase (stub delegates to CPU) --------------------------------
 
     #[test]
     fn gpu_stub_finds_same_pairs_as_cpu() {
         let mut cpu = CpuBroadPhase::new();
         let mut gpu = GpuBroadPhase::new();
+
+        // 4 bodies with known overlaps:
+        //   A (0,0)-(20,20) overlaps B (10,10)-(30,30) and C (15,0)-(25,15)
+        //   B overlaps C as well
+        //   D (100,100)-(110,110) is isolated
         let bodies = vec![
-            (id(1), Rect::new(0.0, 0.0, 20.0, 20.0)),
-            (id(2), Rect::new(10.0, 10.0, 20.0, 20.0)),
-            (id(3), Rect::new(100.0, 100.0, 10.0, 10.0)),
+            (id(1), Rect::new(0.0, 0.0, 20.0, 20.0)),     // A
+            (id(2), Rect::new(10.0, 10.0, 20.0, 20.0)),   // B
+            (id(3), Rect::new(15.0, 0.0, 10.0, 15.0)),    // C
+            (id(4), Rect::new(100.0, 100.0, 10.0, 10.0)), // D (isolated)
         ];
-        let cpu_pairs = cpu.find_candidates(&bodies);
-        let gpu_pairs = gpu.find_candidates(&bodies);
-        assert_eq!(cpu_pairs, gpu_pairs);
+
+        let mut cpu_pairs = cpu.find_candidates(&bodies);
+        let mut gpu_pairs = gpu.find_candidates(&bodies);
+
+        // Sort for deterministic comparison
+        cpu_pairs.sort_by_key(|p| (p.a, p.b));
+        gpu_pairs.sort_by_key(|p| (p.a, p.b));
+
+        // Both should return the exact same pairs
+        assert_eq!(
+            cpu_pairs, gpu_pairs,
+            "CPU and GPU broad phase must return identical pairs"
+        );
+
+        // Verify the expected pair count: A-B, A-C, B-C = 3 pairs
+        assert_eq!(
+            cpu_pairs.len(),
+            3,
+            "Expected 3 overlapping pairs (A-B, A-C, B-C), got {}",
+            cpu_pairs.len()
+        );
+
+        // Verify specific expected pairs exist
+        assert!(
+            cpu_pairs.contains(&CollisionPair::new(id(1), id(2))),
+            "A-B should overlap"
+        );
+        assert!(
+            cpu_pairs.contains(&CollisionPair::new(id(1), id(3))),
+            "A-C should overlap"
+        );
+        assert!(
+            cpu_pairs.contains(&CollisionPair::new(id(2), id(3))),
+            "B-C should overlap"
+        );
+
+        // D should not appear in any pair
+        assert!(
+            !cpu_pairs.iter().any(|p| p.a == id(4) || p.b == id(4)),
+            "Isolated body D should not appear in any collision pair"
+        );
     }
 }

@@ -12,6 +12,8 @@ pub struct DeckbuilderConfig {
     pub max_energy: u8,
     pub hand_size: u8,
     pub starting_deck: Vec<CardId>,
+    pub starting_hp: i32,
+    pub starting_max_hp: i32,
     pub seed: u64,
 }
 
@@ -22,6 +24,8 @@ impl Default for DeckbuilderConfig {
             max_energy: 3,
             hand_size: 5,
             starting_deck: Vec::new(),
+            starting_hp: 50,
+            starting_max_hp: 50,
             seed: 0,
         }
     }
@@ -227,6 +231,8 @@ pub struct DbState {
     pub combat: Option<CombatState>,
     pub gold: u32,
     pub floor: u32,
+    pub player_hp: i32,
+    pub player_max_hp: i32,
     pub relics: Vec<RelicId>,
     pub map: Vec<Vec<MapNode>>,
     pub reward_choices: Vec<RewardChoice>,
@@ -239,6 +245,8 @@ impl DbState {
         let map = generate_map(15, 3, config.seed);
 
         Self {
+            player_hp: config.starting_hp,
+            player_max_hp: config.starting_max_hp,
             phase: DbPhase::MapSelect,
             deck,
             hand,
@@ -284,8 +292,8 @@ pub fn start_combat(state: &mut DbState, enemies: Vec<EnemyState>) -> Vec<DbEven
     state.phase = DbPhase::Combat;
 
     state.combat = Some(CombatState {
-        player_hp: 50, // TODO: track persistent HP
-        player_max_hp: 50,
+        player_hp: state.player_hp,
+        player_max_hp: state.player_max_hp,
         player_block: 0,
         energy: state.config.starting_energy,
         max_energy: state.config.max_energy,
@@ -347,6 +355,10 @@ pub fn play_card(
     // Check if all enemies dead.
     if let Some(ref combat) = state.combat {
         if combat.enemies.iter().all(|e| e.hp <= 0) {
+            // Persist HP back to run state (both current and max, in case
+            // relics/upgrades changed max_hp during combat).
+            state.player_hp = combat.player_hp;
+            state.player_max_hp = combat.player_max_hp;
             events.push(DbEvent::CombatWon);
             state.phase = DbPhase::Reward;
         }
@@ -419,6 +431,7 @@ fn xorshift64(mut s: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::card::CardDef;
 
     #[test]
     fn map_generation_deterministic() {
@@ -479,6 +492,125 @@ mod tests {
         let state = DbState::new(DeckbuilderConfig::default());
         assert_eq!(state.phase, DbPhase::MapSelect);
         assert_eq!(state.floor, 0);
+        assert_eq!(state.player_hp, 50);
+        assert_eq!(state.player_max_hp, 50);
         assert!(!state.map.is_empty());
+    }
+
+    #[test]
+    fn persistent_hp_across_combats() {
+        let config = DeckbuilderConfig {
+            starting_deck: (0..10).map(CardId).collect(),
+            starting_hp: 40,
+            starting_max_hp: 50,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut state = DbState::new(config);
+        assert_eq!(state.player_hp, 40);
+
+        let enemies = vec![EnemyState {
+            id: 0,
+            name: "Slime".into(),
+            hp: 20,
+            max_hp: 20,
+            block: 0,
+            intent: EnemyIntent::Attack(6),
+        }];
+        start_combat(&mut state, enemies);
+
+        // Combat should use the persistent HP.
+        let combat = state.combat.as_ref().unwrap();
+        assert_eq!(combat.player_hp, 40);
+        assert_eq!(combat.player_max_hp, 50);
+    }
+
+    fn make_registry_with_cost(id: u32, cost: u8) -> CardRegistry {
+        let mut reg = CardRegistry::new();
+        reg.register(CardDef {
+            id: CardId(id),
+            name: format!("Card{}", id),
+            cost,
+            rarity: crate::card::Rarity::Common,
+            effects: vec![],
+            tags: vec![],
+            upgraded: false,
+            target: crate::card::TargetKind::SingleEnemy,
+        });
+        reg
+    }
+
+    #[test]
+    fn play_card_insufficient_energy() {
+        // Card costs 5, but starting energy is 3
+        let registry = make_registry_with_cost(0, 5);
+        let config = DeckbuilderConfig {
+            starting_deck: vec![CardId(0)],
+            hand_size: 5,
+            starting_energy: 3,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut state = DbState::new(config);
+
+        let enemies = vec![EnemyState {
+            id: 0,
+            name: "Slime".into(),
+            hp: 20,
+            max_hp: 20,
+            block: 0,
+            intent: EnemyIntent::Attack(6),
+        }];
+        start_combat(&mut state, enemies);
+
+        let hand_before = state.hand.cards.clone();
+        let events = play_card(&mut state, 0, Some(0), &registry);
+
+        // No events emitted (card too expensive)
+        assert!(events.is_empty());
+        // Hand unchanged
+        assert_eq!(state.hand.cards, hand_before);
+        // Energy unchanged
+        assert_eq!(state.combat.as_ref().unwrap().energy, 3);
+    }
+
+    #[test]
+    fn combat_won_persists_hp_and_max_hp() {
+        // Card costs 0 so we can always play it
+        let registry = make_registry_with_cost(0, 0);
+        let config = DeckbuilderConfig {
+            starting_deck: vec![CardId(0)],
+            hand_size: 5,
+            starting_energy: 3,
+            starting_hp: 35,
+            starting_max_hp: 45,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut state = DbState::new(config);
+
+        // Enemy already dead (hp = 0)
+        let enemies = vec![EnemyState {
+            id: 0,
+            name: "Dead Slime".into(),
+            hp: 0,
+            max_hp: 20,
+            block: 0,
+            intent: EnemyIntent::Unknown,
+        }];
+        start_combat(&mut state, enemies);
+
+        // Modify combat HP to simulate damage taken during combat
+        state.combat.as_mut().unwrap().player_hp = 30;
+        state.combat.as_mut().unwrap().player_max_hp = 45;
+
+        // Playing a card triggers the "all enemies dead" check
+        let events = play_card(&mut state, 0, None, &registry);
+
+        assert!(events.iter().any(|e| matches!(e, DbEvent::CombatWon)));
+        assert_eq!(state.phase, DbPhase::Reward);
+        // HP persisted from combat back to run state
+        assert_eq!(state.player_hp, 30);
+        assert_eq!(state.player_max_hp, 45);
     }
 }

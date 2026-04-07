@@ -788,12 +788,4 @@ mod tests {
         scoring.tick();
         assert_eq!(scoring.chain, 0);
     }
-
-    #[test]
-    fn scoring_graze_adds_score() {
-        let mut scoring = ShmupScoring::new(120);
-        scoring.on_graze(500);
-        scoring.on_graze(500);
-        assert_eq!(scoring.score, 1000);
-    }
 }

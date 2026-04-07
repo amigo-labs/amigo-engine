@@ -826,7 +826,10 @@ fn cmd_pack(_args: &[String]) {
     }
 
     let out_dir = Path::new("assets/packed");
-    std::fs::create_dir_all(out_dir).unwrap();
+    if let Err(e) = std::fs::create_dir_all(out_dir) {
+        eprintln!("  ERROR: Failed to create {}: {e}", out_dir.display());
+        process::exit(1);
+    }
     let pak_path = out_dir.join("game.pak");
 
     match pak.write_to(&pak_path) {
@@ -1367,7 +1370,10 @@ fn cmd_publish_steam(_args: &[String]) {
     // Step 2: Generate VDF build script
     println!("\n[2/3] Generating Steam build script...");
     let build_dir = Path::new("target/steam_build");
-    std::fs::create_dir_all(build_dir).unwrap();
+    if let Err(e) = std::fs::create_dir_all(build_dir) {
+        eprintln!("  ERROR: Failed to create {}: {e}", build_dir.display());
+        process::exit(1);
+    }
 
     let default_desc = format!("{} v{}", manifest.name, manifest.version);
     let description = dist.build_description.as_deref().unwrap_or(&default_desc);
@@ -1398,7 +1404,10 @@ fn cmd_publish_steam(_args: &[String]) {
     );
 
     let vdf_path = build_dir.join("app_build.vdf");
-    std::fs::write(&vdf_path, &app_vdf).unwrap();
+    if let Err(e) = std::fs::write(&vdf_path, &app_vdf) {
+        eprintln!("  ERROR: Failed to write {}: {e}", vdf_path.display());
+        process::exit(1);
+    }
     println!("  Generated: {}", vdf_path.display());
 
     // Step 3: Show upload command

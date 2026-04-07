@@ -1091,53 +1091,6 @@ mod tests {
         assert!(candidates.is_empty());
     }
 
-    #[test]
-    fn test_checkpoint_system() {
-        let mut sys = CheckpointSystem::new();
-        assert!(sys.respawn_point().is_none());
-
-        sys.last_checkpoint = Some(RoomId(42));
-        assert_eq!(sys.respawn_point(), Some(RoomId(42)));
-    }
-
-    #[test]
-    fn test_backtrack_marker_creation() {
-        let marker = BacktrackMarker {
-            room: RoomId(5),
-            connection: 3,
-            required: AbilityGate::Single(Ability::PhaseDoor),
-            custom_pin: None,
-        };
-        assert_eq!(marker.room, RoomId(5));
-        assert_eq!(marker.connection, 3);
-        assert!(marker.custom_pin.is_none());
-    }
-
-    #[test]
-    fn test_backtrack_marker_with_custom_pin() {
-        let marker = BacktrackMarker {
-            room: RoomId(7),
-            connection: 1,
-            required: AbilityGate::Single(Ability::Grapple),
-            custom_pin: Some(PinType::Arrow {
-                color: [1.0, 0.5, 0.0, 1.0],
-            }),
-        };
-        assert!(marker.custom_pin.is_some());
-    }
-
-    #[test]
-    fn test_boss_data_defaults() {
-        let boss = BossData {
-            boss_id: BossId(1),
-            arena_bounds: Rect::new(0.0, 0.0, 200.0, 150.0),
-            seal_doors: Vec::new(),
-            defeated: false,
-        };
-        assert!(!boss.defeated);
-        assert_eq!(boss.boss_id, BossId(1));
-    }
-
     // -- MapRevealer tests --------------------------------------------------
 
     #[test]

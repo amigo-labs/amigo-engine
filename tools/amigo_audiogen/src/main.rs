@@ -36,22 +36,21 @@ struct JsonRpcError {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    // Parse server flags
-    let _acestep_url = args
+    // Parse --server flag for custom ComfyUI endpoint
+    let server_url = args
         .iter()
-        .position(|a| a == "--acestep")
+        .position(|a| a == "--server")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
-        .unwrap_or("http://localhost:7860");
+        .unwrap_or("http://localhost:8188");
 
-    let _audiogen_url = args
-        .iter()
-        .position(|a| a == "--audiogen")
-        .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str())
-        .unwrap_or("http://localhost:7861");
+    // Export ComfyUI URL so tools::create_comfyui_client() can pick it up
+    std::env::set_var("AMIGO_COMFYUI_URL", server_url);
 
-    eprintln!("amigo-audiogen MCP server starting...");
+    eprintln!(
+        "amigo-audiogen MCP server starting (ComfyUI: {})...",
+        server_url
+    );
 
     let stdin = io::stdin();
     let stdout = io::stdout();

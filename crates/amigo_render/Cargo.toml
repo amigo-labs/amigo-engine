@@ -6,6 +6,8 @@ edition.workspace = true
 [features]
 default = []
 editor = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit"]
+asset_streaming = []
+gpu_physics = []
 
 [dependencies]
 amigo_core = { workspace = true }
@@ -21,3 +23,6 @@ serde = { workspace = true }
 egui = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }
 egui-winit = { workspace = true, optional = true }
+
+[dev-dependencies]
+pollster = { workspace = true }

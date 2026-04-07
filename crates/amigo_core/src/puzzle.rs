@@ -2328,6 +2328,32 @@ mod tests {
         let state = PuzzleState::new(3, 3);
         let cmd = MoveCommand::new(EntityId::from_raw(0, 0), GridDir::Right);
         assert!(validator.validate(&cmd, &state).is_ok());
+
+        // Now test that a validator with a failing constraint returns Err.
+        struct AlwaysFailConstraint;
+        impl Constraint for AlwaysFailConstraint {
+            fn validate(
+                &self,
+                _command: &dyn PuzzleCommand,
+                _state: &PuzzleState,
+            ) -> Result<(), MoveError> {
+                Err(MoveError::ConstraintViolation("always fails".into()))
+            }
+        }
+
+        let mut failing_validator = ConstraintValidator::new();
+        failing_validator.add_constraint(Box::new(AlwaysFailConstraint));
+        let result = failing_validator.validate(&cmd, &state);
+        assert!(
+            result.is_err(),
+            "Validator with a failing constraint should return Err"
+        );
+        match result.unwrap_err() {
+            MoveError::ConstraintViolation(msg) => {
+                assert_eq!(msg, "always fails");
+            }
+            other => panic!("Expected ConstraintViolation, got {:?}", other),
+        }
     }
 
     // ── Full Sokoban workflow ────────────────────────────────

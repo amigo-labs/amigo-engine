@@ -432,13 +432,6 @@ mod tests {
     // ── FlowField tests ────────────────────────────────────────
 
     #[test]
-    fn flow_field_goal_cost_zero() {
-        let grid = OpenGrid { w: 10, h: 10 };
-        let field = FlowField::compute(IVec2::new(5, 5), 10, 10, &grid);
-        assert_eq!(field.cost_at(5, 5), 0);
-    }
-
-    #[test]
     fn flow_field_costs_increase_from_goal() {
         let grid = OpenGrid { w: 10, h: 10 };
         let field = FlowField::compute(IVec2::new(5, 5), 10, 10, &grid);

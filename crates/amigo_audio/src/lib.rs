@@ -1,10 +1,14 @@
 #![allow(missing_docs)]
 
+#[cfg(feature = "audio_graph")]
+pub mod graph;
 pub mod spatial;
 
 use kira::manager::backend::DefaultBackend;
 use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
+use kira::sound::PlaybackRate;
+use kira::tween::Tween;
 use kira::Volume;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -140,7 +144,7 @@ impl SfxManager {
         let now = Instant::now();
 
         // -- Look up definition (optional) for cooldown / concurrency / pitch --
-        let (cooldown, max_concurrent, _pitch_variance) =
+        let (cooldown, max_concurrent, pitch_variance) =
             if let Some(def) = self.definitions.get(name) {
                 (def.cooldown, def.max_concurrent, def.pitch_variance)
             } else {
@@ -178,7 +182,22 @@ impl SfxManager {
         let idx = (now.elapsed().subsec_nanos() as usize) % variants.len();
         let data = variants[idx].clone();
 
-        // TODO: apply pitch_variance via kira's PlaybackRate when kira 0.9 settings support it
+        // Apply random pitch variance via PlaybackRate.
+        // Use a simple hash of the play count + subsec_nanos for cheap entropy.
+        let data = if pitch_variance > 0.0 {
+            let seed = rt
+                .active_handles
+                .len()
+                .wrapping_mul(2654435761)
+                .wrapping_add(now.elapsed().subsec_nanos() as usize);
+            let t = ((seed & 0xFFFF) as f32 / 0xFFFF as f32) * 2.0 - 1.0; // -1..1
+            let rate = (1.0 + t * pitch_variance).max(0.1); // clamp to positive
+            data.with_settings(
+                StaticSoundSettings::new().playback_rate(PlaybackRate::Factor(rate as f64)),
+            )
+        } else {
+            data
+        };
         match kira.play(data) {
             Ok(handle) => {
                 rt.active_handles.push(handle);
@@ -433,12 +452,22 @@ impl AudioManager {
         self.music_handles.clear();
     }
 
-    /// Set volume for a channel.
+    /// Set volume for a channel and push to active Kira music handles.
+    ///
+    /// Note: SFX are fire-and-forget (no persistent handles to update).
+    /// Ambient handles are not currently tracked individually.
+    /// Only `"music"` propagates to live handles immediately.
     pub fn set_volume(&mut self, channel: &str, volume: f32) {
         let vol = volume.clamp(0.0, 1.0);
         match channel {
             "master" => self.volumes.master = vol,
-            "music" => self.volumes.music = vol,
+            "music" => {
+                self.volumes.music = vol;
+                let effective = (self.volumes.master * vol) as f64;
+                for handle in self.music_handles.values_mut() {
+                    handle.set_volume(Volume::Amplitude(effective), Tween::default());
+                }
+            }
             "sfx" => self.volumes.sfx = vol,
             "ambient" => self.volumes.ambient = vol,
             _ => warn!("Unknown audio channel: {}", channel),
@@ -776,10 +805,14 @@ impl MusicSection {
         }
     }
 
-    /// Tick all layer volumes.
+    /// Tick all layer volumes and push changes to Kira handles.
     pub fn update_volumes(&mut self, dt: f32) {
         for layer in &mut self.layers {
             layer.update_volume(dt);
+            let vol = layer.effective_volume();
+            if let Some(handle) = &mut layer.handle {
+                handle.set_volume(Volume::Amplitude(vol as f64), Tween::default());
+            }
         }
     }
 
