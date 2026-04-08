@@ -16,6 +16,7 @@
 |---------|-------------|
 | `amigo build` | Check compilation |
 | `amigo run [--headless] [--api]` | Run the game |
+| `amigo dev [--port PORT]` | Watch mode: rebuild + restart on changes |
 | `amigo editor` | Open the level editor |
 | `amigo pack` | Pack assets into atlas |
 | `amigo release [--target T]` | Build optimized release binary |
@@ -64,6 +65,14 @@ See [Audio Pipeline](Audio-Pipeline) for details.
 | `--name <text>` | Composition name |
 | `--license <text>` | License metadata |
 | `--author <text>` | Author metadata |
+
+## MCP / Claude Code
+
+| Command | Description |
+|---------|-------------|
+| `amigo connect` | Write `.mcp.json` in current directory |
+| `amigo connect --global` | Write to `~/.claude/claude_code_config.json` |
+| `amigo connect --port PORT` | Use custom engine API port |
 
 ## Utilities
 

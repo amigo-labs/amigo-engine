@@ -23,14 +23,14 @@ COMMANDS:
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Check that the project compiles
     run [--headless] [--api]             Run the game (cargo run)
-    dev                                  Watch mode: rebuild + restart on .rs changes
+    dev [--port PORT]                    Watch mode: rebuild + restart on .rs changes
     pack                                 Pack assets into atlas (release build)
     release [--target <TARGET>]          Build optimized release binary
     publish steam                        Prepare and upload to Steam (via steamcmd)
     publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
     editor                               Launch the Amigo editor
     connect [--global] [--port PORT]    Write MCP config for Claude Code
-    setup [--only GROUP] [--gpu BACKEND] Install Python toolchain (Demucs, etc.)
+    setup [--only G] [--gpu B] [--check] Install Python toolchain (Demucs, etc.)
     pipeline <COMMAND>                   Audio-to-TidalCycles pipeline
     list-templates                       Show available project templates
     list-presets                         Show available scene presets

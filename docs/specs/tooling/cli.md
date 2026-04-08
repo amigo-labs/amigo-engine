@@ -31,6 +31,9 @@ COMMANDS:
     publish steam                        Prepare and upload to Steam (via steamcmd)
     publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
     editor                               Launch the Amigo editor
+    connect [--global] [--port PORT]     Write MCP config for Claude Code
+    setup [--only G] [--gpu B] [--check] Install Python toolchain (Demucs, etc.)
+    pipeline <COMMAND>                   Audio-to-TidalCycles pipeline
     list-templates                       Show available project templates
     list-presets                         Show available scene presets
     export-level <path> [--format json]  Convert a .amigo level to JSON
@@ -252,6 +255,41 @@ Loads a `.amigo` level file via `amigo_editor::load_level()` and serializes it t
 ### `amigo info`
 
 Displays project name, version, engine version, virtual resolution, start scene, and a list of all scenes with their IDs, names, and presets.
+
+### `amigo connect`
+
+Writes an MCP server configuration file so Claude Code auto-discovers the Amigo MCP servers.
+
+1. Without `--global`: writes `.mcp.json` in the current directory. Prompts before overwriting an existing file.
+2. With `--global`: writes to `~/.claude/claude_code_config.json`. Merges with existing config (preserving other keys).
+3. `--port PORT` overrides the engine API port (default: reads from `amigo.toml` `[dev].api_port`, falling back to 9999).
+4. Configures three MCP servers: `amigo` (engine control), `amigo-artgen` (pixel art), `amigo-audiogen` (audio generation).
+
+### `amigo setup`
+
+Installs the Python toolchain required for AI asset pipelines (Demucs, Basic Pitch, ACE-Step, etc.).
+
+1. `--only <GROUP>`: Install a specific tool group only (`audio`, `artgen`, `music-gen`, or `all`).
+2. `--gpu <BACKEND>`: Select GPU backend (`cpu`, `nvidia`/`cuda`, `mps`/`metal`).
+3. `--python <VERSION>`: Python version (default: 3.11).
+4. `--check`: Show installation status without installing.
+5. `--clean [--all]`: Remove installed environments.
+6. `--update`: Update existing packages.
+
+Creates a Python virtual environment, installs requirements from bundled `requirements_*.txt` files, and validates tool availability. See [AI Setup](../../wiki/AI-Setup.md).
+
+### `amigo pipeline`
+
+Audio-to-TidalCycles conversion pipeline. Subcommands:
+
+- `convert --input F --output F`: Full pipeline (separate → transcribe → notate).
+- `separate --input F --output D`: Stem separation only (Demucs).
+- `transcribe --input D --output D`: Audio-to-MIDI only (Basic Pitch).
+- `notate --input D --output F`: MIDI-to-TidalCycles only.
+- `batch --input D --output D`: Process directory of audio files.
+- `play <file>`: Preview `.amigo.tidal` file.
+
+Common flags: `--config`, `--bpm`, `--name`, `--license`, `--author`. See [Audio Pipeline](../../wiki/Audio-Pipeline.md).
 
 ### `amigo list-templates` / `amigo list-presets`
 
