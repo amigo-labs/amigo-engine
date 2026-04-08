@@ -29,6 +29,7 @@ COMMANDS:
     publish steam                        Prepare and upload to Steam (via steamcmd)
     publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
     editor                               Launch the Amigo editor
+    connect [--global] [--port PORT]    Write MCP config for Claude Code
     setup [--only GROUP] [--gpu BACKEND] Install Python toolchain (Demucs, etc.)
     pipeline <COMMAND>                   Audio-to-TidalCycles pipeline
     list-templates                       Show available project templates
@@ -65,6 +66,7 @@ fn main() {
         "release" => cmd_release(&args[2..]),
         "publish" => cmd_publish(&args[2..]),
         "editor" => cmd_editor(&args[2..]),
+        "connect" => cmd_connect(&args[2..]),
         "setup" => setup::cmd_setup(&args[2..]),
         "pipeline" => pipeline_cmd::cmd_pipeline(&args[2..]),
         "list-templates" => cmd_list_templates(),
@@ -1048,6 +1050,119 @@ fn cmd_export_level(args: &[String]) {
             process::exit(1);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// `amigo connect` — write MCP config for Claude Code
+// ---------------------------------------------------------------------------
+
+/// MCP configuration JSON that Claude Code uses to discover Amigo servers.
+fn mcp_config_json(port: u16) -> String {
+    format!(
+        r#"{{
+  "mcpServers": {{
+    "amigo": {{
+      "command": "amigo",
+      "args": ["mcp-server", "--port", "{}"]
+    }},
+    "amigo-artgen": {{
+      "command": "amigo-artgen",
+      "args": ["--server", "http://localhost:8188"]
+    }},
+    "amigo-audiogen": {{
+      "command": "amigo-audiogen",
+      "args": ["--acestep", "http://localhost:7860"]
+    }}
+  }}
+}}
+"#,
+        port
+    )
+}
+
+fn cmd_connect(args: &[String]) {
+    let global = args.iter().any(|a| a == "--global");
+
+    let port: u16 = find_flag(args, "--port")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| {
+            // Try reading port from amigo.toml if present
+            load_manifest()
+                .map(|m| m.dev.api_port)
+                .unwrap_or(9999)
+        });
+
+    let json = mcp_config_json(port);
+
+    if global {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| {
+                eprintln!("Could not determine home directory.");
+                process::exit(1);
+            });
+
+        let claude_dir = PathBuf::from(&home).join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap_or_else(|e| {
+            eprintln!("Failed to create {}: {e}", claude_dir.display());
+            process::exit(1);
+        });
+
+        let config_path = claude_dir.join("claude_code_config.json");
+
+        // Merge with existing config if it already has other keys
+        let merged = if config_path.exists() {
+            if let Ok(existing) = std::fs::read_to_string(&config_path) {
+                if let Ok(mut doc) = serde_json::from_str::<serde_json::Value>(&existing) {
+                    let new: serde_json::Value = serde_json::from_str(&json).unwrap();
+                    if let Some(servers) = new.get("mcpServers") {
+                        doc.as_object_mut()
+                            .unwrap()
+                            .insert("mcpServers".to_string(), servers.clone());
+                    }
+                    serde_json::to_string_pretty(&doc).unwrap() + "\n"
+                } else {
+                    json.clone()
+                }
+            } else {
+                json.clone()
+            }
+        } else {
+            json.clone()
+        };
+
+        std::fs::write(&config_path, &merged).unwrap_or_else(|e| {
+            eprintln!("Failed to write {}: {e}", config_path.display());
+            process::exit(1);
+        });
+
+        println!("Wrote MCP config to {}", config_path.display());
+        println!("Claude Code will discover Amigo MCP servers in all projects.");
+    } else {
+        let mcp_path = Path::new(".mcp.json");
+
+        if mcp_path.exists() {
+            eprintln!(".mcp.json already exists. Overwrite? [y/N] ");
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_ok()
+                && !input.trim().eq_ignore_ascii_case("y")
+            {
+                eprintln!("Aborted.");
+                process::exit(0);
+            }
+        }
+
+        std::fs::write(mcp_path, &json).unwrap_or_else(|e| {
+            eprintln!("Failed to write .mcp.json: {e}");
+            process::exit(1);
+        });
+
+        println!("Wrote .mcp.json (port {port})");
+        println!("Claude Code will discover Amigo MCP servers in this directory.");
+    }
+
+    println!();
+    println!("Next: start the engine with `amigo run --api` then open Claude Code.");
 }
 
 // ---------------------------------------------------------------------------
