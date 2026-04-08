@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "amigo": {
+      "command": "amigo",
+      "args": ["mcp-server", "--port", "9999"]
+    },
+    "amigo-artgen": {
+      "command": "amigo-artgen",
+      "args": ["--server", "http://localhost:8188"]
+    },
+    "amigo-audiogen": {
+      "command": "amigo-audiogen",
+      "args": ["--acestep", "http://localhost:7860"]
+    }
+  }
+}
