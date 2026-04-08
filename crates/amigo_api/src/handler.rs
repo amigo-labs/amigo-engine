@@ -1,3 +1,4 @@
+use crate::metrics::MetricsCollector;
 use crate::{RpcRequest, RpcResponse, INVALID_PARAMS, METHOD_NOT_FOUND};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -89,6 +90,8 @@ pub struct ApiSharedState {
     pub subscriptions: Vec<String>,
     /// Most recent dev snapshot (set by dev.save_snapshot command).
     pub dev_snapshot: Option<DevSnapshot>,
+    /// Gameplay metrics collected during simulation runs.
+    pub metrics: MetricsCollector,
 }
 
 impl ApiSharedState {
@@ -106,6 +109,7 @@ impl ApiSharedState {
             event_buffer: Vec::new(),
             subscriptions: Vec::new(),
             dev_snapshot: None,
+            metrics: MetricsCollector::new(),
         }
     }
 
@@ -260,6 +264,52 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         "dev.save_snapshot" => handle_dev_save_snapshot(req, state),
         "dev.snapshot_status" => handle_dev_snapshot_status(req, state),
         "dev.restore_snapshot" => handle_dev_restore_snapshot(req, state),
+
+        // ── Tilemap ──
+        "tilemap.get_tile" => handle_tilemap_get_tile(req, state),
+        "tilemap.get_region" => handle_tilemap_get_region(req, state),
+        "tilemap.collision_at" => handle_tilemap_collision_at(req, state),
+        "tilemap.dimensions" => queue_cmd(req, state, "tilemap.dimensions", Value::Null),
+
+        // ── Camera ──
+        "camera.get" => queue_cmd(req, state, "camera.get", Value::Null),
+        "camera.set" => handle_camera_set(req, state),
+        "camera.shake" => handle_camera_shake(req, state),
+        "camera.follow" => handle_camera_follow(req, state),
+
+        // ── Lighting ──
+        "lighting.add" => handle_lighting_add(req, state),
+        "lighting.remove" => handle_lighting_remove(req, state),
+        "lighting.list" => queue_cmd(req, state, "lighting.list", Value::Null),
+
+        // ── Particles ──
+        "particles.spawn" => handle_particles_spawn(req, state),
+        "particles.stop" => handle_particles_stop(req, state),
+
+        // ── Inventory ──
+        "inventory.list" => queue_cmd(req, state, "inventory.list", Value::Null),
+        "inventory.add" => handle_inventory_add(req, state),
+        "inventory.remove" => handle_inventory_remove(req, state),
+
+        // ── Crafting ──
+        "crafting.list_recipes" => queue_cmd(req, state, "crafting.list_recipes", Value::Null),
+        "crafting.craft" => handle_crafting_craft(req, state),
+
+        // ── Dialogue ──
+        "dialogue.start" => handle_dialogue_start(req, state),
+        "dialogue.choose" => handle_dialogue_choose(req, state),
+        "dialogue.get_state" => queue_cmd(req, state, "dialogue.get_state", Value::Null),
+        "dialogue.set_flag" => handle_dialogue_set_flag(req, state),
+
+        // ── Asset packing ──
+        "pack" => queue_cmd(req, state, "pack", Value::Null),
+
+        // ── Preview / Metrics ──
+        "preview.level" => handle_preview_level(req, state),
+        "preview.palette" => handle_preview_palette(req, state),
+        "diff.levels" => handle_diff_levels(req, state),
+        "metrics.snapshot" => handle_metrics_snapshot(req, state),
+        "metrics.clear" => handle_metrics_clear(req, state),
 
         _ => RpcResponse::error(
             req.id,
@@ -840,6 +890,314 @@ fn handle_dev_restore_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResp
 }
 
 // ---------------------------------------------------------------------------
+// Tilemap handlers
+// ---------------------------------------------------------------------------
+
+fn handle_tilemap_get_tile(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (
+        require_str(p, "layer"),
+        require_i64(p, "x"),
+        require_i64(p, "y"),
+    ) {
+        (Ok(layer), Ok(x), Ok(y)) => queue_cmd(
+            req,
+            state,
+            "tilemap.get_tile",
+            json!({"layer": layer, "x": x, "y": y}),
+        ),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: layer, x, y"),
+    }
+}
+
+fn handle_tilemap_get_region(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (
+        require_str(p, "layer"),
+        require_i64(p, "x"),
+        require_i64(p, "y"),
+        require_i64(p, "w"),
+        require_i64(p, "h"),
+    ) {
+        (Ok(layer), Ok(x), Ok(y), Ok(w), Ok(h)) => queue_cmd(
+            req,
+            state,
+            "tilemap.get_region",
+            json!({"layer": layer, "x": x, "y": y, "w": w, "h": h}),
+        ),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: layer, x, y, w, h"),
+    }
+}
+
+fn handle_tilemap_collision_at(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (require_i64(p, "x"), require_i64(p, "y")) {
+        (Ok(x), Ok(y)) => queue_cmd(req, state, "tilemap.collision_at", json!({"x": x, "y": y})),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: x, y"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Camera handlers
+// ---------------------------------------------------------------------------
+
+fn handle_camera_set(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (require_f64(p, "x"), require_f64(p, "y")) {
+        (Ok(x), Ok(y)) => {
+            let zoom = p.get("zoom").and_then(|v| v.as_f64());
+            let mut params = json!({"x": x, "y": y});
+            if let Some(z) = zoom {
+                params["zoom"] = json!(z);
+            }
+            queue_cmd(req, state, "camera.set", params)
+        }
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: x, y"),
+    }
+}
+
+fn handle_camera_shake(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (require_f64(p, "intensity"), require_f64(p, "duration")) {
+        (Ok(intensity), Ok(duration)) => queue_cmd(
+            req,
+            state,
+            "camera.shake",
+            json!({"intensity": intensity, "duration": duration}),
+        ),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: intensity, duration"),
+    }
+}
+
+fn handle_camera_follow(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match require_i64(p, "entity_id") {
+        Ok(id) => queue_cmd(req, state, "camera.follow", json!({"entity_id": id})),
+        Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: entity_id"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Lighting handlers
+// ---------------------------------------------------------------------------
+
+fn handle_lighting_add(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (
+        require_f64(p, "x"),
+        require_f64(p, "y"),
+        require_f64(p, "radius"),
+        require_str(p, "color"),
+    ) {
+        (Ok(x), Ok(y), Ok(radius), Ok(color)) => {
+            let intensity = p.get("intensity").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            queue_cmd(
+                req,
+                state,
+                "lighting.add",
+                json!({"x": x, "y": y, "radius": radius, "color": color, "intensity": intensity}),
+            )
+        }
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: x, y, radius, color"),
+    }
+}
+
+fn handle_lighting_remove(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match require_i64(p, "id") {
+        Ok(id) => queue_cmd(req, state, "lighting.remove", json!({"id": id})),
+        Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: id"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Particle handlers
+// ---------------------------------------------------------------------------
+
+fn handle_particles_spawn(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (
+        require_str(p, "effect"),
+        require_f64(p, "x"),
+        require_f64(p, "y"),
+    ) {
+        (Ok(effect), Ok(x), Ok(y)) => queue_cmd(
+            req,
+            state,
+            "particles.spawn",
+            json!({"effect": effect, "x": x, "y": y}),
+        ),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: effect, x, y"),
+    }
+}
+
+fn handle_particles_stop(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match require_i64(p, "id") {
+        Ok(id) => queue_cmd(req, state, "particles.stop", json!({"id": id})),
+        Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: id"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Inventory handlers
+// ---------------------------------------------------------------------------
+
+fn handle_inventory_add(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (require_str(p, "item"), require_i64(p, "count")) {
+        (Ok(item), Ok(count)) => queue_cmd(
+            req,
+            state,
+            "inventory.add",
+            json!({"item": item, "count": count}),
+        ),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: item, count"),
+    }
+}
+
+fn handle_inventory_remove(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (require_str(p, "item"), require_i64(p, "count")) {
+        (Ok(item), Ok(count)) => queue_cmd(
+            req,
+            state,
+            "inventory.remove",
+            json!({"item": item, "count": count}),
+        ),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: item, count"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Crafting handlers
+// ---------------------------------------------------------------------------
+
+fn handle_crafting_craft(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match require_str(p, "recipe") {
+        Ok(recipe) => queue_cmd(req, state, "crafting.craft", json!({"recipe": recipe})),
+        Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: recipe"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dialogue handlers
+// ---------------------------------------------------------------------------
+
+fn handle_dialogue_start(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match require_str(p, "dialogue_id") {
+        Ok(id) => queue_cmd(req, state, "dialogue.start", json!({"dialogue_id": id})),
+        Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: dialogue_id"),
+    }
+}
+
+fn handle_dialogue_choose(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match require_i64(p, "choice_index") {
+        Ok(idx) => queue_cmd(req, state, "dialogue.choose", json!({"choice_index": idx})),
+        Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: choice_index"),
+    }
+}
+
+fn handle_dialogue_set_flag(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match require_str(p, "flag") {
+        Ok(flag) => {
+            let value = p.get("value").cloned().unwrap_or(json!(true));
+            queue_cmd(
+                req,
+                state,
+                "dialogue.set_flag",
+                json!({"flag": flag, "value": value}),
+            )
+        }
+        Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: flag"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Preview / Diff handlers
+// ---------------------------------------------------------------------------
+
+fn handle_preview_level(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match p.get("config") {
+        Some(config) => {
+            let world_ctx = p
+                .get("world_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            queue_cmd(
+                req,
+                state,
+                "preview.level",
+                json!({"config": config, "world_context": world_ctx}),
+            )
+        }
+        None => RpcResponse::error(req.id, INVALID_PARAMS, "Required: config"),
+    }
+}
+
+fn handle_preview_palette(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (
+        require_str(p, "primary"),
+        require_str(p, "secondary"),
+        require_str(p, "accent"),
+    ) {
+        (Ok(primary), Ok(secondary), Ok(accent)) => {
+            let danger = p.get("danger").and_then(|v| v.as_str()).unwrap_or("");
+            let samples: Vec<String> = p
+                .get("sample_sprites")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            queue_cmd(
+                req,
+                state,
+                "preview.palette",
+                json!({
+                    "primary": primary,
+                    "secondary": secondary,
+                    "accent": accent,
+                    "danger": danger,
+                    "sample_sprites": samples,
+                }),
+            )
+        }
+        _ => RpcResponse::error(
+            req.id,
+            INVALID_PARAMS,
+            "Required: primary, secondary, accent",
+        ),
+    }
+}
+
+fn handle_diff_levels(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let p = &req.params;
+    match (require_str(p, "a"), require_str(p, "b")) {
+        (Ok(a), Ok(b)) => queue_cmd(req, state, "diff.levels", json!({"a": a, "b": b})),
+        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: a, b"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Metrics handlers
+// ---------------------------------------------------------------------------
+
+fn handle_metrics_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let s = state.lock().unwrap();
+    RpcResponse::success(req.id, s.metrics.snapshot())
+}
+
+fn handle_metrics_clear(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    let mut s = state.lock().unwrap();
+    s.metrics.clear();
+    RpcResponse::success(req.id, json!({"ok": true}))
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1158,5 +1516,357 @@ mod tests {
         assert!(resp.error.is_none());
         let s = state.lock().unwrap();
         assert_eq!(s.pending_commands[0].action, "dev.restore_snapshot");
+    }
+
+    // ── Tilemap ──
+
+    #[test]
+    fn tilemap_get_tile_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "tilemap.get_tile",
+                json!({"layer": "terrain", "x": 5, "y": 3}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "tilemap.get_tile");
+        assert_eq!(s.pending_commands[0].params["layer"], "terrain");
+    }
+
+    #[test]
+    fn tilemap_get_tile_missing_params() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("tilemap.get_tile", json!({"layer": "terrain"})),
+            &state,
+        );
+        assert!(resp.error.is_some());
+    }
+
+    #[test]
+    fn tilemap_get_region_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "tilemap.get_region",
+                json!({"layer": "terrain", "x": 0, "y": 0, "w": 10, "h": 10}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "tilemap.get_region");
+    }
+
+    #[test]
+    fn tilemap_collision_at_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("tilemap.collision_at", json!({"x": 3, "y": 7})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "tilemap.collision_at");
+    }
+
+    #[test]
+    fn tilemap_dimensions_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("tilemap.dimensions", json!({})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "tilemap.dimensions");
+    }
+
+    // ── Camera ──
+
+    #[test]
+    fn camera_set_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("camera.set", json!({"x": 100.0, "y": 200.0, "zoom": 2.0})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "camera.set");
+        assert_eq!(s.pending_commands[0].params["zoom"], 2.0);
+    }
+
+    #[test]
+    fn camera_shake_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("camera.shake", json!({"intensity": 5.0, "duration": 0.3})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "camera.shake");
+    }
+
+    #[test]
+    fn camera_follow_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("camera.follow", json!({"entity_id": 42})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].params["entity_id"], 42);
+    }
+
+    // ── Lighting ──
+
+    #[test]
+    fn lighting_add_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "lighting.add",
+                json!({"x": 10.0, "y": 20.0, "radius": 50.0, "color": "#ffcc00"}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "lighting.add");
+        assert_eq!(s.pending_commands[0].params["color"], "#ffcc00");
+    }
+
+    #[test]
+    fn lighting_remove_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("lighting.remove", json!({"id": 7})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "lighting.remove");
+    }
+
+    // ── Particles ──
+
+    #[test]
+    fn particles_spawn_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "particles.spawn",
+                json!({"effect": "explosion", "x": 5.0, "y": 10.0}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "particles.spawn");
+        assert_eq!(s.pending_commands[0].params["effect"], "explosion");
+    }
+
+    #[test]
+    fn particles_stop_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("particles.stop", json!({"id": 3})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "particles.stop");
+    }
+
+    // ── Inventory ──
+
+    #[test]
+    fn inventory_add_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("inventory.add", json!({"item": "sword", "count": 1})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "inventory.add");
+        assert_eq!(s.pending_commands[0].params["item"], "sword");
+    }
+
+    #[test]
+    fn inventory_remove_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("inventory.remove", json!({"item": "potion", "count": 2})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "inventory.remove");
+    }
+
+    #[test]
+    fn inventory_list_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("inventory.list", json!({})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "inventory.list");
+    }
+
+    // ── Crafting ──
+
+    #[test]
+    fn crafting_craft_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("crafting.craft", json!({"recipe": "iron_sword"})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "crafting.craft");
+        assert_eq!(s.pending_commands[0].params["recipe"], "iron_sword");
+    }
+
+    #[test]
+    fn crafting_list_recipes_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("crafting.list_recipes", json!({})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "crafting.list_recipes");
+    }
+
+    // ── Dialogue ──
+
+    #[test]
+    fn dialogue_start_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("dialogue.start", json!({"dialogue_id": "npc_greeting"})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "dialogue.start");
+        assert_eq!(s.pending_commands[0].params["dialogue_id"], "npc_greeting");
+    }
+
+    #[test]
+    fn dialogue_choose_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request("dialogue.choose", json!({"choice_index": 2})),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "dialogue.choose");
+        assert_eq!(s.pending_commands[0].params["choice_index"], 2);
+    }
+
+    #[test]
+    fn dialogue_set_flag_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "dialogue.set_flag",
+                json!({"flag": "met_wizard", "value": true}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "dialogue.set_flag");
+        assert_eq!(s.pending_commands[0].params["flag"], "met_wizard");
+    }
+
+    #[test]
+    fn dialogue_get_state_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(&make_request("dialogue.get_state", json!({})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "dialogue.get_state");
+    }
+
+    // ── Preview / Diff ──
+
+    #[test]
+    fn preview_level_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "preview.level",
+                json!({"config": {"width": 40, "height": 25}}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "preview.level");
+    }
+
+    #[test]
+    fn preview_palette_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "preview.palette",
+                json!({"primary": "#1a1a2e", "secondary": "#16213e", "accent": "#0f3460"}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "preview.palette");
+    }
+
+    #[test]
+    fn diff_levels_queues() {
+        let state = new_shared_state();
+        let resp = handle_request(
+            &make_request(
+                "diff.levels",
+                json!({"a": "levels/v1.amigo", "b": "levels/v2.amigo"}),
+            ),
+            &state,
+        );
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands[0].action, "diff.levels");
+    }
+
+    // ── Metrics ──
+
+    #[test]
+    fn metrics_snapshot_returns_data() {
+        let state = new_shared_state();
+        {
+            let mut s = state.lock().unwrap();
+            s.metrics.record_death(10.0, 20.0);
+            s.metrics.record_death(30.0, 40.0);
+            s.metrics.increment("enemies_killed", 5);
+        }
+        let resp = handle_request(&make_request("metrics.snapshot", json!({})), &state);
+        assert!(resp.error.is_none());
+        let r = resp.result.unwrap();
+        assert_eq!(r["death_positions"].as_array().unwrap().len(), 2);
+        assert_eq!(r["counters"]["enemies_killed"], 5);
+    }
+
+    #[test]
+    fn metrics_clear_resets() {
+        let state = new_shared_state();
+        {
+            let mut s = state.lock().unwrap();
+            s.metrics.record_death(10.0, 20.0);
+            s.metrics.increment("kills", 3);
+        }
+        let resp = handle_request(&make_request("metrics.clear", json!({})), &state);
+        assert!(resp.error.is_none());
+        let s = state.lock().unwrap();
+        assert!(s.metrics.snapshot()["death_positions"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }

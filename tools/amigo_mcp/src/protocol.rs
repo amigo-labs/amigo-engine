@@ -126,6 +126,11 @@ fn handle_tools_call(
         "amigo_dev_save_snapshot" => "dev.save_snapshot",
         "amigo_dev_snapshot_status" => "dev.snapshot_status",
         "amigo_dev_restore_snapshot" => "dev.restore_snapshot",
+        "amigo_preview_level" => "preview.level",
+        "amigo_preview_palette" => "preview.palette",
+        "amigo_diff_levels" => "diff.levels",
+        "amigo_metrics_snapshot" => "metrics.snapshot",
+        "amigo_metrics_clear" => "metrics.clear",
         _ => {
             return McpResponse::success(
                 req.id.clone(),
@@ -242,5 +247,72 @@ mod tests {
     fn unknown_method_returns_rpc_error() {
         let resp = handle_mcp_request(&make_req("bogus/method", json!({})), &mock_api_call);
         assert!(resp.error.is_some());
+    }
+
+    // ── Newly-routed tools ─────────────────────────────────────
+
+    #[test]
+    fn preview_level_routes_correctly() {
+        let resp = handle_mcp_request(
+            &make_req(
+                "tools/call",
+                json!({"name": "amigo_preview_level", "arguments": {"config": {}}}),
+            ),
+            &mock_api_call,
+        );
+        let result = resp.result.unwrap();
+        assert_ne!(result.get("isError"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn metrics_snapshot_routes_correctly() {
+        let resp = handle_mcp_request(
+            &make_req(
+                "tools/call",
+                json!({"name": "amigo_metrics_snapshot", "arguments": {}}),
+            ),
+            &mock_api_call,
+        );
+        let result = resp.result.unwrap();
+        assert_ne!(result.get("isError"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn metrics_clear_routes_correctly() {
+        let resp = handle_mcp_request(
+            &make_req(
+                "tools/call",
+                json!({"name": "amigo_metrics_clear", "arguments": {}}),
+            ),
+            &mock_api_call,
+        );
+        let result = resp.result.unwrap();
+        assert_ne!(result.get("isError"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn diff_levels_routes_correctly() {
+        let resp = handle_mcp_request(
+            &make_req(
+                "tools/call",
+                json!({"name": "amigo_diff_levels", "arguments": {"a": "x", "b": "y"}}),
+            ),
+            &mock_api_call,
+        );
+        let result = resp.result.unwrap();
+        assert_ne!(result.get("isError"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn preview_palette_routes_correctly() {
+        let resp = handle_mcp_request(
+            &make_req(
+                "tools/call",
+                json!({"name": "amigo_preview_palette", "arguments": {"primary": "#000"}}),
+            ),
+            &mock_api_call,
+        );
+        let result = resp.result.unwrap();
+        assert_ne!(result.get("isError"), Some(&json!(true)));
     }
 }
