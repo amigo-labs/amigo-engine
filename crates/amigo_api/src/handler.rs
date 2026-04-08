@@ -900,9 +900,12 @@ fn handle_tilemap_get_tile(req: &RpcRequest, state: &SharedState) -> RpcResponse
         require_i64(p, "x"),
         require_i64(p, "y"),
     ) {
-        (Ok(layer), Ok(x), Ok(y)) => {
-            queue_cmd(req, state, "tilemap.get_tile", json!({"layer": layer, "x": x, "y": y}))
-        }
+        (Ok(layer), Ok(x), Ok(y)) => queue_cmd(
+            req,
+            state,
+            "tilemap.get_tile",
+            json!({"layer": layer, "x": x, "y": y}),
+        ),
         _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: layer, x, y"),
     }
 }
@@ -929,9 +932,7 @@ fn handle_tilemap_get_region(req: &RpcRequest, state: &SharedState) -> RpcRespon
 fn handle_tilemap_collision_at(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
     match (require_i64(p, "x"), require_i64(p, "y")) {
-        (Ok(x), Ok(y)) => {
-            queue_cmd(req, state, "tilemap.collision_at", json!({"x": x, "y": y}))
-        }
+        (Ok(x), Ok(y)) => queue_cmd(req, state, "tilemap.collision_at", json!({"x": x, "y": y})),
         _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: x, y"),
     }
 }
@@ -1045,9 +1046,12 @@ fn handle_particles_stop(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 fn handle_inventory_add(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
     match (require_str(p, "item"), require_i64(p, "count")) {
-        (Ok(item), Ok(count)) => {
-            queue_cmd(req, state, "inventory.add", json!({"item": item, "count": count}))
-        }
+        (Ok(item), Ok(count)) => queue_cmd(
+            req,
+            state,
+            "inventory.add",
+            json!({"item": item, "count": count}),
+        ),
         _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: item, count"),
     }
 }
@@ -1055,9 +1059,12 @@ fn handle_inventory_add(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 fn handle_inventory_remove(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
     match (require_str(p, "item"), require_i64(p, "count")) {
-        (Ok(item), Ok(count)) => {
-            queue_cmd(req, state, "inventory.remove", json!({"item": item, "count": count}))
-        }
+        (Ok(item), Ok(count)) => queue_cmd(
+            req,
+            state,
+            "inventory.remove",
+            json!({"item": item, "count": count}),
+        ),
         _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: item, count"),
     }
 }
@@ -1099,7 +1106,12 @@ fn handle_dialogue_set_flag(req: &RpcRequest, state: &SharedState) -> RpcRespons
     match require_str(p, "flag") {
         Ok(flag) => {
             let value = p.get("value").cloned().unwrap_or(json!(true));
-            queue_cmd(req, state, "dialogue.set_flag", json!({"flag": flag, "value": value}))
+            queue_cmd(
+                req,
+                state,
+                "dialogue.set_flag",
+                json!({"flag": flag, "value": value}),
+            )
         }
         Err(_) => RpcResponse::error(req.id, INVALID_PARAMS, "Required: flag"),
     }
@@ -1113,7 +1125,10 @@ fn handle_preview_level(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
     match p.get("config") {
         Some(config) => {
-            let world_ctx = p.get("world_context").and_then(|v| v.as_str()).unwrap_or("");
+            let world_ctx = p
+                .get("world_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             queue_cmd(
                 req,
                 state,
@@ -1151,16 +1166,18 @@ fn handle_preview_palette(req: &RpcRequest, state: &SharedState) -> RpcResponse 
                 }),
             )
         }
-        _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: primary, secondary, accent"),
+        _ => RpcResponse::error(
+            req.id,
+            INVALID_PARAMS,
+            "Required: primary, secondary, accent",
+        ),
     }
 }
 
 fn handle_diff_levels(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let p = &req.params;
     match (require_str(p, "a"), require_str(p, "b")) {
-        (Ok(a), Ok(b)) => {
-            queue_cmd(req, state, "diff.levels", json!({"a": a, "b": b}))
-        }
+        (Ok(a), Ok(b)) => queue_cmd(req, state, "diff.levels", json!({"a": a, "b": b})),
         _ => RpcResponse::error(req.id, INVALID_PARAMS, "Required: a, b"),
     }
 }
@@ -1625,10 +1642,7 @@ mod tests {
     #[test]
     fn lighting_remove_queues() {
         let state = new_shared_state();
-        let resp = handle_request(
-            &make_request("lighting.remove", json!({"id": 7})),
-            &state,
-        );
+        let resp = handle_request(&make_request("lighting.remove", json!({"id": 7})), &state);
         assert!(resp.error.is_none());
         let s = state.lock().unwrap();
         assert_eq!(s.pending_commands[0].action, "lighting.remove");
@@ -1655,10 +1669,7 @@ mod tests {
     #[test]
     fn particles_stop_queues() {
         let state = new_shared_state();
-        let resp = handle_request(
-            &make_request("particles.stop", json!({"id": 3})),
-            &state,
-        );
+        let resp = handle_request(&make_request("particles.stop", json!({"id": 3})), &state);
         assert!(resp.error.is_none());
         let s = state.lock().unwrap();
         assert_eq!(s.pending_commands[0].action, "particles.stop");
@@ -1756,7 +1767,10 @@ mod tests {
     fn dialogue_set_flag_queues() {
         let state = new_shared_state();
         let resp = handle_request(
-            &make_request("dialogue.set_flag", json!({"flag": "met_wizard", "value": true})),
+            &make_request(
+                "dialogue.set_flag",
+                json!({"flag": "met_wizard", "value": true}),
+            ),
             &state,
         );
         assert!(resp.error.is_none());
@@ -1850,6 +1864,9 @@ mod tests {
         let resp = handle_request(&make_request("metrics.clear", json!({})), &state);
         assert!(resp.error.is_none());
         let s = state.lock().unwrap();
-        assert!(s.metrics.snapshot()["death_positions"].as_array().unwrap().is_empty());
+        assert!(s.metrics.snapshot()["death_positions"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }

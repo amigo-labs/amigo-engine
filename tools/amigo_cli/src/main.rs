@@ -1087,9 +1087,7 @@ fn cmd_connect(args: &[String]) {
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| {
             // Try reading port from amigo.toml if present
-            load_manifest()
-                .map(|m| m.dev.api_port)
-                .unwrap_or(9999)
+            load_manifest().map(|m| m.dev.api_port).unwrap_or(9999)
         });
 
     let json = mcp_config_json(port);
