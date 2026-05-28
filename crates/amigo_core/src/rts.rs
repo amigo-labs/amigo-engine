@@ -482,7 +482,7 @@ impl FormationSystem {
                 pairs.push((ui, si, dist_sq));
             }
         }
-        pairs.sort_by(|a, b| a.2.cmp(&b.2));
+        pairs.sort_by_key(|p| p.2);
 
         let mut assigned_units = vec![false; units.len()];
         for (ui, si, _) in pairs {
