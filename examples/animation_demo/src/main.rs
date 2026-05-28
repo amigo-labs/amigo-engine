@@ -22,9 +22,9 @@ impl CharState {
 
     fn color(self) -> Color {
         match self {
-            Self::Idle => Color::new(80, 180, 80, 255),
-            Self::Walk => Color::new(80, 120, 220, 255),
-            Self::Jump => Color::new(220, 160, 50, 255),
+            Self::Idle => Color::from_rgba(80, 180, 80, 255),
+            Self::Walk => Color::from_rgba(80, 120, 220, 255),
+            Self::Jump => Color::from_rgba(220, 160, 50, 255),
         }
     }
 
@@ -144,7 +144,7 @@ impl Game for AnimationDemo {
             "Arrows=Walk  Space=Jump",
             4.0,
             16.0,
-            Color::new(180, 180, 180, 255),
+            Color::from_rgba(180, 180, 180, 255),
         );
     }
 }
