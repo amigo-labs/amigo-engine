@@ -323,11 +323,7 @@ impl<T: Clone + Serialize + DeserializeOwned + PartialEq> RewindBuffer<T> {
 
         self.last_stats.keyframe_count = keyframes;
         self.last_stats.delta_count = deltas;
-        self.last_stats.avg_delta_bytes = if deltas > 0 {
-            total_delta_bytes / deltas
-        } else {
-            0
-        };
+        self.last_stats.avg_delta_bytes = total_delta_bytes.checked_div(deltas).unwrap_or(0);
         self.last_stats.memory_bytes = total_memory;
     }
 

@@ -534,7 +534,7 @@ impl Battle {
             .filter(|(_, c)| c.is_alive())
             .map(|(i, c)| (i, c.effective_speed()))
             .collect();
-        order.sort_by(|a, b| b.1.cmp(&a.1));
+        order.sort_by_key(|o| core::cmp::Reverse(o.1));
         self.turn_order = order.into_iter().map(|(i, _)| i).collect();
     }
 

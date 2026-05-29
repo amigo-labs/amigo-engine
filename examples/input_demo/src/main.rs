@@ -108,7 +108,7 @@ impl Game for InputDemo {
             "Actions: Jump=Space, Move=WASD",
             8.0,
             104.0,
-            Color::new(180, 180, 180, 255),
+            Color::from_rgba(180, 180, 180, 255),
         );
     }
 }

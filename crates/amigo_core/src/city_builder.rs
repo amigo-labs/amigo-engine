@@ -1560,7 +1560,7 @@ impl PopulationSim {
             let death_count = (pop * self.death_rate) as usize;
             if death_count > 0 {
                 // Sort by age descending and remove the oldest.
-                self.agents.sort_by(|a, b| b.age.cmp(&a.age));
+                self.agents.sort_by_key(|a| core::cmp::Reverse(a.age));
                 let remove = death_count.min(self.agents.len());
                 self.agents.truncate(self.agents.len() - remove);
             }
@@ -1590,7 +1590,7 @@ impl PopulationSim {
         if count == 0 {
             return;
         }
-        self.agents.sort_by(|a, b| b.age.cmp(&a.age));
+        self.agents.sort_by_key(|a| core::cmp::Reverse(a.age));
         self.agents.truncate(self.agents.len() - count);
     }
 

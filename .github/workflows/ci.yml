@@ -68,6 +68,17 @@ jobs:
             -p amigo_mcp \
             -p amigo_artgen \
             -p amigo_audiogen
+      - name: Check examples
+        run: |
+          cargo check \
+            -p amigo_starter \
+            -p amigo_particles \
+            -p amigo_tilemap_demo \
+            -p amigo_audio_demo \
+            -p amigo_ecs_demo \
+            -p amigo_input_demo \
+            -p amigo_animation_demo \
+            -p amigo_pathfinding_demo
 
   clippy:
     name: Clippy

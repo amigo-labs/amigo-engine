@@ -122,7 +122,7 @@ impl AtlasBuilder {
 
         // Sort by height descending (stable sort keeps insertion order for
         // sprites of equal height).
-        self.pending.sort_by(|a, b| b.height.cmp(&a.height));
+        self.pending.sort_by_key(|e| core::cmp::Reverse(e.height));
 
         let mut entries = FxHashMap::default();
 

@@ -1,12 +1,16 @@
 use amigo_engine::prelude::*;
 
-struct Position(RenderVec2);
-struct Velocity(RenderVec2);
+// Game-specific component types. With the current ECS, the `Component` trait is
+// reserved for the engine's built-in components; game types are stored as
+// *dynamic* components via `world.insert_dynamic` / `world.dynamic`.
+//
+// Position and velocity are combined into a single `Particle` component so the
+// integration step needs only one mutable borrow of the world.
+struct Particle {
+    pos: RenderVec2,
+    vel: RenderVec2,
+}
 struct Tint(Color);
-
-impl Component for Position {}
-impl Component for Velocity {}
-impl Component for Tint {}
 
 const W: f32 = 480.0;
 const H: f32 = 270.0;
@@ -37,16 +41,18 @@ impl EcsDemo {
             let id = self.world.spawn();
             let angle = (self.next_color as f32) * 0.618 * std::f32::consts::TAU;
             let speed = 30.0 + (self.next_color % 60) as f32;
-            self.world.insert(id, Position(RenderVec2 { x: cx, y: cy }));
-            self.world.insert(
+            self.world.insert_dynamic(
                 id,
-                Velocity(RenderVec2 {
-                    x: angle.cos() * speed,
-                    y: angle.sin() * speed,
-                }),
+                Particle {
+                    pos: RenderVec2 { x: cx, y: cy },
+                    vel: RenderVec2 {
+                        x: angle.cos() * speed,
+                        y: angle.sin() * speed,
+                    },
+                },
             );
             self.world
-                .insert(id, Tint(Self::color_for(self.next_color)));
+                .insert_dynamic(id, Tint(Self::color_for(self.next_color)));
             self.next_color += 1;
         }
     }
@@ -60,38 +66,42 @@ impl Game for EcsDemo {
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
         let dt = ctx.time.dt;
 
-        // Bounce off screen edges
-        let positions = self.world.storage_mut::<Position>();
-        let velocities = self.world.storage_mut::<Velocity>();
-        for (_id, pos, vel) in join_mut!(positions, velocities) {
-            pos.0.x += vel.0.x * dt;
-            pos.0.y += vel.0.y * dt;
+        // Move and bounce off screen edges.
+        if let Some(particles) = self.world.dynamic_mut::<Particle>() {
+            for (_id, p) in particles.iter_mut() {
+                p.pos.x += p.vel.x * dt;
+                p.pos.y += p.vel.y * dt;
 
-            if pos.0.x < 0.0 {
-                pos.0.x = 0.0;
-                vel.0.x = vel.0.x.abs();
-            } else if pos.0.x > W - SIZE {
-                pos.0.x = W - SIZE;
-                vel.0.x = -vel.0.x.abs();
-            }
-            if pos.0.y < 0.0 {
-                pos.0.y = 0.0;
-                vel.0.y = vel.0.y.abs();
-            } else if pos.0.y > H - SIZE {
-                pos.0.y = H - SIZE;
-                vel.0.y = -vel.0.y.abs();
+                if p.pos.x < 0.0 {
+                    p.pos.x = 0.0;
+                    p.vel.x = p.vel.x.abs();
+                } else if p.pos.x > W - SIZE {
+                    p.pos.x = W - SIZE;
+                    p.vel.x = -p.vel.x.abs();
+                }
+                if p.pos.y < 0.0 {
+                    p.pos.y = 0.0;
+                    p.vel.y = p.vel.y.abs();
+                } else if p.pos.y > H - SIZE {
+                    p.pos.y = H - SIZE;
+                    p.vel.y = -p.vel.y.abs();
+                }
             }
         }
 
-        // Click spawns 50 entities
+        // Click spawns 50 entities at the cursor.
         if ctx.input.mouse_pressed(MouseButton::Left) {
             let pos = ctx.input.mouse_world_pos();
             self.spawn_entities(50, pos.x, pos.y);
         }
 
-        // D key despawns oldest 50
+        // D key despawns the oldest 50 entities.
         if ctx.input.pressed(KeyCode::KeyD) {
-            let ids: Vec<EntityId> = self.world.storage::<Position>().ids().take(50).collect();
+            let ids: Vec<EntityId> = self
+                .world
+                .dynamic::<Particle>()
+                .map(|s| s.entities().iter().take(50).copied().collect())
+                .unwrap_or_default();
             for id in ids {
                 self.world.despawn(id);
             }
@@ -101,13 +111,16 @@ impl Game for EcsDemo {
     }
 
     fn draw(&self, ctx: &mut DrawContext) {
-        let positions = self.world.storage::<Position>();
-        let tints = self.world.storage::<Tint>();
-        for (_id, pos, tint) in join!(positions, tints) {
-            ctx.draw_rect(Rect::new(pos.0.x, pos.0.y, SIZE, SIZE), tint.0);
+        if let (Some(particles), Some(tints)) = (
+            self.world.dynamic::<Particle>(),
+            self.world.dynamic::<Tint>(),
+        ) {
+            for (_id, p, tint) in join(particles, tints) {
+                ctx.draw_rect(Rect::new(p.pos.x, p.pos.y, SIZE, SIZE), tint.0);
+            }
         }
 
-        let count = self.world.storage::<Position>().len();
+        let count = self.world.dynamic::<Particle>().map_or(0, |s| s.len());
         let hud = format!("Entities: {}  |  Click=spawn 50  D=despawn 50", count);
         ctx.draw_text(&hud, 4.0, 4.0, Color::WHITE);
     }

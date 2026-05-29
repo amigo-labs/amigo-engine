@@ -1,5 +1,11 @@
 use amigo_engine::prelude::*;
 
+// Music files are resolved against the engine's assets directory via
+// `AudioManager::base_path()`. The demo runs fine without the files present
+// (playback simply no-ops with a warning).
+const TRACK_A_PATH: &str = "music/track_a.ogg";
+const TRACK_B_PATH: &str = "music/track_b.ogg";
+
 struct AudioDemo {
     current_track: &'static str,
     volume: f32,
@@ -20,23 +26,19 @@ impl AudioDemo {
 
 impl Game for AudioDemo {
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
-        // Key 1: play music track A
+        // Key 1: switch to music track A
         if ctx.input.pressed(KeyCode::Digit1) {
-            if self.current_track == "Track A" {
-                ctx.audio.play_music("track_a");
-            } else {
-                ctx.audio.crossfade("track_a", 1.0);
-            }
+            let path = ctx.audio.base_path().join(TRACK_A_PATH);
+            ctx.audio.stop_music();
+            ctx.audio.play_music("track_a", &path);
             self.current_track = "Track A";
         }
 
-        // Key 2: play music track B (crossfade from current)
+        // Key 2: switch to music track B
         if ctx.input.pressed(KeyCode::Digit2) {
-            if self.current_track == "Track B" {
-                ctx.audio.play_music("track_b");
-            } else {
-                ctx.audio.crossfade("track_b", 1.0);
-            }
+            let path = ctx.audio.base_path().join(TRACK_B_PATH);
+            ctx.audio.stop_music();
+            ctx.audio.play_music("track_b", &path);
             self.current_track = "Track B";
         }
 
@@ -48,13 +50,13 @@ impl Game for AudioDemo {
         // Up arrow: increase volume
         if ctx.input.pressed(KeyCode::ArrowUp) {
             self.volume = (self.volume + 0.1).min(1.0);
-            ctx.audio.set_master_volume(self.volume);
+            ctx.audio.set_volume("master", self.volume);
         }
 
         // Down arrow: decrease volume
         if ctx.input.pressed(KeyCode::ArrowDown) {
             self.volume = (self.volume - 0.1).max(0.0);
-            ctx.audio.set_master_volume(self.volume);
+            ctx.audio.set_volume("master", self.volume);
         }
 
         SceneAction::Continue
