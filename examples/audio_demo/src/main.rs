@@ -1,8 +1,8 @@
 use amigo_engine::prelude::*;
-use std::path::Path;
 
-// Music files are resolved relative to the engine's assets directory. The demo
-// runs fine without the files present (playback simply no-ops with a warning).
+// Music files are resolved against the engine's assets directory via
+// `AudioManager::base_path()`. The demo runs fine without the files present
+// (playback simply no-ops with a warning).
 const TRACK_A_PATH: &str = "music/track_a.ogg";
 const TRACK_B_PATH: &str = "music/track_b.ogg";
 
@@ -28,15 +28,17 @@ impl Game for AudioDemo {
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
         // Key 1: switch to music track A
         if ctx.input.pressed(KeyCode::Digit1) {
+            let path = ctx.audio.base_path().join(TRACK_A_PATH);
             ctx.audio.stop_music();
-            ctx.audio.play_music("track_a", Path::new(TRACK_A_PATH));
+            ctx.audio.play_music("track_a", &path);
             self.current_track = "Track A";
         }
 
         // Key 2: switch to music track B
         if ctx.input.pressed(KeyCode::Digit2) {
+            let path = ctx.audio.base_path().join(TRACK_B_PATH);
             ctx.audio.stop_music();
-            ctx.audio.play_music("track_b", Path::new(TRACK_B_PATH));
+            ctx.audio.play_music("track_b", &path);
             self.current_track = "Track B";
         }
 
