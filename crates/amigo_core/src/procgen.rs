@@ -1188,7 +1188,8 @@ mod tests {
 
     #[test]
     fn biome_selection() {
-        let biomes = [BiomeDef::new(1, "Desert")
+        let biomes = [
+            BiomeDef::new(1, "Desert")
                 .with_temperature(0.6, 1.0)
                 .with_moisture(0.0, 0.3),
             BiomeDef::new(2, "Forest")
@@ -1196,7 +1197,8 @@ mod tests {
                 .with_moisture(0.4, 1.0),
             BiomeDef::new(3, "Tundra")
                 .with_temperature(0.0, 0.3)
-                .with_moisture(0.0, 0.5)];
+                .with_moisture(0.0, 0.5),
+        ];
 
         assert!(biomes[0].contains(0.8, 0.1)); // desert
         assert!(!biomes[0].contains(0.2, 0.1)); // too cold for desert
