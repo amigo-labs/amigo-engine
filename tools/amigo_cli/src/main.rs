@@ -508,7 +508,7 @@ fn main() {{
         },
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "--- .rs change detected",
+          "beginsPattern": "--- source change detected",
           "endsPattern": "--- rebuild complete"
         }
       }
