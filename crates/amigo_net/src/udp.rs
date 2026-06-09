@@ -259,6 +259,11 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
             UdpMode::Client { .. } => 0,
         }
     }
+
+    /// The local address this transport's socket is bound to.
+    pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.socket.local_addr()
+    }
 }
 
 impl<C: Clone + Serialize + for<'de> Deserialize<'de>> Transport<C> for UdpTransport<C> {
@@ -356,5 +361,60 @@ mod tests {
         let cfg = UdpConfig::default();
         assert_eq!(cfg.max_clients, 8);
         assert_eq!(cfg.bind_addr, "0.0.0.0:7777");
+    }
+
+    /// Malformed datagrams from untrusted peers must be dropped, never panic.
+    #[test]
+    fn server_survives_malformed_packets() {
+        let config = UdpConfig {
+            bind_addr: "127.0.0.1:0".into(),
+            ..Default::default()
+        };
+        let mut server: UdpTransport<String> = UdpTransport::bind_server(config).unwrap();
+        let server_addr = server.local_addr().unwrap();
+
+        let attacker = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let payloads: &[&[u8]] = &[
+            b"",                                  // empty datagram
+            b"\x00\x01\x02\x03",                  // binary garbage
+            b"{\"header\"",                       // truncated JSON
+            b"{\"header\":{},\"payload\":null}",  // wrong schema
+            &[0xffu8; MAX_PACKET_SIZE],           // max-size garbage
+        ];
+        for payload in payloads {
+            attacker.send_to(payload, server_addr).unwrap();
+        }
+        // Give the datagrams a moment to arrive.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        server.poll();
+        assert_eq!(server.client_count(), 0, "garbage must not create clients");
+    }
+
+    /// A connected client whose Commands payload is not valid JSON must be
+    /// ignored by receive_commands rather than crash the server.
+    #[test]
+    fn server_ignores_malformed_command_payload() {
+        let config = UdpConfig {
+            bind_addr: "127.0.0.1:0".into(),
+            ..Default::default()
+        };
+        let mut server: UdpTransport<String> = UdpTransport::bind_server(config).unwrap();
+        let server_addr = server.local_addr().unwrap();
+
+        let peer = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let connect = Packet::new(PacketKind::Connect, 0, 0, 0, Vec::new());
+        peer.send_to(&connect.encode().unwrap(), server_addr).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        server.poll();
+        assert_eq!(server.client_count(), 1);
+
+        let bad_commands = Packet::new(PacketKind::Commands, 1, 0, 1, b"not json".to_vec());
+        peer.send_to(&bad_commands.encode().unwrap(), server_addr)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let commands: Vec<(PlayerId, Vec<String>)> = server.receive();
+        assert!(commands.is_empty(), "malformed payloads must be dropped");
     }
 }

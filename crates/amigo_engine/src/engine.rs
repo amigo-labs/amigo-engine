@@ -179,7 +179,14 @@ impl Engine {
             return;
         }
 
-        let event_loop = EventLoop::new().expect("Failed to create event loop");
+        let event_loop = match EventLoop::new() {
+            Ok(el) => el,
+            Err(e) => {
+                error!("Failed to create a window event loop: {e}");
+                error!("No display seems to be available. On a headless machine, run with `amigo run --headless` (requires the 'api' feature).");
+                return;
+            }
+        };
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let mut app = EngineApp {
