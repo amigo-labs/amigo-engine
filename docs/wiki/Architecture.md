@@ -33,7 +33,7 @@
 
 ## Game-Type Presets
 
-Die Engine liefert vorkonfigurierte Game-Type-Module in `amigo_core`:
+The engine ships preconfigured game-type modules in `amigo_core`:
 
 | Preset | Features |
 |--------|----------|
@@ -46,7 +46,7 @@ Die Engine liefert vorkonfigurierte Game-Type-Module in `amigo_core`:
 | Visual Novel | Dialogue trees, choices, flag system |
 | City Builder | Grid placement, zones, resource management |
 
-## Workspace-Struktur
+## Workspace Structure
 
 ```
 amigo-engine/

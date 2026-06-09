@@ -1,18 +1,14 @@
 use serde::Deserialize;
 
-/// Player stats loaded from RON.
+/// Player stats loaded from RON (see `assets/data/player.ron`).
 #[derive(Debug, Deserialize)]
 pub struct PlayerStats {
     pub speed: f32,
-    pub jump_force: f32,
 }
 
 impl Default for PlayerStats {
     fn default() -> Self {
-        Self {
-            speed: 80.0,
-            jump_force: 200.0,
-        }
+        Self { speed: 80.0 }
     }
 }
 

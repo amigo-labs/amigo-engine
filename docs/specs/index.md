@@ -2,7 +2,7 @@
 status: draft
 last_updated: 2026-03-18
 ---
-<!-- Status: 62 done · 2 spec · 0 draft --> 95b366c (Add specs for dev workflow and art/audio generation defaults)
+<!-- Status: 76 done · 2 spec · 0 draft --> 95b366c (Add specs for dev workflow and art/audio generation defaults)
 
 # Amigo Engine -- Spec Overview
 
@@ -228,7 +228,7 @@ graph TD
 
 ## Status Table
 
-Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **spec** = vollständig ausgearbeitet, noch nicht umgesetzt · **done** = im Code umgesetzt
+Status values: **draft** = outline, not fully worked out yet · **spec** = fully specified, not yet implemented · **done** = implemented in code
 
 | Spec                                                      | Status | Crate             | Depends on                    |
 | --------------------------------------------------------- | ------ | ----------------- | ----------------------------- |
@@ -296,10 +296,24 @@ Status-Werte: **draft** = Entwurf, noch nicht vollständig ausgearbeitet · **sp
 | [gametypes/visual-novel](gametypes/visual-novel.md)       | done   | amigo_core        | engine/dialogue, engine/tween |
 | [gametypes/puzzle](gametypes/puzzle.md)                   | done   | amigo_core        | engine/state-rewind           |
 | [gametypes/city-builder](gametypes/city-builder.md)       | done   | amigo_core        | engine/chunks, engine/procedural |
+| [gametypes/top-down-adventure](gametypes/top-down-adventure.md) | done | amigo_core    | engine/dialogue, engine/inventory, engine/tilemap |
+| [gametypes/action-rpg](gametypes/action-rpg.md)           | done   | amigo_core        | engine/pathfinding, engine/inventory |
+| [gametypes/turn-based-rpg](gametypes/turn-based-rpg.md)   | done   | amigo_core        | engine/core                   |
+| [gametypes/tower-defense](gametypes/tower-defense.md)     | done   | amigo_core        | engine/pathfinding            |
+| [gametypes/bullet-hell](gametypes/bullet-hell.md)         | done   | amigo_core        | gametypes/shmup, engine/bullet-patterns |
+| [gametypes/arcade-shooter](gametypes/arcade-shooter.md)   | done   | amigo_core        | gametypes/shmup               |
+| [gametypes/farming-sim](gametypes/farming-sim.md)         | done   | amigo_core        | engine/crafting, engine/save-load |
+| [gametypes/fighting](gametypes/fighting.md)               | done   | amigo_core        | engine/input                  |
+| [gametypes/sandbox-survival](gametypes/sandbox-survival.md) | done | amigo_core        | engine/procedural, engine/crafting, engine/chunks |
+| [gametypes/god-sim](gametypes/god-sim.md)                 | done   | amigo_core        | engine/agents, engine/simulation |
+| [gametypes/social-deduction](gametypes/social-deduction.md) | done | amigo_core        | engine/simulation, engine/fog-of-war |
+| [gametypes/deckbuilder](gametypes/deckbuilder.md)         | done   | amigo_core        | engine/procedural, engine/save-load |
+| [gametypes/auto-battler](gametypes/auto-battler.md)       | done   | amigo_core        | engine/simulation             |
+| [gametypes/idle](gametypes/idle.md)                       | done   | amigo_core        | engine/save-load              |
 
 ## AI Pipelines
 
-AI-gestützte Asset-Generierung:
+AI-assisted asset generation:
 
 - **Art Generation**: See [ai-pipelines/artgen](ai-pipelines/artgen.md) (ComfyUI integration, post-processing, style definitions)
 - **Audio Generation**: See [ai-pipelines/audiogen](ai-pipelines/audiogen.md) (ACE-Step music gen, AudioGen SFX, adaptive music system, stem-based vertical layering)

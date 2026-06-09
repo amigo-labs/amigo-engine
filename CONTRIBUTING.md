@@ -70,6 +70,9 @@ Default features: `audio`, `input`.
 5. **Format** — run `cargo fmt --all` before committing.
 6. **PR** — open a pull request against `main` with a clear description.
 
+With [just](https://github.com/casey/just) installed, `just ci` runs the same
+format, clippy, and test checks as CI in one command (see the `justfile`).
+
 ### Running with feature flags
 
 ```sh

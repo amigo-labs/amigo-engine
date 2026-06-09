@@ -15,9 +15,15 @@ pub struct Player {
 
 impl Player {
     pub fn new() -> Self {
+        // Tuning data lives in a RON file so it can be tweaked without
+        // touching code; falls back to defaults if the file is missing.
+        let stats: crate::data::PlayerStats = crate::data::load_ron_or_default(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/data/player.ron"
+        ));
         Self {
             entity: None,
-            speed: 80.0,
+            speed: stats.speed,
             anim_timer: 0.0,
             anim_frame: 0,
             facing_left: false,

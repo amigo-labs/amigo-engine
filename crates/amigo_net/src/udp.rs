@@ -375,11 +375,11 @@ mod tests {
 
         let attacker = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let payloads: &[&[u8]] = &[
-            b"",                                  // empty datagram
-            b"\x00\x01\x02\x03",                  // binary garbage
-            b"{\"header\"",                       // truncated JSON
-            b"{\"header\":{},\"payload\":null}",  // wrong schema
-            &[0xffu8; MAX_PACKET_SIZE],           // max-size garbage
+            b"",                                 // empty datagram
+            b"\x00\x01\x02\x03",                 // binary garbage
+            b"{\"header\"",                      // truncated JSON
+            b"{\"header\":{},\"payload\":null}", // wrong schema
+            &[0xffu8; MAX_PACKET_SIZE],          // max-size garbage
         ];
         for payload in payloads {
             attacker.send_to(payload, server_addr).unwrap();
@@ -404,7 +404,8 @@ mod tests {
 
         let peer = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let connect = Packet::new(PacketKind::Connect, 0, 0, 0, Vec::new());
-        peer.send_to(&connect.encode().unwrap(), server_addr).unwrap();
+        peer.send_to(&connect.encode().unwrap(), server_addr)
+            .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(50));
         server.poll();
         assert_eq!(server.client_count(), 1);

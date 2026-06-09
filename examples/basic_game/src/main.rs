@@ -199,7 +199,12 @@ impl Game for BasicGame {
                 Color::new(0.4, 1.0, 0.4, 1.0),
             );
         } else {
-            ctx.draw_text("WASD / arrows to move", 4.0, VIRTUAL_H - 14.0, Color::new(0.6, 0.6, 0.6, 1.0));
+            ctx.draw_text(
+                "WASD / arrows to move",
+                4.0,
+                VIRTUAL_H - 14.0,
+                Color::new(0.6, 0.6, 0.6, 1.0),
+            );
         }
     }
 }

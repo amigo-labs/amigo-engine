@@ -41,8 +41,10 @@ COMMANDS:
     info                                 Show current project info
 
 TEMPLATES:
-    platformer, topdown-rpg, turn-based-rpg, roguelike, tower-defense,
-    bullet-hell, puzzle, farming-sim, fighting, visual-novel
+    platformer, top-down-adventure, action-rpg, roguelike, turn-based-rpg,
+    tower-defense, puzzle-game, farming-sim, bullet-hell, arcade-shooter,
+    visual-novel, sandbox-survival, god-sim, social-deduction, deckbuilder,
+    auto-battler, idle-game, custom (see `amigo list-templates`)
 
 PRESETS:
     top-down, platformer, turn-based, arpg, roguelike, tower-defense,
@@ -364,14 +366,20 @@ fn cmd_new(args: &[String]) {
     let template_name = find_flag(args, "--template").unwrap_or("platformer".to_string());
     let engine_dep = engine_dependency(args);
 
+    // Compare names ignoring case, spaces, and punctuation so that e.g.
+    // "sandbox-survival" matches the "Sandbox / Survival" template.
+    let normalize = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_lowercase()
+    };
+    let wanted = normalize(&template_name);
+
     let templates = project_templates();
     let template = templates
         .iter()
-        .find(|t| {
-            t.name.to_lowercase().replace(' ', "-") == template_name.to_lowercase()
-                || t.name.to_lowercase().replace(' ', "_") == template_name.to_lowercase()
-                || t.name.to_lowercase() == template_name.to_lowercase()
-        })
+        .find(|t| normalize(t.name) == wanted)
         .unwrap_or_else(|| {
             eprintln!("Unknown template: {template_name}");
             eprintln!("Use `amigo list-templates` to see available templates.");
@@ -579,7 +587,9 @@ fn engine_dependency(args: &[String]) -> String {
     // on the engine's main branch.
     let built_rev = env!("AMIGO_ENGINE_REV");
     if built_rev.is_empty() {
-        eprintln!("note: engine revision unknown; the project will track the engine's main branch.");
+        eprintln!(
+            "note: engine revision unknown; the project will track the engine's main branch."
+        );
         eprintln!("      Use `--rev`, `--tag`, or `--path` to pin the engine version.");
         format!(r#"amigo_engine = {{ git = "{GIT_URL}", features = ["audio"] }}"#)
     } else {
@@ -1349,15 +1359,14 @@ fn cmd_dev(args: &[String]) {
     use notify::{RecursiveMode, Watcher};
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut watcher = notify::recommended_watcher(
-        move |res: Result<notify::Event, notify::Error>| {
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
             let _ = tx.send(res);
-        },
-    )
-    .unwrap_or_else(|e| {
-        eprintln!("Failed to start file watcher: {e}");
-        process::exit(1);
-    });
+        })
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to start file watcher: {e}");
+            process::exit(1);
+        });
 
     if let Err(e) = watcher.watch(Path::new("src"), RecursiveMode::Recursive) {
         eprintln!("Failed to watch src/: {e}");

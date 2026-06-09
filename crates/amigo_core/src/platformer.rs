@@ -850,8 +850,10 @@ mod tests {
 
     #[test]
     fn double_jump() {
-        let mut config = PlatformerConfig::default();
-        config.max_jumps = 2;
+        let mut config = PlatformerConfig {
+            max_jumps: 2,
+            ..Default::default()
+        };
         config.coyote.coyote_ticks = 1; // minimize coyote so it doesn't interfere
         let mut ctrl = PlatformerController::new(config);
 

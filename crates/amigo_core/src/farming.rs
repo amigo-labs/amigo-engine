@@ -510,14 +510,14 @@ mod tests {
 
         // Tick 5 times — should advance to stage 1
         for _ in 0..5 {
-            tick_growth(&mut inst, &[def.clone()], Season::Spring);
+            tick_growth(&mut inst, std::slice::from_ref(&def), Season::Spring);
         }
         assert_eq!(inst[0].current_stage, 1);
 
         // Tick 5 more — should complete
         let mut completed = false;
         for _ in 0..5 {
-            let events = tick_growth(&mut inst, &[def.clone()], Season::Spring);
+            let events = tick_growth(&mut inst, std::slice::from_ref(&def), Season::Spring);
             if events
                 .iter()
                 .any(|e| matches!(e, GrowthEvent::Completed { .. }))
@@ -535,14 +535,14 @@ mod tests {
 
         // Tick without watering — should not progress
         for _ in 0..5 {
-            tick_growth(&mut inst, &[def.clone()], Season::Spring);
+            tick_growth(&mut inst, std::slice::from_ref(&def), Season::Spring);
         }
         assert_eq!(inst[0].ticks_in_stage, 0);
 
         // Water and tick — should progress
         inst[0].water();
         for _ in 0..3 {
-            tick_growth(&mut inst, &[def.clone()], Season::Spring);
+            tick_growth(&mut inst, std::slice::from_ref(&def), Season::Spring);
         }
         assert!(inst[0].is_complete(&def));
     }
@@ -554,7 +554,7 @@ mod tests {
 
         let mut withered = false;
         for _ in 0..5 {
-            let events = tick_growth(&mut inst, &[def.clone()], Season::Spring);
+            let events = tick_growth(&mut inst, std::slice::from_ref(&def), Season::Spring);
             if events
                 .iter()
                 .any(|e| matches!(e, GrowthEvent::Withered { .. }))
@@ -574,13 +574,13 @@ mod tests {
 
         // Tick in spring — no progress
         for _ in 0..5 {
-            tick_growth(&mut inst, &[def.clone()], Season::Spring);
+            tick_growth(&mut inst, std::slice::from_ref(&def), Season::Spring);
         }
         assert_eq!(inst[0].ticks_in_stage, 0);
 
         // Tick in summer — should progress
         for _ in 0..3 {
-            tick_growth(&mut inst, &[def.clone()], Season::Summer);
+            tick_growth(&mut inst, std::slice::from_ref(&def), Season::Summer);
         }
         assert!(inst[0].is_complete(&def));
     }

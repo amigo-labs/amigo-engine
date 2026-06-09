@@ -30,7 +30,7 @@ impl MenuState {
         );
 
         // "Press SPACE" prompt — blinking text
-        let blink = ((ctx.alpha * 60.0) as u32 / 30) % 2 == 0;
+        let blink = ((ctx.alpha * 60.0) as u32 / 30).is_multiple_of(2);
         if blink {
             let prompt = "Press SPACE to start";
             let (pw, _) = ctx.measure_text(prompt);

@@ -47,6 +47,14 @@ cargo run
 
 > Building games requires the [Rust toolchain](https://rustup.rs/) and a Vulkan/Metal/DX12 capable GPU.
 
+## Examples
+
+The [`examples/`](examples) directory contains runnable demos (`cargo run -p <name>` from a source checkout):
+
+- [`basic_game`](examples/basic_game) -- a complete small game in one file: movement, ECS components, pickups, HUD. **Start here** after `amigo new`.
+- [`starter`](examples/starter) -- a multi-scene game with loading, menu, and gameplay states.
+- Focused demos: [`ecs_demo`](examples/ecs_demo), [`input_demo`](examples/input_demo), [`tilemap_demo`](examples/tilemap_demo), [`animation_demo`](examples/animation_demo), [`particles`](examples/particles), [`audio_demo`](examples/audio_demo), [`pathfinding_demo`](examples/pathfinding_demo).
+
 ## Documentation
 
 See the **[Wiki](https://github.com/amigo-labs/amigo-engine/wiki)** for full documentation:
