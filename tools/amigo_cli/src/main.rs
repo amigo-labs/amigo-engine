@@ -20,15 +20,18 @@ USAGE:
 
 COMMANDS:
     new <name> [--template <TEMPLATE>]   Create a new game project
+        [--path <ENGINE_DIR>]            ... using a local engine checkout
+        [--rev <REV> | --tag <TAG>]      ... pinned to an engine git rev/tag
     scene <name> [--preset <PRESET>]     Add a scene to the current project
-    build                                Check that the project compiles
+    build                                Validate the project and run cargo check
     run [--headless] [--api]             Run the game (cargo run)
-    dev [--port PORT]                    Watch mode: rebuild + restart on .rs changes
+    dev [--port PORT]                    Watch mode: rebuild + restart on source
+                                         changes, live-reload on asset changes
     pack                                 Pack assets into atlas (release build)
     release [--target <TARGET>]          Build optimized release binary
     publish steam                        Prepare and upload to Steam (via steamcmd)
     publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
-    editor                               Launch the Amigo editor
+    editor                               Run the game with the editor overlay
     connect [--global] [--port PORT]    Write MCP config for Claude Code
     setup [--only G] [--gpu B] [--check] Install Python toolchain (Demucs, etc.)
     pipeline <COMMAND>                   Audio-to-TidalCycles pipeline
@@ -351,12 +354,15 @@ fn manifest_from_project(project: &GameProject) -> ProjectManifest {
 
 fn cmd_new(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Usage: amigo new <name> [--template <TEMPLATE>]");
+        eprintln!(
+            "Usage: amigo new <name> [--template <TEMPLATE>] [--path <ENGINE_DIR> | --rev <REV> | --tag <TAG>]"
+        );
         process::exit(1);
     }
 
     let name = &args[0];
     let template_name = find_flag(args, "--template").unwrap_or("platformer".to_string());
+    let engine_dep = engine_dependency(args);
 
     let templates = project_templates();
     let template = templates
@@ -415,7 +421,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-amigo_engine = {{ git = "https://github.com/amigo-labs/amigo-engine", features = ["audio"] }}
+{engine_dep}
 
 [profile.dev]
 opt-level = 1
@@ -439,11 +445,11 @@ panic = "abort"
 struct MyGame;
 
 impl Game for MyGame {{
-    fn init(&mut self, ctx: &mut GameContext) {{
+    fn init(&mut self, _ctx: &mut GameContext) {{
         // Initialize your game here
     }}
 
-    fn update(&mut self, ctx: &mut GameContext) -> SceneAction {{
+    fn update(&mut self, _ctx: &mut GameContext) -> SceneAction {{
         // Update game logic here
         SceneAction::Continue
     }}
@@ -522,6 +528,65 @@ fn main() {{
     println!("Next steps:");
     println!("  cd {name}");
     println!("  cargo run");
+}
+
+/// Build the `amigo_engine` dependency line for a generated project.
+///
+/// Resolution order: `--path` (local engine checkout) > `--rev` > `--tag` >
+/// the engine revision this CLI was built from (pinned for reproducible
+/// builds) > unpinned git as a last resort.
+fn engine_dependency(args: &[String]) -> String {
+    const GIT_URL: &str = "https://github.com/amigo-labs/amigo-engine";
+
+    if let Some(path) = find_flag(args, "--path") {
+        let given = PathBuf::from(&path);
+        // Accept either the engine repo root or the crate directory itself.
+        let crate_dir = if given.join("crates/amigo_engine/Cargo.toml").exists() {
+            given.join("crates/amigo_engine")
+        } else {
+            given
+        };
+        let abs = crate_dir.canonicalize().unwrap_or_else(|e| {
+            eprintln!("--path: cannot resolve '{path}': {e}");
+            process::exit(1);
+        });
+        if !abs.join("Cargo.toml").exists() {
+            eprintln!(
+                "--path: '{}' does not contain a Cargo.toml (expected the amigo-engine repo root or crates/amigo_engine)",
+                abs.display()
+            );
+            process::exit(1);
+        }
+        // Forward slashes keep the TOML string valid on Windows too.
+        let toml_path = abs.display().to_string().replace('\\', "/");
+        return format!(r#"amigo_engine = {{ path = "{toml_path}", features = ["audio"] }}"#);
+    }
+
+    if let Some(rev) = find_flag(args, "--rev") {
+        return format!(
+            r#"amigo_engine = {{ git = "{GIT_URL}", rev = "{rev}", features = ["audio"] }}"#
+        );
+    }
+
+    if let Some(tag) = find_flag(args, "--tag") {
+        return format!(
+            r#"amigo_engine = {{ git = "{GIT_URL}", tag = "{tag}", features = ["audio"] }}"#
+        );
+    }
+
+    // Pin to the engine commit this CLI was built from, so `cargo build`
+    // in the new project is reproducible and immune to breaking changes
+    // on the engine's main branch.
+    let built_rev = env!("AMIGO_ENGINE_REV");
+    if built_rev.is_empty() {
+        eprintln!("note: engine revision unknown; the project will track the engine's main branch.");
+        eprintln!("      Use `--rev`, `--tag`, or `--path` to pin the engine version.");
+        format!(r#"amigo_engine = {{ git = "{GIT_URL}", features = ["audio"] }}"#)
+    } else {
+        format!(
+            r#"amigo_engine = {{ git = "{GIT_URL}", rev = "{built_rev}", features = ["audio"] }}"#
+        )
+    }
 }
 
 fn create_dirs(base: &Path) {
@@ -644,12 +709,28 @@ fn cmd_build(_args: &[String]) {
         manifest.render.virtual_width, manifest.render.virtual_height
     );
 
-    if errors == 0 {
-        println!("  OK — project looks good!");
-    } else {
+    if errors > 0 {
         eprintln!("  Found {errors} issue(s).");
         process::exit(1);
     }
+
+    // Manifest looks good — make sure the Rust code compiles too.
+    if Path::new("Cargo.toml").exists() {
+        println!("  Running `cargo check`...");
+        let status = std::process::Command::new("cargo")
+            .arg("check")
+            .status()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to run `cargo check`: {e}");
+                process::exit(1);
+            });
+        if !status.success() {
+            eprintln!("  cargo check failed — fix the errors above.");
+            process::exit(status.code().unwrap_or(1));
+        }
+    }
+
+    println!("  OK — project looks good!");
 }
 
 // ---------------------------------------------------------------------------
@@ -1247,7 +1328,9 @@ fn cmd_dev(args: &[String]) {
         .and_then(|w| w[1].parse().ok())
         .unwrap_or(9999);
 
-    println!("amigo dev — watching for .rs changes, auto-rebuild + restart");
+    println!("amigo dev — watching src/, assets/, and amigo.toml");
+    println!("  .rs / amigo.toml changes: rebuild + restart (with state snapshot)");
+    println!("  asset changes: picked up live by the engine's hot-reloader");
     println!("  API port: {api_port}");
     println!("  Press Ctrl+C to stop\n");
 
@@ -1262,13 +1345,36 @@ fn cmd_dev(args: &[String]) {
         }
     }
 
-    // Watch src/ for .rs file changes using polling (no extra dependency)
-    let src_dir = PathBuf::from("src");
-    let mut last_check = std::time::Instant::now();
-    let mut last_mtime = scan_max_mtime(&src_dir);
+    // Watch src/, assets/, and amigo.toml using filesystem events.
+    use notify::{RecursiveMode, Watcher};
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut watcher = notify::recommended_watcher(
+        move |res: Result<notify::Event, notify::Error>| {
+            let _ = tx.send(res);
+        },
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("Failed to start file watcher: {e}");
+        process::exit(1);
+    });
+
+    if let Err(e) = watcher.watch(Path::new("src"), RecursiveMode::Recursive) {
+        eprintln!("Failed to watch src/: {e}");
+        process::exit(1);
+    }
+    if Path::new("assets").exists() {
+        if let Err(e) = watcher.watch(Path::new("assets"), RecursiveMode::Recursive) {
+            eprintln!("warning: failed to watch assets/: {e}");
+        }
+    }
+    if let Err(e) = watcher.watch(&manifest_path(), RecursiveMode::NonRecursive) {
+        eprintln!("warning: failed to watch amigo.toml: {e}");
+    }
 
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wake up regularly so we notice when the game process exits on its own.
+        let event = rx.recv_timeout(std::time::Duration::from_millis(500));
 
         // Check if child exited on its own
         if let Some(ref mut c) = child {
@@ -1286,13 +1392,35 @@ fn cmd_dev(args: &[String]) {
             }
         }
 
-        // Poll for .rs changes every 500ms
-        if last_check.elapsed() >= std::time::Duration::from_millis(500) {
-            last_check = std::time::Instant::now();
-            let current_mtime = scan_max_mtime(&src_dir);
-            if current_mtime > last_mtime {
-                last_mtime = current_mtime;
-                println!("\n--- .rs change detected, rebuilding... ---");
+        let change = match event {
+            Ok(Ok(event)) => classify_dev_change(&event),
+            Ok(Err(e)) => {
+                eprintln!("warning: file watcher error: {e}");
+                None
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                eprintln!("File watcher stopped unexpectedly.");
+                process::exit(1);
+            }
+        };
+
+        match change {
+            Some(DevChange::Rebuild) => {
+                // Debounce: editors often emit several events per save.
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
+                loop {
+                    let Some(remaining) =
+                        deadline.checked_duration_since(std::time::Instant::now())
+                    else {
+                        break;
+                    };
+                    if rx.recv_timeout(remaining).is_err() {
+                        break;
+                    }
+                }
+
+                println!("\n--- source change detected, rebuilding... ---");
 
                 // Save snapshot via API before kill
                 if child.is_some() {
@@ -1320,8 +1448,41 @@ fn cmd_dev(args: &[String]) {
                     }
                 }
             }
+            Some(DevChange::Assets) => {
+                // No rebuild needed: the engine's asset hot-reloader picks
+                // these up while the game is running.
+                println!("--- asset change detected (hot-reloaded by the engine) ---");
+            }
+            None => {}
         }
     }
+}
+
+/// What a filesystem event means for the dev loop.
+#[derive(PartialEq)]
+enum DevChange {
+    /// Source or manifest changed: rebuild and restart the game.
+    Rebuild,
+    /// Asset changed: the running engine hot-reloads it, no restart needed.
+    Assets,
+}
+
+fn classify_dev_change(event: &notify::Event) -> Option<DevChange> {
+    if matches!(event.kind, notify::EventKind::Access(_)) {
+        return None;
+    }
+    let mut assets = false;
+    for path in &event.paths {
+        if path.extension().is_some_and(|e| e == "rs")
+            || path.file_name().is_some_and(|n| n == "amigo.toml")
+        {
+            return Some(DevChange::Rebuild);
+        }
+        if path.components().any(|c| c.as_os_str() == "assets") {
+            assets = true;
+        }
+    }
+    assets.then_some(DevChange::Assets)
 }
 
 /// Build the game crate and launch it with API enabled.
@@ -1350,31 +1511,6 @@ fn build_and_launch(api_port: u16) -> Result<std::process::Child, String> {
         .map_err(|e| format!("failed to launch: {e}"))?;
 
     Ok(child)
-}
-
-/// Scan src/ recursively for the newest .rs file mtime.
-fn scan_max_mtime(dir: &Path) -> std::time::SystemTime {
-    let mut max = std::time::SystemTime::UNIX_EPOCH;
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let sub = scan_max_mtime(&path);
-                if sub > max {
-                    max = sub;
-                }
-            } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
-                if let Ok(meta) = path.metadata() {
-                    if let Ok(mtime) = meta.modified() {
-                        if mtime > max {
-                            max = mtime;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    max
 }
 
 /// Send a JSON-RPC request to the engine API.
@@ -1413,10 +1549,27 @@ fn send_api_request(port: u16, method: &str, params: &str) -> Result<String, Str
 // ---------------------------------------------------------------------------
 
 fn cmd_editor(_args: &[String]) {
-    println!("The Amigo Editor is a visual level and scene editor for Amigo Engine projects.");
-    println!();
-    println!("The editor feature is coming soon. Stay tuned!");
-    println!("Follow progress at: https://github.com/amigo-labs/amigo-engine");
+    if !manifest_path().exists() {
+        eprintln!("No amigo.toml found in the current directory.");
+        eprintln!("Run `amigo new <name>` to create a project, then cd into it.");
+        process::exit(1);
+    }
+
+    println!("Launching the game with the Amigo editor overlay (cargo run --features amigo_engine/editor)...");
+
+    let status = std::process::Command::new("cargo")
+        .arg("run")
+        .arg("--features")
+        .arg("amigo_engine/editor")
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to run `cargo run`: {e}");
+            process::exit(1);
+        });
+
+    if !status.success() {
+        process::exit(status.code().unwrap_or(1));
+    }
 }
 
 // ---------------------------------------------------------------------------

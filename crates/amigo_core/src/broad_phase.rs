@@ -1,11 +1,16 @@
 //! Broad-phase collision detection abstractions.
 //!
 //! Provides a [`BroadPhase`] trait that decouples the physics world from any
-//! specific spatial acceleration structure.  Two implementations ship today:
+//! specific spatial acceleration structure.  Implementations:
 //!
 //! * [`CpuBroadPhase`] -- sort-and-sweep on the X axis (always available).
-//! * [`GpuBroadPhase`] -- placeholder for a future wgpu compute-shader path
-//!   (radix sort + sweep on the GPU).  Currently delegates to `CpuBroadPhase`.
+//! * `amigo_render::gpu_broad_phase::GpuBroadPhase` -- wgpu compute-shader
+//!   implementation, gated behind the `gpu_physics` feature of `amigo_render`.
+//! * [`GpuBroadPhase`] (this module) -- CPU fallback with the same name, for
+//!   builds without the `gpu_physics` feature.
+//!
+//! Install a custom broad phase on a physics world via
+//! `PhysicsWorld::set_broad_phase`.
 
 use crate::ecs::EntityId;
 use crate::rect::Rect;
@@ -159,20 +164,18 @@ impl BroadPhase for CpuBroadPhase {
 
 /// CPU-only GPU broad-phase fallback.
 ///
-/// This stub delegates to [`CpuBroadPhase`] and exists for use when
-/// the `gpu_physics` feature is not enabled. For the real GPU compute
-/// shader implementation, see `amigo_render::gpu_broad_phase::GpuBroadPhase`
-/// (enabled via the `gpu_physics` feature flag on the `amigo_render` crate).
+/// This stand-in delegates to [`CpuBroadPhase`] and exists for builds where
+/// the `gpu_physics` feature is not enabled. For the real GPU compute-shader
+/// implementation, use `amigo_render::gpu_broad_phase::GpuBroadPhase`
+/// (enabled via the `gpu_physics` feature flag on the `amigo_render` crate),
+/// which requires wgpu device/queue handles.
 pub struct GpuBroadPhase {
-    /// Fallback used until the compute shader is implemented.
+    /// CPU implementation used in builds without `gpu_physics`.
     fallback: CpuBroadPhase,
 }
 
 impl GpuBroadPhase {
-    /// Create a new GPU broad-phase.
-    ///
-    /// In the future this will accept wgpu device/queue references and create
-    /// the compute pipeline.  For now it simply wraps a [`CpuBroadPhase`].
+    /// Create the CPU-backed stand-in for the GPU broad-phase.
     pub fn new() -> Self {
         Self {
             fallback: CpuBroadPhase::new(),
@@ -188,8 +191,6 @@ impl Default for GpuBroadPhase {
 
 impl BroadPhase for GpuBroadPhase {
     fn find_candidates(&mut self, bodies: &[(EntityId, Rect)]) -> Vec<CollisionPair> {
-        // TODO: dispatch wgpu compute shader (radix sort + sweep).
-        // For now, fall back to the CPU implementation.
         self.fallback.find_candidates(bodies)
     }
 }

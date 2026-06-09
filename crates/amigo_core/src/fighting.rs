@@ -785,19 +785,6 @@ mod tests {
             .with_recovery(6)
     }
 
-    fn heavy_kick() -> MoveDef {
-        MoveDef::new("Heavy Kick")
-            .with_startup(8)
-            .with_active(
-                4,
-                HitBox::new(Rect::new(4.0, -16.0, 48.0, 20.0), 80)
-                    .with_hitstun(20)
-                    .with_blockstun(10)
-                    .with_knockback(8.0, -2.0),
-            )
-            .with_recovery(12)
-    }
-
     // ── Frame data and advantage ─────────────────────────────
 
     #[test]

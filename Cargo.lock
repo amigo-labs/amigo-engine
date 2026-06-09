@@ -193,6 +193,7 @@ dependencies = [
  "amigo_render",
  "amigo_tidal_parser",
  "image 0.25.9",
+ "notify",
  "ron",
  "serde",
  "serde_json",
