@@ -27,7 +27,10 @@ impl PadState {
 
 /// Tracks all connected gamepads, their button/axis state, and hot-plug events.
 pub struct GamepadState {
-    gilrs: Gilrs,
+    /// `None` when the platform gamepad subsystem could not be initialised
+    /// (e.g. headless CI, WSL without a backend). All queries then report
+    /// no gamepads instead of panicking.
+    gilrs: Option<Gilrs>,
     pads: FxHashMap<GamepadId, PadState>,
     connected_this_frame: Vec<GamepadId>,
     disconnected_this_frame: Vec<GamepadId>,
@@ -38,15 +41,24 @@ pub struct GamepadState {
 impl GamepadState {
     /// Create a new `GamepadState`, initialising the gilrs backend.
     ///
-    /// Panics if the platform gamepad subsystem cannot be initialised.
+    /// If the platform gamepad subsystem cannot be initialised, a warning is
+    /// printed and the state behaves as if no gamepad is ever connected.
     pub fn new() -> Self {
-        let gilrs = Gilrs::new().expect("failed to initialise gilrs");
+        let gilrs = match Gilrs::new() {
+            Ok(g) => Some(g),
+            Err(e) => {
+                eprintln!("amigo_input: gamepad backend unavailable ({e}); continuing without gamepad support");
+                None
+            }
+        };
 
         // Register any gamepads that are already connected at startup.
         let mut pads = FxHashMap::default();
-        for (id, gp) in gilrs.gamepads() {
-            if gp.is_connected() {
-                pads.insert(id, PadState::new());
+        if let Some(gilrs) = &gilrs {
+            for (id, gp) in gilrs.gamepads() {
+                if gp.is_connected() {
+                    pads.insert(id, PadState::new());
+                }
             }
         }
 
@@ -57,6 +69,12 @@ impl GamepadState {
             disconnected_this_frame: Vec::new(),
             deadzone: 0.15,
         }
+    }
+
+    /// Returns `true` if the platform gamepad backend was initialised
+    /// successfully. When `false`, all queries report no gamepads.
+    pub fn backend_available(&self) -> bool {
+        self.gilrs.is_some()
     }
 
     /// Call at the start of each frame before polling events.
@@ -72,7 +90,10 @@ impl GamepadState {
     /// Poll all pending gilrs events and update internal state.
     /// Call once per frame after `begin_frame`.
     pub fn update(&mut self) {
-        while let Some(event) = self.gilrs.next_event() {
+        let Some(gilrs) = self.gilrs.as_mut() else {
+            return;
+        };
+        while let Some(event) = gilrs.next_event() {
             let id = event.id;
             match event.event {
                 EventType::Connected => {
@@ -107,7 +128,7 @@ impl GamepadState {
         // Synchronise held-button and axis state from gilrs for accuracy,
         // so that state stays correct even if events were coalesced.
         for (&id, pad) in &mut self.pads {
-            let gp = self.gilrs.gamepad(id);
+            let gp = gilrs.gamepad(id);
             for &btn in &ALL_BUTTONS {
                 if gp.is_pressed(btn) {
                     pad.buttons_down.insert(btn);
@@ -240,6 +261,9 @@ impl GamepadState {
     ///
     /// This is a best-effort API — not all platforms/gamepads support rumble.
     pub fn rumble(&mut self, id: GamepadId, strong: f32, weak: f32, duration: std::time::Duration) {
+        let Some(gilrs) = self.gilrs.as_mut() else {
+            return;
+        };
         let strong = strong.clamp(0.0, 1.0);
         let weak = weak.clamp(0.0, 1.0);
         if strong == 0.0 && weak == 0.0 {
@@ -268,7 +292,7 @@ impl GamepadState {
                 envelope: Default::default(),
             })
             .gamepads(&[id])
-            .finish(&mut self.gilrs)
+            .finish(gilrs)
         {
             let _ = effect.play();
         }

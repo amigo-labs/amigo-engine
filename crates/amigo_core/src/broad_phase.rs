@@ -128,7 +128,7 @@ impl BroadPhase for CpuBroadPhase {
 
         // 2. Sort by min_x (sweep axis).
         self.sorted
-            .sort_unstable_by(|a, b| a.1.min_x.partial_cmp(&b.1.min_x).unwrap());
+            .sort_unstable_by(|a, b| a.1.min_x.total_cmp(&b.1.min_x));
 
         // 3. Sweep: for each body, walk forward while the next body's min_x is
         //    less than this body's max_x.  Check Y overlap for each candidate.

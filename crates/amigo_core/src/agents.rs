@@ -96,7 +96,7 @@ impl Needs {
     pub fn most_urgent(&self) -> Option<(NeedType, f32)> {
         self.values
             .iter()
-            .max_by(|a, b| a.1.urgency().partial_cmp(&b.1.urgency()).unwrap())
+            .max_by(|a, b| a.1.urgency().total_cmp(&b.1.urgency()))
             .map(|(&t, n)| (t, n.urgency()))
     }
 
@@ -211,7 +211,7 @@ impl AgentMemory {
             .min_by(|a, b| {
                 let da = dist_sq(pos, a.position);
                 let db = dist_sq(pos, b.position);
-                da.partial_cmp(&db).unwrap()
+                da.total_cmp(&db)
             })
     }
 
