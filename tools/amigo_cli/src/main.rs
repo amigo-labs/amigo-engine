@@ -1418,12 +1418,9 @@ fn cmd_dev(args: &[String]) {
             Some(DevChange::Rebuild) => {
                 // Debounce: editors often emit several events per save.
                 let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
-                loop {
-                    let Some(remaining) =
-                        deadline.checked_duration_since(std::time::Instant::now())
-                    else {
-                        break;
-                    };
+                while let Some(remaining) =
+                    deadline.checked_duration_since(std::time::Instant::now())
+                {
                     if rx.recv_timeout(remaining).is_err() {
                         break;
                     }
