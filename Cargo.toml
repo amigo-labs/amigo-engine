@@ -25,6 +25,7 @@ members = [
     "tools/amigo_artgen",
     "tools/amigo_audiogen",
     "tools/amigo_cli",
+    "examples/basic_game",
     "examples/starter",
     "examples/particles",
     "examples/tilemap_demo",
