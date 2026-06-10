@@ -502,7 +502,7 @@ mod tests {
         });
         let (income, interest) = calculate_income(&state);
         assert_eq!(interest, 1); // 10 gold * 0.1 = 1
-        assert_eq!(income, 5 + 0 + 1); // base + streak + interest
+        assert_eq!(income, 5 + 1); // base + streak + interest
     }
 
     #[test]

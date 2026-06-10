@@ -47,10 +47,10 @@ pub fn select_target(
     let best = match strategy {
         TargetingStrategy::Nearest => candidates
             .iter()
-            .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap()),
+            .min_by(|a, b| a.distance.total_cmp(&b.distance)),
         TargetingStrategy::First => candidates
             .iter()
-            .max_by(|a, b| a.path_progress.partial_cmp(&b.path_progress).unwrap()),
+            .max_by(|a, b| a.path_progress.total_cmp(&b.path_progress)),
         TargetingStrategy::Strongest => candidates.iter().max_by(|a, b| a.health.cmp(&b.health)),
         TargetingStrategy::Weakest => candidates.iter().min_by(|a, b| a.health.cmp(&b.health)),
         TargetingStrategy::MostDamaged => candidates.iter().min_by(|a, b| {
@@ -64,7 +64,7 @@ pub fn select_target(
             } else {
                 1.0
             };
-            frac_a.partial_cmp(&frac_b).unwrap()
+            frac_a.total_cmp(&frac_b)
         }),
         TargetingStrategy::Random => {
             // Simple deterministic "random"

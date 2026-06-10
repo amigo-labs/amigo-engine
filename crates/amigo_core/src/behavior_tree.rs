@@ -450,7 +450,6 @@ fn reset_node(node: &mut BtNode) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::Fix;
 
     fn test_ctx() -> BtContext {
         BtContext {

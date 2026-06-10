@@ -338,8 +338,19 @@ pub struct BoneAnimation {
 }
 
 impl BoneAnimation {
+    /// Create a channel from keyframes, sorting them by time so that
+    /// [`sample`](Self::sample) interpolates correctly regardless of the
+    /// order the keyframes were authored in.
+    pub fn new(bone_id: BoneId, mut keyframes: Vec<BoneKeyframe>) -> Self {
+        keyframes.sort_by(|a, b| a.time.total_cmp(&b.time));
+        Self { bone_id, keyframes }
+    }
+
     /// Sample this channel at the given time, linearly interpolating between
     /// the two surrounding keyframes.
+    ///
+    /// Keyframes are expected to be sorted by time (see [`new`](Self::new));
+    /// unsorted keyframes produce clamped rather than interpolated results.
     pub fn sample(&self, time: f32) -> BoneTransform {
         if self.keyframes.is_empty() {
             return BoneTransform::default();
@@ -361,12 +372,15 @@ impl BoneAnimation {
             };
         }
 
-        // Find the two keyframes surrounding `time`.
+        // Find the two keyframes surrounding `time`. With sorted keyframes
+        // the guards above guarantee idx >= 1; `max(1)` keeps this panic-free
+        // even if the keyframes were left unsorted.
         let idx = self
             .keyframes
             .iter()
             .position(|kf| kf.time > time)
-            .unwrap_or(self.keyframes.len() - 1);
+            .unwrap_or(self.keyframes.len() - 1)
+            .max(1);
         let a = &self.keyframes[idx - 1];
         let b = &self.keyframes[idx];
         let span = b.time - a.time;

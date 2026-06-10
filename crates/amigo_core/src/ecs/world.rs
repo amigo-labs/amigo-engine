@@ -212,7 +212,7 @@ impl World {
         storage
             .as_any_mut()
             .downcast_mut::<SparseSet<T>>()
-            .unwrap()
+            .expect("dynamic storage type mismatch: entry under this TypeId must be SparseSet<T>")
             .insert(id, data);
     }
 

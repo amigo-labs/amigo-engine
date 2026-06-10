@@ -1188,7 +1188,7 @@ mod tests {
 
     #[test]
     fn biome_selection() {
-        let biomes = vec![
+        let biomes = [
             BiomeDef::new(1, "Desert")
                 .with_temperature(0.6, 1.0)
                 .with_moisture(0.0, 0.3),

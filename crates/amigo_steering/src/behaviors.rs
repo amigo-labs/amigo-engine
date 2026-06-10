@@ -311,7 +311,7 @@ mod tests {
         for _ in 0..200 {
             let force = compute_steering(&agent, pos, vel, &[]);
             vel = truncate(vel + force, agent.max_speed);
-            pos = pos + vel;
+            pos += vel;
         }
 
         let dist = (target - pos).length().to_num::<f32>();
@@ -495,7 +495,7 @@ mod tests {
         for _ in 0..100 {
             let force = compute_steering(&agent, pos, vel, &[]);
             vel = truncate(vel + force, agent.max_speed);
-            pos = pos + vel;
+            pos += vel;
         }
         // Should have advanced well beyond x=0
         assert!(

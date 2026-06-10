@@ -102,6 +102,14 @@ mod tests {
         assert_eq!(decoded.payload, b"hello");
     }
 
+    #[test]
+    fn decode_rejects_malformed_input() {
+        assert!(Packet::decode(b"").is_none());
+        assert!(Packet::decode(b"\x00\x01\x02").is_none());
+        assert!(Packet::decode(b"{\"header\"").is_none());
+        assert!(Packet::decode(b"{\"header\":{},\"payload\":null}").is_none());
+    }
+
     // ── Sequence Numbers ────────────────────────────────────────
 
     #[test]

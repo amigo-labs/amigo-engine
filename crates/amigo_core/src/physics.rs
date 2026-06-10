@@ -105,6 +105,9 @@ pub struct PhysicsWorld {
     pub solver_iterations: u32,
     bodies: FxHashMap<EntityId, RigidBody>,
     spatial_hash: SpatialHash,
+    /// Optional pluggable broad phase. When set, it replaces the built-in
+    /// spatial hash for collision-pair detection (see [`set_broad_phase`](Self::set_broad_phase)).
+    broad_phase: Option<Box<dyn crate::broad_phase::BroadPhase>>,
     /// Velocity threshold for CCD. Bodies faster than this use swept tests.
     /// Default: 0.0 (disabled). Set via `set_ccd_threshold()`.
     ccd_threshold: f32,
@@ -117,8 +120,22 @@ impl PhysicsWorld {
             solver_iterations: 4,
             bodies: FxHashMap::default(),
             spatial_hash: SpatialHash::new(cell_size),
+            broad_phase: None,
             ccd_threshold: 0.0,
         }
+    }
+
+    /// Replace the built-in spatial-hash broad phase with a custom
+    /// [`BroadPhase`](crate::broad_phase::BroadPhase) implementation, e.g.
+    /// `amigo_render::gpu_broad_phase::GpuBroadPhase` (feature `gpu_physics`)
+    /// to run candidate detection on the GPU.
+    pub fn set_broad_phase(&mut self, broad_phase: Box<dyn crate::broad_phase::BroadPhase>) {
+        self.broad_phase = Some(broad_phase);
+    }
+
+    /// Revert to the built-in spatial-hash broad phase.
+    pub fn clear_broad_phase(&mut self) {
+        self.broad_phase = None;
     }
 
     pub fn add_body(&mut self, entity: EntityId, body: RigidBody) {
@@ -202,7 +219,54 @@ impl PhysicsWorld {
         }
     }
 
-    fn find_collision_pairs(&self) -> Vec<(EntityId, EntityId, ContactInfo)> {
+    fn find_collision_pairs(&mut self) -> Vec<(EntityId, EntityId, ContactInfo)> {
+        // Use the pluggable broad phase when one is installed. Take it out
+        // temporarily so it can be borrowed mutably alongside `self.bodies`.
+        if let Some(mut bp) = self.broad_phase.take() {
+            let pairs = self.find_collision_pairs_with(bp.as_mut());
+            self.broad_phase = Some(bp);
+            return pairs;
+        }
+        self.find_collision_pairs_spatial_hash()
+    }
+
+    /// Narrow-phase filtering of candidates produced by a custom broad phase.
+    fn find_collision_pairs_with(
+        &self,
+        broad_phase: &mut dyn crate::broad_phase::BroadPhase,
+    ) -> Vec<(EntityId, EntityId, ContactInfo)> {
+        let bodies: Vec<(EntityId, Rect)> = self
+            .bodies
+            .iter()
+            .map(|(&entity, body)| (entity, shape_to_aabb(body.position, &body.shape)))
+            .collect();
+
+        let mut pairs = Vec::new();
+        for candidate in broad_phase.find_candidates(&bodies) {
+            let (Some(body_a), Some(body_b)) =
+                (self.bodies.get(&candidate.a), self.bodies.get(&candidate.b))
+            else {
+                continue;
+            };
+
+            // Skip static-static and kinematic-kinematic pairs
+            if body_a.body_type != BodyType::Dynamic && body_b.body_type != BodyType::Dynamic {
+                continue;
+            }
+
+            if let Some(contact) = check_shapes(
+                body_a.position,
+                &body_a.shape,
+                body_b.position,
+                &body_b.shape,
+            ) {
+                pairs.push((candidate.a, candidate.b, contact));
+            }
+        }
+        pairs
+    }
+
+    fn find_collision_pairs_spatial_hash(&self) -> Vec<(EntityId, EntityId, ContactInfo)> {
         let mut pairs = Vec::new();
         let mut checked = rustc_hash::FxHashSet::default();
 
@@ -574,5 +638,44 @@ mod tests {
         world.remove_body(id);
         assert_eq!(world.body_count(), 0);
         assert!(world.get_body(id).is_none());
+    }
+
+    #[test]
+    fn pluggable_broad_phase_detects_contacts() {
+        // Two overlapping dynamic bodies must produce a contact both with the
+        // built-in spatial hash and with an installed custom broad phase.
+        let make_world = || {
+            let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 0.0), 64.0);
+            world.add_body(
+                make_id(1),
+                RigidBody::dynamic(
+                    RenderVec2::new(0.0, 0.0),
+                    CollisionShape::Aabb(Rect::new(-8.0, -8.0, 16.0, 16.0)),
+                    1.0,
+                ),
+            );
+            world.add_body(
+                make_id(2),
+                RigidBody::dynamic(
+                    RenderVec2::new(4.0, 0.0),
+                    CollisionShape::Aabb(Rect::new(-8.0, -8.0, 16.0, 16.0)),
+                    1.0,
+                ),
+            );
+            world
+        };
+
+        let mut hash_world = make_world();
+        let hash_contacts = hash_world.step();
+        assert!(!hash_contacts.is_empty());
+
+        let mut bp_world = make_world();
+        bp_world.set_broad_phase(Box::new(crate::broad_phase::CpuBroadPhase::new()));
+        let bp_contacts = bp_world.step();
+        assert!(!bp_contacts.is_empty());
+
+        // Reverting restores the spatial-hash path.
+        bp_world.clear_broad_phase();
+        let _ = bp_world.step();
     }
 }
