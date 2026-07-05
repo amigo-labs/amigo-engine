@@ -36,10 +36,12 @@ struct JsonRpcError {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    // Parse --server flag for custom ComfyUI endpoint
+    // Parse --server flag for a custom ComfyUI endpoint. `--acestep` is an
+    // accepted alias (older configs used it); ACE-Step runs as ComfyUI
+    // custom nodes, so both point at the same server.
     let server_url = args
         .iter()
-        .position(|a| a == "--server")
+        .position(|a| a == "--server" || a == "--acestep")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
         .unwrap_or("http://localhost:8188");
@@ -105,7 +107,7 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
             })),
             error: None,
         },
-        "initialized" => JsonRpcResponse {
+        "initialized" | "notifications/initialized" => JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: req.id.clone(),
             result: Some(serde_json::json!({})),

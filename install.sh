@@ -98,12 +98,39 @@ echo "Extracting..."
 tar -xzf "${TMPDIR}/${ASSET_NAME}" -C "${TMPDIR}"
 
 # ---------------------------------------------------------------------------
-# Install binary
+# Install binaries
 # ---------------------------------------------------------------------------
 
+# Release archives contain a staging directory (amigo-<target>/amigo);
+# search for the binary rather than assuming a flat layout.
+find_binary() {
+    name="$1"
+    if [ -f "${TMPDIR}/${name}" ]; then
+        echo "${TMPDIR}/${name}"
+    else
+        find "$TMPDIR" -type f -name "$name" | head -1
+    fi
+}
+
+MAIN_BINARY="$(find_binary "$BINARY_NAME")"
+if [ -z "$MAIN_BINARY" ]; then
+    echo "Error: '${BINARY_NAME}' binary not found in the downloaded archive."
+    exit 1
+fi
+
 mkdir -p "$INSTALL_DIR"
-mv "${TMPDIR}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+mv "$MAIN_BINARY" "${INSTALL_DIR}/${BINARY_NAME}"
 chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+
+# Companion MCP servers (present in newer releases; optional otherwise).
+for extra in amigo-artgen amigo-audiogen; do
+    EXTRA_BINARY="$(find_binary "$extra")"
+    if [ -n "$EXTRA_BINARY" ]; then
+        mv "$EXTRA_BINARY" "${INSTALL_DIR}/${extra}"
+        chmod +x "${INSTALL_DIR}/${extra}"
+        echo "Installed ${extra} to ${INSTALL_DIR}/${extra}"
+    fi
+done
 
 echo ""
 echo "Installed amigo to ${INSTALL_DIR}/${BINARY_NAME}"

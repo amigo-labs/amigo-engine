@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "MCP server for AI audio generation (ACE-Step music, AudioGen SFX)"
 
+# The MCP configs (`amigo connect`, .mcp.json) launch `amigo-audiogen`, so
+# the binary uses the hyphenated name (same convention as amigo-artgen).
+[[bin]]
+name = "amigo-audiogen"
+path = "src/main.rs"
+
 [dependencies]
 amigo_comfyui = { workspace = true }
 serde = { version = "1", features = ["derive"] }

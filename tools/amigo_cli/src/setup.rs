@@ -678,7 +678,10 @@ pub fn cmd_setup(args: &[String]) {
 // Embedded requirement files
 // ---------------------------------------------------------------------------
 
-const REQUIREMENTS_CORE: &str = r#"--index-url {{PYTORCH_INDEX}}
+// --extra-index-url (NOT --index-url): the PyTorch index only hosts the
+// torch wheels; replacing PyPI entirely would make every other package in
+// the dependent requirement files unresolvable.
+const REQUIREMENTS_CORE: &str = r#"--extra-index-url {{PYTORCH_INDEX}}
 torch>=2.2.0
 torchaudio>=2.2.0
 numpy>=1.24.0
@@ -743,8 +746,23 @@ fn chrono_lite_now() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
     let secs = dur.as_secs();
-    // Rough conversion — good enough for a timestamp.
     let days = secs / 86400;
-    let years_approx = 1970 + days / 365;
-    format!("{years_approx}-01-01T00:00:00Z")
+    let (year, month, day) = civil_from_days(days as i64);
+    let rem = secs % 86400;
+    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+/// Days-since-epoch to (year, month, day), Howard Hinnant's algorithm.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // day of era [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // year of era
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // day of year [0, 365]
+    let mp = (5 * doy + 2) / 153; // month index [0, 11], March-based
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }

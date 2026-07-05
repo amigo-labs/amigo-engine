@@ -110,6 +110,13 @@ pub struct ComfyUiClient {
 }
 
 impl ComfyUiClient {
+    /// Timeout for control-plane calls (queue, status, listings). Without
+    /// one, a hung ComfyUI socket blocks forever — and `wait_for_completion`'s
+    /// own timeout can never fire while a single request is stalled.
+    const API_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+    /// Timeout for bulk downloads (generated images/audio can be large).
+    const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
     pub fn new(config: ComfyUiConfig) -> Self {
         Self { config }
     }
@@ -129,6 +136,7 @@ impl ComfyUiClient {
 
         let body = serde_json::to_value(prompt).map_err(ComfyError::Json)?;
         let resp: Value = ureq::post(&self.url("/prompt"))
+            .timeout(Self::API_TIMEOUT)
             .send_json(body)
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
@@ -150,6 +158,7 @@ impl ComfyUiClient {
         }
 
         let resp: Value = ureq::get(&self.url(&format!("/history/{}", prompt_id)))
+            .timeout(Self::API_TIMEOUT)
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
@@ -168,12 +177,33 @@ impl ComfyUiClient {
 
         if let Some(err) = entry["status"]["status_str"].as_str() {
             if err == "error" {
+                // `messages` is an array of [event_name, payload] pairs;
+                // pull out anything human-readable rather than always
+                // reporting "unknown error".
                 let msg = entry["status"]["messages"]
-                    .as_str()
-                    .unwrap_or("unknown error");
-                return Ok(PromptStatus::Failed {
-                    error: msg.to_string(),
-                });
+                    .as_array()
+                    .map(|msgs| {
+                        msgs.iter()
+                            .filter_map(|m| {
+                                let name = m.get(0)?.as_str()?;
+                                let detail = m
+                                    .get(1)
+                                    .and_then(|p| {
+                                        p.get("exception_message").and_then(|v| v.as_str())
+                                    })
+                                    .unwrap_or("");
+                                Some(if detail.is_empty() {
+                                    name.to_string()
+                                } else {
+                                    format!("{name}: {detail}")
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    })
+                    .filter(|joined| !joined.is_empty())
+                    .unwrap_or_else(|| "unknown error".to_string());
+                return Ok(PromptStatus::Failed { error: msg });
             }
         }
 
@@ -187,6 +217,7 @@ impl ComfyUiClient {
         }
 
         let resp: Value = ureq::get(&self.url(&format!("/history/{}", prompt_id)))
+            .timeout(Self::API_TIMEOUT)
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
@@ -217,6 +248,7 @@ impl ComfyUiClient {
         }
 
         let resp: Value = ureq::get(&self.url(&format!("/history/{}", prompt_id)))
+            .timeout(Self::API_TIMEOUT)
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
@@ -274,6 +306,7 @@ impl ComfyUiClient {
 
         let mut bytes = Vec::new();
         ureq::get(&url)
+            .timeout(Self::DOWNLOAD_TIMEOUT)
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_reader()
@@ -295,6 +328,7 @@ impl ComfyUiClient {
 
         let mut bytes = Vec::new();
         ureq::get(&url)
+            .timeout(Self::DOWNLOAD_TIMEOUT)
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_reader()
@@ -308,6 +342,7 @@ impl ComfyUiClient {
     /// Get the list of available models/checkpoints via `GET /object_info`.
     pub fn list_models(&self) -> Result<Vec<String>, ComfyError> {
         let resp: Value = ureq::get(&self.url("/object_info/CheckpointLoaderSimple"))
+            .timeout(Self::API_TIMEOUT)
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
@@ -334,6 +369,7 @@ impl ComfyUiClient {
     /// Get the system status (queue length, GPU info) via `GET /system_stats`.
     pub fn system_stats(&self) -> Result<Value, ComfyError> {
         let resp: Value = ureq::get(&self.url("/system_stats"))
+            .timeout(Self::API_TIMEOUT)
             .call()
             .map_err(|e| ComfyError::Http(e.to_string()))?
             .into_json()
