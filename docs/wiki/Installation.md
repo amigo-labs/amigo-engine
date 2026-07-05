@@ -16,7 +16,7 @@ curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/instal
 irm https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.ps1 | iex
 ```
 
-The binary is installed to `~/.amigo/bin/amigo` and automatically added to your PATH.
+The binary is installed to `~/.amigo/bin/amigo`. On Windows the installer adds it to your user PATH automatically; on Linux/macOS the install script prints the matching `export PATH=...` line for your shell — add it to your shell profile.
 
 ### Environment Variables
 
@@ -60,7 +60,7 @@ cd my_game
 cargo run
 ```
 
-Available templates: `platformer`, `topdown-rpg`, `turn-based-rpg`, `roguelike`, `tower-defense`, `bullet-hell`, `puzzle`, `farming-sim`, `fighting`, `visual-novel`
+Available templates: `platformer`, `top-down-adventure`, `action-rpg`, `roguelike`, `turn-based-rpg`, `tower-defense`, `puzzle-game`, `farming-sim`, `bullet-hell`, `arcade-shooter`, `visual-novel`, and more — run `amigo list-templates` for the full list.
 
 ```sh
 amigo new my_platformer --template platformer

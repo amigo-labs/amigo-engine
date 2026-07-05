@@ -95,7 +95,7 @@ impl SfxManager {
         Self::default()
     }
 
-    /// Register an SFX definition. Call [`load`] afterwards to load the actual
+    /// Register an SFX definition. Call [`Self::load`] afterwards to load the actual
     /// sound data from disk.
     pub fn register(&mut self, name: impl Into<String>, def: SfxDefinition) {
         self.definitions.insert(name.into(), def);

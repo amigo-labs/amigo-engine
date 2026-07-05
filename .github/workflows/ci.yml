@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -46,6 +46,8 @@ jobs:
       - name: Clippy feature flags
         run: |
           cargo clippy -p amigo_core --features async_tasks -- -D warnings
+          cargo clippy -p amigo_core --features system_graph -- -D warnings
+          cargo clippy -p amigo_core --all-features -- -D warnings
           cargo clippy -p amigo_assets --features asset_streaming -- -D warnings
           cargo clippy -p amigo_render --features asset_streaming -- -D warnings
           cargo clippy -p amigo_net --features rollback_net -- -D warnings
@@ -64,6 +66,8 @@ jobs:
       - name: Test feature flags
         run: |
           cargo test -p amigo_core --features async_tasks
+          cargo test -p amigo_core --features system_graph
+          cargo test -p amigo_core --all-features
           cargo test -p amigo_assets --features asset_streaming
           cargo test -p amigo_render --features asset_streaming
           cargo test -p amigo_net --features rollback_net
@@ -93,7 +97,8 @@ jobs:
             -p amigo_audio_pipeline \
             -p amigo_engine
         env:
-          RUSTDOCFLAGS: ""
+          # CONTRIBUTING.md promises that CI fails on doc warnings.
+          RUSTDOCFLAGS: "-D warnings"
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:

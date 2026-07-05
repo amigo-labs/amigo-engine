@@ -544,7 +544,7 @@ pub struct RichTextSegment {
 }
 
 /// Parse rich text markup into styled segments.
-/// Supports: [b]...[/b], [i]...[/i], [c=#RRGGBB]...[/c], [s=N]...[/s]
+/// Supports: `[b]...[/b]`, `[i]...[/i]`, `[c=#RRGGBB]...[/c]`, `[s=N]...[/s]`
 pub fn parse_rich_text(input: &str) -> Vec<RichTextSegment> {
     let mut segments = Vec::new();
     let mut current_text = String::new();
