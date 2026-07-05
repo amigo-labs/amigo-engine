@@ -29,10 +29,17 @@ impl SimVec2 {
         }
     }
 
+    /// Squared distance, saturating at `Fix::MAX`.
+    ///
+    /// Computed on widened integers: `dx * dx` in Q16.16 overflows for
+    /// deltas beyond ~181 units, which real maps exceed easily. The result
+    /// saturates instead of panicking/wrapping, and stays deterministic.
     pub fn distance_squared(self, other: Self) -> Fix {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        dx * dx + dy * dy
+        let dx = i128::from(self.x.to_bits()) - i128::from(other.x.to_bits());
+        let dy = i128::from(self.y.to_bits()) - i128::from(other.y.to_bits());
+        // Squares of Q16.16 bits are Q32.32; shift back down to Q16.16.
+        let sq = (dx * dx + dy * dy) >> 16;
+        Fix::from_bits(sq.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32)
     }
 
     pub fn to_render(self) -> RenderVec2 {
@@ -254,6 +261,25 @@ impl IVec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn distance_squared_small_values() {
+        let a = SimVec2::new(Fix::from_num(3), Fix::from_num(0));
+        let b = SimVec2::new(Fix::from_num(0), Fix::from_num(4));
+        assert_eq!(a.distance_squared(b), Fix::from_num(25));
+    }
+
+    #[test]
+    fn distance_squared_large_values_saturate() {
+        // Deltas beyond ~181 units used to overflow Q16.16 multiplication
+        // (panic in debug, garbage in release). Must saturate instead.
+        let a = SimVec2::new(Fix::from_num(1000), Fix::from_num(-2000));
+        let b = SimVec2::new(Fix::from_num(-1000), Fix::from_num(2000));
+        assert_eq!(a.distance_squared(b), Fix::MAX);
+        // And still be usable for comparisons against nearer points.
+        let near = SimVec2::new(Fix::from_num(1001), Fix::from_num(-2001));
+        assert!(a.distance_squared(near) < a.distance_squared(b));
+    }
 
     #[test]
     fn sqrt_fix_perfect_squares() {

@@ -52,6 +52,9 @@ pub struct ArchetypeLocation {
 
 /// Type-erased column storage for a single component type.
 struct Column {
+    /// Kept for debugging/assertions; lookups go through the archetype's
+    /// sorted `component_types` list instead.
+    #[allow(dead_code)]
     type_id: TypeId,
     item_layout: Layout,
     drop_fn: Option<unsafe fn(*mut u8)>,
@@ -254,6 +257,10 @@ impl Archetype {
     /// size/alignment for its type.
     ///
     /// Returns the row index.
+    ///
+    /// # Safety
+    /// Each pointer in `components` must be valid for reads of the size and
+    /// alignment of the corresponding column's component type.
     pub unsafe fn push_entity(&mut self, entity: EntityId, components: &[*const u8]) -> u32 {
         debug_assert_eq!(components.len(), self.columns.len());
         let row = self.entities.len() as u32;
@@ -266,6 +273,9 @@ impl Archetype {
 
     /// Remove an entity by row index (swap-remove). Returns the entity that
     /// was swapped into this row (if any) so the caller can update its location.
+    ///
+    /// # Safety
+    /// `row` must be a valid, occupied row index in this archetype.
     pub unsafe fn swap_remove(&mut self, row: u32) -> Option<EntityId> {
         let row = row as usize;
         let last = self.entities.len() - 1;
@@ -313,6 +323,9 @@ impl Archetype {
     }
 
     /// Get raw pointer to a component column row.
+    ///
+    /// # Safety
+    /// `row` must be a valid, occupied row index in this archetype.
     pub unsafe fn get_component_raw(&self, type_id: TypeId, row: u32) -> Option<*const u8> {
         let col_idx = self.type_to_column.get(&type_id)?;
         Some(self.columns[*col_idx].get_row(row as usize))
@@ -350,9 +363,9 @@ impl ArchetypeMap {
         sorted.sort();
         let id = ArchetypeId::from_type_ids(&sorted);
 
-        if !self.archetypes.contains_key(&id) {
-            self.archetypes.insert(id, Archetype::new(id, descriptors));
-        }
+        self.archetypes
+            .entry(id)
+            .or_insert_with(|| Archetype::new(id, descriptors));
         id
     }
 
@@ -383,6 +396,10 @@ impl ArchetypeMap {
     }
 
     /// Insert an entity into an archetype. Returns the row.
+    ///
+    /// # Safety
+    /// `archetype_id` must exist, and each pointer in `components` must be
+    /// valid for reads of the corresponding column's component type.
     pub unsafe fn insert_entity(
         &mut self,
         archetype_id: ArchetypeId,
@@ -396,6 +413,9 @@ impl ArchetypeMap {
     }
 
     /// Remove an entity from its archetype.
+    ///
+    /// # Safety
+    /// The entity's recorded location (if any) must refer to a valid row.
     pub unsafe fn remove_entity(&mut self, entity: EntityId) {
         if let Some(loc) = self.entity_location(entity) {
             let swapped = {

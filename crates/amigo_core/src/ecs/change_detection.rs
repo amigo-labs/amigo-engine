@@ -350,7 +350,7 @@ mod tests {
         {
             let wrapper = Mut::new(&mut value, &mut ticks, world_tick);
             // Read through Deref -- should NOT update changed tick
-            let _read: &u32 = &*wrapper;
+            let _read: &u32 = &wrapper;
         }
 
         // Changed tick should still be the original (1)
