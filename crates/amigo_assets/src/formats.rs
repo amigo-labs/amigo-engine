@@ -62,8 +62,13 @@ impl AitFile {
         tile_width: u16,
         tile_height: u16,
     ) -> Result<Self, FormatError> {
-        let expected_len = (atlas_width * atlas_height * 4) as usize;
-        if pixels.len() != expected_len {
+        if tile_width == 0 || tile_height == 0 {
+            return Err(FormatError::InvalidAit(
+                "Tile dimensions must be non-zero".into(),
+            ));
+        }
+        let expected_len = (atlas_width as u64) * (atlas_height as u64) * 4;
+        if pixels.len() as u64 != expected_len {
             return Err(FormatError::InvalidAit(format!(
                 "Expected {} bytes, got {}",
                 expected_len,
@@ -170,21 +175,19 @@ pub enum ImageFormat {
     WebP,
 }
 
-/// Convert a PNG image to WebP (lossy, quality 0-100).
+/// Convert a PNG image to WebP.
 ///
-/// Uses the `image` crate's built-in WebP encoder when available.
-/// Falls back to storing as PNG-in-pak when WebP is not compiled in.
-pub fn png_to_webp(png_data: &[u8], quality: u8) -> Result<Vec<u8>, FormatError> {
+/// The `image` crate's WebP encoder is lossless-only, so no quality knob is
+/// offered; callers that need lossy WebP must bring their own encoder.
+pub fn png_to_webp(png_data: &[u8]) -> Result<Vec<u8>, FormatError> {
     let img = image::load_from_memory_with_format(png_data, image::ImageFormat::Png)?;
     let rgba = img.to_rgba8();
     let mut buf = Vec::new();
-    // image crate 0.25+ supports WebP encoding
     rgba.write_to(
         &mut std::io::Cursor::new(&mut buf),
         image::ImageFormat::WebP,
     )
     .map_err(|e| FormatError::Unsupported(format!("WebP encoding: {e}")))?;
-    let _ = quality; // quality knob reserved for future encoder configurability
     Ok(buf)
 }
 
@@ -249,7 +252,7 @@ pub struct ConversionResult {
 pub fn convert_image(png_data: &[u8]) -> Result<ConversionResult, FormatError> {
     let source_size = png_data.len();
 
-    match png_to_webp(png_data, 90) {
+    match png_to_webp(png_data) {
         Ok(webp_data) => {
             let target_size = webp_data.len();
             if target_size < source_size {

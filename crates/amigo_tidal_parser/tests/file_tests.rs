@@ -105,6 +105,7 @@ fn roundtrip_save_and_load() {
                     ]),
                     amp_pattern: None,
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             },
             Stem {
@@ -116,6 +117,7 @@ fn roundtrip_save_and_load() {
                     ]),
                     amp_pattern: None,
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             },
         ],
@@ -161,4 +163,36 @@ fn no_stems_returns_error() {
 "#;
     let result = parse_amigo_tidal(content);
     assert!(result.is_err());
+}
+
+#[test]
+fn rev_transform_from_file_is_applied() {
+    let content = r#"-- amigo:meta
+-- name: "rev_test"
+-- bpm: 120
+
+-- amigo:stem melody
+d1 $ rev $ n "c4 d4 e4"
+"#;
+    let comp = parse_amigo_tidal(content).unwrap();
+    let events = evaluate_pattern(&comp, 0);
+    assert_eq!(events.len(), 3);
+    // rev reverses the order: E, D, C.
+    assert_eq!(events[0].note.pitch_class, PitchClass::E);
+    assert_eq!(events[2].note.pitch_class, PitchClass::C);
+}
+
+#[test]
+fn fast_transform_from_file_is_applied() {
+    let content = r#"-- amigo:meta
+-- name: "fast_test"
+-- bpm: 120
+
+-- amigo:stem melody
+d1 $ fast 2 $ n "c4 d4"
+"#;
+    let comp = parse_amigo_tidal(content).unwrap();
+    let events = evaluate_pattern(&comp, 0);
+    // fast 2 plays the two-note pattern twice per cycle.
+    assert_eq!(events.len(), 4);
 }

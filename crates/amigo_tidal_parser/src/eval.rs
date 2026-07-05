@@ -33,6 +33,10 @@ pub fn evaluate_pattern(composition: &Composition, cycle: u64) -> Vec<NoteEvent>
                 .as_ref()
                 .map(|p| eval_values(p, 0.0, 1.0, cycle));
 
+            let mut voice_events = Vec::new();
+            // Amp/legato values align positionally with the note pattern's
+            // slots INCLUDING rests (e.g. `n "c5 ~ e5" # amp "0.8 0 0.9"`),
+            // so the slot index `i` is the right lookup key.
             for (i, (time, duration, atom)) in note_events.iter().enumerate() {
                 if let PatternAtom::Note(note) = atom {
                     let amplitude = amp_values
@@ -46,7 +50,7 @@ pub fn evaluate_pattern(composition: &Composition, cycle: u64) -> Vec<NoteEvent>
                         .copied()
                         .unwrap_or(1.0);
 
-                    events.push(NoteEvent {
+                    voice_events.push(NoteEvent {
                         time: *time,
                         duration: *duration,
                         note: *note,
@@ -57,6 +61,18 @@ pub fn evaluate_pattern(composition: &Composition, cycle: u64) -> Vec<NoteEvent>
                 }
                 // Rests produce no event.
             }
+
+            // Apply the voice's `$`-chain transforms. Slow is skipped here
+            // because the parser folds it into the composition's
+            // cycle_length; re-applying it would double the slowdown.
+            for t in &voice.transforms {
+                match t {
+                    Transform::Slow(_) => {}
+                    other => apply_transform(&mut voice_events, *other),
+                }
+            }
+
+            events.extend(voice_events);
         }
     }
 
@@ -72,6 +88,9 @@ pub fn evaluate_pattern(composition: &Composition, cycle: u64) -> Vec<NoteEvent>
 pub fn apply_transform(events: &mut Vec<NoteEvent>, transform: Transform) {
     match transform {
         Transform::Slow(factor) => {
+            if factor <= 0.0 {
+                return;
+            }
             for ev in events.iter_mut() {
                 ev.time /= factor;
                 ev.duration /= factor;
@@ -80,14 +99,25 @@ pub fn apply_transform(events: &mut Vec<NoteEvent>, transform: Transform) {
             events.retain(|ev| ev.time < 1.0);
         }
         Transform::Fast(factor) => {
-            for ev in events.iter_mut() {
-                ev.time *= factor;
-                ev.duration *= factor;
+            if factor <= 0.0 {
+                return;
             }
-            // Keep within bounds and wrap.
-            for ev in events.iter_mut() {
-                ev.time %= 1.0;
+            // The pattern plays `factor` times per cycle: compress each
+            // repetition into a 1/factor window and lay them out in order.
+            let reps = factor.ceil() as usize;
+            let mut out = Vec::with_capacity(events.len() * reps);
+            for rep in 0..reps {
+                for ev in events.iter() {
+                    let time = (ev.time + rep as f64) / factor;
+                    if time < 1.0 {
+                        let mut ev = ev.clone();
+                        ev.time = time;
+                        ev.duration /= factor;
+                        out.push(ev);
+                    }
+                }
             }
+            *events = out;
         }
         Transform::Rev => {
             for ev in events.iter_mut() {
@@ -105,77 +135,75 @@ pub fn apply_transform(events: &mut Vec<NoteEvent>, transform: Transform) {
     }
 }
 
+/// Hard ceiling on events produced by a single pattern evaluation. Patterns
+/// come from (possibly hostile) files, and repeat counts like `c4*4000000000`
+/// or nested replication would otherwise allocate without bound. Evaluation
+/// silently stops adding events once the ceiling is hit.
+const MAX_EVENTS_PER_PATTERN: usize = 65_536;
+
 /// Internal: evaluate a pattern tree into (time, duration, atom) triples.
 fn eval_pattern(
     pattern: &Pattern,
     start: f64,
     span: f64,
-    _cycle: u64,
+    cycle: u64,
 ) -> Vec<(f64, f64, PatternAtom)> {
+    let mut results = Vec::new();
+    eval_pattern_into(&mut results, pattern, start, span, cycle);
+    results
+}
+
+fn eval_pattern_into(
+    results: &mut Vec<(f64, f64, PatternAtom)>,
+    pattern: &Pattern,
+    start: f64,
+    span: f64,
+    cycle: u64,
+) {
+    if results.len() >= MAX_EVENTS_PER_PATTERN {
+        return;
+    }
     match pattern {
         Pattern::Atom(atom) => {
-            vec![(start, span, atom.clone())]
+            results.push((start, span, atom.clone()));
         }
-        Pattern::Sequence(elements) => {
+        Pattern::Sequence(elements) | Pattern::Group(elements) => {
+            // A Group subdivides its parent's single slot the same way a
+            // Sequence subdivides the full span.
             let n = elements.len() as f64;
             let slot_size = span / n;
-            let mut results = Vec::new();
             for (i, elem) in elements.iter().enumerate() {
                 let slot_start = start + i as f64 * slot_size;
-                results.extend(eval_pattern(elem, slot_start, slot_size, _cycle));
+                eval_pattern_into(results, elem, slot_start, slot_size, cycle);
             }
-            results
         }
-        Pattern::Group(elements) => {
-            // Same as Sequence but within the parent's single slot.
-            let n = elements.len() as f64;
-            let slot_size = span / n;
-            let mut results = Vec::new();
-            for (i, elem) in elements.iter().enumerate() {
-                let slot_start = start + i as f64 * slot_size;
-                results.extend(eval_pattern(elem, slot_start, slot_size, _cycle));
-            }
-            results
-        }
-        Pattern::Repeat(inner, count) => {
+        // Replicate is the same as Repeat for evaluation purposes (in
+        // TidalCycles, replicate differs from repeat only in pattern
+        // structure, not timing).
+        Pattern::Repeat(inner, count) | Pattern::Replicate(inner, count) => {
             // Same event repeated n times in the same time slot.
             let n = *count as f64;
             let slot_size = span / n;
-            let mut results = Vec::new();
             for i in 0..*count {
+                if results.len() >= MAX_EVENTS_PER_PATTERN {
+                    return;
+                }
                 let slot_start = start + i as f64 * slot_size;
-                results.extend(eval_pattern(inner, slot_start, slot_size, _cycle));
+                eval_pattern_into(results, inner, slot_start, slot_size, cycle);
             }
-            results
-        }
-        Pattern::Replicate(inner, count) => {
-            // Same as Repeat for evaluation purposes (in TidalCycles, replicate
-            // differs from repeat only in pattern structure, not timing).
-            let n = *count as f64;
-            let slot_size = span / n;
-            let mut results = Vec::new();
-            for i in 0..*count {
-                let slot_start = start + i as f64 * slot_size;
-                results.extend(eval_pattern(inner, slot_start, slot_size, _cycle));
-            }
-            results
         }
         Pattern::SlowDiv(inner, divisor) => {
             // Only produce events on every nth cycle.
             let d = *divisor as u64;
-            if _cycle.is_multiple_of(d) {
-                eval_pattern(inner, start, span, _cycle / d)
-            } else {
-                Vec::new()
+            if cycle.is_multiple_of(d) {
+                eval_pattern_into(results, inner, start, span, cycle / d);
             }
         }
         Pattern::Stack(layers) => {
             // All layers play simultaneously in the same time span.
-            let mut results = Vec::new();
             for layer in layers {
-                results.extend(eval_pattern(layer, start, span, _cycle));
+                eval_pattern_into(results, layer, start, span, cycle);
             }
-            results
         }
     }
 }
@@ -277,6 +305,7 @@ mod tests {
                     ]),
                     amp_pattern: None,
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             }],
             metadata: CompositionMeta::default(),
@@ -328,6 +357,7 @@ mod tests {
                     ]),
                     amp_pattern: None,
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             }],
             metadata: CompositionMeta::default(),
@@ -356,6 +386,7 @@ mod tests {
                         Pattern::Atom(PatternAtom::Number(0.5)),
                     ])),
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             }],
             metadata: CompositionMeta::default(),

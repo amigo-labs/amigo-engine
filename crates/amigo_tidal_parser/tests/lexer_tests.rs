@@ -123,3 +123,17 @@ fn full_voice_definition_tokenizes() {
     assert!(tokens.contains(&Token::Hash));
     assert!(tokens.contains(&Token::Keyword(Keyword::Amp)));
 }
+
+#[test]
+fn non_ascii_in_comment_does_not_panic() {
+    // Multi-byte UTF-8 before a token must not break token slicing.
+    let tokens = tokenize("-- Melodie: äöü ⚡\nc4 d4").unwrap();
+    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens[0], Token::Note(NoteValue::new(PitchClass::C, 4)));
+}
+
+#[test]
+fn non_ascii_outside_comment_is_rejected_gracefully() {
+    let result = tokenize("c4 ⚡ d4");
+    assert!(result.is_err());
+}

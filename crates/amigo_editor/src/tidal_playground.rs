@@ -476,6 +476,7 @@ mod tests {
                         ]),
                         amp_pattern: None,
                         legato_pattern: None,
+                        transforms: Vec::new(),
                     }],
                 },
                 Stem {
@@ -487,6 +488,7 @@ mod tests {
                         ]),
                         amp_pattern: None,
                         legato_pattern: None,
+                        transforms: Vec::new(),
                     }],
                 },
             ],

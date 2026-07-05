@@ -354,6 +354,17 @@ impl PakReader {
         let entry_count = u32::from_le_bytes(buf4) as usize;
 
         // -- TOC --
+        // The smallest possible TOC entry (empty name) is 19 bytes (v1) /
+        // 20 bytes (v2), so an entry count claiming more entries than the
+        // file could possibly hold is corrupt. Checking up front also keeps
+        // a hostile header from forcing a huge pre-allocation.
+        let min_entry_size = if is_v2 { 20 } else { 19 };
+        if entry_count > data.len() / min_entry_size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Pak entry count {entry_count} exceeds file capacity"),
+            ));
+        }
         let mut entries = Vec::with_capacity(entry_count);
         for _ in 0..entry_count {
             let mut buf2 = [0u8; 2];
@@ -395,6 +406,21 @@ impl PakReader {
             cursor.read_exact(&mut buf8)?;
             let size = u64::from_le_bytes(buf8);
 
+            // Reject entries whose data range lies outside the file so that
+            // reads never index out of bounds on a corrupt or hostile pak.
+            let end = offset.checked_add(size).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Pak entry '{name}' has overflowing offset/size"),
+                )
+            })?;
+            if end > data.len() as u64 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Pak entry '{name}' extends past end of file"),
+                ));
+            }
+
             entries.push(PakEntry {
                 name,
                 kind,
@@ -414,20 +440,24 @@ impl PakReader {
 
     /// Get raw bytes for an entry by name.
     pub fn read_entry(&self, name: &str) -> Option<&[u8]> {
-        self.entries.iter().find(|e| e.name == name).map(|e| {
-            let start = e.offset as usize;
-            let end = start + e.size as usize;
-            &self.data[start..end]
-        })
+        self.entries
+            .iter()
+            .find(|e| e.name == name)
+            .and_then(|e| self.entry_bytes(e))
     }
 
     /// Get raw bytes for an entry by index.
     pub fn read_entry_at(&self, index: usize) -> Option<&[u8]> {
-        self.entries.get(index).map(|e| {
-            let start = e.offset as usize;
-            let end = start + e.size as usize;
-            &self.data[start..end]
-        })
+        self.entries.get(index).and_then(|e| self.entry_bytes(e))
+    }
+
+    /// Slice an entry's data range, returning `None` instead of panicking if
+    /// the range is out of bounds (ranges are validated in `from_bytes`, so
+    /// this is purely defensive).
+    fn entry_bytes(&self, e: &PakEntry) -> Option<&[u8]> {
+        let start = usize::try_from(e.offset).ok()?;
+        let end = start.checked_add(usize::try_from(e.size).ok()?)?;
+        self.data.get(start..end)
     }
 
     /// Get all entries of a given kind.
@@ -510,6 +540,38 @@ mod tests {
         assert_eq!(reader.len(), 0);
 
         std::fs::remove_file(&tmp).ok();
+    }
+
+    // ── Corrupt/hostile pak handling ─────────────────────────────
+
+    fn valid_pak_bytes(tmp_name: &str) -> Vec<u8> {
+        let mut writer = PakWriter::new();
+        writer.add("player", AssetKind::Sprite, vec![0xFF; 64]);
+        let tmp = std::env::temp_dir().join(tmp_name);
+        writer.write_to(&tmp).unwrap();
+        let raw = std::fs::read(&tmp).unwrap();
+        std::fs::remove_file(&tmp).ok();
+        raw
+    }
+
+    #[test]
+    fn corrupt_entry_count_is_rejected() {
+        let mut raw = valid_pak_bytes("test_amigo_corrupt_count.pak");
+        // Entry count lives right after magic (8) + version (4).
+        raw[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
+        let err = PakReader::from_bytes(raw).err().unwrap();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn corrupt_entry_range_is_rejected() {
+        let mut raw = valid_pak_bytes("test_amigo_corrupt_range.pak");
+        // First TOC entry: 16 (header) + 2 (name_len) + 6 ("player") + 1
+        // (kind) + 1 (flags), then 8 bytes offset + 8 bytes size.
+        let offset_pos = 16 + 2 + 6 + 1 + 1;
+        raw[offset_pos..offset_pos + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        let err = PakReader::from_bytes(raw).err().unwrap();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     // ── SHA-256 integrity ───────────────────────────────────────

@@ -20,6 +20,7 @@ fn make_comp(note_pattern: Pattern) -> Composition {
                 note_pattern,
                 amp_pattern: None,
                 legato_pattern: None,
+                transforms: Vec::new(),
             }],
         }],
         metadata: CompositionMeta::default(),
@@ -139,8 +140,16 @@ fn transform_fast() {
     let comp = make_comp(seq(vec![note(PitchClass::C, 4), note(PitchClass::D, 4)]));
     let mut events = evaluate_pattern(&comp, 0);
     apply_transform(&mut events, Transform::Fast(2.0));
-    // With fast 2, events at 0.0, 0.5 become 0.0, 0.0 (wrapped).
-    assert_eq!(events.len(), 2);
+    // With fast 2 the pattern plays twice per cycle: events at 0.0, 0.5
+    // become 0.0, 0.25, 0.5, 0.75 with halved durations.
+    assert_eq!(events.len(), 4);
+    assert!((events[0].time - 0.0).abs() < 1e-9);
+    assert!((events[1].time - 0.25).abs() < 1e-9);
+    assert!((events[2].time - 0.5).abs() < 1e-9);
+    assert!((events[3].time - 0.75).abs() < 1e-9);
+    for ev in &events {
+        assert!((ev.duration - 0.25).abs() < 1e-9);
+    }
 }
 
 #[test]
@@ -179,6 +188,7 @@ fn amp_pattern_applied() {
                     Pattern::Atom(PatternAtom::Number(0.3)),
                 ])),
                 legato_pattern: None,
+                transforms: Vec::new(),
             }],
         }],
         metadata: CompositionMeta::default(),
@@ -205,6 +215,7 @@ fn legato_pattern_applied() {
                     Pattern::Atom(PatternAtom::Number(1.0)),
                     Pattern::Atom(PatternAtom::Number(0.5)),
                 ])),
+                transforms: Vec::new(),
             }],
         }],
         metadata: CompositionMeta::default(),
@@ -228,6 +239,7 @@ fn multi_stem_events_have_correct_stem_index() {
                     note_pattern: note(PitchClass::C, 5),
                     amp_pattern: None,
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             },
             Stem {
@@ -236,6 +248,7 @@ fn multi_stem_events_have_correct_stem_index() {
                     note_pattern: note(PitchClass::C, 2),
                     amp_pattern: None,
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             },
         ],
@@ -251,4 +264,13 @@ fn multi_stem_events_have_correct_stem_index() {
     assert_eq!(melody_events[0].note.octave, 5);
     assert_eq!(bass_events[0].note.pitch_class, PitchClass::C);
     assert_eq!(bass_events[0].note.octave, 2);
+}
+
+#[test]
+fn huge_repeat_count_is_capped() {
+    // A hostile pattern like "c4*4000000000" must not exhaust memory.
+    let pat = Pattern::Repeat(Box::new(note(PitchClass::C, 4)), 4_000_000_000);
+    let comp = make_comp(pat);
+    let events = evaluate_pattern(&comp, 0);
+    assert!(events.len() <= 65_536);
 }

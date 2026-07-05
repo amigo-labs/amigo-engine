@@ -353,6 +353,7 @@ d3 $ slow 8 $ n "bd ~ sd ~ bd ~ sd bd"
                     ]),
                     amp_pattern: None,
                     legato_pattern: None,
+                    transforms: Vec::new(),
                 }],
             }],
             metadata: CompositionMeta::default(),
