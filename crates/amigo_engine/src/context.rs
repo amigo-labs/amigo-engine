@@ -68,6 +68,9 @@ impl GameContext {
         self.fonts.load_font(data, px)
     }
 
+    /// Register (or replace) the texture backing a sprite name. Replacing
+    /// an existing entry keeps hot reload working: draws by name pick up
+    /// the new texture on the next frame.
     pub fn register_sprite_texture(
         &mut self,
         name: String,
@@ -75,7 +78,11 @@ impl GameContext {
         width: u32,
         height: u32,
     ) {
-        self.sprite_textures.push((name, texture_id, width, height));
+        if let Some(entry) = self.sprite_textures.iter_mut().find(|(n, _, _, _)| *n == name) {
+            *entry = (name, texture_id, width, height);
+        } else {
+            self.sprite_textures.push((name, texture_id, width, height));
+        }
     }
 
     pub fn find_sprite_texture(&self, name: &str) -> Option<(TextureId, u32, u32)> {

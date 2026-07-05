@@ -292,10 +292,12 @@ impl Camera {
                 let aw = *arena_width;
                 let ah = *arena_height;
 
-                // Frame the arena: zoom to fit, center on arena
+                // Frame the arena: zoom to fit, center on arena. Clamp like
+                // set_zoom so a zero/negative arena size can't produce a
+                // zoom of 0 (inf/NaN in view math).
                 let zoom_x = self.virtual_width / aw;
                 let zoom_y = self.virtual_height / ah;
-                self.target_zoom = zoom_x.min(zoom_y);
+                self.target_zoom = zoom_x.min(zoom_y).max(0.1);
                 self.position = self.position.lerp(center, 3.0 * dt);
             }
 
