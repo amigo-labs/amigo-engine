@@ -185,13 +185,13 @@ fn path_follow(
     pos: SimVec2,
     vel: SimVec2,
     waypoints: &[SimVec2],
-    _look_ahead: Fix,
+    look_ahead: Fix,
     max_speed: Fix,
 ) -> SimVec2 {
     if waypoints.is_empty() {
         return SimVec2::ZERO;
     }
-    // Find the nearest waypoint, then seek the one after it (look-ahead of 1)
+    // Find the nearest waypoint.
     let mut nearest_idx = 0;
     let mut nearest_dist_sq = Fix::MAX;
     for (i, wp) in waypoints.iter().enumerate() {
@@ -201,7 +201,19 @@ fn path_follow(
             nearest_idx = i;
         }
     }
-    let target_idx = (nearest_idx + 1).min(waypoints.len() - 1);
+    // Head for the waypoint after the nearest one, and while we are already
+    // within `look_ahead` of that target, advance further along the path so
+    // the agent cuts corners smoothly instead of visiting every point.
+    // (Squared on widened bits — Fix*Fix overflows beyond ~181.)
+    let la_sq_bits =
+        (i128::from(look_ahead.to_bits()).pow(2) >> 16).clamp(0, i128::from(i32::MAX)) as i32;
+    let look_ahead_sq = Fix::from_bits(la_sq_bits);
+    let mut target_idx = (nearest_idx + 1).min(waypoints.len() - 1);
+    while target_idx + 1 < waypoints.len()
+        && pos.distance_squared(waypoints[target_idx]) <= look_ahead_sq
+    {
+        target_idx += 1;
+    }
     seek(waypoints[target_idx], pos, vel, max_speed)
 }
 

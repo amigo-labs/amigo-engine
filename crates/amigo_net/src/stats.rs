@@ -13,9 +13,10 @@ const WINDOW_SIZE: usize = 120;
 pub struct NetStats {
     /// Round-trip time samples (milliseconds).
     rtt_samples: VecDeque<f32>,
-    /// Packets sent in the current window.
+    /// Packets sent since the last `reset_window` call (unlike the
+    /// byte/RTT deques, these are not a rolling window).
     packets_sent: u32,
-    /// Packets acknowledged in the current window.
+    /// Packets acknowledged since the last `reset_window` call.
     packets_acked: u32,
     /// Total packets lost (across all time).
     packets_lost_total: u64,
@@ -55,14 +56,14 @@ impl NetStats {
 
     /// Record that a packet was sent.
     pub fn record_send(&mut self, bytes: u32) {
-        self.packets_sent += 1;
+        self.packets_sent = self.packets_sent.saturating_add(1);
         self.packets_sent_total += 1;
-        self.current_bytes_sent += bytes;
+        self.current_bytes_sent = self.current_bytes_sent.saturating_add(bytes);
     }
 
     /// Record that a packet was acknowledged.
     pub fn record_ack(&mut self) {
-        self.packets_acked += 1;
+        self.packets_acked = self.packets_acked.saturating_add(1);
     }
 
     /// Record packet loss (e.g., detected by sequence gap).
@@ -72,7 +73,7 @@ impl NetStats {
 
     /// Record received bytes.
     pub fn record_recv(&mut self, bytes: u32) {
-        self.current_bytes_recv += bytes;
+        self.current_bytes_recv = self.current_bytes_recv.saturating_add(bytes);
     }
 
     /// Call once per tick to finalize bandwidth counters.
@@ -133,7 +134,7 @@ impl NetStats {
         variance.sqrt()
     }
 
-    /// Packet loss ratio in the current window (0.0 - 1.0).
+    /// Packet loss ratio since the last `reset_window` call (0.0 - 1.0).
     pub fn packet_loss(&self) -> f32 {
         if self.packets_sent == 0 {
             return 0.0;

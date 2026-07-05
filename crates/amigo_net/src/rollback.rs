@@ -80,7 +80,9 @@ pub struct RollbackSession<S: RollbackState> {
     local_player: PlayerId,
     players: Vec<PlayerId>,
     current_tick: u64,
-    #[allow(dead_code)]
+    /// Highest tick for which ALL players have confirmed inputs. Everything
+    /// at or below this can never be rolled back again, so older bookkeeping
+    /// is pruned relative to it.
     last_confirmed_tick: u64,
     /// Ring buffer of snapshots indexed by `tick % snapshot_buffer_size`.
     snapshots: Vec<Option<Vec<u8>>>,
@@ -227,6 +229,19 @@ impl<S: RollbackState> RollbackSession<S> {
             self.stats.prediction_accuracy =
                 self.stats.correct_predictions as f32 / self.stats.total_predictions as f32;
         }
+
+        // 10. Advance the confirmation watermark and prune bookkeeping that
+        // can never be rolled back to again. Without this, the input and
+        // checksum maps grow by one entry per player per tick for the whole
+        // session.
+        self.update_confirmed_tick();
+        self.prune_history();
+
+        // Reset the per-second rollback counter once per second of sim time
+        // (the simulation runs at a fixed 60 ticks/sec).
+        if self.current_tick.is_multiple_of(60) {
+            self.stats.rollbacks_this_second = 0;
+        }
     }
 
     /// Predict the input for a remote player (returns last known or default).
@@ -275,6 +290,43 @@ impl<S: RollbackState> RollbackSession<S> {
     }
 
     // ── Internal helpers ────────────────────────────────────────
+
+    /// Advance `last_confirmed_tick` to the highest tick below the current
+    /// tick for which every player has a confirmed input.
+    fn update_confirmed_tick(&mut self) {
+        let mut confirmed = self.last_confirmed_tick;
+        'outer: while confirmed < self.current_tick {
+            for pid in &self.players {
+                let has_input = self
+                    .confirmed_inputs
+                    .get(pid)
+                    .is_some_and(|m| m.contains_key(&confirmed));
+                if !has_input {
+                    break 'outer;
+                }
+            }
+            confirmed += 1;
+        }
+        self.last_confirmed_tick = confirmed;
+    }
+
+    /// Drop inputs and checksums older than the confirmation watermark
+    /// (minus the rollback window as a safety margin).
+    fn prune_history(&mut self) {
+        let cutoff = self
+            .last_confirmed_tick
+            .saturating_sub(self.config.max_rollback_frames as u64 * 2);
+        if cutoff == 0 {
+            return;
+        }
+        for map in self.confirmed_inputs.values_mut() {
+            map.retain(|&t, _| t >= cutoff);
+        }
+        for map in self.predicted_inputs.values_mut() {
+            map.retain(|&t, _| t >= cutoff);
+        }
+        self.checksums.retain(|&t, _| t >= cutoff);
+    }
 
     /// Gather the best-known inputs for all players at a given tick.
     /// Uses confirmed inputs when available, otherwise predicts and records
@@ -481,7 +533,7 @@ mod tests {
         let mut state = MockState::default();
 
         // Run 20 ticks — buffer wraps around at size 8
-        for tick in 0..20u64 {
+        for _tick in 0..20u64 {
             session.advance_tick(&mut state, 1, vec![]);
         }
 

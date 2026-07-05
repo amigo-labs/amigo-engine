@@ -65,6 +65,8 @@ impl Default for SeparationConfig {
             output_format: "wav".into(),
             stem_mapping: [
                 ("vocals".into(), "melody".into()),
+                // Two-stem mode: everything that isn't vocals.
+                ("no_vocals".into(), "accompaniment".into()),
                 ("bass".into(), "bass".into()),
                 ("drums".into(), "percussion".into()),
                 ("other".into(), "harmony".into()),
