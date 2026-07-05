@@ -677,7 +677,6 @@ mod tests {
         let frame = profiler.last_frame().expect("should have one frame");
         assert_eq!(frame.spans.len(), 1);
         assert_eq!(frame.spans[0].name, "unclosed");
-        assert!(frame.spans[0].duration_us > 0 || frame.spans[0].duration_us == 0);
     }
 
     #[test]

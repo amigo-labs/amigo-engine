@@ -112,10 +112,7 @@ impl AssetManager {
 
         // Same naming scheme as load_sprites_recursive: subdirectories
         // become a `dir/name` prefix, extension dropped.
-        let name = rel
-            .with_extension("")
-            .to_string_lossy()
-            .replace('\\', "/");
+        let name = rel.with_extension("").to_string_lossy().replace('\\', "/");
 
         match image::open(path) {
             Ok(img) => {

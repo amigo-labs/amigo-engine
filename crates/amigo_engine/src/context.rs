@@ -78,7 +78,11 @@ impl GameContext {
         width: u32,
         height: u32,
     ) {
-        if let Some(entry) = self.sprite_textures.iter_mut().find(|(n, _, _, _)| *n == name) {
+        if let Some(entry) = self
+            .sprite_textures
+            .iter_mut()
+            .find(|(n, _, _, _)| *n == name)
+        {
             *entry = (name, texture_id, width, height);
         } else {
             self.sprite_textures.push((name, texture_id, width, height));

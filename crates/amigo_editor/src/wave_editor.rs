@@ -7,7 +7,6 @@ use amigo_core::waves::{SpawnGroup, WaveDef};
 use amigo_core::{Color, Rect};
 use amigo_input::InputState;
 use amigo_ui::UiContext;
-use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Wave editor commands (undo / redo)

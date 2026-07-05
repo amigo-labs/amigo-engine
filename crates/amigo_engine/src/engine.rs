@@ -379,12 +379,7 @@ fn reload_changed_asset(
 ) {
     if let Some(sprite) = assets.reload_sprite(path) {
         let tex_id = renderer.load_texture(&sprite.image, &sprite.name);
-        game_ctx.register_sprite_texture(
-            sprite.name.clone(),
-            tex_id,
-            sprite.width,
-            sprite.height,
-        );
+        game_ctx.register_sprite_texture(sprite.name.clone(), tex_id, sprite.width, sprite.height);
         info!("Hot reload: sprite '{}' reloaded", sprite.name);
     } else {
         warn!(

@@ -19,20 +19,15 @@ use crate::UiContext;
 pub struct NodeId(pub(crate) usize);
 
 /// How a dimension is specified.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Size {
     /// Fixed pixel value.
     Fixed(f32),
     /// Percentage of the parent's corresponding dimension (0.0 .. 1.0).
     Percent(f32),
     /// Determined by children / content.
+    #[default]
     Auto,
-}
-
-impl Default for Size {
-    fn default() -> Self {
-        Size::Auto
-    }
 }
 
 /// Direction of the main axis.
