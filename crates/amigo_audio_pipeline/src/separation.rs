@@ -28,12 +28,22 @@ impl SeparationStage {
     }
 
     /// Check if input is a mono WAV by reading the channel count from the
-    /// `fmt ` chunk. Non-WAV or unreadable files are treated as non-mono so
+    /// `fmt ` chunk. Non-WAV or unreadable files — or files whose `fmt `
+    /// chunk isn't within the first 64 KiB — are treated as non-mono so
     /// they still go through full separation.
     fn is_mono(input: &Path) -> bool {
-        let Ok(data) = std::fs::read(input) else {
+        use std::io::Read;
+        // Only read a prefix: `fmt ` sits near the start of real WAVs, and
+        // audio files can be large — no need to pull the whole file into
+        // memory just to inspect the header.
+        const PREFIX_LEN: u64 = 64 * 1024;
+        let Ok(file) = std::fs::File::open(input) else {
             return false;
         };
+        let mut data = Vec::new();
+        if file.take(PREFIX_LEN).read_to_end(&mut data).is_err() {
+            return false;
+        }
         // RIFF header: "RIFF" .... "WAVE", then chunks of [id, size, data].
         if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
             return false;

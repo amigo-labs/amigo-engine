@@ -88,7 +88,8 @@ pub fn evaluate_pattern(composition: &Composition, cycle: u64) -> Vec<NoteEvent>
 pub fn apply_transform(events: &mut Vec<NoteEvent>, transform: Transform) {
     match transform {
         Transform::Slow(factor) => {
-            if factor <= 0.0 {
+            // Rejects NaN too (NaN comparisons are false).
+            if !(factor > 0.0 && factor.is_finite()) {
                 return;
             }
             for ev in events.iter_mut() {
@@ -99,15 +100,27 @@ pub fn apply_transform(events: &mut Vec<NoteEvent>, transform: Transform) {
             events.retain(|ev| ev.time < 1.0);
         }
         Transform::Fast(factor) => {
-            if factor <= 0.0 {
+            // Rejects NaN too (NaN comparisons are false).
+            if !(factor > 0.0 && factor.is_finite()) {
                 return;
             }
             // The pattern plays `factor` times per cycle: compress each
             // repetition into a 1/factor window and lay them out in order.
-            let reps = factor.ceil() as usize;
-            let mut out = Vec::with_capacity(events.len() * reps);
-            for rep in 0..reps {
+            // Factors come from (possibly hostile) files, so both the
+            // repetition count and the output size are capped — a
+            // `$ fast 4000000000` must not allocate without bound.
+            let reps = (factor.ceil() as usize).min(MAX_EVENTS_PER_PATTERN);
+            let mut out = Vec::with_capacity(
+                events
+                    .len()
+                    .saturating_mul(reps)
+                    .min(MAX_EVENTS_PER_PATTERN),
+            );
+            'outer: for rep in 0..reps {
                 for ev in events.iter() {
+                    if out.len() >= MAX_EVENTS_PER_PATTERN {
+                        break 'outer;
+                    }
                     let time = (ev.time + rep as f64) / factor;
                     if time < 1.0 {
                         let mut ev = ev.clone();
