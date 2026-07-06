@@ -358,7 +358,7 @@ mod tests {
         let def = test_def();
 
         let id1 = mgr.spawn(EnemyInstance::from_def(&def), RenderVec2::new(10.0, 10.0));
-        let id2 = mgr.spawn(EnemyInstance::from_def(&def), RenderVec2::new(20.0, 20.0));
+        let _id2 = mgr.spawn(EnemyInstance::from_def(&def), RenderVec2::new(20.0, 20.0));
         assert_eq!(mgr.alive_count(), 2);
 
         // Kill one

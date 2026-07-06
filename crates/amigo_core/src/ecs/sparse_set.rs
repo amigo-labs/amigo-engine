@@ -45,6 +45,10 @@ impl<T> SparseSet<T> {
     }
 
     /// Insert a component for the given entity.
+    ///
+    /// If the slot is occupied by an entity with a different generation
+    /// (a stale `EntityId` writing onto a reused index), the insert is
+    /// ignored rather than clobbering the live entity's component.
     pub fn insert(&mut self, id: EntityId, data: T) {
         let idx = id.index;
         self.ensure_sparse(idx);
@@ -52,6 +56,9 @@ impl<T> SparseSet<T> {
         if self.sparse[idx as usize] != EMPTY {
             // Entity already has this component - update it
             let dense_idx = self.sparse[idx as usize] as usize;
+            if self.dense_ids[dense_idx].generation != id.generation {
+                return;
+            }
             self.dense_data[dense_idx] = data;
             self.changed.set(idx);
         } else {
@@ -72,6 +79,9 @@ impl<T> SparseSet<T> {
         }
 
         let dense_idx = self.sparse[idx] as usize;
+        if self.dense_ids[dense_idx].generation != id.generation {
+            return None;
+        }
         self.sparse[idx] = EMPTY;
 
         // Swap-remove from dense arrays
@@ -88,28 +98,44 @@ impl<T> SparseSet<T> {
     }
 
     /// Get an immutable reference to the component for the given entity.
+    ///
+    /// Returns `None` if the stored entity's generation differs from the
+    /// requested one, so a stale `EntityId` never reads the component of an
+    /// entity that reused the same index.
     pub fn get(&self, id: EntityId) -> Option<&T> {
         let idx = id.index as usize;
         if idx >= self.sparse.len() || self.sparse[idx] == EMPTY {
             return None;
         }
-        Some(&self.dense_data[self.sparse[idx] as usize])
+        let dense_idx = self.sparse[idx] as usize;
+        if self.dense_ids[dense_idx].generation != id.generation {
+            return None;
+        }
+        Some(&self.dense_data[dense_idx])
     }
 
     /// Get a mutable reference to the component. Marks the entity as changed.
+    ///
+    /// Stale `EntityId`s (generation mismatch) return `None`; see [`get`](Self::get).
     pub fn get_mut(&mut self, id: EntityId) -> Option<&mut T> {
         let idx = id.index as usize;
         if idx >= self.sparse.len() || self.sparse[idx] == EMPTY {
             return None;
         }
+        let dense_idx = self.sparse[idx] as usize;
+        if self.dense_ids[dense_idx].generation != id.generation {
+            return None;
+        }
         self.changed.set(id.index);
-        Some(&mut self.dense_data[self.sparse[idx] as usize])
+        Some(&mut self.dense_data[dense_idx])
     }
 
     /// Check if an entity has this component.
     pub fn contains(&self, id: EntityId) -> bool {
         let idx = id.index as usize;
-        idx < self.sparse.len() && self.sparse[idx] != EMPTY
+        idx < self.sparse.len()
+            && self.sparse[idx] != EMPTY
+            && self.dense_ids[self.sparse[idx] as usize].generation == id.generation
     }
 
     /// Number of entities with this component.

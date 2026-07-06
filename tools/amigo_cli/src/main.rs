@@ -33,6 +33,8 @@ COMMANDS:
     publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
     editor                               Run the game with the editor overlay
     connect [--global] [--port PORT]    Write MCP config for Claude Code
+    mcp-server [--host H] [--port P]     Run the MCP stdio bridge to the
+                                         engine API (used by Claude Code)
     setup [--only G] [--gpu B] [--check] Install Python toolchain (Demucs, etc.)
     pipeline <COMMAND>                   Audio-to-TidalCycles pipeline
     list-templates                       Show available project templates
@@ -72,6 +74,7 @@ fn main() {
         "publish" => cmd_publish(&args[2..]),
         "editor" => cmd_editor(&args[2..]),
         "connect" => cmd_connect(&args[2..]),
+        "mcp-server" => cmd_mcp_server(&args[2..]),
         "setup" => setup::cmd_setup(&args[2..]),
         "pipeline" => pipeline_cmd::cmd_pipeline(&args[2..]),
         "list-templates" => cmd_list_templates(),
@@ -1055,8 +1058,10 @@ fn cmd_release(args: &[String]) {
     );
     if let Some(ref t) = target {
         println!("  Target:     {t}");
+        println!("  Binary:     target/{t}/release/{}", manifest.name);
+    } else {
+        println!("  Binary:     target/release/{}", manifest.name);
     }
-    println!("  Binary:     target/release/{}", manifest.name);
     println!();
     println!("Release build complete!");
 }
@@ -1162,13 +1167,38 @@ fn mcp_config_json(port: u16) -> String {
     }},
     "amigo-audiogen": {{
       "command": "amigo-audiogen",
-      "args": ["--acestep", "http://localhost:7860"]
+      "args": ["--server", "http://localhost:8188"]
     }}
   }}
 }}
 "#,
         port
     )
+}
+
+/// Run the MCP stdio bridge (`amigo mcp-server`). This is the command that
+/// the config written by `amigo connect` (and the repo's `.mcp.json`)
+/// launches, bridging Claude Code to the engine's JSON-RPC API.
+fn cmd_mcp_server(args: &[String]) {
+    let host = find_flag(args, "--host").unwrap_or_else(|| "127.0.0.1".to_string());
+    let port: u16 = find_flag(args, "--port")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(9999);
+
+    let config = amigo_mcp::McpServerConfig {
+        api_host: host,
+        api_port: port,
+    };
+
+    eprintln!(
+        "amigo mcp-server starting (engine API at {}:{})...",
+        config.api_host, config.api_port
+    );
+
+    if let Err(e) = amigo_mcp::transport::run_stdio_server(&config) {
+        eprintln!("MCP server error: {e}");
+        process::exit(1);
+    }
 }
 
 fn cmd_connect(args: &[String]) {

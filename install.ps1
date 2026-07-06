@@ -86,8 +86,22 @@ if (-not (Test-Path $SourceBin)) {
     # Binary might be in a subdirectory.
     $SourceBin = Get-ChildItem -Path $TmpDir -Filter $BinaryName -Recurse | Select-Object -First 1 -ExpandProperty FullName
 }
+if (-not $SourceBin) {
+    Write-Error "'$BinaryName' not found in the downloaded archive."
+    Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
+    exit 1
+}
 
 Copy-Item -Path $SourceBin -Destination (Join-Path $InstallDir $BinaryName) -Force
+
+# Companion MCP servers (present in newer releases; optional otherwise).
+foreach ($Extra in @("amigo-artgen.exe", "amigo-audiogen.exe")) {
+    $ExtraBin = Get-ChildItem -Path $TmpDir -Filter $Extra -Recurse | Select-Object -First 1 -ExpandProperty FullName
+    if ($ExtraBin) {
+        Copy-Item -Path $ExtraBin -Destination (Join-Path $InstallDir $Extra) -Force
+        Write-Host "Installed $Extra to $InstallDir\$Extra"
+    }
+}
 
 # Cleanup.
 Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue

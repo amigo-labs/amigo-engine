@@ -116,6 +116,20 @@ impl FontAtlas {
         let gh = metrics.height as u32;
         let padding = 1u32;
 
+        // A glyph wider than the atlas can never fit a row; blitting it
+        // would write past the row end into unrelated pixels (or past the
+        // buffer). Bail out instead.
+        if gw + padding + 1 > self.atlas_width {
+            tracing::warn!(
+                "Glyph '{}' ({}x{}) is wider than the font atlas ({}px); skipping",
+                ch.escape_debug(),
+                gw,
+                gh,
+                self.atlas_width
+            );
+            return None;
+        }
+
         // Check if we need to wrap to the next row
         if self.cursor_x + gw + padding > self.atlas_width {
             self.cursor_x = 1;
@@ -123,8 +137,9 @@ impl FontAtlas {
             self.row_height = 0;
         }
 
-        // Check if we need to grow the atlas vertically
-        if self.cursor_y + gh + padding > self.atlas_height {
+        // Grow the atlas vertically until the glyph fits (a single doubling
+        // is not always enough for very tall glyphs).
+        while self.cursor_y + gh + padding > self.atlas_height {
             self.grow_atlas();
         }
 
@@ -529,7 +544,7 @@ pub struct RichTextSegment {
 }
 
 /// Parse rich text markup into styled segments.
-/// Supports: [b]...[/b], [i]...[/i], [c=#RRGGBB]...[/c], [s=N]...[/s]
+/// Supports: `[b]...[/b]`, `[i]...[/i]`, `[c=#RRGGBB]...[/c]`, `[s=N]...[/s]`
 pub fn parse_rich_text(input: &str) -> Vec<RichTextSegment> {
     let mut segments = Vec::new();
     let mut current_text = String::new();

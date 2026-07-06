@@ -121,6 +121,11 @@ pub struct Voice {
     pub note_pattern: Pattern,
     pub amp_pattern: Option<Pattern>,
     pub legato_pattern: Option<Pattern>,
+    /// Transforms from the voice's `$`-chain (e.g. `$ rev $ fast 2`),
+    /// applied during evaluation. `slow` factors are folded into the
+    /// composition's `cycle_length` at parse time instead.
+    #[serde(default)]
+    pub transforms: Vec<Transform>,
 }
 
 /// A single stem (instrument track).

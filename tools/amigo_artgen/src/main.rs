@@ -120,6 +120,20 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
             })),
             error: None,
         },
+        // Sent as a notification after `initialize`; acknowledge instead of
+        // answering with -32601 (same handling as amigo-audiogen).
+        "initialized" | "notifications/initialized" => JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            id: req.id.clone(),
+            result: Some(serde_json::json!({})),
+            error: None,
+        },
+        "ping" => JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            id: req.id.clone(),
+            result: Some(serde_json::json!({})),
+            error: None,
+        },
         "tools/list" => JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: req.id.clone(),

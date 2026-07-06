@@ -89,8 +89,10 @@ impl Parser {
                     self.advance(); // consume $
                     self.advance(); // consume fast
                     let n = self.expect_number()?;
+                    // Unlike slow, fast is NOT folded into cycle_length:
+                    // it is applied to the voice's events at evaluation
+                    // time (folding both would double-apply the speedup).
                     transforms.push(Transform::Fast(n));
-                    cycle_length /= n;
                 }
                 Some(Token::Keyword(Keyword::Rev)) => {
                     self.advance(); // consume $
@@ -130,6 +132,7 @@ impl Parser {
             note_pattern,
             amp_pattern,
             legato_pattern,
+            transforms: transforms.clone(),
         };
 
         Ok((voice, transforms, cycle_length))

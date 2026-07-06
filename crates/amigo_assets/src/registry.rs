@@ -82,7 +82,9 @@ impl StyleDef {
     /// Parse `"#RRGGBB"` to `[u8; 3]`.
     pub fn parse_hex_color(hex: &str) -> Option<[u8; 3]> {
         let hex = hex.trim_start_matches('#');
-        if hex.len() != 6 {
+        // Byte-length 6 does not imply char-boundaries at 2/4 for non-ASCII
+        // input, so validate before slicing to avoid a panic.
+        if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
         let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
@@ -543,6 +545,17 @@ fn check_stinger_refs(
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn parse_hex_color_valid_and_invalid() {
+        assert_eq!(StyleDef::parse_hex_color("#ff8000"), Some([255, 128, 0]));
+        assert_eq!(StyleDef::parse_hex_color("00ff00"), Some([0, 255, 0]));
+        assert_eq!(StyleDef::parse_hex_color("#fff"), None);
+        assert_eq!(StyleDef::parse_hex_color("#gg0000"), None);
+        // 6 bytes but multi-byte UTF-8 — must not panic.
+        assert_eq!(StyleDef::parse_hex_color("#€€"), None);
+        assert_eq!(StyleDef::parse_hex_color("#ää00"), None);
+    }
 
     #[test]
     fn style_ron_roundtrip() {

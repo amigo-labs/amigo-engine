@@ -278,18 +278,21 @@ impl<'a, A, B, C, D> Iterator for JoinIter4<'a, A, B, C, D> {
 /// }
 /// ```
 pub fn join_ids<A, B>(a: &SparseSet<A>, b: &SparseSet<B>) -> Vec<EntityId> {
-    let (smaller, larger_check): (&[EntityId], &SparseSet<B>) = if a.len() <= b.len() {
-        (a.entities(), b)
+    // Drive the iteration from the smaller set; membership checks against
+    // the larger set are O(1) either way.
+    if a.len() <= b.len() {
+        a.entities()
+            .iter()
+            .copied()
+            .filter(|id| b.contains(*id))
+            .collect()
     } else {
-        // When b is smaller, we iterate b's entities and check a
-        // but we need to return the right type... just iterate a for simplicity
-        (a.entities(), b)
-    };
-    smaller
-        .iter()
-        .copied()
-        .filter(|id| larger_check.contains(*id))
-        .collect()
+        b.entities()
+            .iter()
+            .copied()
+            .filter(|id| a.contains(*id))
+            .collect()
+    }
 }
 
 /// Apply a closure to each entity present in both SparseSets, with mutable

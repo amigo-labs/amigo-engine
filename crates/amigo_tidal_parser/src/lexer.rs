@@ -136,9 +136,12 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                 while i < len && (chars[i].is_ascii_digit() || chars[i] == '.') {
                     i += 1;
                 }
-                let text = &input[start..i];
+                // `start`/`i` are char indices, so collect from `chars`
+                // rather than byte-slicing `input` (which panics on
+                // non-ASCII input earlier in the string).
+                let text: String = chars[start..i].iter().collect();
                 let val: f64 = text.parse().map_err(|_| LexError::InvalidNumber {
-                    text: text.to_string(),
+                    text: text.clone(),
                     pos: start,
                 })?;
                 tokens.push(Token::Number(val));
@@ -148,15 +151,16 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                 while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                     i += 1;
                 }
-                let word = &input[start..i];
+                // Char indices, not byte indices — see the number case above.
+                let word: String = chars[start..i].iter().collect();
 
                 // Try keyword first.
-                if let Some(kw) = match_keyword(word) {
+                if let Some(kw) = match_keyword(&word) {
                     tokens.push(Token::Keyword(kw));
-                } else if let Some(note) = try_parse_note(word) {
+                } else if let Some(note) = try_parse_note(&word) {
                     tokens.push(Token::Note(note));
                 } else {
-                    tokens.push(Token::Sample(word.to_string()));
+                    tokens.push(Token::Sample(word));
                 }
             }
             _ => {

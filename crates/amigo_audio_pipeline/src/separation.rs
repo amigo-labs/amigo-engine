@@ -27,11 +27,44 @@ impl SeparationStage {
         }
     }
 
-    /// Check if input is mono (single voice) by examining channel count.
+    /// Check if input is a mono WAV by reading the channel count from the
+    /// `fmt ` chunk. Non-WAV or unreadable files — or files whose `fmt `
+    /// chunk isn't within the first 64 KiB — are treated as non-mono so
+    /// they still go through full separation.
     fn is_mono(input: &Path) -> bool {
-        // Simple heuristic: check file size or use basic audio analysis.
-        // For now, we rely on the user flag or config.
-        let _ = input;
+        use std::io::Read;
+        // Only read a prefix: `fmt ` sits near the start of real WAVs, and
+        // audio files can be large — no need to pull the whole file into
+        // memory just to inspect the header.
+        const PREFIX_LEN: u64 = 64 * 1024;
+        let Ok(file) = std::fs::File::open(input) else {
+            return false;
+        };
+        let mut data = Vec::new();
+        if file.take(PREFIX_LEN).read_to_end(&mut data).is_err() {
+            return false;
+        }
+        // RIFF header: "RIFF" .... "WAVE", then chunks of [id, size, data].
+        if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+            return false;
+        }
+        let mut pos = 12;
+        while pos + 8 <= data.len() {
+            let chunk_id = &data[pos..pos + 4];
+            let chunk_size =
+                u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                    as usize;
+            if chunk_id == b"fmt " {
+                // Channel count is a u16 at offset 2 within the fmt chunk.
+                if pos + 8 + 4 <= data.len() {
+                    let channels = u16::from_le_bytes([data[pos + 10], data[pos + 11]]);
+                    return channels == 1;
+                }
+                return false;
+            }
+            // Chunks are word-aligned.
+            pos += 8 + chunk_size + (chunk_size & 1);
+        }
         false
     }
 
@@ -88,7 +121,10 @@ impl SeparationStage {
         let stems_dir = output_dir.join(&self.config.model).join(track_name);
 
         let mut stems = Vec::new();
-        let demucs_stems = ["vocals", "bass", "drums", "other"];
+        // `--two-stems vocals` produces vocals.wav + no_vocals.wav (the full
+        // instrumental); the four-stem names are checked as well in case the
+        // command is ever switched back to full separation.
+        let demucs_stems = ["vocals", "no_vocals", "bass", "drums", "other"];
         for demucs_name in &demucs_stems {
             let stem_path = stems_dir.join(format!("{demucs_name}.wav"));
             if stem_path.exists() {

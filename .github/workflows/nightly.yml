@@ -45,15 +45,19 @@ jobs:
         if: runner.os == 'Linux'
         uses: ./.github/actions/install-system-deps
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p amigo_cli
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p amigo_cli -p amigo_artgen -p amigo_audiogen
 
+      # Keep the archive contents in sync with release.yml — the MCP configs
+      # reference amigo-artgen and amigo-audiogen on PATH.
       - name: Package (Unix)
         if: matrix.archive == 'tar.gz'
         run: |
           STAGING="amigo-nightly-${{ matrix.target }}"
           mkdir -p "$STAGING"
           cp "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}" "$STAGING/"
+          cp "target/${{ matrix.target }}/release/amigo-artgen" "$STAGING/"
+          cp "target/${{ matrix.target }}/release/amigo-audiogen" "$STAGING/"
           tar czf "${STAGING}.tar.gz" "$STAGING"
           echo "ASSET=${STAGING}.tar.gz" >> $GITHUB_ENV
 
@@ -64,6 +68,8 @@ jobs:
           $staging = "amigo-nightly-${{ matrix.target }}"
           New-Item -ItemType Directory -Path $staging -Force
           Copy-Item "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe" "$staging/"
+          Copy-Item "target/${{ matrix.target }}/release/amigo-artgen.exe" "$staging/"
+          Copy-Item "target/${{ matrix.target }}/release/amigo-audiogen.exe" "$staging/"
           Compress-Archive -Path "$staging/*" -DestinationPath "$staging.zip"
           echo "ASSET=$staging.zip" >> $env:GITHUB_ENV
 

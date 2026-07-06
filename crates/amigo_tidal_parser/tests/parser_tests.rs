@@ -142,8 +142,9 @@ fn voice_def_with_slow_and_fast() {
     assert_eq!(transforms.len(), 2);
     assert_eq!(transforms[0], Transform::Slow(4.0));
     assert_eq!(transforms[1], Transform::Fast(2.0));
-    // slow 4 * fast 2 = cycle_length 4 / 2 = 2
-    assert!((cycle_length - 2.0).abs() < 0.001);
+    // Only slow is folded into cycle_length; fast is applied to the events
+    // at evaluation time instead (folding both would double-apply it).
+    assert!((cycle_length - 4.0).abs() < 0.001);
 }
 
 #[test]

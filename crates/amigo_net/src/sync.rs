@@ -99,13 +99,20 @@ impl PositionDeltaEncoder {
                     || snap.facing != prev.facing
                     || snap.action_flag != prev.action_flag
                 {
-                    deltas.push(EntityPositionDelta::Delta {
-                        entity_index: snap.entity_index,
-                        dx: dx as i16,
-                        dy: dy as i16,
-                        facing: snap.facing,
-                        action_flag: snap.action_flag,
-                    });
+                    // Deltas are wire-encoded as i16. A jump beyond that
+                    // range (teleport, respawn) must fall back to a full
+                    // snapshot — `as i16` truncation would silently desync
+                    // the entity forever.
+                    match (i16::try_from(dx), i16::try_from(dy)) {
+                        (Ok(dx), Ok(dy)) => deltas.push(EntityPositionDelta::Delta {
+                            entity_index: snap.entity_index,
+                            dx,
+                            dy,
+                            facing: snap.facing,
+                            action_flag: snap.action_flag,
+                        }),
+                        _ => deltas.push(EntityPositionDelta::Full(*snap)),
+                    }
                 }
             } else {
                 deltas.push(EntityPositionDelta::Full(*snap));
@@ -256,6 +263,25 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn delta_encode_large_jump_falls_back_to_full() {
+        let mut encoder = PositionDeltaEncoder::new();
+        let mut decoder = PositionDeltaEncoder::new();
+
+        let tick1 = vec![snap(0, 0, 0)];
+        decoder.decode(&encoder.encode(&tick1));
+
+        // Teleport beyond i16 range: must be sent as a Full snapshot, not a
+        // truncated delta (which would silently desync forever).
+        let tick2 = vec![snap(0, 100_000, -100_000)];
+        let deltas = encoder.encode(&tick2);
+        assert!(matches!(deltas[0], EntityPositionDelta::Full(_)));
+
+        let decoded = decoder.decode(&deltas);
+        assert_eq!(decoded[0].x, 100_000);
+        assert_eq!(decoded[0].y, -100_000);
     }
 
     #[test]

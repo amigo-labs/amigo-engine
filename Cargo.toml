@@ -64,6 +64,7 @@ amigo_audio_pipeline = { path = "crates/amigo_audio_pipeline" }
 amigo_reflect = { path = "crates/amigo_reflect" }
 amigo_reflect_derive = { path = "crates/amigo_reflect_derive" }
 amigo_comfyui = { path = "tools/amigo_comfyui" }
+amigo_mcp = { path = "tools/amigo_mcp" }
 
 # External dependencies
 wgpu = "24"

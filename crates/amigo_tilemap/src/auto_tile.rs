@@ -89,7 +89,8 @@ impl AutoTileResolver {
         terrain_type: u32,
     ) -> u8 {
         let height = terrain_map.len();
-        if height == 0 {
+        // Also guards the direct `terrain_map[y]` row accesses below.
+        if y >= height {
             return 0;
         }
 
@@ -146,7 +147,8 @@ impl AutoTileResolver {
         let mut mask = Self::compute_neighbors_4(terrain_map, x, y, terrain_type);
 
         let height = terrain_map.len();
-        if height == 0 {
+        // Also guards the direct `terrain_map[y - 1]` row accesses below.
+        if y >= height {
             return mask;
         }
 

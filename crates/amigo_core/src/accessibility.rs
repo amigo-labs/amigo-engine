@@ -153,7 +153,7 @@ pub enum SubtitleDirection {
 /// A single subtitle entry for an audio cue.
 #[derive(Clone, Debug)]
 pub struct Subtitle {
-    /// Display text (e.g. dialogue line or "[footsteps]").
+    /// Display text (e.g. dialogue line or `"[footsteps]"`).
     pub text: String,
     /// Optional speaker name for voiced dialogue.
     pub speaker: Option<String>,

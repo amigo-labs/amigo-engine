@@ -4,13 +4,11 @@ use crate::splash::{self, SplashState};
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_debug::DebugOverlay;
-#[cfg(feature = "editor")]
-use amigo_render::egui_integration::egui;
 use amigo_render::renderer::Renderer;
 use amigo_render::sprite_batcher::SpriteInstance;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info, info_span};
+use tracing::{error, info, info_span, warn};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -205,7 +203,7 @@ impl Engine {
     /// Controlled entirely via the JSON-RPC API server.
     #[cfg(feature = "api")]
     fn run_headless<G: Game>(self, mut game: G) {
-        use amigo_api::handler::{new_shared_state, ApiCommand};
+        use amigo_api::handler::new_shared_state;
         use amigo_api::server::ApiServer;
         use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -306,22 +304,22 @@ impl Engine {
                 for _ in 0..ticks_requested {
                     game_ctx.time.dt = tick_duration as f32;
                     game_ctx.time.elapsed += tick_duration;
-                    game_ctx.input.begin_frame();
 
                     let action = game.update(&mut game_ctx);
                     game_ctx.time.tick += 1;
 
-                    match action {
-                        amigo_scene::SceneAction::Quit => {
-                            quit = true;
-                            break;
-                        }
-                        _ => {}
+                    if let amigo_scene::SceneAction::Quit = action {
+                        quit = true;
+                        break;
                     }
 
                     game_ctx.world.flush();
                     game_ctx.events.flush();
                     game_ctx.particles.update(tick_duration as f32);
+                    // Clear edge-detected input AFTER the update consumed
+                    // it (clearing before update would hide injected
+                    // just-pressed state from the game).
+                    game_ctx.input.begin_frame();
                 }
                 let elapsed = start.elapsed();
                 info!(
@@ -368,6 +366,29 @@ impl Engine {
 }
 
 /// Upload any dirty font atlas textures to the GPU.
+/// Handle one hot-reload file change: PNGs under `<assets>/sprites/` are
+/// re-read, re-uploaded to the GPU, and re-registered under their sprite
+/// name (the old texture stays resident until shutdown — acceptable for
+/// dev mode). Other asset types are not live-reloadable yet and get a
+/// visible warning instead of being silently ignored.
+fn reload_changed_asset(
+    path: &std::path::Path,
+    assets: &mut AssetManager,
+    renderer: &mut Renderer,
+    game_ctx: &mut GameContext,
+) {
+    if let Some(sprite) = assets.reload_sprite(path) {
+        let tex_id = renderer.load_texture(&sprite.image, &sprite.name);
+        game_ctx.register_sprite_texture(sprite.name.clone(), tex_id, sprite.width, sprite.height);
+        info!("Hot reload: sprite '{}' reloaded", sprite.name);
+    } else {
+        warn!(
+            "Hot reload: '{}' changed but is not a reloadable sprite (restart to apply)",
+            path.display()
+        );
+    }
+}
+
 fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
     for font_atlas in game_ctx.fonts.iter_mut() {
         if font_atlas.dirty || font_atlas.texture_id.is_none() {
@@ -384,7 +405,7 @@ struct EngineState {
     renderer: Renderer,
     game_ctx: GameContext,
     debug: DebugOverlay,
-    _assets: AssetManager,
+    assets: AssetManager,
     hot_reloader: Option<HotReloader>,
     sprite_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
@@ -460,8 +481,14 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             error!("Failed to load built-in font: {}", e);
         }
 
-        // Upload loaded sprites to GPU
-        // (In a real implementation this would happen via the asset manager)
+        // Upload loaded sprites to GPU and register them so games can draw
+        // them by name via DrawContext::draw_sprite.
+        for name in assets.sprite_names().to_vec() {
+            if let Some(sprite) = assets.sprite(&name) {
+                let tex_id = renderer.load_texture(&sprite.image, &name);
+                game_ctx.register_sprite_texture(name, tex_id, sprite.width, sprite.height);
+            }
+        }
 
         // Apply plugin registrations (events, resources)
         if let Some(plugin_ctx) = self.plugin_ctx.take() {
@@ -524,7 +551,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             renderer,
             game_ctx,
             debug: DebugOverlay::new(),
-            _assets: assets,
+            assets,
             hot_reloader,
             sprite_draw_list: Vec::new(),
             last_frame: Instant::now(),
@@ -699,20 +726,24 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 state.game_ctx.time.dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
 
-                // Check hot reload
+                // Hot reload: re-upload changed sprite textures.
                 if let Some(reloader) = &state.hot_reloader {
-                    let changes = reloader.poll_changes();
-                    if !changes.is_empty() {
-                        info!("Hot reload: {} files changed", changes.len());
+                    for path in reloader.poll_changes() {
+                        reload_changed_asset(
+                            &path,
+                            &mut state.assets,
+                            &mut state.renderer,
+                            &mut state.game_ctx,
+                        );
                     }
                 }
 
                 // Fixed timestep simulation
                 let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
+                let mut ticks_ran = false;
                 while state.accumulator >= tick_duration {
                     let _tick_span = info_span!("tick").entered();
-
-                    state.game_ctx.input.begin_frame();
+                    ticks_ran = true;
 
                     let action = {
                         let _update_span = info_span!("game_update").entered();
@@ -740,6 +771,17 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     }
                     state.game_ctx.particles.update(tick_duration as f32);
                     state.accumulator -= tick_duration;
+                }
+
+                // Clear edge-detected input (just pressed/released) only
+                // after the simulation consumed it, and only if a tick
+                // actually ran this frame. Clearing at tick START would wipe
+                // the events winit delivered before this redraw, so
+                // `just_pressed` would never be observable; clearing on
+                // zero-tick frames would drop presses that arrive between
+                // ticks.
+                if ticks_ran {
+                    state.game_ctx.input.begin_frame();
                 }
 
                 state.game_ctx.time.alpha = (state.accumulator / tick_duration) as f32;

@@ -178,8 +178,8 @@ impl SystemGraph {
 
             // Kahn's algorithm with batched layers for parallelism
             let mut queue: VecDeque<usize> = VecDeque::new();
-            for i in 0..n {
-                if in_degree[i] == 0 {
+            for (i, &deg) in in_degree.iter().enumerate() {
+                if deg == 0 {
                     queue.push_back(i);
                 }
             }
@@ -276,13 +276,16 @@ impl SystemGraph {
         indices: &[usize],
         world: &mut super::world::World,
     ) {
-        // SAFETY: The schedule guarantees that systems in the same step have
-        // disjoint component access. We convert the `&mut World` to a raw
-        // pointer and hand each system a reconstructed `&mut World`. This is
-        // sound because the systems operate on non-overlapping components.
-        //
-        // This is the same pattern used by Bevy and other ECS frameworks for
-        // parallel system dispatch.
+        // SAFETY: Systems only share a batch when every one of them declared
+        // its component access via `.reads::<T>()` / `.writes::<T>()` and
+        // those declarations are pairwise disjoint (see `has_conflict`;
+        // undeclared systems always run alone). The declarations are a
+        // caller-supplied contract: a system that touches components (or
+        // performs structural changes like spawn/despawn) without declaring
+        // them can still race. A future iteration should replace the raw
+        // `&mut World` reconstruction with per-component borrows so the
+        // contract is checked by the type system rather than by convention
+        // (ADR-0002 step 5).
         let world_ptr = SendPtr(world as *mut super::world::World);
         let systems_ptr = SendPtr(systems.as_mut_ptr());
 
@@ -323,11 +326,24 @@ impl Default for SystemGraph {
 
 /// Returns true if two systems have conflicting component access (i.e. at
 /// least one writes to a component the other reads or writes).
+///
+/// A system that declares no access at all (empty `reads` AND empty
+/// `writes`) gets a full `&mut World` without any statement about what it
+/// touches, so it must be treated as conflicting with everything. Otherwise
+/// two undeclared systems would be scheduled into the same parallel batch
+/// and race on whatever they actually access. Parallel execution is
+/// strictly opt-in via `.reads::<T>()` / `.writes::<T>()` declarations.
 fn has_conflict(a: &SystemDescriptor, b: &SystemDescriptor) -> bool {
     let a_writes = a.writes();
     let b_writes = b.writes();
     let a_reads = a.reads();
     let b_reads = b.reads();
+
+    let a_undeclared = a_reads.is_empty() && a_writes.is_empty();
+    let b_undeclared = b_reads.is_empty() && b_writes.is_empty();
+    if a_undeclared || b_undeclared {
+        return true;
+    }
 
     // Conflict if a writes something b reads or writes, or vice-versa.
     !a_writes.is_disjoint(&b_reads)
@@ -427,6 +443,34 @@ mod tests {
             Err(ScheduleError::UnknownLabel(l)) => assert_eq!(l, "nonexistent"),
             other => panic!("expected UnknownLabel, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn undeclared_systems_never_share_a_parallel_batch() {
+        // Systems without declared reads/writes get a full &mut World, so
+        // they must be serialized even without ordering constraints.
+        let systems = vec![noop_system("a"), noop_system("b"), noop_system("c")];
+        let groups = split_by_conflicts(&systems, &[0, 1, 2]);
+        assert_eq!(groups.len(), 3);
+        for group in &groups {
+            assert_eq!(group.len(), 1);
+        }
+    }
+
+    #[test]
+    fn declared_disjoint_systems_share_a_batch() {
+        struct CompA;
+        struct CompB;
+        let systems = vec![
+            noop_system("a").writes::<CompA>(),
+            noop_system("b").writes::<CompB>(),
+            noop_system("c").reads::<CompA>(),
+        ];
+        let groups = split_by_conflicts(&systems, &[0, 1, 2]);
+        // a+b are disjoint (parallel); c reads what a writes (own batch).
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0], vec![0, 1]);
+        assert_eq!(groups[1], vec![2]);
     }
 
     #[test]

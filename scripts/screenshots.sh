@@ -83,9 +83,12 @@ wait_for_api() {
 }
 
 # ── Start the engine ──
+# `amigo run --api` enables the engine's api feature on the game build
+# itself; passing `--features amigo_engine/api` to the CLI build would be
+# rejected (amigo_cli has no amigo_engine dependency).
 echo "Starting engine with API server..."
 # shellcheck disable=SC2086
-cargo run --release --features amigo_engine/api -p amigo_cli -- run --api $LEVEL_ARGS &
+cargo run --release -p amigo_cli -- run --api $LEVEL_ARGS &
 ENGINE_PID=$!
 wait_for_api
 

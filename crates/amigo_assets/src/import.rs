@@ -311,12 +311,30 @@ fn convert_ldtk_level(level: &LdtkLevel, default_grid: u32) -> Result<MapDescrip
         grid_size = li.grid_size;
         match li.layer_type.as_str() {
             "IntGrid" | "AutoLayer" | "Tiles" => {
+                // These values come from the (untrusted) file; reject
+                // degenerate sizes instead of panicking on division by zero
+                // or allocating an absurd grid.
+                if li.grid_size == 0 {
+                    return Err(ImportError::InvalidFile(format!(
+                        "Layer '{}' has a grid size of 0",
+                        li.identifier
+                    )));
+                }
+                let cell_count = (li.c_wid as u64) * (li.c_hei as u64);
+                const MAX_CELLS: u64 = 64 * 1024 * 1024;
+                if cell_count > MAX_CELLS {
+                    return Err(ImportError::InvalidFile(format!(
+                        "Layer '{}' is unreasonably large ({}x{} cells)",
+                        li.identifier, li.c_wid, li.c_hei
+                    )));
+                }
+
                 // Use intGridCsv if available, otherwise reconstruct from auto tiles
                 let tiles = if !li.int_grid_csv.is_empty() {
                     li.int_grid_csv.clone()
                 } else {
                     // Reconstruct tile grid from auto layer tiles
-                    let mut grid = vec![0u32; (li.c_wid * li.c_hei) as usize];
+                    let mut grid = vec![0u32; cell_count as usize];
                     for tile in &li.auto_layer_tiles {
                         if tile.px.len() >= 2 {
                             let cx = tile.px[0] as u32 / li.grid_size;

@@ -156,7 +156,9 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
                 PacketKind::Connect => {
                     if !clients.contains_key(&addr) && clients.len() < self.config.max_clients {
                         let pid = PlayerId(*next_player_id);
-                        *next_player_id += 1;
+                        // Wrap instead of overflowing after u32::MAX joins
+                        // over a very long server lifetime.
+                        *next_player_id = next_player_id.wrapping_add(1);
                         clients.insert(
                             addr,
                             ClientSlot {

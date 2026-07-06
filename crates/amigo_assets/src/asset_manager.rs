@@ -91,6 +91,57 @@ impl AssetManager {
         Ok(())
     }
 
+    /// Re-read a single sprite PNG from disk (hot reload). Accepts an
+    /// absolute or relative path; it must point below `<base>/sprites/`.
+    /// Returns the refreshed sprite data on success.
+    pub fn reload_sprite(&mut self, path: &Path) -> Option<&SpriteData> {
+        if path.extension().is_none_or(|ext| ext != "png") {
+            return None;
+        }
+        let sprites_root = self.base_path.join("sprites");
+        // The watcher may report absolute paths while base_path is relative;
+        // compare against a canonicalized root in that case.
+        let rel = path
+            .strip_prefix(&sprites_root)
+            .ok()
+            .map(|p| p.to_path_buf())
+            .or_else(|| {
+                let canon_root = sprites_root.canonicalize().ok()?;
+                path.strip_prefix(&canon_root).ok().map(|p| p.to_path_buf())
+            })?;
+
+        // Same naming scheme as load_sprites_recursive: subdirectories
+        // become a `dir/name` prefix, extension dropped.
+        let name = rel.with_extension("").to_string_lossy().replace('\\', "/");
+
+        match image::open(path) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let width = rgba.width();
+                let height = rgba.height();
+                if !self.sprites.contains_key(&name) {
+                    self.sprite_names.push(name.clone());
+                }
+                self.sprites.insert(
+                    name.clone(),
+                    SpriteData {
+                        name: name.clone(),
+                        width,
+                        height,
+                        image: rgba,
+                        uv: Rect::new(0.0, 0.0, 1.0, 1.0),
+                        texture_index: 0,
+                    },
+                );
+                self.sprites.get(&name)
+            }
+            Err(e) => {
+                warn!("Failed to reload sprite {:?}: {}", path, e);
+                None
+            }
+        }
+    }
+
     /// Get a sprite by name. In dev mode, provides fuzzy match suggestions.
     pub fn sprite(&self, name: &str) -> Option<&SpriteData> {
         match self.sprites.get(name) {

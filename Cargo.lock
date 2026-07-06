@@ -198,6 +198,7 @@ dependencies = [
  "amigo_audio_pipeline",
  "amigo_core",
  "amigo_editor",
+ "amigo_mcp",
  "amigo_render",
  "amigo_tidal_parser",
  "image 0.25.9",

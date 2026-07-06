@@ -95,7 +95,7 @@ impl SfxManager {
         Self::default()
     }
 
-    /// Register an SFX definition. Call [`load`] afterwards to load the actual
+    /// Register an SFX definition. Call [`Self::load`] afterwards to load the actual
     /// sound data from disk.
     pub fn register(&mut self, name: impl Into<String>, def: SfxDefinition) {
         self.definitions.insert(name.into(), def);
@@ -460,7 +460,15 @@ impl AudioManager {
     pub fn set_volume(&mut self, channel: &str, volume: f32) {
         let vol = volume.clamp(0.0, 1.0);
         match channel {
-            "master" => self.volumes.master = vol,
+            "master" => {
+                self.volumes.master = vol;
+                // Master scales music too, so live handles must be updated
+                // here as well or the slider has no audible effect.
+                let effective = (vol * self.volumes.music) as f64;
+                for handle in self.music_handles.values_mut() {
+                    handle.set_volume(Volume::Amplitude(effective), Tween::default());
+                }
+            }
             "music" => {
                 self.volumes.music = vol;
                 let effective = (self.volumes.master * vol) as f64;

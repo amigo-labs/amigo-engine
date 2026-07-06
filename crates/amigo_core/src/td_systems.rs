@@ -224,9 +224,10 @@ pub fn process_dead_enemies(dead: &[DeadEnemy], game_state: &mut TdGameState) {
 // ---------------------------------------------------------------------------
 
 /// Run one complete tower defense game tick. This is the main game loop body.
+#[allow(clippy::too_many_arguments)]
 pub fn td_tick(
     game_state: &mut TdGameState,
-    towers: &mut Vec<(EntityId, TowerInstance)>,
+    towers: &mut [(EntityId, TowerInstance)],
     tower_defs: &[TowerDef],
     enemy_defs: &[EnemyDef],
     enemies: &mut EnemyManager,
@@ -300,7 +301,7 @@ mod tests {
     use crate::math::RenderVec2;
     use crate::tower::{TargetingStrategy, TowerAttackType, TowerTier};
 
-    fn setup() -> (
+    type Setup = (
         TdGameState,
         Vec<(EntityId, TowerInstance)>,
         Vec<TowerDef>,
@@ -308,7 +309,9 @@ mod tests {
         EnemyManager,
         ProjectileManager,
         WaypointPath,
-    ) {
+    );
+
+    fn setup() -> Setup {
         let tower_defs = vec![TowerDef {
             id: 1,
             name: "Arrow".to_string(),
@@ -356,7 +359,7 @@ mod tests {
 
     #[test]
     fn tower_fires_at_enemy() {
-        let (mut gs, mut towers, tower_defs, enemy_defs, mut enemies, mut projectiles, _path) =
+        let (_gs, mut towers, tower_defs, enemy_defs, mut enemies, mut projectiles, _path) =
             setup();
 
         // Spawn an enemy near the tower
@@ -400,7 +403,7 @@ mod tests {
 
     #[test]
     fn enemy_death_awards_bounty() {
-        let (mut gs, mut towers, _td, enemy_defs, mut enemies, _proj, _path) = setup();
+        let (mut gs, _towers, _td, enemy_defs, mut enemies, _proj, _path) = setup();
 
         let enemy = EnemyInstance::from_def(&enemy_defs[0]);
         let eid = enemies.spawn(enemy, RenderVec2::ZERO);

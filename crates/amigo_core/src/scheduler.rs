@@ -17,7 +17,7 @@ struct ScheduleEntry {
 
 /// A tick-based scheduler that tracks which callbacks should run on a given tick.
 ///
-/// No closures are stored -- the caller checks [`should_run`] each tick and
+/// No closures are stored -- the caller checks [`TickScheduler::should_run`] each tick and
 /// dispatches externally.
 ///
 /// ```ignore

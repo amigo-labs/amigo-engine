@@ -48,6 +48,10 @@ pub struct AnimPlayer {
     pub speed: f32,
     /// Events collected during the last `update` call.
     pub pending_events: Vec<AnimEvent>,
+    /// PingPong playback direction (true while stepping backwards).
+    reversed: bool,
+    /// Fractional tick accumulator so non-1.0 `speed` values apply.
+    tick_accum: f32,
 }
 
 impl AnimPlayer {
@@ -60,6 +64,8 @@ impl AnimPlayer {
             finished: false,
             speed: 1.0,
             pending_events: Vec::new(),
+            reversed: false,
+            tick_accum: 0.0,
         }
     }
 
@@ -70,6 +76,8 @@ impl AnimPlayer {
             self.frame_index = 0;
             self.ticks_in_frame = 0;
             self.finished = false;
+            self.reversed = false;
+            self.tick_accum = 0.0;
         }
         self.play_mode = mode;
     }
@@ -92,26 +100,12 @@ impl AnimPlayer {
         // query the event track for any events that fall within this window.
         let time_before = self.current_time(animation);
 
-        self.ticks_in_frame += 1;
-        let current_frame = &animation.frames[self.frame_index];
-
-        if self.ticks_in_frame >= current_frame.duration {
-            self.ticks_in_frame = 0;
-            self.frame_index += 1;
-
-            if self.frame_index >= animation.frames.len() {
-                match self.play_mode {
-                    PlayMode::Loop => self.frame_index = 0,
-                    PlayMode::Once => {
-                        self.frame_index = animation.frames.len() - 1;
-                        self.finished = true;
-                    }
-                    PlayMode::PingPong => {
-                        // Reverse the frames
-                        self.frame_index = animation.frames.len().saturating_sub(2);
-                    }
-                }
-            }
+        // `speed` scales playback via a fractional tick accumulator:
+        // 0.5 advances every other update, 2.0 advances twice per update.
+        self.tick_accum += self.speed.max(0.0);
+        while self.tick_accum >= 1.0 && !self.finished {
+            self.tick_accum -= 1.0;
+            self.step_one_tick(animation);
         }
 
         let time_after = self.current_time(animation);
@@ -120,6 +114,43 @@ impl AnimPlayer {
         if let Some(track) = event_track {
             let collected = track.collect_events(time_before, time_after);
             self.pending_events.extend(collected.into_iter().cloned());
+        }
+    }
+
+    /// Advance playback by exactly one animation tick.
+    fn step_one_tick(&mut self, animation: &Animation) {
+        self.ticks_in_frame += 1;
+        let current_frame = &animation.frames[self.frame_index.min(animation.frames.len() - 1)];
+        if self.ticks_in_frame < current_frame.duration {
+            return;
+        }
+        self.ticks_in_frame = 0;
+
+        if self.reversed {
+            // PingPong, backwards leg: ... 2, 1, 0, then forwards again.
+            if self.frame_index == 0 {
+                self.reversed = false;
+                self.frame_index = 1.min(animation.frames.len() - 1);
+            } else {
+                self.frame_index -= 1;
+            }
+            return;
+        }
+
+        self.frame_index += 1;
+        if self.frame_index >= animation.frames.len() {
+            match self.play_mode {
+                PlayMode::Loop => self.frame_index = 0,
+                PlayMode::Once => {
+                    self.frame_index = animation.frames.len() - 1;
+                    self.finished = true;
+                }
+                PlayMode::PingPong => {
+                    // Turn around and walk back down: ..., n-1, n-2, ...
+                    self.reversed = true;
+                    self.frame_index = animation.frames.len().saturating_sub(2);
+                }
+            }
         }
     }
 
@@ -1258,6 +1289,35 @@ mod tests {
         player.update(&anim);
         assert_eq!(player.frame_index, 1);
         assert!(!player.finished);
+        // The backwards leg must continue all the way down to frame 0
+        // (not oscillate between the last two frames)...
+        player.update(&anim);
+        assert_eq!(player.frame_index, 0);
+        // ...and then head forwards again: 1, 2, 1, 0, ...
+        for expected in [1, 2, 1, 0] {
+            player.update(&anim);
+            assert_eq!(player.frame_index, expected);
+        }
+        assert!(!player.finished);
+    }
+
+    #[test]
+    fn sprite_anim_speed_scales_playback() {
+        // speed 2.0 advances two ticks per update.
+        let anim = make_sprite_animation(4, 2, true);
+        let mut player = AnimPlayer::new("test");
+        player.speed = 2.0;
+        player.update(&anim);
+        assert_eq!(player.frame_index, 1);
+
+        // speed 0.5 advances every other update.
+        let mut slow = AnimPlayer::new("test");
+        slow.speed = 0.5;
+        for _ in 0..4 {
+            slow.update(&anim);
+        }
+        // 4 updates * 0.5 = 2 ticks = one full 2-tick frame.
+        assert_eq!(slow.frame_index, 1);
     }
 
     // ── Skeleton Transforms ──────────────────────────────────────
