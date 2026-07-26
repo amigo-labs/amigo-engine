@@ -524,7 +524,16 @@ mod tests {
         graph.build().expect("should build with before constraint");
     }
 
+    /// Guards against scheduling becoming super-linear. The ADR's target is
+    /// < 0.5 ms to build 30 systems; the assertion allows 50 ms so a loaded CI
+    /// runner does not fail the suite over scheduler-unrelated noise. The
+    /// comment used to claim 0.5 ms while the assertion allowed 500 ms, which
+    /// would not have caught a thousandfold regression.
+    ///
+    /// Ignored under Miri, where everything runs orders of magnitude slower and
+    /// a wall-clock bound measures the interpreter rather than the code.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn many_systems_builds_fast() {
         let mut graph = SystemGraph::new();
         for i in 0..30 {
@@ -533,10 +542,9 @@ mod tests {
         let start = std::time::Instant::now();
         graph.build().expect("should build");
         let elapsed = start.elapsed();
-        // ADR abort criterion: < 0.5ms for 30 systems
         assert!(
-            elapsed.as_micros() < 500_000,
-            "scheduling took too long: {:?}",
+            elapsed.as_millis() < 50,
+            "scheduling 30 systems took {:?}, far past the 0.5ms target",
             elapsed
         );
     }
