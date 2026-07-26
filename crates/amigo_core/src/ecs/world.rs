@@ -191,6 +191,7 @@ impl World {
     /// structural change (spawn / despawn / component-type registration) while
     /// sharing a batch with other systems, which the disjoint-access contract
     /// does not permit. Not a substitute for the contract, just a tripwire.
+    #[cfg(feature = "system_graph")]
     pub(crate) fn structural_fingerprint(&self) -> (usize, usize, usize) {
         (
             self.entities.count(),

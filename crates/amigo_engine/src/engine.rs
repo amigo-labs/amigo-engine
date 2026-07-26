@@ -259,7 +259,7 @@ impl Engine {
         while running.load(Ordering::Relaxed) {
             // Drain commands from the API
             let commands = {
-                let mut state = shared_state.lock().unwrap();
+                let mut state = amigo_api::lock_or_recover(&shared_state);
                 state.drain_commands()
             };
 
@@ -336,7 +336,7 @@ impl Engine {
 
             // Handle screenshot requests (no GPU in headless — return error)
             {
-                let mut state = shared_state.lock().unwrap();
+                let mut state = amigo_api::lock_or_recover(&shared_state);
                 let requests = state.drain_screenshot_requests();
                 for req in &requests {
                     state.screenshot_results.push(serde_json::json!({
@@ -349,7 +349,7 @@ impl Engine {
 
             // Update shared state snapshot for API queries
             {
-                let mut state = shared_state.lock().unwrap();
+                let mut state = amigo_api::lock_or_recover(&shared_state);
                 state.snapshot.tick = game_ctx.time.tick;
                 state.snapshot.entity_count = game_ctx.world.entity_count();
                 state.snapshot.paused = paused;
@@ -832,12 +832,12 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 #[cfg(feature = "api")]
                 if let Some(ref api) = state.api_state {
                     let requests = {
-                        let mut s = api.shared_state.lock().unwrap();
+                        let mut s = amigo_api::lock_or_recover(&api.shared_state);
                         s.drain_screenshot_requests()
                     };
                     for req in &requests {
                         let result = state.renderer.capture_screenshot(&req.path);
-                        let mut s = api.shared_state.lock().unwrap();
+                        let mut s = amigo_api::lock_or_recover(&api.shared_state);
                         match result {
                             Ok(()) => {
                                 s.screenshot_results.push(serde_json::json!({
@@ -936,7 +936,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // Update API snapshot after frame
                 #[cfg(feature = "api")]
                 if let Some(ref api) = state.api_state {
-                    let mut s = api.shared_state.lock().unwrap();
+                    let mut s = amigo_api::lock_or_recover(&api.shared_state);
                     s.snapshot.tick = state.game_ctx.time.tick;
                     s.snapshot.fps = state.debug.fps() as f32;
                     s.snapshot.entity_count = state.game_ctx.world.entity_count();

@@ -11,6 +11,29 @@ use std::collections::HashMap;
 // Core metrics collector
 // ---------------------------------------------------------------------------
 
+/// Rolling window of tick-duration samples kept by [`MetricsCollector`].
+///
+/// One `u64` per tick is ~480 B/s at 60 Hz, so an unbounded vector grows for as
+/// long as the engine runs — and the whole thing is serialized into every
+/// `amigo_metrics_snapshot` response. 10k samples is ~2.8 minutes of play at
+/// 60 Hz, enough for percentile work without an ever-growing payload.
+pub const MAX_TICK_SAMPLES: usize = 10_000;
+
+/// Rolling window of recorded death positions, bounded for the same reason.
+pub const MAX_DEATH_POSITIONS: usize = 10_000;
+
+/// Drop this fraction of the oldest samples when a window fills, so trimming is
+/// amortized instead of shifting the whole vector on every sample.
+const TRIM_DIVISOR: usize = 4;
+
+/// Append to a rolling window, dropping the oldest entries once `cap` is hit.
+fn push_bounded<T>(buffer: &mut Vec<T>, value: T, cap: usize) {
+    if buffer.len() >= cap {
+        buffer.drain(..cap / TRIM_DIVISOR);
+    }
+    buffer.push(value);
+}
+
 /// Collects gameplay metrics during a simulation run.
 ///
 /// Designed to be stored in [`amigo_core::Resources`] and updated by game
@@ -44,9 +67,11 @@ impl MetricsCollector {
     }
 
     /// Record a player death at the given world position.
+    ///
+    /// Keeps the most recent [`MAX_DEATH_POSITIONS`] entries.
     pub fn record_death(&mut self, x: f32, y: f32) {
         if self.enabled {
-            self.death_positions.push([x, y]);
+            push_bounded(&mut self.death_positions, [x, y], MAX_DEATH_POSITIONS);
         }
     }
 
@@ -58,9 +83,11 @@ impl MetricsCollector {
     }
 
     /// Record a single tick's duration in microseconds.
+    ///
+    /// Keeps the most recent [`MAX_TICK_SAMPLES`] samples.
     pub fn record_tick_duration(&mut self, us: u64) {
         if self.enabled {
-            self.tick_durations_us.push(us);
+            push_bounded(&mut self.tick_durations_us, us, MAX_TICK_SAMPLES);
         }
     }
 
@@ -126,5 +153,37 @@ mod tests {
         m.clear();
         assert!(m.death_positions.is_empty());
         assert!(m.counters.is_empty());
+    }
+
+    /// One sample per tick used to accumulate for the entire process lifetime,
+    /// and every metrics snapshot serialized all of it.
+    #[test]
+    fn tick_samples_are_bounded() {
+        let mut m = MetricsCollector::new();
+        for i in 0..(MAX_TICK_SAMPLES * 3) {
+            m.record_tick_duration(i as u64);
+        }
+        assert!(
+            m.tick_durations_us.len() <= MAX_TICK_SAMPLES,
+            "expected at most {} samples, got {}",
+            MAX_TICK_SAMPLES,
+            m.tick_durations_us.len()
+        );
+        // The window keeps the newest samples, not the oldest.
+        let newest = *m.tick_durations_us.last().unwrap();
+        assert_eq!(newest, (MAX_TICK_SAMPLES * 3 - 1) as u64);
+        assert!(
+            *m.tick_durations_us.first().unwrap() > 0,
+            "oldest samples should have been dropped"
+        );
+    }
+
+    #[test]
+    fn death_positions_are_bounded() {
+        let mut m = MetricsCollector::new();
+        for i in 0..(MAX_DEATH_POSITIONS + 100) {
+            m.record_death(i as f32, 0.0);
+        }
+        assert!(m.death_positions.len() <= MAX_DEATH_POSITIONS);
     }
 }

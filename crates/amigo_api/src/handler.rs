@@ -1,5 +1,5 @@
 use crate::metrics::MetricsCollector;
-use crate::{RpcRequest, RpcResponse, INVALID_PARAMS, METHOD_NOT_FOUND};
+use crate::{RpcRequest, RpcResponse, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -160,7 +160,7 @@ pub fn new_shared_state() -> SharedState {
 // ---------------------------------------------------------------------------
 
 fn queue_cmd(req: &RpcRequest, state: &SharedState, action: &str, params: Value) -> RpcResponse {
-    let mut s = state.lock().unwrap();
+    let mut s = crate::lock_or_recover(state);
     s.pending_commands.push(ApiCommand {
         action: action.to_string(),
         params,
@@ -324,7 +324,7 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_status(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     RpcResponse::success(
         req.id,
         json!({
@@ -339,7 +339,7 @@ fn handle_status(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 }
 
 fn handle_perf(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     RpcResponse::success(
         req.id,
         json!({
@@ -378,7 +378,7 @@ fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let mut s = state.lock().unwrap();
+    let mut s = crate::lock_or_recover(state);
     s.screenshot_queue.push(ScreenshotRequest {
         path: path.to_string(),
         overlays,
@@ -390,13 +390,13 @@ fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 }
 
 fn handle_screenshot_results(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let mut s = state.lock().unwrap();
+    let mut s = crate::lock_or_recover(state);
     let results = std::mem::take(&mut s.screenshot_results);
     RpcResponse::success(req.id, json!({"results": results}))
 }
 
 fn handle_list_entities(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     let filter = req.params.get("filter").and_then(|v| v.as_str());
     let near: Option<[f32; 2]> = req
         .params
@@ -444,9 +444,18 @@ fn handle_inspect_entity(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         Some(id) => id,
         None => return RpcResponse::error(req.id, INVALID_PARAMS, "Missing 'id'"),
     };
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     match s.entities.iter().find(|e| e.id == id) {
-        Some(e) => RpcResponse::success(req.id, serde_json::to_value(e).unwrap()),
+        Some(e) => match serde_json::to_value(e) {
+            Ok(value) => RpcResponse::success(req.id, value),
+            // Serializing an entity snapshot should not fail, but a panic here
+            // would poison the shared state for every later request.
+            Err(err) => RpcResponse::error(
+                req.id,
+                INTERNAL_ERROR,
+                format!("Failed to serialize entity {}: {}", id, err),
+            ),
+        },
         None => RpcResponse::error(req.id, INVALID_PARAMS, format!("Entity {} not found", id)),
     }
 }
@@ -784,7 +793,7 @@ fn handle_subscribe(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         .get("events")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let mut s = state.lock().unwrap();
+    let mut s = crate::lock_or_recover(state);
     for event in &events {
         if !s.subscriptions.contains(event) {
             s.subscriptions.push(event.clone());
@@ -799,7 +808,7 @@ fn handle_poll_events(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         .get("limit")
         .and_then(|v| v.as_u64())
         .unwrap_or(100) as usize;
-    let mut s = state.lock().unwrap();
+    let mut s = crate::lock_or_recover(state);
     let count = s.event_buffer.len().min(limit);
     let drained: Vec<GameEvent> = s.event_buffer.drain(..count).collect();
     let events: Vec<Value> = drained
@@ -820,7 +829,7 @@ fn handle_get_log(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         .get("limit")
         .and_then(|v| v.as_u64())
         .unwrap_or(100) as usize;
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     let start = s.log_buffer.len().saturating_sub(limit);
     let lines: Vec<_> = s.log_buffer[start..].to_vec();
     RpcResponse::success(req.id, json!({"lines": lines}))
@@ -831,7 +840,7 @@ fn handle_set_property(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let value = req.params.get("value");
     match (key, value) {
         (Some(key), Some(value)) => {
-            let mut s = state.lock().unwrap();
+            let mut s = crate::lock_or_recover(state);
             s.snapshot.custom.insert(key.to_string(), value.clone());
             RpcResponse::success(req.id, json!({"ok": true}))
         }
@@ -842,7 +851,7 @@ fn handle_set_property(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 fn handle_get_property(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     match req.params.get("key").and_then(|v| v.as_str()) {
         Some(key) => {
-            let s = state.lock().unwrap();
+            let s = crate::lock_or_recover(state);
             let value = s.snapshot.custom.get(key).cloned().unwrap_or(Value::Null);
             RpcResponse::success(req.id, json!({"key": key, "value": value}))
         }
@@ -861,7 +870,7 @@ fn handle_dev_save_snapshot(req: &RpcRequest, state: &SharedState) -> RpcRespons
 }
 
 fn handle_dev_snapshot_status(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     match &s.dev_snapshot {
         Some(snap) => RpcResponse::success(
             req.id,
@@ -878,7 +887,7 @@ fn handle_dev_snapshot_status(req: &RpcRequest, state: &SharedState) -> RpcRespo
 }
 
 fn handle_dev_restore_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     match &s.dev_snapshot {
         Some(snap) => {
             let snap_json = serde_json::to_value(snap).unwrap_or(Value::Null);
@@ -1187,12 +1196,12 @@ fn handle_diff_levels(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_metrics_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let s = state.lock().unwrap();
+    let s = crate::lock_or_recover(state);
     RpcResponse::success(req.id, s.metrics.snapshot())
 }
 
 fn handle_metrics_clear(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let mut s = state.lock().unwrap();
+    let mut s = crate::lock_or_recover(state);
     s.metrics.clear();
     RpcResponse::success(req.id, json!({"ok": true}))
 }
