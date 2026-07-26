@@ -20,6 +20,30 @@ const MAX_CONNECTIONS: usize = 16;
 /// server out of memory.
 const MAX_REQUEST_BYTES: usize = 1 << 20;
 
+/// How long a client may take to deliver one complete request line.
+///
+/// The size cap alone bounds memory but not time: a client dribbling a byte at a
+/// time would sit under the cap for days while holding one of the
+/// [`MAX_CONNECTIONS`] slots. This bounds the wait instead.
+const REQUEST_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Whether an in-progress request has taken longer than [`REQUEST_DEADLINE`].
+///
+/// `None` means no request is in flight, so an idle connection never expires.
+fn exceeded_deadline(started: Option<std::time::Instant>) -> bool {
+    started.is_some_and(|s| s.elapsed() > REQUEST_DEADLINE)
+}
+
+/// Send a JSON-RPC error and log why the connection is being closed.
+fn reject(writer: &mut TcpStream, peer: Option<std::net::SocketAddr>, message: &str) {
+    warn!("Closing API connection from {:?}: {}", peer, message);
+    let response = RpcResponse::error(None, INVALID_REQUEST, message.to_string());
+    if let Ok(mut json) = serde_json::to_string(&response) {
+        json.push('\n');
+        let _ = writer.write_all(json.as_bytes());
+    }
+}
+
 /// TCP-based JSON-RPC server for AI agent control.
 /// Runs on a background thread, communicates with the engine via SharedState.
 pub struct ApiServer {
@@ -151,51 +175,73 @@ fn handle_client(stream: TcpStream, state: SharedState, running: Arc<AtomicBool>
         }
     };
     let mut writer = stream;
+    // Accumulates one request line across however many reads it takes. Never
+    // cleared on a timeout: the size cap and the deadline below are both
+    // per-request, and clearing here would reset them every read window.
     let mut line = String::new();
+    // Set once the first byte of a request arrives, cleared when it completes.
+    // `None` means the connection is idle between requests, which is allowed to
+    // last indefinitely.
+    let mut request_started: Option<std::time::Instant> = None;
 
     while running.load(Ordering::Relaxed) {
-        line.clear();
-        // Bound a single request: `read_line` alone would grow its buffer until
-        // the peer finally sends a newline, or forever.
-        let read = reader
-            .by_ref()
-            .take(MAX_REQUEST_BYTES as u64)
-            .read_line(&mut line);
+        // Budget each read so `line` can exceed the cap by at most one byte,
+        // which is enough to notice that no newline arrived in time.
+        let budget = (MAX_REQUEST_BYTES + 1 - line.len()) as u64;
+        let read = reader.by_ref().take(budget).read_line(&mut line);
 
-        let n = match read {
-            Ok(0) => break, // peer closed
-            Ok(n) => n,
+        match read {
+            // Peer closed. Any partial request dies with it.
+            Ok(0) => break,
+            Ok(_) => {
+                if !line.is_empty() && request_started.is_none() {
+                    request_started = Some(std::time::Instant::now());
+                }
+            }
             Err(ref e)
                 if e.kind() == std::io::ErrorKind::TimedOut
                     || e.kind() == std::io::ErrorKind::WouldBlock =>
             {
+                // Keep what already arrived and check the deadline: a client
+                // that dribbles bytes forever must not hold this thread — and
+                // one of the few connection slots — open indefinitely.
+                if exceeded_deadline(request_started) {
+                    reject(&mut writer, peer, "Request timed out before completing");
+                    break;
+                }
                 continue;
             }
             Err(_) => break,
-        };
+        }
 
-        if n >= MAX_REQUEST_BYTES && !line.ends_with('\n') {
-            warn!(
-                "API request from {:?} exceeded {} bytes, closing connection",
-                peer, MAX_REQUEST_BYTES
+        if line.len() > MAX_REQUEST_BYTES {
+            reject(
+                &mut writer,
+                peer,
+                &format!("Request exceeds {} byte limit", MAX_REQUEST_BYTES),
             );
-            let response = RpcResponse::error(
-                None,
-                INVALID_REQUEST,
-                format!("Request exceeds {} byte limit", MAX_REQUEST_BYTES),
-            );
-            if let Ok(mut json) = serde_json::to_string(&response) {
-                json.push('\n');
-                let _ = writer.write_all(json.as_bytes());
-            }
             break;
         }
 
-        if line.trim().is_empty() {
+        if !line.ends_with('\n') {
+            // Incomplete request: keep reading until the newline, the cap, or
+            // the deadline.
+            if exceeded_deadline(request_started) {
+                reject(&mut writer, peer, "Request timed out before completing");
+                break;
+            }
             continue;
         }
 
-        let response = match serde_json::from_str::<RpcRequest>(&line) {
+        // A complete request line. Take it so `line` is empty for the next one.
+        let request = std::mem::take(&mut line);
+        request_started = None;
+
+        if request.trim().is_empty() {
+            continue;
+        }
+
+        let response = match serde_json::from_str::<RpcRequest>(&request) {
             Ok(req) => handle_request(&req, &state),
             Err(e) => RpcResponse::error(None, PARSE_ERROR, format!("Parse error: {}", e)),
         };
@@ -342,6 +388,79 @@ mod tests {
             resp.error.expect("should report an oversized request").code,
             INVALID_REQUEST
         );
+
+        server.stop();
+    }
+
+    /// The size cap has to apply per request, not per read window.
+    ///
+    /// `handle_client` clears its buffer only once a request completes. An
+    /// earlier version cleared it at the top of every iteration, so bytes
+    /// already consumed were dropped whenever the 1s read timeout fired — a
+    /// client that paused between chunks could stream unbounded data while each
+    /// individual read stayed under the cap, holding a connection slot open.
+    #[test]
+    fn oversized_request_split_across_read_timeouts_is_rejected() {
+        let state = new_shared_state();
+        let mut server = ApiServer::start(0, state).unwrap();
+        let mut stream = connect(server.port);
+
+        // Each pause is longer than the server's 1s read timeout, so every
+        // chunk lands in a separate read.
+        let chunk = "x".repeat(400 * 1024);
+        for _ in 0..3 {
+            if stream.write_all(chunk.as_bytes()).is_err() {
+                break;
+            }
+            let _ = stream.flush();
+            thread::sleep(std::time::Duration::from_millis(1200));
+        }
+
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut response = String::new();
+        reader.read_line(&mut response).unwrap();
+        let resp: RpcResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(
+            resp.error
+                .expect("cap must trip on the accumulated request")
+                .code,
+            INVALID_REQUEST
+        );
+
+        server.stop();
+    }
+
+    /// The flip side of keeping the buffer: a request that arrives in pieces
+    /// must still be assembled. Discarding partial bytes on timeout turned a
+    /// slow but legitimate request into a parse error.
+    #[test]
+    fn request_split_across_a_read_timeout_is_assembled() {
+        let state = new_shared_state();
+        crate::lock_or_recover(&state).snapshot.tick = 7;
+
+        let mut server = ApiServer::start(0, state).unwrap();
+        let mut stream = connect(server.port);
+
+        stream
+            .write_all(br#"{"jsonrpc":"2.0","id":1,"method":"engine."#)
+            .unwrap();
+        stream.flush().unwrap();
+        // Force the server's read to time out mid-request.
+        thread::sleep(std::time::Duration::from_millis(1300));
+        stream.write_all(b"status\",\"params\":null}\n").unwrap();
+        stream.flush().unwrap();
+
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut response = String::new();
+        reader.read_line(&mut response).unwrap();
+        let resp: RpcResponse = serde_json::from_str(&response).unwrap();
+
+        assert!(
+            resp.error.is_none(),
+            "split request should parse, got {:?}",
+            resp.error
+        );
+        assert_eq!(resp.result.expect("status result")["tick"], 7);
 
         server.stop();
     }
