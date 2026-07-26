@@ -12,8 +12,8 @@ use std::collections::HashSet;
 
 /// Context passed to a [`System`] when it runs.
 ///
-/// Currently a thin wrapper around `&mut World`. Future work (ADR-0002 step 5)
-/// will narrow this to only the declared component borrows.
+/// Currently a thin wrapper around `&mut World`. Narrowing this to only the
+/// declared component borrows is tracked in ADR-0002 ("Parallel dispatch").
 pub struct SystemContext<'a> {
     pub world: &'a mut World,
 }

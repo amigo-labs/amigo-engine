@@ -44,3 +44,32 @@ smallest set and probing the others. Change tracking is bitset-based
 - Determinism: iteration order follows dense insertion order, which is stable
   for identical input sequences and therefore safe for the deterministic
   simulation (see ADR-0001).
+- Component types must be `Send + Sync`. This is a consequence of the parallel
+  dispatch below, not of sparse sets themselves, and it applies to the dynamic
+  path too (`register_dynamic`, `insert_dynamic`, `register_reflected`).
+
+## Parallel dispatch (`system_graph`)
+
+Optional, behind the `system_graph` feature. `SystemGraph` groups systems into
+batches whose declared component access (`.reads::<T>()` / `.writes::<T>()`) is
+pairwise disjoint, and runs each batch through `rayon::scope`. A system that
+declares nothing gets a full `&mut World` and therefore always runs alone.
+
+What guards correctness today:
+
+- Every batch member has declared disjoint access; undeclared systems are
+  treated as conflicting with everything (`has_conflict`).
+- `World` and all component storage are `Send + Sync`, so nothing thread-affine
+  can be reached from a worker thread. `SendPtr<T>` carries `T: Send` / `T: Sync`
+  bounds rather than a blanket impl, so this is checked by the compiler.
+- A structural change (spawn, despawn, dynamic type registration) inside a
+  parallel batch is not expressible as a read/write declaration, so the
+  scheduler compares a structural fingerprint before and after each batch and
+  trips a `debug_assert` if one happened.
+
+What remains a convention rather than a guarantee: the declarations themselves.
+Each batch member still receives a reconstructed `&mut World`, so a system that
+touches a component it did not declare races, and no assertion can detect it.
+Closing this requires `SystemContext` to hand out an access token that only
+yields the declared component slices, which changes every system signature —
+tracked as follow-up work, not done here.

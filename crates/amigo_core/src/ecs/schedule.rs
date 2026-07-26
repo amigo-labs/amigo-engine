@@ -5,11 +5,19 @@
 use super::system::{System, SystemContext, SystemDescriptor, SystemStage};
 use std::collections::{HashMap, VecDeque};
 
-/// A raw pointer wrapper that implements Send + Sync.
+/// A raw pointer wrapper that is `Send`/`Sync` when the pointee is.
+///
+/// The bounds matter: a blanket `unsafe impl<T> Send` would let the scheduler
+/// move thread-affine data (an `Rc` inside a component, say) onto a rayon
+/// worker. Requiring `T: Send` pushes that check back onto the pointee, so
+/// `World` has to actually be `Send` for parallel dispatch to compile — which
+/// is why every component storage carries a `Send + Sync` bound (see
+/// `AnyStorage` in [`world`](super::world)).
 ///
 /// # Safety
-/// The caller must guarantee that access through this pointer is sound
-/// (e.g. no data races). The system schedule ensures disjoint access.
+/// The caller must still guarantee that access through this pointer is free of
+/// data races; the bounds only rule out thread-affine pointees, not aliasing.
+/// The system schedule ensures disjoint access.
 #[cfg(feature = "system_graph")]
 struct SendPtr<T>(*mut T);
 
@@ -30,10 +38,12 @@ impl<T> SendPtr<T> {
     }
 }
 
+// SAFETY: sending the pointer is sound whenever sending the pointee would be;
+// the aliasing discipline is enforced by the schedule, not by these impls.
 #[cfg(feature = "system_graph")]
-unsafe impl<T> Send for SendPtr<T> {}
+unsafe impl<T: Send> Send for SendPtr<T> {}
 #[cfg(feature = "system_graph")]
-unsafe impl<T> Sync for SendPtr<T> {}
+unsafe impl<T: Sync> Sync for SendPtr<T> {}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -276,16 +286,24 @@ impl SystemGraph {
         indices: &[usize],
         world: &mut super::world::World,
     ) {
+        // Tripwire for the one contract violation we can detect cheaply: a
+        // system in a parallel batch that changes the world's *structure*.
+        // Spawn / despawn / dynamic-type registration are not expressible as
+        // `.reads()` / `.writes()` declarations, so `has_conflict` cannot see
+        // them and such a system will silently be batched with others.
+        let fingerprint_before = world.structural_fingerprint();
+
         // SAFETY: Systems only share a batch when every one of them declared
         // its component access via `.reads::<T>()` / `.writes::<T>()` and
         // those declarations are pairwise disjoint (see `has_conflict`;
-        // undeclared systems always run alone). The declarations are a
-        // caller-supplied contract: a system that touches components (or
-        // performs structural changes like spawn/despawn) without declaring
-        // them can still race. A future iteration should replace the raw
-        // `&mut World` reconstruction with per-component borrows so the
-        // contract is checked by the type system rather than by convention
-        // (ADR-0002 step 5).
+        // undeclared systems always run alone). Sending the pointers is sound
+        // because `World: Send` and `SystemDescriptor: Send` (enforced by the
+        // bounds on `SendPtr`). The declarations themselves remain a
+        // caller-supplied contract: a system that touches components it did
+        // not declare can still race, and no assertion here can catch that. A
+        // future iteration should replace the raw `&mut World` reconstruction
+        // with per-component borrows so the contract is checked by the type
+        // system rather than by convention (see ADR-0002, "Parallel dispatch").
         let world_ptr = SendPtr(world as *mut super::world::World);
         let systems_ptr = SendPtr(systems.as_mut_ptr());
 
@@ -301,6 +319,18 @@ impl SystemGraph {
                 });
             }
         });
+
+        debug_assert_eq!(
+            fingerprint_before,
+            world.structural_fingerprint(),
+            "a system in a parallel batch performed a structural change \
+             (spawn, despawn, or dynamic component registration). Structural \
+             changes cannot be declared via .reads()/.writes(), so the \
+             scheduler cannot prove they are conflict-free and they race \
+             against the other systems in the batch. Move the structural work \
+             into a system that declares no access (those always run alone), \
+             or defer it via World::despawn + flush between stages."
+        );
     }
 
     /// Returns the number of registered systems.
@@ -530,5 +560,75 @@ mod tests {
             "expected >=2 groups due to Pos conflict, got {}",
             groups.len()
         );
+    }
+
+    /// `dispatch_parallel` moves a `*mut World` onto rayon workers, which is
+    /// only sound if `World` is `Send`. `SendPtr`'s bounds enforce that at the
+    /// type level; this pins it so a future component storage without a
+    /// `Send + Sync` bound fails here instead of silently re-opening the hole.
+    #[test]
+    fn world_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<super::super::world::World>();
+        assert_send_sync::<SystemDescriptor>();
+        assert_send_sync::<SendPtr<super::super::world::World>>();
+    }
+
+    #[test]
+    fn parallel_batch_runs_every_system() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        struct CompA;
+        struct CompB;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c1 = counter.clone();
+        let c2 = counter.clone();
+
+        let mut graph = SystemGraph::new();
+        graph.add_system(
+            SystemDescriptor::new("a", move |_ctx: &mut SystemContext<'_>| {
+                c1.fetch_add(1, Ordering::Relaxed);
+            })
+            .writes::<CompA>(),
+        );
+        graph.add_system(
+            SystemDescriptor::new("b", move |_ctx: &mut SystemContext<'_>| {
+                c2.fetch_add(1, Ordering::Relaxed);
+            })
+            .writes::<CompB>(),
+        );
+        graph.build().expect("should build");
+
+        let mut world = super::super::world::World::new();
+        graph.run(&mut world);
+
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
+    }
+
+    /// Spawning from inside a parallel batch is a contract violation that
+    /// `has_conflict` cannot see, because structural changes are not
+    /// expressible as read/write declarations. The scheduler must trip loudly
+    /// rather than corrupt the world silently.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "structural change")]
+    fn structural_change_in_parallel_batch_is_detected() {
+        struct CompA;
+        struct CompB;
+
+        let mut graph = SystemGraph::new();
+        graph.add_system(
+            SystemDescriptor::new("spawner", |ctx: &mut SystemContext<'_>| {
+                ctx.world.spawn();
+            })
+            .writes::<CompA>(),
+        );
+        graph.add_system(noop_system("innocent").writes::<CompB>());
+        graph.build().expect("should build");
+
+        let mut world = super::super::world::World::new();
+        graph.run(&mut world);
     }
 }

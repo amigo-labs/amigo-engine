@@ -79,7 +79,13 @@ struct ReflectAccessor {
 }
 
 /// Trait for type-erased SparseSet storage.
-trait AnyStorage: Any {
+///
+/// `Send + Sync` is required so that [`World`] itself is `Send + Sync`. The
+/// parallel dispatch in [`schedule`](super::schedule) hands a `&mut World` to
+/// worker threads, which is only sound if nothing reachable from the world is
+/// thread-affine. Without this bound a game could register a dynamic component
+/// holding an `Rc` and the scheduler would move it across threads.
+trait AnyStorage: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn remove_entity(&mut self, id: EntityId);
@@ -88,7 +94,7 @@ trait AnyStorage: Any {
     fn len(&self) -> usize;
 }
 
-impl<T: 'static> AnyStorage for SparseSet<T> {
+impl<T: 'static + Send + Sync> AnyStorage for SparseSet<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -178,10 +184,25 @@ impl World {
         self.entities.iter_alive()
     }
 
+    /// A cheap summary of the world's *structure*: alive entity count, queued
+    /// despawns, and number of registered dynamic component types.
+    ///
+    /// Used by the parallel scheduler to detect systems that performed a
+    /// structural change (spawn / despawn / component-type registration) while
+    /// sharing a batch with other systems, which the disjoint-access contract
+    /// does not permit. Not a substitute for the contract, just a tripwire.
+    pub(crate) fn structural_fingerprint(&self) -> (usize, usize, usize) {
+        (
+            self.entities.count(),
+            self.pending_despawn.len(),
+            self.dynamic.len(),
+        )
+    }
+
     // ── Dynamic Component Access ──
 
     /// Register a dynamic component type with optional capacity hint.
-    pub fn register_dynamic<T: 'static>(&mut self, capacity: usize) {
+    pub fn register_dynamic<T: 'static + Send + Sync>(&mut self, capacity: usize) {
         let type_id = TypeId::of::<T>();
         self.dynamic
             .entry(type_id)
@@ -189,21 +210,21 @@ impl World {
     }
 
     /// Get the SparseSet for a dynamic component type.
-    pub fn dynamic<T: 'static>(&self) -> Option<&SparseSet<T>> {
+    pub fn dynamic<T: 'static + Send + Sync>(&self) -> Option<&SparseSet<T>> {
         self.dynamic
             .get(&TypeId::of::<T>())
             .and_then(|s| s.as_any().downcast_ref())
     }
 
     /// Get mutable SparseSet for a dynamic component type.
-    pub fn dynamic_mut<T: 'static>(&mut self) -> Option<&mut SparseSet<T>> {
+    pub fn dynamic_mut<T: 'static + Send + Sync>(&mut self) -> Option<&mut SparseSet<T>> {
         self.dynamic
             .get_mut(&TypeId::of::<T>())
             .and_then(|s| s.as_any_mut().downcast_mut())
     }
 
     /// Insert a dynamic component. Registers the type if not already registered.
-    pub fn insert_dynamic<T: 'static>(&mut self, id: EntityId, data: T) {
+    pub fn insert_dynamic<T: 'static + Send + Sync>(&mut self, id: EntityId, data: T) {
         let type_id = TypeId::of::<T>();
         let storage = self
             .dynamic
@@ -217,12 +238,12 @@ impl World {
     }
 
     /// Get a dynamic component by reference.
-    pub fn get_dynamic<T: 'static>(&self, id: EntityId) -> Option<&T> {
+    pub fn get_dynamic<T: 'static + Send + Sync>(&self, id: EntityId) -> Option<&T> {
         self.dynamic::<T>()?.get(id)
     }
 
     /// Get a dynamic component by mutable reference (marks changed).
-    pub fn get_dynamic_mut<T: 'static>(&mut self, id: EntityId) -> Option<&mut T> {
+    pub fn get_dynamic_mut<T: 'static + Send + Sync>(&mut self, id: EntityId) -> Option<&mut T> {
         self.dynamic_mut::<T>()?.get_mut(id)
     }
 
@@ -601,7 +622,10 @@ impl World {
     /// Register a dynamic component type for reflection.
     /// This stores accessor functions that allow `get_reflected` and `get_reflected_mut`
     /// to work with this component type.
-    pub fn register_reflected<T: amigo_reflect::Reflect + 'static>(&mut self, capacity: usize) {
+    pub fn register_reflected<T: amigo_reflect::Reflect + 'static + Send + Sync>(
+        &mut self,
+        capacity: usize,
+    ) {
         let type_id = TypeId::of::<T>();
         self.dynamic
             .entry(type_id)
