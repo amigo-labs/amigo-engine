@@ -5,6 +5,17 @@ and workflow for getting changes merged.
 
 ## Getting started
 
+On Linux, install the system libraries first — audio (`alsa`) and input (`udev`)
+are linked at build time, so the workspace does not compile without them:
+
+```sh
+sudo apt-get install -y \
+  libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev \
+  libx11-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev pkg-config
+```
+
+This is the same list CI installs (`.github/actions/install-system-deps`).
+
 ```sh
 git clone https://github.com/amigo-labs/amigo-engine.git
 cd amigo-engine

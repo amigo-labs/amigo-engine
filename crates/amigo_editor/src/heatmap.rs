@@ -39,7 +39,7 @@ impl Heatmap {
             width,
             height,
             tile_size,
-            data: vec![0.0; (width * height) as usize],
+            data: vec![0.0; crate::grid_len(width, height)],
             max_value: 0.0,
         }
     }

@@ -52,6 +52,7 @@ jobs:
           cargo clippy -p amigo_render --features asset_streaming -- -D warnings
           cargo clippy -p amigo_net --features rollback_net -- -D warnings
           cargo clippy -p amigo_audio --features audio_graph -- -D warnings
+          cargo clippy -p amigo_editor --all-features -- -D warnings
 
   test:
     name: Test
@@ -72,6 +73,7 @@ jobs:
           cargo test -p amigo_render --features asset_streaming
           cargo test -p amigo_net --features rollback_net
           cargo test -p amigo_audio --features audio_graph
+          cargo test -p amigo_editor --all-features
       - name: Doc tests
         run: |
           cargo test --doc \

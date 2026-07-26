@@ -106,7 +106,7 @@ impl CollisionEditorState {
             overlay_alpha: 0.4,
             width,
             height,
-            tiles: vec![CollisionType::Empty; (width * height) as usize],
+            tiles: vec![CollisionType::Empty; crate::grid_len(width, height)],
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         }

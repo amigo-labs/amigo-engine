@@ -72,7 +72,7 @@ impl EditorRuntime {
             tile_size,
             layers: vec![crate::LayerData {
                 name: "ground".to_string(),
-                tiles: vec![0; (width * height) as usize],
+                tiles: vec![0; crate::grid_len(width, height)],
                 visible: true,
             }],
             entities: Vec::new(),
