@@ -247,9 +247,13 @@ impl Engine {
         let running = Arc::new(AtomicBool::new(true));
         {
             let running = running.clone();
-            let _ = ctrlc::set_handler(move || {
+            // A failed registration means Ctrl+C will kill the process
+            // outright instead of shutting down cleanly — worth saying so.
+            if let Err(e) = ctrlc::set_handler(move || {
                 running.store(false, Ordering::Relaxed);
-            });
+            }) {
+                warn!("Could not install the Ctrl+C handler, shutdown will not be graceful: {e}");
+            }
         }
 
         let tick_duration = amigo_core::TimeInfo::TICK_DURATION;

@@ -320,7 +320,7 @@ impl Renderer {
 
         // Update projection uniform
         let proj = self.camera.projection_matrix();
-        let proj_flat: [f32; 16] = unsafe { std::mem::transmute(proj) };
+        let proj_flat: [f32; 16] = bytemuck::cast(proj);
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&proj_flat));
 
@@ -449,7 +449,7 @@ impl Renderer {
 
         // Update projection
         let proj = self.camera.projection_matrix();
-        let proj_flat: [f32; 16] = unsafe { std::mem::transmute(proj) };
+        let proj_flat: [f32; 16] = bytemuck::cast(proj);
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&proj_flat));
 

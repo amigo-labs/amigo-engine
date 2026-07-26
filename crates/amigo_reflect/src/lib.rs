@@ -281,6 +281,66 @@ mod tests {
         assert_eq!(fields[2].info.name, "active");
     }
 
+    /// `fields_mut` is the derive's one `unsafe` block: it builds a `FieldMut`
+    /// per field from `offset_of!` pointers, and hands them all out at once.
+    /// Soundness rests on those offsets being distinct and correct, so this
+    /// writes through every handle while they are all alive and checks each
+    /// value landed in its own field — an offset mix-up in the macro would show
+    /// up as a value in the wrong place or a clobbered neighbour.
+    #[test]
+    fn fields_mut_write_through_targets_the_right_field() {
+        let mut s = Stats {
+            name: "alice".into(),
+            speed: 5.0,
+            internal_id: 99,
+            active: false,
+        };
+
+        {
+            let mut fields = s.fields_mut();
+            // All three handles are alive simultaneously here.
+            for field in fields.iter_mut() {
+                match field.info.name {
+                    "name" => {
+                        *field
+                            .value
+                            .downcast_mut::<String>()
+                            .expect("name is a String") = "bob".to_string()
+                    }
+                    "speed" => *field.value.downcast_mut::<f32>().expect("speed is an f32") = 12.5,
+                    "active" => {
+                        *field
+                            .value
+                            .downcast_mut::<bool>()
+                            .expect("active is a bool") = true
+                    }
+                    other => panic!("unexpected reflected field {other}"),
+                }
+            }
+        }
+
+        assert_eq!(s.name, "bob");
+        assert_eq!(s.speed, 12.5);
+        assert!(s.active);
+        assert_eq!(s.internal_id, 99, "skipped field must not be touched");
+    }
+
+    /// The offsets the macro emits must be distinct, otherwise two `FieldMut`
+    /// values would alias the same bytes.
+    #[test]
+    fn reflected_field_offsets_are_distinct() {
+        let info = Stats::type_info();
+        for (i, a) in info.fields.iter().enumerate() {
+            for b in info.fields.iter().skip(i + 1) {
+                assert_ne!(
+                    a.offset, b.offset,
+                    "fields {} and {} share offset {}",
+                    a.name, b.name, a.offset
+                );
+            }
+        }
+    }
+
     #[test]
     fn apply_patch_updates_matching_fields() {
         let mut h = Health {
