@@ -474,7 +474,18 @@ pub struct BlockBag {
 }
 
 impl BlockBag {
+    /// Create a bag that deals every shape once before repeating.
+    ///
+    /// # Panics
+    /// If `shapes` is empty. An empty bag has nothing to deal, and
+    /// [`next`](Self::next) / [`peek`](Self::peek) return a `BlockShape` rather
+    /// than an `Option` — failing here names the actual mistake instead of
+    /// panicking inside `refill` on the first draw.
     pub fn new(shapes: Vec<BlockShape>, seed: u64) -> Self {
+        assert!(
+            !shapes.is_empty(),
+            "BlockBag requires at least one shape to deal"
+        );
         Self {
             shapes,
             remaining: Vec::new(),
@@ -1788,6 +1799,14 @@ mod tests {
             second_batch.push(bag.next());
         }
         assert_eq!(second_batch.len(), 7);
+    }
+
+    /// An empty bag used to construct fine and then panic on the first draw,
+    /// inside `refill`, with an `unwrap` on `None` and no useful message.
+    #[test]
+    #[should_panic(expected = "at least one shape")]
+    fn empty_block_bag_is_rejected_at_construction() {
+        BlockBag::new(Vec::new(), 0);
     }
 
     #[test]

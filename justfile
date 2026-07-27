@@ -33,6 +33,7 @@ clippy-features:
     cargo clippy -p amigo_render --features asset_streaming -- -D warnings
     cargo clippy -p amigo_net --features rollback_net -- -D warnings
     cargo clippy -p amigo_audio --features audio_graph -- -D warnings
+    cargo clippy -p amigo_editor --all-features -- -D warnings
 
 test-features:
     cargo test -p amigo_core --features async_tasks
@@ -42,6 +43,7 @@ test-features:
     cargo test -p amigo_render --features asset_streaming
     cargo test -p amigo_net --features rollback_net
     cargo test -p amigo_audio --features audio_graph
+    cargo test -p amigo_editor --all-features
 
 # Doc tests for the crates CI covers
 test-doc:

@@ -1,5 +1,3 @@
-#[cfg(feature = "ecs_archetypes")]
-pub mod archetype;
 mod bitset;
 #[cfg(feature = "change_detection")]
 pub mod change_detection;
@@ -13,8 +11,6 @@ pub mod schedule;
 #[cfg(feature = "system_graph")]
 pub mod system;
 
-#[cfg(feature = "ecs_archetypes")]
-pub use archetype::{Archetype, ArchetypeId, ArchetypeLocation, ArchetypeMap, ComponentDescriptor};
 pub use bitset::BitSet;
 #[cfg(feature = "change_detection")]
 pub use change_detection::{Added, Changed, ComponentTicks, Mut, Tick, TickStorage};

@@ -280,7 +280,7 @@ A separate crate is required because Rust proc-macros must be compiled as `proc-
 
 - **Should `Reflect` require `Clone`?** `clone_reflect()` requires cloning for undo snapshots. This is already satisfied by most components (`Position`, `Health`, `SpriteComp` all derive `Clone`). Proposal: yes, require `Clone` as a supertrait.
 - **Should the built-in components (`Position`, `Velocity`, etc.) derive `Reflect` directly, or should we provide manual impls?** `Position(pub SimVec2)` is a tuple struct, which the derive macro does not support in v1. Manual impls for the 5 built-in types are low effort.
-- **Interaction with archetype storage (ADR-0001)**: If archetypes land first, `get_reflected` must also probe archetype columns. The `AnyColumn` trait from ADR-0001 would need a similar downcast-function-pointer mechanism. Resolve: implement reflection against the current SparseSet storage; archetype support is additive.
+- **Interaction with archetype storage**: Resolved — ADR-0002 selects SparseSet storage and rejects archetype tables, so there are no archetype columns for `get_reflected` to probe. Reflection is implemented against the SparseSet storage only. (An unused archetype prototype lived behind the `ecs_archetypes` feature until it was removed; earlier revisions of this spec referred to it as "ADR-0001", which is in fact the fixed-point simulation ADR.)
 
 ## Acceptance Criteria
 
