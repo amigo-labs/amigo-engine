@@ -6,6 +6,7 @@ use amigo_editor::{save_level, AmigoLevel, EntityPlacement, LayerData};
 
 mod pipeline_cmd;
 mod setup;
+mod templates;
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing (minimal, no external dependency)
@@ -52,8 +53,9 @@ TEMPLATES:
 
 PRESETS:
     top-down, platformer, turn-based, arpg, roguelike, tower-defense,
-    bullet-hell, puzzle, farming-sim, fighting, visual-novel, menu,
-    world-map, custom
+    bullet-hell, arcade-shooter, puzzle, farming-sim, fighting, visual-novel,
+    menu, world-map, sandbox, god-sim, social-deduction, deckbuilder,
+    auto-battler, idle, custom (see `amigo list-presets`)
 "#
     );
 }
@@ -451,43 +453,22 @@ panic = "abort"
     let cargo_toml_path = base.join("Cargo.toml");
     std::fs::write(&cargo_toml_path, cargo_toml).expect("Failed to write Cargo.toml");
 
-    // Write src/main.rs
-    let main_rs = format!(
-        r#"use amigo_engine::prelude::*;
-
-struct MyGame;
-
-impl Game for MyGame {{
-    fn init(&mut self, _ctx: &mut GameContext) {{
-        // Initialize your game here
-    }}
-
-    fn update(&mut self, _ctx: &mut GameContext) -> SceneAction {{
-        // Update game logic here
-        SceneAction::Continue
-    }}
-
-    fn draw(&self, ctx: &mut DrawContext) {{
-        // Draw your game here
-        ctx.draw_rect(
-            Rect::new(100.0, 100.0, 32.0, 32.0),
-            Color::new(0.2, 0.6, 1.0, 1.0),
-        );
-    }}
-}}
-
-fn main() {{
-    Engine::build()
-        .title("{name}")
-        .virtual_resolution(480, 270)
-        .window_size(1280, 720)
-        .build()
-        .run(MyGame);
-}}
-"#
-    );
-    let main_rs_path = base.join("src").join("main.rs");
-    std::fs::write(&main_rs_path, main_rs).expect("Failed to write src/main.rs");
+    // Write the source tree: title menu, gameplay and pause scenes, chosen by
+    // the template's primary preset. Previously this wrote one hardcoded main.rs
+    // that was identical for every template.
+    for file in templates::project_files(
+        template.primary_preset,
+        name,
+        project.virtual_width,
+        project.virtual_height,
+    ) {
+        let path = base.join(&file.path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("Failed to create source directory");
+        }
+        std::fs::write(&path, file.contents)
+            .unwrap_or_else(|e| panic!("Failed to write {}: {e}", file.path));
+    }
 
     // Generate .vscode/tasks.json for dev workflow
     let vscode_dir = base.join(".vscode");
@@ -637,7 +618,11 @@ fn cmd_scene(args: &[String]) {
 
     let name = &args[0];
     let preset_name = find_flag(args, "--preset").unwrap_or("custom".to_string());
-    let preset = parse_preset(&preset_name);
+    let preset = parse_preset(&preset_name).unwrap_or_else(|| {
+        eprintln!("Unknown preset: {preset_name}");
+        eprintln!("Available: {}", PRESET_NAMES.join(", "));
+        process::exit(1);
+    });
 
     let mut manifest = load_manifest().unwrap_or_else(|| {
         eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
@@ -1090,28 +1075,16 @@ fn cmd_list_templates() {
 // ---------------------------------------------------------------------------
 
 fn cmd_list_presets() {
-    let presets = [
-        ("top-down", ScenePreset::TopDown),
-        ("platformer", ScenePreset::Platformer),
-        ("turn-based", ScenePreset::TurnBased),
-        ("arpg", ScenePreset::Arpg),
-        ("roguelike", ScenePreset::Roguelike),
-        ("tower-defense", ScenePreset::TowerDefense),
-        ("bullet-hell", ScenePreset::BulletHell),
-        ("puzzle", ScenePreset::Puzzle),
-        ("farming-sim", ScenePreset::FarmingSim),
-        ("fighting", ScenePreset::Fighting),
-        ("visual-novel", ScenePreset::VisualNovel),
-        ("menu", ScenePreset::Menu),
-        ("world-map", ScenePreset::WorldMap),
-        ("custom", ScenePreset::Custom),
-    ];
-
     println!("Available scene presets:");
     println!();
-    for (name, preset) in &presets {
+    // Derived from PRESET_NAMES so the list cannot drift from what
+    // `--preset` accepts, which is how seven variants went unlisted before.
+    for name in PRESET_NAMES {
+        let Some(preset) = parse_preset(name) else {
+            continue;
+        };
         let systems = preset.default_systems();
-        println!("  {name:<16} systems: {}", systems.join(", "));
+        println!("  {name:<18} systems: {}", systems.join(", "));
     }
 }
 
@@ -1860,8 +1833,13 @@ fn find_flag(args: &[String], flag: &str) -> Option<String> {
         .and_then(|i| args.get(i + 1).cloned())
 }
 
-fn parse_preset(name: &str) -> ScenePreset {
-    match name.to_lowercase().replace('-', "_").as_str() {
+/// Map a preset name to a [`ScenePreset`], or `None` if it is not one.
+///
+/// This used to cover 14 of the 21 variants and silently fall through to
+/// `Custom` for the rest, so `--preset deckbuilder` quietly produced a blank
+/// scene. Unknown names are an error now, and every variant is reachable.
+fn parse_preset(name: &str) -> Option<ScenePreset> {
+    Some(match name.to_lowercase().replace('-', "_").as_str() {
         "top_down" | "topdown" => ScenePreset::TopDown,
         "platformer" => ScenePreset::Platformer,
         "turn_based" | "turnbased" => ScenePreset::TurnBased,
@@ -1869,12 +1847,45 @@ fn parse_preset(name: &str) -> ScenePreset {
         "roguelike" => ScenePreset::Roguelike,
         "tower_defense" | "towerdefense" | "td" => ScenePreset::TowerDefense,
         "bullet_hell" | "bullethell" => ScenePreset::BulletHell,
+        "arcade_shooter" | "arcadeshooter" => ScenePreset::ArcadeShooter,
         "puzzle" => ScenePreset::Puzzle,
         "farming_sim" | "farmingsim" | "farming" => ScenePreset::FarmingSim,
         "fighting" => ScenePreset::Fighting,
         "visual_novel" | "visualnovel" | "vn" => ScenePreset::VisualNovel,
         "menu" => ScenePreset::Menu,
         "world_map" | "worldmap" => ScenePreset::WorldMap,
-        _ => ScenePreset::Custom,
-    }
+        "sandbox" | "sandbox_survival" | "survival" => ScenePreset::Sandbox,
+        "god_sim" | "godsim" => ScenePreset::GodSim,
+        "social_deduction" | "socialdeduction" => ScenePreset::SocialDeduction,
+        "deckbuilder" | "deck_builder" => ScenePreset::Deckbuilder,
+        "auto_battler" | "autobattler" => ScenePreset::AutoBattler,
+        "idle" | "idle_game" | "incremental" => ScenePreset::Idle,
+        "custom" => ScenePreset::Custom,
+        _ => return None,
+    })
 }
+
+/// All preset names `parse_preset` accepts, for error messages and `list-presets`.
+const PRESET_NAMES: &[&str] = &[
+    "top-down",
+    "platformer",
+    "turn-based",
+    "arpg",
+    "roguelike",
+    "tower-defense",
+    "bullet-hell",
+    "arcade-shooter",
+    "puzzle",
+    "farming-sim",
+    "fighting",
+    "visual-novel",
+    "menu",
+    "world-map",
+    "sandbox",
+    "god-sim",
+    "social-deduction",
+    "deckbuilder",
+    "auto-battler",
+    "idle",
+    "custom",
+];

@@ -23,7 +23,7 @@ A pixel-art game engine with built-in editor, AI asset generation, and algorithm
 - Built-in level editor with Tidal Playground
 - AI pipelines for art generation, music generation, and audio analysis
 - TidalCycles mini-notation for algorithmic chiptune music
-- 10 game-type templates (platformer, roguelike, shmup, RTS, puzzle, ...)
+- 18 game-type project templates, each scaffolded as a playable skeleton
 
 ## Quick start
 
