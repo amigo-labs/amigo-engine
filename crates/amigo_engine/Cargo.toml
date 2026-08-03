@@ -37,3 +37,7 @@ tracing-subscriber = { workspace = true }
 pollster = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+# Asset-loading tests build real PNGs and pak archives on disk.
+image = { workspace = true }

@@ -14,15 +14,9 @@ pub struct Player {
 
 impl Player {
     pub fn new() -> Self {
-        // Tuning data lives in a RON file so it can be tweaked without
-        // touching code; falls back to defaults if the file is missing.
-        let stats: crate::data::PlayerStats = crate::data::load_ron_or_default(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/assets/data/player.ron"
-        ));
         Self {
             entity: None,
-            speed: stats.speed,
+            speed: crate::data::PlayerStats::default().speed,
             anim_timer: 0.0,
             anim_frame: 0,
             facing_left: false,
@@ -38,6 +32,12 @@ impl Player {
     /// component yet, so setting it would suggest the entity gets drawn from the
     /// ECS when in fact `draw` below is what puts it on screen.
     pub fn spawn(&mut self, ctx: &mut GameContext, x: f32, y: f32, state_scope: u32) {
+        // Tuning data lives in a RON file so it can be tweaked without touching
+        // code. Loaded here rather than in `new()` because reading assets needs
+        // the context.
+        let stats: crate::data::PlayerStats = crate::data::load_or_default(ctx, "player.ron");
+        self.speed = stats.speed;
+
         let id = ctx.world.spawn();
         ctx.world
             .positions

@@ -392,6 +392,45 @@ impl Engine {
     }
 }
 
+/// Load sprites into `assets`, preferring a packed archive over loose files.
+///
+/// `amigo pack` writes `<assets>/packed/game.pak`, but nothing ever read it back:
+/// `AssetManager::load_from_pak` had no caller, so a packed release build still
+/// needed the loose `assets/` tree beside the binary. Returns whether the pak was
+/// used, which also decides whether hot reload can run.
+pub fn load_assets(assets: &mut AssetManager, assets_path: &str) -> bool {
+    let pak_path = std::path::Path::new(assets_path)
+        .join("packed")
+        .join("game.pak");
+
+    if pak_path.exists() {
+        match assets.load_from_pak(&pak_path) {
+            Ok(_reader) => {
+                info!(
+                    "Loaded {} sprite(s) from {}",
+                    assets.sprite_names().len(),
+                    pak_path.display()
+                );
+                // The reader also holds audio, data, levels and fonts. Those
+                // paths are not wired to the pak yet, so it is dropped here
+                // rather than pretending otherwise.
+                return true;
+            }
+            Err(e) => {
+                warn!(
+                    "Could not read {}: {e}. Falling back to loose files.",
+                    pak_path.display()
+                );
+            }
+        }
+    }
+
+    if let Err(e) = assets.load_sprites() {
+        error!("Failed to load sprites: {}", e);
+    }
+    false
+}
+
 /// Upload any dirty font atlas textures to the GPU.
 /// Handle one hot-reload file change: PNGs under `<assets>/sprites/` are
 /// re-read, re-uploaded to the GPU, and re-registered under their sprite
@@ -400,14 +439,23 @@ impl Engine {
 /// visible warning instead of being silently ignored.
 fn reload_changed_asset(
     path: &std::path::Path,
-    assets: &mut AssetManager,
     renderer: &mut Renderer,
     game_ctx: &mut GameContext,
 ) {
-    if let Some(sprite) = assets.reload_sprite(path) {
-        let tex_id = renderer.load_texture(&sprite.image, &sprite.name);
-        game_ctx.register_sprite_texture(sprite.name.clone(), tex_id, sprite.width, sprite.height);
-        info!("Hot reload: sprite '{}' reloaded", sprite.name);
+    // Reload first, then register: the borrow of `game_ctx.assets` has to end
+    // before `register_sprite_texture` takes `&mut game_ctx`.
+    let reloaded = game_ctx.assets.reload_sprite(path).map(|sprite| {
+        (
+            sprite.name.clone(),
+            sprite.image.clone(),
+            sprite.width,
+            sprite.height,
+        )
+    });
+    if let Some((name, image, width, height)) = reloaded {
+        let tex_id = renderer.load_texture(&image, &name);
+        game_ctx.register_sprite_texture(name.clone(), tex_id, width, height);
+        info!("Hot reload: sprite '{}' reloaded", name);
     } else {
         warn!(
             "Hot reload: '{}' changed but is not a reloadable sprite (restart to apply)",
@@ -432,7 +480,6 @@ struct EngineState {
     renderer: Renderer,
     game_ctx: GameContext,
     debug: DebugOverlay,
-    assets: AssetManager,
     hot_reloader: Option<HotReloader>,
     sprite_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
@@ -493,20 +540,21 @@ impl ApplicationHandler for EngineApp {
             self.config.render.virtual_height,
         ));
 
-        let mut assets = AssetManager::new(&self.assets_path);
-        if let Err(e) = assets.load_sprites() {
-            error!("Failed to load sprites: {}", e);
-        }
-
-        let hot_reloader = if self.config.dev.hot_reload {
-            HotReloader::new(std::path::PathBuf::from(&self.assets_path))
-        } else {
-            None
-        };
-
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
+
+        // Hot reload only makes sense against loose files: a pak is a build
+        // artifact, and watching it would reload the whole archive per write.
+        let hot_reloader = if self.config.dev.hot_reload && !packed {
+            HotReloader::new(std::path::PathBuf::from(&self.assets_path))
+        } else {
+            if packed && self.config.dev.hot_reload {
+                info!("Hot reload disabled: assets are served from game.pak");
+            }
+            None
+        };
 
         // Load built-in pixel font at 7px (native size)
         if let Err(e) = game_ctx.fonts.load_builtin(7.0) {
@@ -515,10 +563,16 @@ impl ApplicationHandler for EngineApp {
 
         // Upload loaded sprites to GPU and register them so games can draw
         // them by name via DrawContext::draw_sprite.
-        for name in assets.sprite_names().to_vec() {
-            if let Some(sprite) = assets.sprite(&name) {
-                let tex_id = renderer.load_texture(&sprite.image, &name);
-                game_ctx.register_sprite_texture(name, tex_id, sprite.width, sprite.height);
+        for name in game_ctx.assets.sprite_names().to_vec() {
+            let uploaded = game_ctx.assets.sprite(&name).map(|sprite| {
+                (
+                    renderer.load_texture(&sprite.image, &name),
+                    sprite.width,
+                    sprite.height,
+                )
+            });
+            if let Some((tex_id, w, h)) = uploaded {
+                game_ctx.register_sprite_texture(name, tex_id, w, h);
             }
         }
 
@@ -587,7 +641,6 @@ impl ApplicationHandler for EngineApp {
             renderer,
             game_ctx,
             debug: DebugOverlay::new(),
-            assets,
             hot_reloader,
             sprite_draw_list: Vec::new(),
             last_frame: Instant::now(),
@@ -818,12 +871,7 @@ impl ApplicationHandler for EngineApp {
                 // Hot reload: re-upload changed sprite textures.
                 if let Some(reloader) = &state.hot_reloader {
                     for path in reloader.poll_changes() {
-                        reload_changed_asset(
-                            &path,
-                            &mut state.assets,
-                            &mut state.renderer,
-                            &mut state.game_ctx,
-                        );
+                        reload_changed_asset(&path, &mut state.renderer, &mut state.game_ctx);
                     }
                 }
 

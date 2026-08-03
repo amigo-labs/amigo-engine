@@ -1,3 +1,4 @@
+use amigo_assets::AssetManager;
 use amigo_core::events::EventHub;
 use amigo_core::resources::Resources;
 use amigo_core::save::{SaveConfig, SaveManager};
@@ -28,6 +29,12 @@ pub struct GameContext {
     pub events: EventHub,
     /// Typed resource storage for game-specific singletons.
     pub resources: Resources,
+    /// Loaded assets: sprites, and `load_ron` for game data.
+    ///
+    /// This used to live in the engine's private state, so game code could not
+    /// reach `load_ron` at all and had to fall back to `std::fs` with hand-built
+    /// paths.
+    pub assets: AssetManager,
     #[cfg(feature = "audio")]
     pub audio: AudioManager,
     #[cfg(feature = "async_tasks")]
@@ -55,6 +62,7 @@ impl GameContext {
             fonts: FontManager::new(),
             events: EventHub::new(),
             resources: Resources::new(),
+            assets: AssetManager::new(assets_path),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
             #[cfg(feature = "async_tasks")]

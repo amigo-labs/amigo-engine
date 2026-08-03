@@ -297,6 +297,7 @@ dependencies = [
  "amigo_tilemap",
  "amigo_ui",
  "ctrlc",
+ "image 0.25.9",
  "pollster",
  "ron",
  "serde",
