@@ -8,8 +8,11 @@ use wgpu::util::DeviceExt;
 // ---------------------------------------------------------------------------
 
 /// Fullscreen vertex shader. Generates a fullscreen triangle from vertex ID
-/// (3 vertices, no vertex buffer needed). The UVs cover [0,1] over the screen.
-/// Public so tests can validate it with `naga` without a GPU.
+/// (3 vertices, no vertex buffer needed). The UVs cover `[0,1]` over the screen.
+///
+/// Public so tests can validate it with `naga` without a GPU. Making it public is
+/// what first put this comment through rustdoc's intra-doc link check, which read
+/// the bare `[0,1]` as a link.
 pub const FULLSCREEN_VERTEX_SHADER: &str = r#"
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
