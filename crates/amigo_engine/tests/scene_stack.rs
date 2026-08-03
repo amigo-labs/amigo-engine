@@ -227,3 +227,79 @@ fn each_pushed_instance_is_initialized_exactly_once() {
         "the root is initialized once, not on every resume"
     );
 }
+
+/// A game that quits after N ticks, driven the way the headless loop drives it.
+///
+/// The headless loop cannot be started in a test (it owns the process's Ctrl+C
+/// handler and blocks), so this exercises the same stack-and-quit contract it
+/// relies on: update, apply, stop when apply returns false.
+#[test]
+fn a_game_that_quits_after_n_ticks_stops_the_loop_there() {
+    struct QuitAfter {
+        remaining: u32,
+        ticks: u32,
+    }
+    impl Game for QuitAfter {
+        fn update(&mut self, _ctx: &mut GameContext) -> SceneAction {
+            self.ticks += 1;
+            if self.remaining == 0 {
+                return SceneAction::Quit;
+            }
+            self.remaining -= 1;
+            SceneAction::Continue
+        }
+        fn draw(&self, _ctx: &mut DrawContext) {}
+    }
+
+    let mut ctx = ctx();
+    let mut stack = GameStack::new(Box::new(QuitAfter {
+        remaining: 5,
+        ticks: 0,
+    }));
+    stack.enter_root(&mut ctx);
+
+    let ticks = run(&mut stack, &mut ctx, 100);
+
+    // Five Continues, then the sixth update returns Quit.
+    assert_eq!(ticks, 6, "the loop must stop on Quit, not run to the cap");
+}
+
+/// The world and event buffers have to be flushed per tick, or despawns and
+/// events pile up — the headless loop does this between updates.
+#[test]
+fn flushing_between_ticks_applies_despawns() {
+    struct Spawner {
+        spawned: Vec<EntityId>,
+    }
+    impl Game for Spawner {
+        fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
+            if let Some(id) = self.spawned.pop() {
+                ctx.world.despawn(id);
+            }
+            SceneAction::Continue
+        }
+        fn draw(&self, _ctx: &mut DrawContext) {}
+    }
+
+    let mut ctx = ctx();
+    let ids: Vec<EntityId> = (0..3).map(|_| ctx.world.spawn()).collect();
+    ctx.world.flush();
+    assert_eq!(ctx.world.entity_count(), 3);
+
+    let mut stack = GameStack::new(Box::new(Spawner {
+        spawned: ids.clone(),
+    }));
+    stack.enter_root(&mut ctx);
+
+    for _ in 0..3 {
+        let action = stack.top_mut().unwrap().update(&mut ctx);
+        stack.apply(action, &mut ctx);
+        ctx.world.flush();
+    }
+
+    assert_eq!(
+        ctx.world.entity_count(),
+        0,
+        "despawns only take effect on flush"
+    );
+}

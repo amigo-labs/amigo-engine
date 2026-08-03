@@ -78,6 +78,7 @@ pub mod context;
 pub mod engine;
 pub mod splash;
 pub mod stack;
+pub mod timestep;
 pub mod ui_bridge;
 
 // Re-export all sub-crates for convenient access

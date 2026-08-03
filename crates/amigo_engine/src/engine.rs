@@ -865,9 +865,16 @@ impl ApplicationHandler for EngineApp {
                 #[cfg(not(feature = "api"))]
                 let (sim_paused, sim_speed, forced_ticks) = (false, 1.0f32, 0u64);
 
-                if !sim_paused {
-                    state.accumulator += dt * sim_speed as f64;
-                }
+                let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
+                let budget = crate::timestep::tick_budget(
+                    dt,
+                    state.accumulator,
+                    tick_duration,
+                    sim_speed,
+                    sim_paused,
+                    forced_ticks,
+                );
+                state.accumulator = budget.accumulator;
 
                 state.game_ctx.time.dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
@@ -879,20 +886,12 @@ impl ApplicationHandler for EngineApp {
                     }
                 }
 
-                // Fixed timestep simulation. Ticks come from two sources: the
-                // accumulator (real time) and `forced_ticks` (an API step
-                // request, which must advance even while paused).
-                let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
-                let mut ticks_ran = false;
-                let mut forced_remaining = forced_ticks;
-                while state.accumulator >= tick_duration || forced_remaining > 0 {
+                // Fixed timestep simulation. `tick_budget` above already decided
+                // how many ticks this frame gets, from elapsed time plus any API
+                // step request.
+                let ticks_ran = budget.total() > 0;
+                for _ in 0..budget.total() {
                     let _tick_span = info_span!("tick").entered();
-                    ticks_ran = true;
-                    // A forced tick does not consume accumulated real time.
-                    let forced = state.accumulator < tick_duration;
-                    if forced {
-                        forced_remaining -= 1;
-                    }
 
                     let Some(active) = self.stack.top_mut() else {
                         event_loop.exit();
@@ -930,9 +929,6 @@ impl ApplicationHandler for EngineApp {
                         state.game_ctx.events.flush();
                     }
                     state.game_ctx.particles.update(tick_duration as f32);
-                    if !forced {
-                        state.accumulator -= tick_duration;
-                    }
                 }
 
                 // Clear edge-detected input (just pressed/released) only
@@ -946,7 +942,7 @@ impl ApplicationHandler for EngineApp {
                     state.game_ctx.input.begin_frame();
                 }
 
-                state.game_ctx.time.alpha = (state.accumulator / tick_duration) as f32;
+                state.game_ctx.time.alpha = budget.alpha;
 
                 // Re-upload dirty font atlases
                 upload_font_atlases(&mut state.game_ctx, &mut state.renderer);
