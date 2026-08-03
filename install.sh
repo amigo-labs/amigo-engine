@@ -30,20 +30,34 @@ detect_arch() {
 OS="$(detect_os)"
 ARCH="$(detect_arch)"
 
+BUILD_FROM_SOURCE="cargo install --git https://github.com/${REPO} amigo_cli"
+
 if [ "$OS" = "unsupported" ] || [ "$ARCH" = "unsupported" ]; then
     echo "Error: Unsupported platform: $(uname -s) $(uname -m)"
-    echo "Supported: Linux (x86_64, aarch64), macOS (x86_64, aarch64)"
+    echo "Supported: Linux (x86_64), macOS (x86_64, aarch64)"
     exit 1
 fi
 
-# Map to Rust target triples.
+# Map to Rust target triples. Must stay in sync with the build matrix in
+# .github/workflows/release.yml -- a triple that CI does not build is a 404.
 case "${OS}-${ARCH}" in
     linux-x86_64)   TARGET="x86_64-unknown-linux-gnu" ;;
-    linux-aarch64)  TARGET="aarch64-unknown-linux-gnu" ;;
     macos-x86_64)   TARGET="x86_64-apple-darwin" ;;
     macos-aarch64)  TARGET="aarch64-apple-darwin" ;;
+    linux-aarch64)
+        echo "Error: No pre-built binary for ARM Linux."
+        echo "The engine's audio and input crates need arm64 system libraries"
+        echo "that the release builder does not cross-compile against."
+        echo ""
+        echo "Build from source instead:"
+        echo "  ${BUILD_FROM_SOURCE}"
+        exit 1
+        ;;
     *)
         echo "Error: No pre-built binary for ${OS}-${ARCH}"
+        echo ""
+        echo "Build from source instead:"
+        echo "  ${BUILD_FROM_SOURCE}"
         exit 1
         ;;
 esac
@@ -86,11 +100,12 @@ if ! curl -fSL --progress-bar "$DOWNLOAD_URL" -o "${TMPDIR}/${ASSET_NAME}"; then
     echo "Error: Download failed."
     echo "  URL: ${DOWNLOAD_URL}"
     echo ""
-    echo "If this is a new installation, make sure a release exists at:"
+    echo "If this is a new installation, make sure a release with attached"
+    echo "binaries exists at:"
     echo "  https://github.com/${REPO}/releases"
     echo ""
-    echo "Alternatively, build from source:"
-    echo "  cargo install --path tools/amigo_cli"
+    echo "Alternatively, build from source (needs the Rust toolchain):"
+    echo "  ${BUILD_FROM_SOURCE}"
     exit 1
 fi
 

@@ -10,12 +10,29 @@ $BinaryName = "amigo.exe"
 # Detect architecture
 # ---------------------------------------------------------------------------
 
+$BuildFromSource = "cargo install --git https://github.com/$Repo amigo_cli"
+
+# Must stay in sync with the build matrix in .github/workflows/release.yml --
+# a triple that CI does not build is a 404, not an install.
 $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 switch ($Arch) {
     "X64"   { $Target = "x86_64-pc-windows-msvc" }
-    "Arm64" { $Target = "aarch64-pc-windows-msvc" }
+    "Arm64" {
+        Write-Error @"
+No pre-built binary for ARM64 Windows.
+
+Build from source instead (needs the Rust toolchain):
+  $BuildFromSource
+"@
+        exit 1
+    }
     default {
-        Write-Error "Unsupported architecture: $Arch"
+        Write-Error @"
+Unsupported architecture: $Arch
+
+Build from source instead (needs the Rust toolchain):
+  $BuildFromSource
+"@
         exit 1
     }
 }
@@ -60,11 +77,12 @@ try {
 Download failed.
   URL: $DownloadUrl
 
-If this is a new installation, make sure a release exists at:
+If this is a new installation, make sure a release with attached binaries
+exists at:
   https://github.com/$Repo/releases
 
-Alternatively, build from source:
-  cargo install --path tools/amigo_cli
+Alternatively, build from source (needs the Rust toolchain):
+  $BuildFromSource
 "@
     Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
     exit 1
