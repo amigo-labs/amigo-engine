@@ -25,6 +25,8 @@ COMMANDS:
     scene <name> [--preset <PRESET>]     Add a scene to the current project
     build                                Validate the project and run cargo check
     run [--headless] [--api]             Run the game (cargo run)
+        [--port PORT]                    ... with the API server on PORT
+        [--restore-snapshot <PATH>]      ... resuming a dev snapshot
     dev [--port PORT]                    Watch mode: rebuild + restart on source
                                          changes, live-reload on asset changes
     pack                                 Pack assets into atlas (release build)
@@ -1321,7 +1323,10 @@ fn cmd_run(args: &[String]) {
     }
 
     let headless = args.iter().any(|a| a == "--headless");
-    let api = args.iter().any(|a| a == "--api") || headless;
+    let restore = find_flag(args, "--restore-snapshot");
+    // Restoring a snapshot needs the API feature: the snapshot format and the
+    // restore path both live behind it.
+    let api = args.iter().any(|a| a == "--api") || headless || restore.is_some();
 
     let mut cmd = std::process::Command::new("cargo");
     cmd.arg("run");
@@ -1339,6 +1344,16 @@ fn cmd_run(args: &[String]) {
     }
     if api {
         cmd.env("AMIGO_API", "1");
+    }
+    if let Some(path) = restore {
+        if !std::path::Path::new(&path).exists() {
+            eprintln!("--restore-snapshot: '{path}' does not exist.");
+            process::exit(1);
+        }
+        cmd.env("AMIGO_RESTORE_SNAPSHOT", path);
+    }
+    if let Some(port) = find_flag(args, "--port") {
+        cmd.env("AMIGO_API_PORT", port);
     }
 
     let status = cmd.status().unwrap_or_else(|e| {
@@ -1458,14 +1473,29 @@ fn cmd_dev(args: &[String]) {
 
                 println!("\n--- source change detected, rebuilding... ---");
 
-                // Save snapshot via API before kill
+                // Save snapshot via API before kill. Report failures: a silent
+                // `let _ =` here meant a wrong port or a crashed engine looked
+                // exactly like a successful snapshot, and the restart then came
+                // back with no state and no explanation.
                 if child.is_some() {
-                    let _ = send_api_request(api_port, "dev.save_snapshot", "{}");
-                    // Give a brief moment for the snapshot to be saved
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    match send_api_request(api_port, "dev.save_snapshot", "{}") {
+                        Ok(_) => {
+                            // Give a brief moment for the snapshot to be written
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                        Err(e) => {
+                            eprintln!("warning: could not snapshot state on port {api_port}: {e}");
+                            eprintln!("         restarting without restoring game state.");
+                        }
+                    }
                 }
 
-                // Kill old process
+                // Ask the engine to shut down first, so it can release the API
+                // port and the window cleanly; fall back to killing it if it
+                // does not go away.
+                if child.is_some() && send_api_request(api_port, "engine.quit", "{}").is_ok() {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                }
                 if let Some(ref mut c) = child {
                     let _ = c.kill();
                     let _ = c.wait();
@@ -1522,6 +1552,9 @@ fn classify_dev_change(event: &notify::Event) -> Option<DevChange> {
 }
 
 /// Build the game crate and launch it with API enabled.
+/// Path the engine writes dev snapshots to (amigo_engine::api_bridge::DEV_SNAPSHOT_PATH).
+const DEV_SNAPSHOT_PATH: &str = ".amigo_dev/snapshot.ron";
+
 fn build_and_launch(api_port: u16) -> Result<std::process::Child, String> {
     // Incremental build
     let status = std::process::Command::new("cargo")
@@ -1536,15 +1569,22 @@ fn build_and_launch(api_port: u16) -> Result<std::process::Child, String> {
     }
 
     // Launch
-    let child = std::process::Command::new("cargo")
-        .arg("run")
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("run")
         .arg("--features")
         .arg("amigo_engine/api")
         .arg("--")
         .env("AMIGO_API", "1")
-        .env("AMIGO_API_PORT", api_port.to_string())
-        .spawn()
-        .map_err(|e| format!("failed to launch: {e}"))?;
+        .env("AMIGO_API_PORT", api_port.to_string());
+
+    // Resume where the previous process left off. Without this the snapshot was
+    // written on every rebuild and never read back, so `amigo dev` restarted
+    // from the title screen each time.
+    if std::path::Path::new(DEV_SNAPSHOT_PATH).exists() {
+        cmd.env("AMIGO_RESTORE_SNAPSHOT", DEV_SNAPSHOT_PATH);
+    }
+
+    let child = cmd.spawn().map_err(|e| format!("failed to launch: {e}"))?;
 
     Ok(child)
 }

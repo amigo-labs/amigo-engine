@@ -70,6 +70,7 @@ pub struct EngineBuilder {
     assets_path: String,
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: PluginContext,
+    restore_snapshot: Option<std::path::PathBuf>,
 }
 
 impl EngineBuilder {
@@ -79,6 +80,13 @@ impl EngineBuilder {
             assets_path: "assets".to_string(),
             plugins: Vec::new(),
             plugin_ctx: PluginContext::new(),
+            // `amigo run --restore-snapshot` and `amigo dev` pass the path this
+            // way: the engine never parses argv, since those arguments belong to
+            // the game binary.
+            restore_snapshot: std::env::var("AMIGO_RESTORE_SNAPSHOT")
+                .ok()
+                .filter(|p| !p.is_empty())
+                .map(std::path::PathBuf::from),
         }
     }
 
@@ -126,6 +134,16 @@ impl EngineBuilder {
         self
     }
 
+    /// Restore a dev snapshot on startup: skip the splash, jump to the recorded
+    /// tick and camera, and hand the game blob to `Game::on_dev_restore`.
+    ///
+    /// This is what `amigo run --restore-snapshot <path>` sets, and what makes
+    /// `amigo dev` preserve state across a recompile.
+    pub fn restore_snapshot(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.restore_snapshot = Some(path.into());
+        self
+    }
+
     /// Add a plugin to the engine.
     pub fn add_plugin(mut self, plugin: impl Plugin) -> Self {
         plugin.build(&mut self.plugin_ctx);
@@ -139,6 +157,7 @@ impl EngineBuilder {
             assets_path: self.assets_path,
             plugins: self.plugins,
             plugin_ctx: self.plugin_ctx,
+            restore_snapshot: self.restore_snapshot,
         }
     }
 }
@@ -155,6 +174,7 @@ pub struct Engine {
     assets_path: String,
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: PluginContext,
+    restore_snapshot: Option<std::path::PathBuf>,
 }
 
 impl Engine {
@@ -195,6 +215,7 @@ impl Engine {
             plugins: self.plugins,
             plugin_ctx: Some(self.plugin_ctx),
             state: None,
+            restore_snapshot: self.restore_snapshot,
         };
 
         event_loop.run_app(&mut app).expect("Event loop failed");
@@ -233,6 +254,22 @@ impl Engine {
         let mut stack = GameStack::new(Box::new(game));
         stack.enter_root(&mut game_ctx);
 
+        let mut control = crate::api_bridge::ApiControl::default();
+        if let Some(path) = &self.restore_snapshot {
+            match crate::api_bridge::load_dev_snapshot(path) {
+                Ok(snapshot) => crate::api_bridge::apply_dev_snapshot(
+                    &snapshot,
+                    &mut game_ctx,
+                    &mut stack,
+                    &mut control,
+                ),
+                Err(e) => warn!(
+                    "Could not restore dev snapshot from {}: {e}. Starting fresh.",
+                    path.display()
+                ),
+            }
+        }
+
         // Start the API server
         let shared_state = new_shared_state();
         let _api_server = match ApiServer::start(self.config.dev.api_port, shared_state.clone()) {
@@ -259,50 +296,30 @@ impl Engine {
         }
 
         let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
-        let mut paused = false;
 
         // Main headless loop: process API commands, run ticks on demand
         while running.load(Ordering::Relaxed) {
-            // Drain commands from the API
-            let commands = {
-                let mut state = amigo_api::lock_or_recover(&shared_state);
-                state.drain_commands()
-            };
+            crate::api_bridge::drain_api_commands(
+                &shared_state,
+                &mut game_ctx,
+                &mut stack,
+                &mut control,
+            );
 
-            let mut ticks_requested: u64 = 0;
-            let mut quit = false;
-
-            for cmd in &commands {
-                match cmd.action.as_str() {
-                    "pause" => {
-                        paused = true;
-                        info!("Headless: paused");
-                    }
-                    "unpause" => {
-                        paused = false;
-                        info!("Headless: unpaused");
-                    }
-                    "tick" => {
-                        let count = cmd
-                            .params
-                            .get("count")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(1);
-                        ticks_requested += count;
-                    }
-                    "quit" => {
-                        quit = true;
-                    }
-                    _ => {
-                        // Other commands can be handled by game code via resources
-                    }
-                }
-            }
-
-            if quit {
+            if control.quit {
                 info!("Headless: quit command received");
                 break;
             }
+
+            // Headless only advances when asked to; `paused` additionally
+            // suppresses those requests so a client can freeze the simulation
+            // without racing its own pending ticks.
+            let ticks_requested = if control.paused {
+                0
+            } else {
+                std::mem::take(&mut control.pending_ticks)
+            };
+            let mut quit = false;
 
             // Execute requested ticks at max CPU speed
             if ticks_requested > 0 {
@@ -362,8 +379,8 @@ impl Engine {
                 let mut state = amigo_api::lock_or_recover(&shared_state);
                 state.snapshot.tick = game_ctx.time.tick;
                 state.snapshot.entity_count = game_ctx.world.entity_count();
-                state.snapshot.paused = paused;
             }
+            crate::api_bridge::publish_snapshot(&shared_state, &game_ctx, &control);
 
             // If no ticks were requested, sleep briefly to avoid busy-waiting
             if ticks_requested == 0 {
@@ -423,6 +440,8 @@ struct EngineState {
     splash: Option<SplashState>,
     #[cfg(feature = "api")]
     api_state: Option<ApiEngineState>,
+    #[cfg(feature = "api")]
+    api_control: crate::api_bridge::ApiControl,
     #[cfg(feature = "editor")]
     egui: amigo_render::egui_integration::EguiRenderer,
     #[cfg(feature = "editor")]
@@ -444,6 +463,9 @@ struct EngineApp {
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: Option<PluginContext>,
     state: Option<EngineState>,
+    /// Dev snapshot to restore once the contexts exist, from
+    /// `EngineBuilder::restore_snapshot`.
+    restore_snapshot: Option<std::path::PathBuf>,
 }
 
 impl ApplicationHandler for EngineApp {
@@ -518,7 +540,11 @@ impl ApplicationHandler for EngineApp {
         // Upload font atlas textures to GPU
         upload_font_atlases(&mut game_ctx, &mut renderer);
 
-        let splash = if self.config.splash.enabled {
+        // A restored dev session skips the splash: `amigo dev` restarts the
+        // process on every source change, and sitting through the logo each time
+        // is the opposite of what the dev loop is for.
+        let skip_splash = self.restore_snapshot.is_some();
+        let splash = if self.config.splash.enabled && !skip_splash {
             Some(SplashState::new())
         } else {
             // No splash — init game immediately
@@ -569,6 +595,8 @@ impl ApplicationHandler for EngineApp {
             splash,
             #[cfg(feature = "api")]
             api_state,
+            #[cfg(feature = "api")]
+            api_control: crate::api_bridge::ApiControl::default(),
             #[cfg(feature = "editor")]
             egui,
             #[cfg(feature = "editor")]
@@ -589,6 +617,25 @@ impl ApplicationHandler for EngineApp {
                 metadata: std::collections::HashMap::new(),
             },
         });
+
+        // Restore a dev snapshot, now that the game has been initialized (the
+        // splash was skipped above, so the root game's init already ran).
+        #[cfg(feature = "api")]
+        if let Some(path) = self.restore_snapshot.take() {
+            let Some(state) = &mut self.state else { return };
+            match crate::api_bridge::load_dev_snapshot(&path) {
+                Ok(snapshot) => crate::api_bridge::apply_dev_snapshot(
+                    &snapshot,
+                    &mut state.game_ctx,
+                    &mut self.stack,
+                    &mut state.api_control,
+                ),
+                Err(e) => warn!(
+                    "Could not restore dev snapshot from {}: {e}. Starting fresh.",
+                    path.display()
+                ),
+            }
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -731,7 +778,39 @@ impl ApplicationHandler for EngineApp {
                 // ── Normal game loop ─────────────────────────────────
                 let _frame_span = info_span!("frame").entered();
 
-                state.accumulator += dt;
+                // Execute queued API commands. This has to happen while the
+                // camera still lives on the GameContext (it is swapped into the
+                // renderer further down) and before the tick, so a client's
+                // pause/step lands on this frame rather than the next.
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    crate::api_bridge::drain_api_commands(
+                        &api.shared_state,
+                        &mut state.game_ctx,
+                        &mut self.stack,
+                        &mut state.api_control,
+                    );
+                    if state.api_control.quit {
+                        info!("Quit requested over the API");
+                        event_loop.exit();
+                        return;
+                    }
+                }
+
+                // Simulation time control from the API: `set_speed` scales the
+                // accumulator, `pause` stops feeding it, and `tick`/`debug.step`
+                // request ticks that run even while paused.
+                #[cfg(feature = "api")]
+                let (sim_paused, sim_speed, forced_ticks) = {
+                    let c = &mut state.api_control;
+                    (c.paused, c.speed, std::mem::take(&mut c.pending_ticks))
+                };
+                #[cfg(not(feature = "api"))]
+                let (sim_paused, sim_speed, forced_ticks) = (false, 1.0f32, 0u64);
+
+                if !sim_paused {
+                    state.accumulator += dt * sim_speed as f64;
+                }
 
                 state.game_ctx.time.dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
@@ -748,12 +827,20 @@ impl ApplicationHandler for EngineApp {
                     }
                 }
 
-                // Fixed timestep simulation
+                // Fixed timestep simulation. Ticks come from two sources: the
+                // accumulator (real time) and `forced_ticks` (an API step
+                // request, which must advance even while paused).
                 let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
                 let mut ticks_ran = false;
-                while state.accumulator >= tick_duration {
+                let mut forced_remaining = forced_ticks;
+                while state.accumulator >= tick_duration || forced_remaining > 0 {
                     let _tick_span = info_span!("tick").entered();
                     ticks_ran = true;
+                    // A forced tick does not consume accumulated real time.
+                    let forced = state.accumulator < tick_duration;
+                    if forced {
+                        forced_remaining -= 1;
+                    }
 
                     let Some(active) = self.stack.top_mut() else {
                         event_loop.exit();
@@ -787,7 +874,9 @@ impl ApplicationHandler for EngineApp {
                         state.game_ctx.events.flush();
                     }
                     state.game_ctx.particles.update(tick_duration as f32);
-                    state.accumulator -= tick_duration;
+                    if !forced {
+                        state.accumulator -= tick_duration;
+                    }
                 }
 
                 // Clear edge-detected input (just pressed/released) only
@@ -964,6 +1053,17 @@ impl ApplicationHandler for EngineApp {
 
                 // Swap camera back to GameContext so game code can read updated state
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
+
+                // Publish pause/speed/camera for `engine.status` and `camera.get`.
+                // After the swap-back, so the camera reported is the updated one.
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    crate::api_bridge::publish_snapshot(
+                        &api.shared_state,
+                        &state.game_ctx,
+                        &state.api_control,
+                    );
+                }
 
                 // Mark frame end for Tracy profiler
                 amigo_debug::frame_mark();

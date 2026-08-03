@@ -71,6 +71,8 @@
 //! The [`engine`], [`config`], and [`context`] modules live in this crate
 //! and provide the main loop, configuration, and per-frame contexts.
 
+#[cfg(feature = "api")]
+pub mod api_bridge;
 pub mod config;
 pub mod context;
 pub mod engine;
@@ -146,6 +148,14 @@ pub trait Game: 'static {
     /// Render the game (called every frame, with interpolation alpha).
     fn draw(&self, ctx: &mut DrawContext);
 
+    /// A name for this scene, used in dev snapshots and debug output.
+    ///
+    /// Defaults to the implementing type's name. Override it if you want a name
+    /// that survives refactoring, since dev snapshots record it.
+    fn scene_id(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     /// Called by `amigo dev` before recompile to capture game-specific state.
     /// Return a JSON blob that will be passed to `on_dev_restore` after restart.
     /// Default returns null (no game-specific state to save).
@@ -198,4 +208,7 @@ pub mod prelude {
 
     #[cfg(feature = "audio")]
     pub use amigo_audio::AudioManager;
+
+    #[cfg(feature = "api")]
+    pub use crate::api_bridge::ApiInbox;
 }
