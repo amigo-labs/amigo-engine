@@ -1,3 +1,4 @@
+use crate::states::PlayingState;
 use amigo_engine::prelude::*;
 
 pub struct MenuState;
@@ -6,13 +7,26 @@ impl MenuState {
     pub fn new() -> Self {
         Self
     }
+}
 
-    /// Returns true when player presses Space/Enter to start.
-    pub fn update(&mut self, ctx: &mut GameContext) -> bool {
-        ctx.input.pressed(KeyCode::Space) || ctx.input.pressed(KeyCode::Enter)
+impl Default for MenuState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Game for MenuState {
+    fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
+        if ctx.input.pressed(KeyCode::Space) || ctx.input.pressed(KeyCode::Enter) {
+            // Push, not Replace: gameplay's Escape then pops back to this very
+            // menu instance instead of rebuilding it.
+            SceneAction::Push(Box::new(|| Box::new(PlayingState::new()) as Box<dyn Game>))
+        } else {
+            SceneAction::Continue
+        }
     }
 
-    pub fn draw(&self, ctx: &mut DrawContext) {
+    fn draw(&self, ctx: &mut DrawContext) {
         let vw = ctx.virtual_width;
         let vh = ctx.virtual_height;
 

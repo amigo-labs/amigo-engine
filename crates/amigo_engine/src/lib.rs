@@ -75,6 +75,7 @@ pub mod config;
 pub mod context;
 pub mod engine;
 pub mod splash;
+pub mod stack;
 
 // Re-export all sub-crates for convenient access
 pub use amigo_animation;
@@ -94,14 +95,53 @@ pub use amigo_audio;
 pub use config::EngineConfig;
 pub use context::{DrawContext, GameContext};
 pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
+pub use stack::GameStack;
+
+/// The scene action a [`Game`] returns from `update`.
+///
+/// [`amigo_scene::SceneAction`] is generic over the trait object it constructs;
+/// games construct other games, so this is the specialization they use.
+/// `SceneAction::Continue` and `SceneAction::Quit` work through the alias, and
+/// `Push`/`Replace` take any `Fn() -> Box<dyn Game> + Send`:
+///
+/// ```rust,no_run
+/// use amigo_engine::prelude::*;
+/// # struct PauseMenu;
+/// # impl Game for PauseMenu {
+/// #     fn update(&mut self, _: &mut GameContext) -> SceneAction { SceneAction::Continue }
+/// #     fn draw(&self, _: &mut DrawContext) {}
+/// # }
+/// # fn on_pause_pressed() -> SceneAction {
+/// SceneAction::Push(Box::new(|| Box::new(PauseMenu) as Box<dyn Game>))
+/// # }
+/// ```
+pub type SceneAction = amigo_scene::SceneAction<dyn Game>;
 
 /// The Game trait that all games implement.
+///
+/// A `Game` is also a scene: returning [`amigo_scene::SceneAction::Push`],
+/// `Pop` or `Replace` from [`Game::update`] drives the engine's [`GameStack`],
+/// so menus, pause overlays and level transitions are separate `Game` impls
+/// rather than one hand-rolled state enum.
 pub trait Game: 'static {
-    /// Called once when the game starts.
+    /// Called once per instance, the first time it becomes the active game.
     fn init(&mut self, _ctx: &mut GameContext) {}
 
+    /// Called when this game becomes the active top of the stack, right after
+    /// [`Game::init`].
+    fn on_enter(&mut self, _ctx: &mut GameContext) {}
+
+    /// Called when another game is pushed on top of this one.
+    fn on_pause(&mut self, _ctx: &mut GameContext) {}
+
+    /// Called when the game above this one is popped.
+    fn on_resume(&mut self, _ctx: &mut GameContext) {}
+
+    /// Called when this game is popped or replaced, before it is dropped.
+    fn on_exit(&mut self, _ctx: &mut GameContext) {}
+
     /// Update game logic (called at fixed timestep, 60 ticks/sec).
-    fn update(&mut self, ctx: &mut GameContext) -> amigo_scene::SceneAction;
+    fn update(&mut self, ctx: &mut GameContext) -> SceneAction;
 
     /// Render the game (called every frame, with interpolation alpha).
     fn draw(&self, ctx: &mut DrawContext);
@@ -121,7 +161,8 @@ pub trait Game: 'static {
 /// Prelude with commonly used types.
 pub mod prelude {
     pub use crate::{
-        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, Plugin, PluginContext,
+        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack, Plugin,
+        PluginContext, SceneAction,
     };
     pub use amigo_animation::*;
     pub use amigo_assets::{AssetError, AssetHandle, AssetState, HandleAllocator};
@@ -149,7 +190,7 @@ pub mod prelude {
     pub use amigo_render::{
         ArtStyle, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
     };
-    pub use amigo_scene::SceneAction;
+    pub use amigo_scene::SceneFactory;
     pub use amigo_tilemap::*;
     pub use amigo_ui::{UiContext, UiDrawCommand};
     pub use winit::event::MouseButton;

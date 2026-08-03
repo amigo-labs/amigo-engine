@@ -1,7 +1,6 @@
 use amigo_engine::prelude::*;
 
 mod data;
-mod game;
 mod player;
 mod states;
 
@@ -11,5 +10,8 @@ fn main() {
         .virtual_resolution(640, 360)
         .window_size(1280, 720)
         .build()
-        .run(game::StarterGame::new());
+        // Each state is its own `Game`; LoadingState replaces itself with the
+        // menu, which pushes gameplay, which pops back. No hand-rolled state
+        // enum — the engine owns the stack.
+        .run(states::LoadingState::new());
 }

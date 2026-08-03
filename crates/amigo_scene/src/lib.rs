@@ -6,30 +6,38 @@ pub mod hierarchical;
 pub mod transition;
 
 /// Action returned by a scene's update method to control scene transitions.
-pub enum SceneAction {
+///
+/// `S` is the trait object the pushed/replaced scene is constructed as. It
+/// defaults to [`Scene`] for the context-free [`SceneManager`] in this crate;
+/// `amigo_engine` uses `SceneAction<dyn Game>` so that a game's own `update`
+/// can drive the stack while still receiving the engine contexts.
+pub enum SceneAction<S: ?Sized = dyn Scene> {
     /// Continue running the current scene.
     Continue,
     /// Push a new scene on top (overlay).
-    Push(Box<dyn SceneFactory>),
+    Push(Box<dyn SceneFactory<S>>),
     /// Pop the current scene (go back).
     Pop,
     /// Replace the current scene with a new one.
-    Replace(Box<dyn SceneFactory>),
+    Replace(Box<dyn SceneFactory<S>>),
     /// Quit the application.
     Quit,
 }
 
 /// Trait for creating scenes. Used with Push/Replace to defer construction.
-pub trait SceneFactory: Send + 'static {
-    fn create(&self) -> Box<dyn Scene>;
+///
+/// Construction is deferred because the transition is decided mid-update, when
+/// the outgoing scene still owns the stack.
+pub trait SceneFactory<S: ?Sized = dyn Scene>: Send + 'static {
+    fn create(&self) -> Box<S>;
 }
 
 /// Implement SceneFactory for closures.
-impl<F> SceneFactory for F
+impl<S: ?Sized, F> SceneFactory<S> for F
 where
-    F: Fn() -> Box<dyn Scene> + Send + 'static,
+    F: Fn() -> Box<S> + Send + 'static,
 {
-    fn create(&self) -> Box<dyn Scene> {
+    fn create(&self) -> Box<S> {
         (self)()
     }
 }

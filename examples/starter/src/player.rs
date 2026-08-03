@@ -1,5 +1,4 @@
-use crate::game::AppState;
-use amigo_core::ecs::world::{Position, SpriteComp, StateScoped, Velocity};
+use amigo_core::ecs::world::{Position, StateScoped, Velocity};
 use amigo_engine::prelude::*;
 
 pub struct Player {
@@ -32,16 +31,19 @@ impl Player {
         }
     }
 
-    pub fn spawn(&mut self, ctx: &mut GameContext, x: f32, y: f32) {
+    /// Spawn the player entity, tagged with `state_scope` so the owning state
+    /// can despawn it on exit.
+    ///
+    /// No `SpriteComp` is inserted: nothing in the render pipeline consumes that
+    /// component yet, so setting it would suggest the entity gets drawn from the
+    /// ECS when in fact `draw` below is what puts it on screen.
+    pub fn spawn(&mut self, ctx: &mut GameContext, x: f32, y: f32, state_scope: u32) {
         let id = ctx.world.spawn();
         ctx.world
             .positions
             .insert(id, Position(SimVec2::from_f32(x, y)));
         ctx.world.velocities.insert(id, Velocity(SimVec2::ZERO));
-        ctx.world.sprites.insert(id, SpriteComp::new("player"));
-        ctx.world
-            .state_scoped
-            .insert(id, StateScoped(AppState::Playing as u32));
+        ctx.world.state_scoped.insert(id, StateScoped(state_scope));
         self.entity = Some(id);
         self.pos_x = x;
         self.pos_y = y;

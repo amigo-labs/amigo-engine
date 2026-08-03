@@ -1,7 +1,14 @@
-use crate::game::AppState;
 use crate::player::Player;
-use amigo_core::ecs::world::{Position, SpriteComp, StateScoped};
+use amigo_core::ecs::world::{Position, StateScoped};
 use amigo_engine::prelude::*;
+
+/// Tag for entities this state owns, so `on_exit` can despawn exactly those and
+/// leave anything the menu or a future overlay spawned alone.
+const STATE_SCOPE: u32 = 1;
+
+/// Game-specific marker component. Engine-core components are typed fields on
+/// `World`; anything a game invents goes into dynamic storage instead.
+struct Decoration;
 
 /// The main gameplay state: tilemap, player, decorations, HUD.
 pub struct PlayingState {
@@ -10,6 +17,12 @@ pub struct PlayingState {
     tiles: Vec<u8>,
     map_w: u32,
     map_h: u32,
+    /// Decoration positions read out of the ECS during `update`.
+    ///
+    /// `draw` only gets a [`DrawContext`], which does not expose the world, so
+    /// anything drawn from ECS state has to be collected while the game still
+    /// has `&mut GameContext`.
+    decorations: Vec<RenderVec2>,
 }
 
 impl PlayingState {
@@ -19,14 +32,8 @@ impl PlayingState {
             tiles: Vec::new(),
             map_w: 20,
             map_h: 12,
+            decorations: Vec::new(),
         }
-    }
-
-    /// Set up the level: load tilemap, spawn entities.
-    pub fn enter(&mut self, ctx: &mut GameContext) {
-        self.load_tilemap();
-        self.player.spawn(ctx, 64.0, 64.0);
-        self.spawn_decorations(ctx);
     }
 
     fn load_tilemap(&mut self) {
@@ -52,22 +59,63 @@ impl PlayingState {
     }
 
     fn spawn_decorations(&self, ctx: &mut GameContext) {
-        // Spawn a few decoration entities tagged with Playing state
+        // Decorations live in the ECS and are tagged with this state's scope, so
+        // `on_exit` cleans them up without tracking the ids by hand.
         let positions = [(160.0, 80.0), (240.0, 120.0), (96.0, 144.0)];
         for (x, y) in positions {
             let id = ctx.world.spawn();
             ctx.world
                 .positions
                 .insert(id, Position(SimVec2::from_f32(x, y)));
-            ctx.world.sprites.insert(id, SpriteComp::new("decoration"));
-            ctx.world
-                .state_scoped
-                .insert(id, StateScoped(AppState::Playing as u32));
+            ctx.world.state_scoped.insert(id, StateScoped(STATE_SCOPE));
+            ctx.world.insert_dynamic(id, Decoration);
         }
     }
 
-    /// Returns true when player presses Escape (back to menu).
-    pub fn update(&mut self, ctx: &mut GameContext) -> bool {
+    /// Collect decoration positions for `draw`.
+    ///
+    /// Filtering on the `Decoration` marker rather than the state scope matters:
+    /// the player carries the same scope, and would otherwise be drawn twice.
+    fn collect_decorations(&mut self, ctx: &GameContext) {
+        self.decorations.clear();
+        let Some(markers) = ctx.world.dynamic::<Decoration>() else {
+            return;
+        };
+        for (id, _) in markers.iter() {
+            if let Some(pos) = ctx.world.positions.get(id) {
+                self.decorations.push(RenderVec2 {
+                    x: pos.0.x.to_num::<f32>(),
+                    y: pos.0.y.to_num::<f32>(),
+                });
+            }
+        }
+    }
+}
+
+impl Default for PlayingState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Game for PlayingState {
+    /// Set up the level: load tilemap, spawn entities.
+    fn on_enter(&mut self, ctx: &mut GameContext) {
+        self.load_tilemap();
+        self.player.spawn(ctx, 64.0, 64.0, STATE_SCOPE);
+        self.spawn_decorations(ctx);
+        ctx.world.flush();
+        self.collect_decorations(ctx);
+    }
+
+    /// Despawn everything this state spawned, so returning to the menu does not
+    /// leak entities into the next round of gameplay.
+    fn on_exit(&mut self, ctx: &mut GameContext) {
+        ctx.world.cleanup_state(STATE_SCOPE);
+        ctx.world.flush();
+    }
+
+    fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
         self.player.update(ctx, &self.tiles, self.map_w);
 
         // Camera follows the player
@@ -77,10 +125,14 @@ impl PlayingState {
         };
         ctx.camera.set_target(target);
 
-        ctx.input.pressed(KeyCode::Escape)
+        if ctx.input.pressed(KeyCode::Escape) {
+            // Pop back to the menu that pushed us.
+            return SceneAction::Pop;
+        }
+        SceneAction::Continue
     }
 
-    pub fn draw(&self, ctx: &mut DrawContext) {
+    fn draw(&self, ctx: &mut DrawContext) {
         let vw = ctx.virtual_width;
         let vh = ctx.virtual_height;
 
@@ -109,6 +161,14 @@ impl PlayingState {
                     color,
                 );
             }
+        }
+
+        // Decorations, from the positions collected out of the ECS in `update`
+        for pos in &self.decorations {
+            ctx.draw_rect(
+                Rect::new(pos.x, pos.y, 8.0, 8.0),
+                Color::rgb(0.75, 0.65, 0.30),
+            );
         }
 
         // Draw player

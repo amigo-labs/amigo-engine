@@ -1,8 +1,12 @@
+use crate::states::MenuState;
 use amigo_engine::prelude::*;
 
 /// Minimal loading state. In a real game this would show a loading bar
 /// while assets stream in. Here we just wait one tick to demonstrate
-/// the state transition.
+/// the scene transition.
+///
+/// Each state is its own [`Game`]; transitions are [`SceneAction`]s the engine
+/// applies to its scene stack.
 pub struct LoadingState {
     frames_waited: u32,
 }
@@ -11,14 +15,27 @@ impl LoadingState {
     pub fn new() -> Self {
         Self { frames_waited: 0 }
     }
+}
 
-    /// Returns true when loading is "done" (after 1 tick).
-    pub fn update(&mut self, _ctx: &mut GameContext) -> bool {
+impl Default for LoadingState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Game for LoadingState {
+    fn update(&mut self, _ctx: &mut GameContext) -> SceneAction {
         self.frames_waited += 1;
-        self.frames_waited > 1
+        if self.frames_waited > 1 {
+            // Replace, not Push: loading is finished and should not stay on the
+            // stack for a later Pop to return to.
+            SceneAction::Replace(Box::new(|| Box::new(MenuState::new()) as Box<dyn Game>))
+        } else {
+            SceneAction::Continue
+        }
     }
 
-    pub fn draw(&self, ctx: &mut DrawContext) {
+    fn draw(&self, ctx: &mut DrawContext) {
         // Dark background
         ctx.draw_rect(
             Rect::new(0.0, 0.0, ctx.virtual_width, ctx.virtual_height),

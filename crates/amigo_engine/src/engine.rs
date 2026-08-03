@@ -1,6 +1,7 @@
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
 use crate::splash::{self, SplashState};
+use crate::stack::GameStack;
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_debug::DebugOverlay;
@@ -190,7 +191,7 @@ impl Engine {
         let mut app = EngineApp {
             config: self.config,
             assets_path: self.assets_path,
-            game,
+            stack: GameStack::new(Box::new(game)),
             plugins: self.plugins,
             plugin_ctx: Some(self.plugin_ctx),
             state: None,
@@ -202,7 +203,7 @@ impl Engine {
     /// Run the engine in headless mode: simulation only, no window or renderer.
     /// Controlled entirely via the JSON-RPC API server.
     #[cfg(feature = "api")]
-    fn run_headless<G: Game>(self, mut game: G) {
+    fn run_headless<G: Game>(self, game: G) {
         use amigo_api::handler::new_shared_state;
         use amigo_api::server::ApiServer;
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -228,8 +229,9 @@ impl Engine {
             plugin.init(&mut game_ctx);
         }
 
-        // Initialize the game
-        game.init(&mut game_ctx);
+        // Initialize the game (there is no splash in headless mode)
+        let mut stack = GameStack::new(Box::new(game));
+        stack.enter_root(&mut game_ctx);
 
         // Start the API server
         let shared_state = new_shared_state();
@@ -309,10 +311,14 @@ impl Engine {
                     game_ctx.time.dt = tick_duration as f32;
                     game_ctx.time.elapsed += tick_duration;
 
-                    let action = game.update(&mut game_ctx);
+                    let Some(active) = stack.top_mut() else {
+                        quit = true;
+                        break;
+                    };
+                    let action = active.update(&mut game_ctx);
                     game_ctx.time.tick += 1;
 
-                    if let amigo_scene::SceneAction::Quit = action {
+                    if !stack.apply(action, &mut game_ctx) {
                         quit = true;
                         break;
                     }
@@ -431,16 +437,16 @@ struct ApiEngineState {
     _server: amigo_api::server::ApiServer,
 }
 
-struct EngineApp<G: Game> {
+struct EngineApp {
     config: EngineConfig,
     assets_path: String,
-    game: G,
+    stack: GameStack,
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: Option<PluginContext>,
     state: Option<EngineState>,
 }
 
-impl<G: Game> ApplicationHandler for EngineApp<G> {
+impl ApplicationHandler for EngineApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() {
             return;
@@ -516,7 +522,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             Some(SplashState::new())
         } else {
             // No splash — init game immediately
-            self.game.init(&mut game_ctx);
+            self.stack.enter_root(&mut game_ctx);
             None
         };
 
@@ -717,7 +723,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                     if finished {
                         state.splash = None;
-                        self.game.init(&mut state.game_ctx);
+                        self.stack.enter_root(&mut state.game_ctx);
                     }
                     return;
                 }
@@ -749,13 +755,20 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     let _tick_span = info_span!("tick").entered();
                     ticks_ran = true;
 
+                    let Some(active) = self.stack.top_mut() else {
+                        event_loop.exit();
+                        return;
+                    };
                     let action = {
                         let _update_span = info_span!("game_update").entered();
-                        self.game.update(&mut state.game_ctx)
+                        active.update(&mut state.game_ctx)
                     };
                     state.game_ctx.time.tick += 1;
 
-                    if let amigo_scene::SceneAction::Quit = action {
+                    // Push/Pop/Replace run the stack's lifecycle hooks; a
+                    // `false` return means Quit, or the last game popped
+                    // itself off and there is nothing left to run.
+                    if !self.stack.apply(action, &mut state.game_ctx) {
                         event_loop.exit();
                         return;
                     }
@@ -817,7 +830,9 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                         alpha,
                         white_tex,
                     );
-                    self.game.draw(&mut draw_ctx);
+                    if let Some(active) = self.stack.top() {
+                        active.draw(&mut draw_ctx);
+                    }
                 }
 
                 // Collect particle sprites
