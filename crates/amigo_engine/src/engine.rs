@@ -4,6 +4,7 @@ use crate::splash::{self, SplashState};
 use crate::stack::GameStack;
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
+use amigo_core::Color;
 use amigo_debug::DebugOverlay;
 use amigo_render::renderer::Renderer;
 use amigo_render::sprite_batcher::SpriteInstance;
@@ -948,6 +949,16 @@ impl ApplicationHandler for EngineApp {
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 state.renderer.camera.update(dt as f32);
 
+                // Post-processing: only re-upload when the game changed the
+                // stack, so an unchanged stack costs one comparison per frame
+                // instead of a Vec clone.
+                if state.renderer.post_process.effects() != state.game_ctx.post_effects.as_slice() {
+                    state
+                        .renderer
+                        .post_process
+                        .set_effects(state.game_ctx.post_effects.clone());
+                }
+
                 // Render
                 state.sprite_draw_list.clear();
                 {
@@ -978,6 +989,60 @@ impl ApplicationHandler for EngineApp {
                     .game_ctx
                     .particles
                     .collect_sprites(&mut state.sprite_draw_list, white_tex);
+
+                // Debug overlay text. `DebugOverlay::overlay_lines()` had no
+                // caller anywhere, so F1-F8 flipped flags that nothing read out:
+                // the overlay was invisible however many times you pressed them.
+                state.debug.update(
+                    dt,
+                    state.game_ctx.world.entity_count(),
+                    state.renderer.draw_call_count(),
+                );
+                let overlay_lines = state.debug.overlay_lines();
+                let show_entity_ids = state.debug.visible && state.debug.show_entity_ids;
+                if !overlay_lines.is_empty() || show_entity_ids {
+                    let view = state.renderer.camera.view_rect();
+                    let camera_pos = state.renderer.camera.effective_position();
+                    let vw = state.renderer.camera.virtual_width;
+                    let vh = state.renderer.camera.virtual_height;
+                    let mut draw_ctx = DrawContext::new(
+                        &mut state.sprite_draw_list,
+                        &state.game_ctx,
+                        camera_pos,
+                        vw,
+                        vh,
+                        state.game_ctx.time.alpha,
+                        white_tex,
+                    );
+
+                    // Everything draws in world space, so anchor to the visible
+                    // rect's top-left instead of (0,0) — otherwise the overlay
+                    // scrolls off with the camera.
+                    let (x, mut y) = (view.x + 4.0, view.y + 4.0);
+                    let line_height = 9.0;
+                    for (text, color) in &overlay_lines {
+                        draw_ctx.draw_text(text, x, y, *color);
+                        y += line_height;
+                    }
+
+                    // F5: entity ids at their positions. This is the one visual
+                    // debug layer the engine can draw from its own data — grid,
+                    // collision and paths all need tilemap/collision state that
+                    // lives in game code, so those flags stay for games to read.
+                    if show_entity_ids {
+                        for (id, pos) in state.game_ctx.world.positions.iter() {
+                            let (px, py) = (pos.0.x.to_num::<f32>(), pos.0.y.to_num::<f32>());
+                            if px < view.x
+                                || py < view.y
+                                || px > view.x + view.w
+                                || py > view.y + view.h
+                            {
+                                continue; // offscreen
+                            }
+                            draw_ctx.draw_text(&id.index().to_string(), px, py, Color::YELLOW);
+                        }
+                    }
+                }
 
                 // Push sprites to batcher
                 for sprite in &state.sprite_draw_list {
@@ -1011,12 +1076,7 @@ impl ApplicationHandler for EngineApp {
                     }
                 }
 
-                // Update debug overlay
-                state.debug.update(
-                    dt,
-                    state.game_ctx.world.entity_count(),
-                    state.renderer.draw_call_count(),
-                );
+                // (The debug overlay is updated before it is drawn, above.)
 
                 // Render frame
                 let _render_span = info_span!("gpu_render").entered();

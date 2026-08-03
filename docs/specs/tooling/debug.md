@@ -21,18 +21,26 @@ Provides in-game debug overlays, visual debug tools, profiling integration, and 
 | F2 | Grid |
 | F3 | Collision boxes |
 | F4 | Pathfinding |
-| F5 | Spawn/build zones |
-| F6 | Performance |
-| F7 | Entity list |
+| F5 | Entity IDs |
+| F6 | Tile IDs |
+| F7 | Audio debug |
 | F8 | Network stats |
+
+Bindings live in `crates/amigo_engine/src/engine.rs`. `DebugOverlay::show_spawn_zones`
+exists but has no key bound to it; earlier revisions of this table listed
+F5=spawn/build zones, F6=performance and F7=entity list, which never matched the
+code. Performance figures are part of the F1 overlay rather than a separate key.
 
 ## Behavior
 
-### In-Game Debug Overlay (Pixel UI)
+### In-Game Debug Overlay
 
-Toggle with `F1`. Shows: FPS, entity count, draw calls, memory.
+Toggle with `F1`. Shows: FPS, entity count, draw calls, frame count.
 
-The overlay renders using the engine's own Pixel UI system, ensuring it is pixel-perfect and consistent with the game's visual style.
+`DebugOverlay::overlay_lines()` produces the text; the engine draws it through
+`DrawContext::draw_text` with the built-in 7px pixel font, into the same sprite
+batcher as the rest of the frame. It is anchored to the camera's visible rect so
+it stays put while the world scrolls.
 
 ### Visual Debug (F-Keys)
 
@@ -93,7 +101,9 @@ Integrates with Tracy for performance profiling. In-game debug overlay logs FPS,
 
 ## Internal Design
 
-The debug overlay renders on Layer 7 (highest Z-order), above all game content and UI. It uses the same sprite batcher and Pixel UI system as the rest of the engine.
+The debug overlay is pushed after game and particle sprites, so it draws above
+them, and goes through the same sprite batcher as everything else. It does not
+use the Pixel UI widget layer.
 
 Debug visualizations are rendered as transparent overlays on top of the game world using dedicated draw calls that are excluded from the sprite batcher's normal sorting.
 

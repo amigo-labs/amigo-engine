@@ -1,4 +1,5 @@
 use crate::camera::Camera;
+use crate::post_process::PostProcessPipeline;
 use crate::sprite_batcher::SpriteBatcher;
 use crate::texture::{Texture, TextureId};
 use crate::vertex::Vertex;
@@ -62,6 +63,11 @@ pub struct Renderer {
     pub camera: Camera,
     pub clear_color: Color,
     pub art_style: ArtStyle,
+    /// Post-processing chain. Inert until effects are set; when it has any, the
+    /// sprite pass renders into its offscreen target and it composites to the
+    /// surface. Nothing consumed this pipeline before — it was constructible and
+    /// complete, but no render path ever ran it.
+    pub post_process: PostProcessPipeline,
     next_texture_id: u32,
     draw_call_count: u32,
 }
@@ -242,6 +248,13 @@ impl Renderer {
 
         let camera = Camera::new(virtual_width as f32, virtual_height as f32);
 
+        let post_process = PostProcessPipeline::new(
+            &device,
+            surface_config.width.max(1),
+            surface_config.height.max(1),
+            surface_config.format,
+        );
+
         Self {
             device,
             queue,
@@ -257,6 +270,7 @@ impl Renderer {
             camera,
             clear_color: Color::CORNFLOWER_BLUE,
             art_style: ArtStyle::PixelArt,
+            post_process,
             next_texture_id: 1,
             draw_call_count: 0,
         }
@@ -267,6 +281,9 @@ impl Renderer {
             self.surface_config.width = width;
             self.surface_config.height = height;
             self.surface.configure(&self.device, &self.surface_config);
+            // The post-process offscreen target has to track the surface, or the
+            // composite pass would sample a stale-sized texture after a resize.
+            self.post_process.resize(&self.device, width, height);
         }
     }
 
@@ -361,11 +378,21 @@ impl Renderer {
                 label: Some("render_encoder"),
             });
 
+        // With effects active the scene goes to an offscreen target first and is
+        // composited to the surface below; otherwise it draws straight to the
+        // surface and costs nothing extra.
+        let post_enabled = self.post_process.enabled();
+        let scene_view = if post_enabled {
+            self.post_process.render_target_view()
+        } else {
+            &view
+        };
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("sprite_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: scene_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -401,6 +428,11 @@ impl Renderer {
                     }
                 }
             }
+        }
+
+        if post_enabled {
+            self.post_process
+                .apply(&mut encoder, &self.device, &self.queue, &view);
         }
 
         Ok(FrameInProgress {

@@ -584,6 +584,11 @@ impl PostProcessPipeline {
     }
 
     /// Replace the entire effect stack.
+    /// The active effect stack, in application order.
+    pub fn effects(&self) -> &[PostEffect] {
+        &self.effects
+    }
+
     pub fn set_effects(&mut self, effects: Vec<PostEffect>) {
         self.effects = effects;
     }

@@ -8,6 +8,7 @@ use amigo_input::InputState;
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontId, FontManager};
 use amigo_render::particles::ParticleSystem;
+use amigo_render::post_process::PostEffect;
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
 use amigo_tilemap::{TileId, TileLayer};
@@ -29,6 +30,19 @@ pub struct GameContext {
     pub events: EventHub,
     /// Typed resource storage for game-specific singletons.
     pub resources: Resources,
+    /// Post-processing effects to run this frame, applied in order.
+    ///
+    /// The engine copies these into the renderer when they change, so a game can
+    /// set them from `update` without touching the renderer. An empty stack means
+    /// the scene draws straight to the surface with no extra pass.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext) {
+    /// ctx.post_effects = vec![PostEffect::Vignette { intensity: 0.4, smoothness: 0.5 }];
+    /// # }
+    /// ```
+    pub post_effects: Vec<PostEffect>,
     /// Loaded assets: sprites, and `load_ron` for game data.
     ///
     /// This used to live in the engine's private state, so game code could not
@@ -63,6 +77,7 @@ impl GameContext {
             events: EventHub::new(),
             resources: Resources::new(),
             assets: AssetManager::new(assets_path),
+            post_effects: Vec::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
             #[cfg(feature = "async_tasks")]

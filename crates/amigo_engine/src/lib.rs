@@ -197,6 +197,9 @@ pub mod prelude {
     pub use amigo_render::lighting::{AmbientLight, LightingState, PointLight};
     pub use amigo_render::particles::{EmitterConfig, EmitterShape, ParticleSystem};
     pub use amigo_render::post_process::{PostEffect, PostProcessPipeline};
+    // `draw_sprite_ex` hands out a `&mut SpriteInstance`, so games need the type
+    // in scope to write a closure against it.
+    pub use amigo_render::sprite_batcher::SpriteInstance;
     pub use amigo_render::{
         ArtStyle, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
     };
