@@ -7,6 +7,7 @@ use amigo_core::{Color, Rect, RenderVec2, TimeInfo, World};
 use amigo_input::InputState;
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontId, FontManager};
+use amigo_render::lighting::LightingState;
 use amigo_render::particles::ParticleSystem;
 use amigo_render::post_process::PostEffect;
 use amigo_render::sprite_batcher::SpriteInstance;
@@ -40,6 +41,15 @@ pub struct GameContext {
     /// Before this was wired, `UiContext` existed and produced draw commands that
     /// nothing consumed, so every widget drew nothing.
     pub ui: UiContext,
+    /// Ambient and point lights for this frame.
+    ///
+    /// The lighting composite runs between the sprite pass and post-processing.
+    /// It is skipped entirely while this is neutral (white ambient at full
+    /// intensity, no point lights), which is the default.
+    ///
+    /// Before this was wired, `LightingState` could collect lights and pack them
+    /// for the GPU, but there was no shader or pass to consume the bytes.
+    pub lighting: LightingState,
     /// Post-processing effects to run this frame, applied in order.
     ///
     /// The engine copies these into the renderer when they change, so a game can
@@ -88,6 +98,7 @@ impl GameContext {
             resources: Resources::new(),
             assets: AssetManager::new(assets_path),
             ui: UiContext::new(),
+            lighting: LightingState::new(),
             post_effects: Vec::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),

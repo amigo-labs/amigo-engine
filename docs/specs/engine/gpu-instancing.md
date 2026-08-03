@@ -1,11 +1,17 @@
 ---
-status: done
+status: partial
 crate: amigo_render
 depends_on: ["engine/rendering"]
-last_updated: 2026-03-18
+last_updated: 2026-08-03
 ---
 
 # GPU Instancing
+
+> **Status: types only, not in the render path.** `InstanceData` and
+> `InstancedBatch` exist in `crates/amigo_render/src/instancing.rs` and are
+> re-exported, but nothing constructs them: the renderer has one non-instanced
+> sprite pass. Batching a scene through them still has to be written, so nothing
+> in the engine or a game currently benefits from this module.
 
 ## Purpose
 

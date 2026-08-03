@@ -6,6 +6,7 @@ pub mod camera;
 pub mod font;
 pub mod instancing;
 pub mod lighting;
+pub mod lighting_pipeline;
 pub mod minimap;
 pub mod particles;
 pub mod post_process;
@@ -26,7 +27,9 @@ pub mod gpu_broad_phase;
 pub use atmosphere::{AtmosphereManager, AtmospherePreset};
 pub use camera::{Camera, CameraMode, Easing};
 pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};
+pub use instancing::{InstanceData, InstancedBatch};
 pub use lighting::{AmbientLight, LightingState, PointLight};
+pub use lighting_pipeline::LightingPipeline;
 pub use minimap::{
     IconRegistry, Minimap, MinimapConfig, MinimapPin, MinimapPing, MinimapPixel, MinimapStyle,
     PinType, SpriteIcon, TEAM_COLORS,

@@ -1,4 +1,6 @@
 use crate::camera::Camera;
+use crate::lighting::LightingState;
+use crate::lighting_pipeline::LightingPipeline;
 use crate::post_process::PostProcessPipeline;
 use crate::sprite_batcher::SpriteBatcher;
 use crate::texture::{Texture, TextureId};
@@ -76,6 +78,12 @@ pub struct Renderer {
     /// surface. Nothing consumed this pipeline before — it was constructible and
     /// complete, but no render path ever ran it.
     pub post_process: PostProcessPipeline,
+    /// Lighting composite. Runs between the sprite pass and post-processing, and
+    /// only when `lighting.is_active()` — neutral ambient with no lights would
+    /// cost a fullscreen pass to multiply by 1.0.
+    pub lighting_pipeline: LightingPipeline,
+    /// Ambient and point lights for this frame.
+    pub lighting: LightingState,
     next_texture_id: u32,
     draw_call_count: u32,
 }
@@ -280,6 +288,12 @@ impl Renderer {
             surface_config.height.max(1),
             surface_config.format,
         );
+        let lighting_pipeline = LightingPipeline::new(
+            &device,
+            surface_config.width.max(1),
+            surface_config.height.max(1),
+            surface_config.format,
+        );
 
         Self {
             device,
@@ -300,6 +314,8 @@ impl Renderer {
             clear_color: Color::CORNFLOWER_BLUE,
             art_style: ArtStyle::PixelArt,
             post_process,
+            lighting_pipeline,
+            lighting: LightingState::new(),
             next_texture_id: 1,
             draw_call_count: 0,
         }
@@ -313,6 +329,7 @@ impl Renderer {
             // The post-process offscreen target has to track the surface, or the
             // composite pass would sample a stale-sized texture after a resize.
             self.post_process.resize(&self.device, width, height);
+            self.lighting_pipeline.resize(&self.device, width, height);
         }
     }
 
@@ -408,11 +425,14 @@ impl Renderer {
                 label: Some("render_encoder"),
             });
 
-        // With effects active the scene goes to an offscreen target first and is
-        // composited to the surface below; otherwise it draws straight to the
-        // surface and costs nothing extra.
+        // Stage chain, per conventions A.6: sprites -> lighting -> post -> UI.
+        // Each inactive stage drops out of the chain entirely, so a game using
+        // neither draws straight to the surface exactly as before.
         let post_enabled = self.post_process.enabled();
-        let scene_view = if post_enabled {
+        let lighting_enabled = self.lighting.is_active();
+        let scene_view = if lighting_enabled {
+            self.lighting_pipeline.scene_view()
+        } else if post_enabled {
             self.post_process.render_target_view()
         } else {
             &view
@@ -458,6 +478,24 @@ impl Renderer {
                     }
                 }
             }
+        }
+
+        if lighting_enabled {
+            // Lighting writes into post's input when post is active, otherwise
+            // straight to the surface.
+            let target = if post_enabled {
+                self.post_process.render_target_view()
+            } else {
+                &view
+            };
+            self.lighting_pipeline.apply(
+                &mut encoder,
+                &self.device,
+                &self.queue,
+                &self.lighting,
+                self.camera.view_rect(),
+                target,
+            );
         }
 
         if post_enabled {

@@ -1,11 +1,16 @@
 ---
-status: done
+status: partial
 crate: amigo_render
 depends_on: ["engine/camera", "engine/fog-of-war"]
-last_updated: 2026-03-18
+last_updated: 2026-08-03
 ---
 
 # Minimap
+
+> **Status: data structure only, no rendering.** `crates/amigo_render/src/minimap.rs`
+> is complete as state and is used as data by `amigo_core::rts` and
+> `amigo_core::metroidvania`, but nothing turns it into draw commands. A game can
+> query it and draw the result itself through `ctx.ui`; the engine does not.
 
 ## Purpose
 

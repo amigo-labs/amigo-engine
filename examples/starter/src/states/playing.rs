@@ -106,6 +106,24 @@ impl Game for PlayingState {
         self.spawn_decorations(ctx);
         ctx.world.flush();
         self.collect_decorations(ctx);
+
+        // Dusk: a dim blue ambient with a warm light on the player. Neutral
+        // lighting skips the composite pass entirely, so this is also what makes
+        // the stage run at all.
+        ctx.lighting.set_ambient(Color::rgb(0.55, 0.6, 0.85), 0.55);
+        ctx.lighting.add_light(PointLight {
+            position: (64.0, 64.0),
+            color: Color::rgb(1.0, 0.85, 0.6),
+            intensity: 1.4,
+            radius: 90.0,
+            falloff: 1.6,
+        });
+    }
+
+    /// Drop this state's lights, so the menu is not left in gameplay's dusk.
+    fn on_pause(&mut self, ctx: &mut GameContext) {
+        ctx.lighting.clear_lights();
+        ctx.lighting.set_ambient(Color::WHITE, 1.0);
     }
 
     /// Despawn everything this state spawned, so returning to the menu does not
@@ -113,6 +131,8 @@ impl Game for PlayingState {
     fn on_exit(&mut self, ctx: &mut GameContext) {
         ctx.world.cleanup_state(STATE_SCOPE);
         ctx.world.flush();
+        ctx.lighting.clear_lights();
+        ctx.lighting.set_ambient(Color::WHITE, 1.0);
     }
 
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
@@ -124,6 +144,11 @@ impl Game for PlayingState {
             y: self.player.pos_y,
         };
         ctx.camera.set_target(target);
+
+        // Keep the torch on the player.
+        if let Some(light) = ctx.lighting.lights.first_mut() {
+            light.position = (self.player.pos_x + 8.0, self.player.pos_y + 8.0);
+        }
 
         // HUD through the Pixel UI. These widgets are drawn in a screen-space
         // pass after post-processing, so they neither scroll with the camera nor

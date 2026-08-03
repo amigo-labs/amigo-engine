@@ -9,7 +9,8 @@ use wgpu::util::DeviceExt;
 
 /// Fullscreen vertex shader. Generates a fullscreen triangle from vertex ID
 /// (3 vertices, no vertex buffer needed). The UVs cover [0,1] over the screen.
-const FULLSCREEN_VERTEX_SHADER: &str = r#"
+/// Public so tests can validate it with `naga` without a GPU.
+pub const FULLSCREEN_VERTEX_SHADER: &str = r#"
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -39,7 +40,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 ///   bit 3 (8)  - Color Grading
 ///   bit 4 (16) - CRT Filter
 ///   bit 5 (32) - Colorblind Filter
-const POST_PROCESS_FRAGMENT_SHADER: &str = r#"
+/// Public so tests can validate it with `naga` without a GPU.
+pub const POST_PROCESS_FRAGMENT_SHADER: &str = r#"
 struct PostUniforms {
     // Bloom
     bloom_threshold: f32,

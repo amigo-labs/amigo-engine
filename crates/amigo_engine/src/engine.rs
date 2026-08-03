@@ -956,6 +956,11 @@ impl ApplicationHandler for EngineApp {
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 state.renderer.camera.update(dt as f32);
 
+                // Lighting: hand this frame's lights to the renderer. Swapped
+                // rather than cloned — a game with many lights should not pay for
+                // a per-frame Vec copy.
+                std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
+
                 // Post-processing: only re-upload when the game changed the
                 // stack, so an unchanged stack costs one comparison per frame
                 // instead of a Vec clone.
@@ -1180,8 +1185,9 @@ impl ApplicationHandler for EngineApp {
                     s.snapshot.draw_calls = state.renderer.draw_call_count();
                 }
 
-                // Swap camera back to GameContext so game code can read updated state
+                // Swap camera and lights back so game code sees them next tick.
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
+                std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
 
                 // Publish pause/speed/camera for `engine.status` and `camera.get`.
                 // After the swap-back, so the camera reported is the updated one.
