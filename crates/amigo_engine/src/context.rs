@@ -12,6 +12,7 @@ use amigo_render::post_process::PostEffect;
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
 use amigo_tilemap::{TileId, TileLayer};
+use amigo_ui::UiContext;
 
 #[cfg(feature = "audio")]
 use amigo_audio::AudioManager;
@@ -30,6 +31,15 @@ pub struct GameContext {
     pub events: EventHub,
     /// Typed resource storage for game-specific singletons.
     pub resources: Resources,
+    /// Immediate-mode UI for this frame.
+    ///
+    /// Call `ui.begin()` at the start of `update`, build widgets, and the engine
+    /// renders the resulting draw commands in a screen-space pass after
+    /// post-processing. Widget input is read from `ctx.input`.
+    ///
+    /// Before this was wired, `UiContext` existed and produced draw commands that
+    /// nothing consumed, so every widget drew nothing.
+    pub ui: UiContext,
     /// Post-processing effects to run this frame, applied in order.
     ///
     /// The engine copies these into the renderer when they change, so a game can
@@ -77,6 +87,7 @@ impl GameContext {
             events: EventHub::new(),
             resources: Resources::new(),
             assets: AssetManager::new(assets_path),
+            ui: UiContext::new(),
             post_effects: Vec::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
@@ -260,6 +271,51 @@ impl<'a> DrawContext<'a> {
                     });
                 }
                 cx += glyph.advance;
+            }
+        }
+    }
+
+    /// Draw text with the default font, scaled about its top-left corner.
+    ///
+    /// Glyphs are rasterized at the font's own pixel size and the quads are
+    /// scaled, so large factors get blocky — which is what pixel-art UI wants.
+    /// `scale` of 1.0 is identical to [`DrawContext::draw_text`].
+    pub fn draw_text_scaled(&mut self, text: &str, x: f32, y: f32, color: Color, scale: f32) {
+        let Some(font) = self.game_ctx.fonts.default_font() else {
+            return;
+        };
+        let Some(tex_id) = font.texture_id else {
+            return;
+        };
+        let px = font.px;
+        let scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
+
+        let mut cx = x;
+        for ch in text.chars() {
+            if let Some(glyph) = font.glyph_cached(ch) {
+                if glyph.width > 0.0 && glyph.height > 0.0 {
+                    self.sprites.push(SpriteInstance {
+                        texture_id: tex_id,
+                        x: cx + glyph.offset_x * scale,
+                        y: y + (px - glyph.height - glyph.offset_y) * scale,
+                        width: glyph.width * scale,
+                        height: glyph.height * scale,
+                        uv_x: glyph.uv_x,
+                        uv_y: glyph.uv_y,
+                        uv_w: glyph.uv_w,
+                        uv_h: glyph.uv_h,
+                        tint: color,
+                        flip_x: false,
+                        flip_y: false,
+                        z_order: 100,
+                        shaders: Vec::new(),
+                    });
+                }
+                cx += glyph.advance * scale;
             }
         }
     }

@@ -125,6 +125,30 @@ impl Game for PlayingState {
         };
         ctx.camera.set_target(target);
 
+        // HUD through the Pixel UI. These widgets are drawn in a screen-space
+        // pass after post-processing, so they neither scroll with the camera nor
+        // get bent by post effects — unlike anything drawn from `draw`.
+        let vw = ctx.camera.virtual_width;
+        let vh = ctx.camera.virtual_height;
+        ctx.ui.panel(
+            Rect::new(0.0, vh - 14.0, vw, 14.0),
+            Color::BLACK.with_alpha(0.6),
+        );
+        ctx.ui.pixel_text(
+            "WASD:Move  ESC:Menu",
+            4.0,
+            vh - 11.0,
+            Color::rgb(0.7, 0.7, 0.6),
+        );
+        // Distance from spawn, as a stand-in for a real resource bar.
+        let travelled =
+            ((self.player.pos_x - 64.0).abs() + (self.player.pos_y - 64.0).abs()) / 400.0;
+        ctx.ui.progress_bar(
+            Rect::new(vw - 64.0, 4.0, 60.0, 6.0),
+            travelled,
+            Color::rgb(0.4, 0.8, 1.0),
+        );
+
         if ctx.input.pressed(KeyCode::Escape) {
             // Pop back to the menu that pushed us.
             return SceneAction::Pop;
@@ -185,16 +209,7 @@ impl Game for PlayingState {
             Color::rgb(0.9, 0.9, 0.8).with_alpha(0.7),
         );
 
-        // Hint bar at bottom
-        ctx.draw_rect(
-            Rect::new(0.0, vh - 12.0, vw, 12.0),
-            Color::BLACK.with_alpha(0.5),
-        );
-        ctx.draw_text(
-            "WASD:Move  ESC:Menu",
-            4.0,
-            vh - 10.0,
-            Color::rgb(0.7, 0.7, 0.6),
-        );
+        // The hint bar and the progress bar are UI now (see `update`), so they
+        // live in the screen-space pass instead of being drawn into the world.
     }
 }

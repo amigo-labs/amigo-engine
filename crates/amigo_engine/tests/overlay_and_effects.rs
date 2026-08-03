@@ -153,3 +153,164 @@ fn a_game_can_declare_post_effects_from_update() {
     assert_eq!(ctx.post_effects, same);
     assert_ne!(ctx.post_effects, Vec::<PostEffect>::new());
 }
+
+// ---------------------------------------------------------------------------
+// Pixel UI bridge
+// ---------------------------------------------------------------------------
+
+mod ui {
+    use super::*;
+    use amigo_engine::ui_bridge::emit_ui_sprites;
+    use amigo_render::texture::TextureId;
+
+    const WHITE: TextureId = TextureId(0);
+
+    fn emit(ctx: &GameContext) -> Vec<SpriteInstance> {
+        let mut out = Vec::new();
+        emit_ui_sprites(ctx.ui.draw_commands(), ctx, &mut out, WHITE);
+        out
+    }
+
+    #[test]
+    fn a_filled_rect_becomes_one_sprite() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.ui.begin();
+        ctx.ui
+            .filled_rect(Rect::new(10.0, 20.0, 30.0, 40.0), Color::RED);
+
+        let sprites = emit(&ctx);
+
+        assert_eq!(sprites.len(), 1);
+        assert_eq!((sprites[0].x, sprites[0].y), (10.0, 20.0));
+        assert_eq!((sprites[0].width, sprites[0].height), (30.0, 40.0));
+        assert_eq!(sprites[0].tint, Color::RED);
+    }
+
+    #[test]
+    fn an_outline_becomes_four_edges_that_do_not_overlap() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.ui.begin();
+        ctx.ui
+            .rect_outline(Rect::new(0.0, 0.0, 10.0, 10.0), Color::WHITE);
+
+        let sprites = emit(&ctx);
+
+        assert_eq!(sprites.len(), 4, "top, bottom and two sides");
+        // Total area must equal the outline's area exactly: 2 full-width bars
+        // plus two sides of the remaining height. Overlapping corners would
+        // double-draw and show through a translucent colour.
+        let area: f32 = sprites.iter().map(|s| s.width * s.height).sum();
+        assert_eq!(area, 10.0 + 10.0 + 8.0 + 8.0);
+    }
+
+    #[test]
+    fn a_progress_bar_draws_background_then_fill() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.ui.begin();
+        ctx.ui
+            .progress_bar(Rect::new(0.0, 0.0, 100.0, 10.0), 0.25, Color::GREEN);
+
+        let sprites = emit(&ctx);
+
+        assert_eq!(sprites.len(), 2, "background plus fill");
+        assert_eq!(sprites[0].width, 100.0, "background spans the full width");
+        assert_eq!(sprites[1].width, 25.0, "fill is 25% of the width");
+    }
+
+    #[test]
+    fn a_full_or_empty_progress_bar_stays_inside_its_rect() {
+        for (fraction, expected_sprites) in [(0.0, 1), (1.0, 2)] {
+            let mut ctx = GameContext::new(320.0, 180.0, "assets");
+            ctx.ui.begin();
+            ctx.ui
+                .progress_bar(Rect::new(0.0, 0.0, 50.0, 5.0), fraction, Color::GREEN);
+
+            let sprites = emit(&ctx);
+
+            assert_eq!(
+                sprites.len(),
+                expected_sprites,
+                "fraction {fraction} should not emit an empty fill"
+            );
+            assert!(sprites.iter().all(|s| s.width <= 50.0));
+        }
+    }
+
+    #[test]
+    fn an_out_of_range_fraction_is_clamped() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.ui.begin();
+        ctx.ui
+            .progress_bar(Rect::new(0.0, 0.0, 40.0, 4.0), 3.0, Color::GREEN);
+
+        let sprites = emit(&ctx);
+
+        assert!(
+            sprites.iter().all(|s| s.width <= 40.0),
+            "a fraction above 1.0 must not spill past the bar"
+        );
+    }
+
+    #[test]
+    fn ui_text_reaches_the_sprite_list() {
+        let ctx = ctx_with_font();
+        let mut ctx = ctx;
+        ctx.ui.begin();
+        ctx.ui.pixel_text("HP", 4.0, 4.0, Color::WHITE);
+
+        let sprites = emit(&ctx);
+
+        assert!(
+            !sprites.is_empty(),
+            "UiDrawCommand::Text had no consumer before the bridge existed"
+        );
+    }
+
+    #[test]
+    fn scaled_ui_text_is_larger_than_unscaled() {
+        let base = {
+            let mut ctx = ctx_with_font();
+            ctx.ui.begin();
+            ctx.ui.pixel_text("M", 0.0, 0.0, Color::WHITE);
+            emit(&ctx)
+        };
+        let scaled = {
+            let mut ctx = ctx_with_font();
+            ctx.ui.begin();
+            ctx.ui.pixel_text_scaled("M", 0.0, 0.0, Color::WHITE, 3.0);
+            emit(&ctx)
+        };
+
+        assert_eq!(base.len(), scaled.len(), "same glyph count");
+        assert!(
+            scaled[0].width > base[0].width,
+            "scale must reach the glyph quads: {} vs {}",
+            scaled[0].width,
+            base[0].width
+        );
+    }
+
+    #[test]
+    fn begin_clears_the_previous_frames_widgets() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.ui.begin();
+        ctx.ui
+            .filled_rect(Rect::new(0.0, 0.0, 1.0, 1.0), Color::RED);
+        assert_eq!(emit(&ctx).len(), 1);
+
+        ctx.ui.begin();
+
+        assert!(
+            emit(&ctx).is_empty(),
+            "without this the command list would grow every tick"
+        );
+    }
+
+    #[test]
+    fn no_widgets_means_no_sprites() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.ui.begin();
+
+        assert!(emit(&ctx).is_empty());
+    }
+}

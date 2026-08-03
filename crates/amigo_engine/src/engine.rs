@@ -483,6 +483,8 @@ struct EngineState {
     debug: DebugOverlay,
     hot_reloader: Option<HotReloader>,
     sprite_draw_list: Vec<SpriteInstance>,
+    /// Sprites for the screen-space UI pass, rebuilt each frame.
+    ui_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
     accumulator: f64,
     splash: Option<SplashState>,
@@ -644,6 +646,7 @@ impl ApplicationHandler for EngineApp {
             debug: DebugOverlay::new(),
             hot_reloader,
             sprite_draw_list: Vec::new(),
+            ui_draw_list: Vec::new(),
             last_frame: Instant::now(),
             accumulator: 0.0,
             splash,
@@ -895,6 +898,10 @@ impl ApplicationHandler for EngineApp {
                         event_loop.exit();
                         return;
                     };
+                    // Immediate-mode UI: clear last tick's commands so a game can
+                    // just build widgets in `update` without bookkeeping. Calling
+                    // `ui.begin()` again in game code is harmless.
+                    state.game_ctx.ui.begin();
                     let action = {
                         let _update_span = info_span!("game_update").entered();
                         active.update(&mut state.game_ctx)
@@ -1047,6 +1054,20 @@ impl ApplicationHandler for EngineApp {
                 // Push sprites to batcher
                 for sprite in &state.sprite_draw_list {
                     state.renderer.batcher.push(sprite.clone());
+                }
+
+                // UI goes into its own batch, drawn after post-processing in
+                // screen space (conventions A.6). `UiDrawCommand` had no consumer
+                // before this, so every widget a game built drew nothing.
+                state.ui_draw_list.clear();
+                crate::ui_bridge::emit_ui_sprites(
+                    state.game_ctx.ui.draw_commands(),
+                    &state.game_ctx,
+                    &mut state.ui_draw_list,
+                    white_tex,
+                );
+                for sprite in &state.ui_draw_list {
+                    state.renderer.ui_batcher.push(sprite.clone());
                 }
 
                 // Process screenshot requests from API (before render clears batcher)
