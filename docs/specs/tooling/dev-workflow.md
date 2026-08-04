@@ -45,10 +45,16 @@ amigo run --api --restore-snapshot .amigo_dev/snapshot.ron
 ### MCP Tools
 
 ```
-amigo_dev_rebuild()           # Trigger manual rebuild
-amigo_dev_status()            # Build status: idle, building, error
-amigo_dev_snapshot()          # Force snapshot without rebuild
+amigo_dev_save_snapshot()     # Snapshot engine + game state now
+amigo_dev_snapshot_status()   # Whether a snapshot exists, and its metadata
+amigo_dev_restore_snapshot()  # Apply the last snapshot to the running engine
 ```
+
+Earlier revisions listed `amigo_dev_rebuild`, `amigo_dev_status` and
+`amigo_dev_snapshot`. The first two are deliberately absent: build status lives in
+the `amigo dev` process, not in the engine, so the engine's API cannot answer them
+without an IPC channel between the two that does not exist. `amigo_dev_snapshot` is
+`amigo_dev_save_snapshot` under a different name.
 
 ## Behavior
 
@@ -94,37 +100,39 @@ Engine responds with OK
 
 ### Snapshot Contents
 
+As implemented in `crates/amigo_api/src/handler.rs`. The camera is flattened
+rather than nested, the game blob is `serde_json::Value` (so
+`Game::on_dev_snapshot` can return anything serde-serialisable without the game
+doing its own byte encoding), and there is no `AudioSnapshot`: restoring audio
+position across a process restart is not implemented.
+
 ```rust
-#[derive(Serialize, Deserialize)]
-struct DevSnapshot {
-    /// Current scene identifier
-    scene_id: String,
-    /// Game tick at time of snapshot
-    tick: u64,
-    /// Camera position and zoom
-    camera: CameraSnapshot,
-    /// Game clock (elapsed time)
-    elapsed_secs: f64,
-    /// Custom game state (opt-in via #[derive(Serialize)])
-    game_state: Option<Vec<u8>>,
-    /// Audio state (current music track, position)
-    audio_state: Option<AudioSnapshot>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct CameraSnapshot {
-    x: f32,
-    y: f32,
-    zoom: f32,
-}
-
-#[derive(Serialize, Deserialize)]
-struct AudioSnapshot {
-    music_track: Option<String>,
-    music_position_secs: f64,
-    music_volume: f32,
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DevSnapshot {
+    pub scene_id: String,
+    pub camera_pos: [f32; 2],
+    pub camera_zoom: f32,
+    pub tick: u64,
+    pub paused: bool,
+    pub speed_multiplier: f32,
+    /// Whatever `Game::on_dev_snapshot` returned.
+    pub game_state: Value,
+    pub timestamp: String,
 }
 ```
+
+`Game`'s hooks take and return `serde_json::Value`, not `Option<Vec<u8>>` and
+`&DevSnapshot`:
+
+```rust
+fn on_dev_snapshot(&self, ctx: &GameContext) -> serde_json::Value;
+fn on_dev_restore(&mut self, ctx: &mut GameContext, state: &serde_json::Value);
+```
+
+`scene_id` comes from `Game::scene_id()`, which defaults to the implementing type's
+name. Restoring a snapshot into a different scene warns rather than failing: scenes
+are pushed by opaque factory closures, so there is no registry to look a scene_id
+up in and reconstruct it.
 
 ### Watch Mode Details
 

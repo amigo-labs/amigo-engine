@@ -1,7 +1,13 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Amigo Engine CLI installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.sh | sh
-set -euo pipefail
+#
+# POSIX sh on purpose: the documented invocation pipes into `sh`, which is dash on
+# Debian and Ubuntu. `set -o pipefail` is a bashism that dash rejects outright, so
+# with a bash shebang this script died on line 4 before doing anything. Both
+# pipelines here are guarded explicitly instead (`if ! curl` and the -z check on
+# the resolved version), so pipefail bought nothing.
+set -eu
 
 REPO="amigo-labs/amigo-engine"
 INSTALL_DIR="${AMIGO_INSTALL_DIR:-$HOME/.amigo/bin}"
@@ -30,20 +36,34 @@ detect_arch() {
 OS="$(detect_os)"
 ARCH="$(detect_arch)"
 
+BUILD_FROM_SOURCE="cargo install --git https://github.com/${REPO} amigo_cli"
+
 if [ "$OS" = "unsupported" ] || [ "$ARCH" = "unsupported" ]; then
     echo "Error: Unsupported platform: $(uname -s) $(uname -m)"
-    echo "Supported: Linux (x86_64, aarch64), macOS (x86_64, aarch64)"
+    echo "Supported: Linux (x86_64), macOS (x86_64, aarch64)"
     exit 1
 fi
 
-# Map to Rust target triples.
+# Map to Rust target triples. Must stay in sync with the build matrix in
+# .github/workflows/release.yml -- a triple that CI does not build is a 404.
 case "${OS}-${ARCH}" in
     linux-x86_64)   TARGET="x86_64-unknown-linux-gnu" ;;
-    linux-aarch64)  TARGET="aarch64-unknown-linux-gnu" ;;
     macos-x86_64)   TARGET="x86_64-apple-darwin" ;;
     macos-aarch64)  TARGET="aarch64-apple-darwin" ;;
+    linux-aarch64)
+        echo "Error: No pre-built binary for ARM Linux."
+        echo "The engine's audio and input crates need arm64 system libraries"
+        echo "that the release builder does not cross-compile against."
+        echo ""
+        echo "Build from source instead:"
+        echo "  ${BUILD_FROM_SOURCE}"
+        exit 1
+        ;;
     *)
         echo "Error: No pre-built binary for ${OS}-${ARCH}"
+        echo ""
+        echo "Build from source instead:"
+        echo "  ${BUILD_FROM_SOURCE}"
         exit 1
         ;;
 esac
@@ -68,6 +88,11 @@ if [ "$VERSION" = "latest" ]; then
     fi
 fi
 
+# Now that a tag is resolved, the source-build fallback can pin to it. The
+# unpinned BUILD_FROM_SOURCE above is used before this point, where the platform
+# is unsupported and no version has been looked up yet.
+BUILD_FROM_SOURCE_PINNED="cargo install --git https://github.com/${REPO} --tag ${VERSION} amigo_cli"
+
 echo "Installing amigo ${VERSION} for ${OS}/${ARCH}..."
 
 # ---------------------------------------------------------------------------
@@ -86,11 +111,12 @@ if ! curl -fSL --progress-bar "$DOWNLOAD_URL" -o "${TMPDIR}/${ASSET_NAME}"; then
     echo "Error: Download failed."
     echo "  URL: ${DOWNLOAD_URL}"
     echo ""
-    echo "If this is a new installation, make sure a release exists at:"
+    echo "If this is a new installation, make sure a release with attached"
+    echo "binaries exists at:"
     echo "  https://github.com/${REPO}/releases"
     echo ""
-    echo "Alternatively, build from source:"
-    echo "  cargo install --path tools/amigo_cli"
+    echo "Alternatively, build ${VERSION} from source (needs the Rust toolchain):"
+    echo "  ${BUILD_FROM_SOURCE_PINNED}"
     exit 1
 fi
 

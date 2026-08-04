@@ -1,8 +1,10 @@
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
 use crate::splash::{self, SplashState};
+use crate::stack::GameStack;
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
+use amigo_core::Color;
 use amigo_debug::DebugOverlay;
 use amigo_render::renderer::Renderer;
 use amigo_render::sprite_batcher::SpriteInstance;
@@ -69,6 +71,7 @@ pub struct EngineBuilder {
     assets_path: String,
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: PluginContext,
+    restore_snapshot: Option<std::path::PathBuf>,
 }
 
 impl EngineBuilder {
@@ -78,6 +81,13 @@ impl EngineBuilder {
             assets_path: "assets".to_string(),
             plugins: Vec::new(),
             plugin_ctx: PluginContext::new(),
+            // `amigo run --restore-snapshot` and `amigo dev` pass the path this
+            // way: the engine never parses argv, since those arguments belong to
+            // the game binary.
+            restore_snapshot: std::env::var("AMIGO_RESTORE_SNAPSHOT")
+                .ok()
+                .filter(|p| !p.is_empty())
+                .map(std::path::PathBuf::from),
         }
     }
 
@@ -125,6 +135,16 @@ impl EngineBuilder {
         self
     }
 
+    /// Restore a dev snapshot on startup: skip the splash, jump to the recorded
+    /// tick and camera, and hand the game blob to `Game::on_dev_restore`.
+    ///
+    /// This is what `amigo run --restore-snapshot <path>` sets, and what makes
+    /// `amigo dev` preserve state across a recompile.
+    pub fn restore_snapshot(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.restore_snapshot = Some(path.into());
+        self
+    }
+
     /// Add a plugin to the engine.
     pub fn add_plugin(mut self, plugin: impl Plugin) -> Self {
         plugin.build(&mut self.plugin_ctx);
@@ -138,6 +158,7 @@ impl EngineBuilder {
             assets_path: self.assets_path,
             plugins: self.plugins,
             plugin_ctx: self.plugin_ctx,
+            restore_snapshot: self.restore_snapshot,
         }
     }
 }
@@ -154,6 +175,7 @@ pub struct Engine {
     assets_path: String,
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: PluginContext,
+    restore_snapshot: Option<std::path::PathBuf>,
 }
 
 impl Engine {
@@ -190,10 +212,11 @@ impl Engine {
         let mut app = EngineApp {
             config: self.config,
             assets_path: self.assets_path,
-            game,
+            stack: GameStack::new(Box::new(game)),
             plugins: self.plugins,
             plugin_ctx: Some(self.plugin_ctx),
             state: None,
+            restore_snapshot: self.restore_snapshot,
         };
 
         event_loop.run_app(&mut app).expect("Event loop failed");
@@ -202,7 +225,7 @@ impl Engine {
     /// Run the engine in headless mode: simulation only, no window or renderer.
     /// Controlled entirely via the JSON-RPC API server.
     #[cfg(feature = "api")]
-    fn run_headless<G: Game>(self, mut game: G) {
+    fn run_headless<G: Game>(self, game: G) {
         use amigo_api::handler::new_shared_state;
         use amigo_api::server::ApiServer;
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -228,8 +251,25 @@ impl Engine {
             plugin.init(&mut game_ctx);
         }
 
-        // Initialize the game
-        game.init(&mut game_ctx);
+        // Initialize the game (there is no splash in headless mode)
+        let mut stack = GameStack::new(Box::new(game));
+        stack.enter_root(&mut game_ctx);
+
+        let mut control = crate::api_bridge::ApiControl::default();
+        if let Some(path) = &self.restore_snapshot {
+            match crate::api_bridge::load_dev_snapshot(path) {
+                Ok(snapshot) => crate::api_bridge::apply_dev_snapshot(
+                    &snapshot,
+                    &mut game_ctx,
+                    &mut stack,
+                    &mut control,
+                ),
+                Err(e) => warn!(
+                    "Could not restore dev snapshot from {}: {e}. Starting fresh.",
+                    path.display()
+                ),
+            }
+        }
 
         // Start the API server
         let shared_state = new_shared_state();
@@ -257,50 +297,30 @@ impl Engine {
         }
 
         let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
-        let mut paused = false;
 
         // Main headless loop: process API commands, run ticks on demand
         while running.load(Ordering::Relaxed) {
-            // Drain commands from the API
-            let commands = {
-                let mut state = amigo_api::lock_or_recover(&shared_state);
-                state.drain_commands()
-            };
+            crate::api_bridge::drain_api_commands(
+                &shared_state,
+                &mut game_ctx,
+                &mut stack,
+                &mut control,
+            );
 
-            let mut ticks_requested: u64 = 0;
-            let mut quit = false;
-
-            for cmd in &commands {
-                match cmd.action.as_str() {
-                    "pause" => {
-                        paused = true;
-                        info!("Headless: paused");
-                    }
-                    "unpause" => {
-                        paused = false;
-                        info!("Headless: unpaused");
-                    }
-                    "tick" => {
-                        let count = cmd
-                            .params
-                            .get("count")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(1);
-                        ticks_requested += count;
-                    }
-                    "quit" => {
-                        quit = true;
-                    }
-                    _ => {
-                        // Other commands can be handled by game code via resources
-                    }
-                }
-            }
-
-            if quit {
+            if control.quit {
                 info!("Headless: quit command received");
                 break;
             }
+
+            // Headless only advances when asked to; `paused` additionally
+            // suppresses those requests so a client can freeze the simulation
+            // without racing its own pending ticks.
+            let ticks_requested = if control.paused {
+                0
+            } else {
+                std::mem::take(&mut control.pending_ticks)
+            };
+            let mut quit = false;
 
             // Execute requested ticks at max CPU speed
             if ticks_requested > 0 {
@@ -309,10 +329,14 @@ impl Engine {
                     game_ctx.time.dt = tick_duration as f32;
                     game_ctx.time.elapsed += tick_duration;
 
-                    let action = game.update(&mut game_ctx);
+                    let Some(active) = stack.top_mut() else {
+                        quit = true;
+                        break;
+                    };
+                    let action = active.update(&mut game_ctx);
                     game_ctx.time.tick += 1;
 
-                    if let amigo_scene::SceneAction::Quit = action {
+                    if !stack.apply(action, &mut game_ctx) {
                         quit = true;
                         break;
                     }
@@ -356,8 +380,8 @@ impl Engine {
                 let mut state = amigo_api::lock_or_recover(&shared_state);
                 state.snapshot.tick = game_ctx.time.tick;
                 state.snapshot.entity_count = game_ctx.world.entity_count();
-                state.snapshot.paused = paused;
             }
+            crate::api_bridge::publish_snapshot(&shared_state, &game_ctx, &control);
 
             // If no ticks were requested, sleep briefly to avoid busy-waiting
             if ticks_requested == 0 {
@@ -369,6 +393,45 @@ impl Engine {
     }
 }
 
+/// Load sprites into `assets`, preferring a packed archive over loose files.
+///
+/// `amigo pack` writes `<assets>/packed/game.pak`, but nothing ever read it back:
+/// `AssetManager::load_from_pak` had no caller, so a packed release build still
+/// needed the loose `assets/` tree beside the binary. Returns whether the pak was
+/// used, which also decides whether hot reload can run.
+pub fn load_assets(assets: &mut AssetManager, assets_path: &str) -> bool {
+    let pak_path = std::path::Path::new(assets_path)
+        .join("packed")
+        .join("game.pak");
+
+    if pak_path.exists() {
+        match assets.load_from_pak(&pak_path) {
+            Ok(_reader) => {
+                info!(
+                    "Loaded {} sprite(s) from {}",
+                    assets.sprite_names().len(),
+                    pak_path.display()
+                );
+                // The reader also holds audio, data, levels and fonts. Those
+                // paths are not wired to the pak yet, so it is dropped here
+                // rather than pretending otherwise.
+                return true;
+            }
+            Err(e) => {
+                warn!(
+                    "Could not read {}: {e}. Falling back to loose files.",
+                    pak_path.display()
+                );
+            }
+        }
+    }
+
+    if let Err(e) = assets.load_sprites() {
+        error!("Failed to load sprites: {}", e);
+    }
+    false
+}
+
 /// Upload any dirty font atlas textures to the GPU.
 /// Handle one hot-reload file change: PNGs under `<assets>/sprites/` are
 /// re-read, re-uploaded to the GPU, and re-registered under their sprite
@@ -377,14 +440,23 @@ impl Engine {
 /// visible warning instead of being silently ignored.
 fn reload_changed_asset(
     path: &std::path::Path,
-    assets: &mut AssetManager,
     renderer: &mut Renderer,
     game_ctx: &mut GameContext,
 ) {
-    if let Some(sprite) = assets.reload_sprite(path) {
-        let tex_id = renderer.load_texture(&sprite.image, &sprite.name);
-        game_ctx.register_sprite_texture(sprite.name.clone(), tex_id, sprite.width, sprite.height);
-        info!("Hot reload: sprite '{}' reloaded", sprite.name);
+    // Reload first, then register: the borrow of `game_ctx.assets` has to end
+    // before `register_sprite_texture` takes `&mut game_ctx`.
+    let reloaded = game_ctx.assets.reload_sprite(path).map(|sprite| {
+        (
+            sprite.name.clone(),
+            sprite.image.clone(),
+            sprite.width,
+            sprite.height,
+        )
+    });
+    if let Some((name, image, width, height)) = reloaded {
+        let tex_id = renderer.load_texture(&image, &name);
+        game_ctx.register_sprite_texture(name.clone(), tex_id, width, height);
+        info!("Hot reload: sprite '{}' reloaded", name);
     } else {
         warn!(
             "Hot reload: '{}' changed but is not a reloadable sprite (restart to apply)",
@@ -409,14 +481,17 @@ struct EngineState {
     renderer: Renderer,
     game_ctx: GameContext,
     debug: DebugOverlay,
-    assets: AssetManager,
     hot_reloader: Option<HotReloader>,
     sprite_draw_list: Vec<SpriteInstance>,
+    /// Sprites for the screen-space UI pass, rebuilt each frame.
+    ui_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
     accumulator: f64,
     splash: Option<SplashState>,
     #[cfg(feature = "api")]
     api_state: Option<ApiEngineState>,
+    #[cfg(feature = "api")]
+    api_control: crate::api_bridge::ApiControl,
     #[cfg(feature = "editor")]
     egui: amigo_render::egui_integration::EguiRenderer,
     #[cfg(feature = "editor")]
@@ -431,16 +506,19 @@ struct ApiEngineState {
     _server: amigo_api::server::ApiServer,
 }
 
-struct EngineApp<G: Game> {
+struct EngineApp {
     config: EngineConfig,
     assets_path: String,
-    game: G,
+    stack: GameStack,
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: Option<PluginContext>,
     state: Option<EngineState>,
+    /// Dev snapshot to restore once the contexts exist, from
+    /// `EngineBuilder::restore_snapshot`.
+    restore_snapshot: Option<std::path::PathBuf>,
 }
 
-impl<G: Game> ApplicationHandler for EngineApp<G> {
+impl ApplicationHandler for EngineApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() {
             return;
@@ -465,20 +543,21 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             self.config.render.virtual_height,
         ));
 
-        let mut assets = AssetManager::new(&self.assets_path);
-        if let Err(e) = assets.load_sprites() {
-            error!("Failed to load sprites: {}", e);
-        }
-
-        let hot_reloader = if self.config.dev.hot_reload {
-            HotReloader::new(std::path::PathBuf::from(&self.assets_path))
-        } else {
-            None
-        };
-
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
+
+        // Hot reload only makes sense against loose files: a pak is a build
+        // artifact, and watching it would reload the whole archive per write.
+        let hot_reloader = if self.config.dev.hot_reload && !packed {
+            HotReloader::new(std::path::PathBuf::from(&self.assets_path))
+        } else {
+            if packed && self.config.dev.hot_reload {
+                info!("Hot reload disabled: assets are served from game.pak");
+            }
+            None
+        };
 
         // Load built-in pixel font at 7px (native size)
         if let Err(e) = game_ctx.fonts.load_builtin(7.0) {
@@ -487,10 +566,16 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
         // Upload loaded sprites to GPU and register them so games can draw
         // them by name via DrawContext::draw_sprite.
-        for name in assets.sprite_names().to_vec() {
-            if let Some(sprite) = assets.sprite(&name) {
-                let tex_id = renderer.load_texture(&sprite.image, &name);
-                game_ctx.register_sprite_texture(name, tex_id, sprite.width, sprite.height);
+        for name in game_ctx.assets.sprite_names().to_vec() {
+            let uploaded = game_ctx.assets.sprite(&name).map(|sprite| {
+                (
+                    renderer.load_texture(&sprite.image, &name),
+                    sprite.width,
+                    sprite.height,
+                )
+            });
+            if let Some((tex_id, w, h)) = uploaded {
+                game_ctx.register_sprite_texture(name, tex_id, w, h);
             }
         }
 
@@ -512,11 +597,15 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
         // Upload font atlas textures to GPU
         upload_font_atlases(&mut game_ctx, &mut renderer);
 
-        let splash = if self.config.splash.enabled {
+        // A restored dev session skips the splash: `amigo dev` restarts the
+        // process on every source change, and sitting through the logo each time
+        // is the opposite of what the dev loop is for.
+        let skip_splash = self.restore_snapshot.is_some();
+        let splash = if self.config.splash.enabled && !skip_splash {
             Some(SplashState::new())
         } else {
             // No splash — init game immediately
-            self.game.init(&mut game_ctx);
+            self.stack.enter_root(&mut game_ctx);
             None
         };
 
@@ -555,14 +644,16 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
             renderer,
             game_ctx,
             debug: DebugOverlay::new(),
-            assets,
             hot_reloader,
             sprite_draw_list: Vec::new(),
+            ui_draw_list: Vec::new(),
             last_frame: Instant::now(),
             accumulator: 0.0,
             splash,
             #[cfg(feature = "api")]
             api_state,
+            #[cfg(feature = "api")]
+            api_control: crate::api_bridge::ApiControl::default(),
             #[cfg(feature = "editor")]
             egui,
             #[cfg(feature = "editor")]
@@ -583,6 +674,25 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 metadata: std::collections::HashMap::new(),
             },
         });
+
+        // Restore a dev snapshot, now that the game has been initialized (the
+        // splash was skipped above, so the root game's init already ran).
+        #[cfg(feature = "api")]
+        if let Some(path) = self.restore_snapshot.take() {
+            let Some(state) = &mut self.state else { return };
+            match crate::api_bridge::load_dev_snapshot(&path) {
+                Ok(snapshot) => crate::api_bridge::apply_dev_snapshot(
+                    &snapshot,
+                    &mut state.game_ctx,
+                    &mut self.stack,
+                    &mut state.api_control,
+                ),
+                Err(e) => warn!(
+                    "Could not restore dev snapshot from {}: {e}. Starting fresh.",
+                    path.display()
+                ),
+            }
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -717,7 +827,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
 
                     if finished {
                         state.splash = None;
-                        self.game.init(&mut state.game_ctx);
+                        self.stack.enter_root(&mut state.game_ctx);
                     }
                     return;
                 }
@@ -725,7 +835,46 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // ── Normal game loop ─────────────────────────────────
                 let _frame_span = info_span!("frame").entered();
 
-                state.accumulator += dt;
+                // Execute queued API commands. This has to happen while the
+                // camera still lives on the GameContext (it is swapped into the
+                // renderer further down) and before the tick, so a client's
+                // pause/step lands on this frame rather than the next.
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    crate::api_bridge::drain_api_commands(
+                        &api.shared_state,
+                        &mut state.game_ctx,
+                        &mut self.stack,
+                        &mut state.api_control,
+                    );
+                    if state.api_control.quit {
+                        info!("Quit requested over the API");
+                        event_loop.exit();
+                        return;
+                    }
+                }
+
+                // Simulation time control from the API: `set_speed` scales the
+                // accumulator, `pause` stops feeding it, and `tick`/`debug.step`
+                // request ticks that run even while paused.
+                #[cfg(feature = "api")]
+                let (sim_paused, sim_speed, forced_ticks) = {
+                    let c = &mut state.api_control;
+                    (c.paused, c.speed, std::mem::take(&mut c.pending_ticks))
+                };
+                #[cfg(not(feature = "api"))]
+                let (sim_paused, sim_speed, forced_ticks) = (false, 1.0f32, 0u64);
+
+                let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
+                let budget = crate::timestep::tick_budget(
+                    dt,
+                    state.accumulator,
+                    tick_duration,
+                    sim_speed,
+                    sim_paused,
+                    forced_ticks,
+                );
+                state.accumulator = budget.accumulator;
 
                 state.game_ctx.time.dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
@@ -733,29 +882,35 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // Hot reload: re-upload changed sprite textures.
                 if let Some(reloader) = &state.hot_reloader {
                     for path in reloader.poll_changes() {
-                        reload_changed_asset(
-                            &path,
-                            &mut state.assets,
-                            &mut state.renderer,
-                            &mut state.game_ctx,
-                        );
+                        reload_changed_asset(&path, &mut state.renderer, &mut state.game_ctx);
                     }
                 }
 
-                // Fixed timestep simulation
-                let tick_duration = amigo_core::TimeInfo::TICK_DURATION;
-                let mut ticks_ran = false;
-                while state.accumulator >= tick_duration {
+                // Fixed timestep simulation. `tick_budget` above already decided
+                // how many ticks this frame gets, from elapsed time plus any API
+                // step request.
+                let ticks_ran = budget.total() > 0;
+                for _ in 0..budget.total() {
                     let _tick_span = info_span!("tick").entered();
-                    ticks_ran = true;
 
+                    let Some(active) = self.stack.top_mut() else {
+                        event_loop.exit();
+                        return;
+                    };
+                    // Immediate-mode UI: clear last tick's commands so a game can
+                    // just build widgets in `update` without bookkeeping. Calling
+                    // `ui.begin()` again in game code is harmless.
+                    state.game_ctx.ui.begin();
                     let action = {
                         let _update_span = info_span!("game_update").entered();
-                        self.game.update(&mut state.game_ctx)
+                        active.update(&mut state.game_ctx)
                     };
                     state.game_ctx.time.tick += 1;
 
-                    if let amigo_scene::SceneAction::Quit = action {
+                    // Push/Pop/Replace run the stack's lifecycle hooks; a
+                    // `false` return means Quit, or the last game popped
+                    // itself off and there is nothing left to run.
+                    if !self.stack.apply(action, &mut state.game_ctx) {
                         event_loop.exit();
                         return;
                     }
@@ -774,7 +929,6 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                         state.game_ctx.events.flush();
                     }
                     state.game_ctx.particles.update(tick_duration as f32);
-                    state.accumulator -= tick_duration;
                 }
 
                 // Clear edge-detected input (just pressed/released) only
@@ -788,7 +942,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     state.game_ctx.input.begin_frame();
                 }
 
-                state.game_ctx.time.alpha = (state.accumulator / tick_duration) as f32;
+                state.game_ctx.time.alpha = budget.alpha;
 
                 // Re-upload dirty font atlases
                 upload_font_atlases(&mut state.game_ctx, &mut state.renderer);
@@ -797,6 +951,21 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                 // Swap it into the renderer for update + render, then swap back.
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 state.renderer.camera.update(dt as f32);
+
+                // Lighting: hand this frame's lights to the renderer. Swapped
+                // rather than cloned — a game with many lights should not pay for
+                // a per-frame Vec copy.
+                std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
+
+                // Post-processing: only re-upload when the game changed the
+                // stack, so an unchanged stack costs one comparison per frame
+                // instead of a Vec clone.
+                if state.renderer.post_process.effects() != state.game_ctx.post_effects.as_slice() {
+                    state
+                        .renderer
+                        .post_process
+                        .set_effects(state.game_ctx.post_effects.clone());
+                }
 
                 // Render
                 state.sprite_draw_list.clear();
@@ -817,7 +986,9 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                         alpha,
                         white_tex,
                     );
-                    self.game.draw(&mut draw_ctx);
+                    if let Some(active) = self.stack.top() {
+                        active.draw(&mut draw_ctx);
+                    }
                 }
 
                 // Collect particle sprites
@@ -827,9 +998,77 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     .particles
                     .collect_sprites(&mut state.sprite_draw_list, white_tex);
 
+                // Debug overlay text. `DebugOverlay::overlay_lines()` had no
+                // caller anywhere, so F1-F8 flipped flags that nothing read out:
+                // the overlay was invisible however many times you pressed them.
+                state.debug.update(
+                    dt,
+                    state.game_ctx.world.entity_count(),
+                    state.renderer.draw_call_count(),
+                );
+                let overlay_lines = state.debug.overlay_lines();
+                let show_entity_ids = state.debug.visible && state.debug.show_entity_ids;
+                if !overlay_lines.is_empty() || show_entity_ids {
+                    let view = state.renderer.camera.view_rect();
+                    let camera_pos = state.renderer.camera.effective_position();
+                    let vw = state.renderer.camera.virtual_width;
+                    let vh = state.renderer.camera.virtual_height;
+                    let mut draw_ctx = DrawContext::new(
+                        &mut state.sprite_draw_list,
+                        &state.game_ctx,
+                        camera_pos,
+                        vw,
+                        vh,
+                        state.game_ctx.time.alpha,
+                        white_tex,
+                    );
+
+                    // Everything draws in world space, so anchor to the visible
+                    // rect's top-left instead of (0,0) — otherwise the overlay
+                    // scrolls off with the camera.
+                    let (x, mut y) = (view.x + 4.0, view.y + 4.0);
+                    let line_height = 9.0;
+                    for (text, color) in &overlay_lines {
+                        draw_ctx.draw_text(text, x, y, *color);
+                        y += line_height;
+                    }
+
+                    // F5: entity ids at their positions. This is the one visual
+                    // debug layer the engine can draw from its own data — grid,
+                    // collision and paths all need tilemap/collision state that
+                    // lives in game code, so those flags stay for games to read.
+                    if show_entity_ids {
+                        for (id, pos) in state.game_ctx.world.positions.iter() {
+                            let (px, py) = (pos.0.x.to_num::<f32>(), pos.0.y.to_num::<f32>());
+                            if px < view.x
+                                || py < view.y
+                                || px > view.x + view.w
+                                || py > view.y + view.h
+                            {
+                                continue; // offscreen
+                            }
+                            draw_ctx.draw_text(&id.index().to_string(), px, py, Color::YELLOW);
+                        }
+                    }
+                }
+
                 // Push sprites to batcher
                 for sprite in &state.sprite_draw_list {
                     state.renderer.batcher.push(sprite.clone());
+                }
+
+                // UI goes into its own batch, drawn after post-processing in
+                // screen space (conventions A.6). `UiDrawCommand` had no consumer
+                // before this, so every widget a game built drew nothing.
+                state.ui_draw_list.clear();
+                crate::ui_bridge::emit_ui_sprites(
+                    state.game_ctx.ui.draw_commands(),
+                    &state.game_ctx,
+                    &mut state.ui_draw_list,
+                    white_tex,
+                );
+                for sprite in &state.ui_draw_list {
+                    state.renderer.ui_batcher.push(sprite.clone());
                 }
 
                 // Process screenshot requests from API (before render clears batcher)
@@ -859,12 +1098,7 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     }
                 }
 
-                // Update debug overlay
-                state.debug.update(
-                    dt,
-                    state.game_ctx.world.entity_count(),
-                    state.renderer.draw_call_count(),
-                );
+                // (The debug overlay is updated before it is drawn, above.)
 
                 // Render frame
                 let _render_span = info_span!("gpu_render").entered();
@@ -947,8 +1181,20 @@ impl<G: Game> ApplicationHandler for EngineApp<G> {
                     s.snapshot.draw_calls = state.renderer.draw_call_count();
                 }
 
-                // Swap camera back to GameContext so game code can read updated state
+                // Swap camera and lights back so game code sees them next tick.
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
+                std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
+
+                // Publish pause/speed/camera for `engine.status` and `camera.get`.
+                // After the swap-back, so the camera reported is the updated one.
+                #[cfg(feature = "api")]
+                if let Some(ref api) = state.api_state {
+                    crate::api_bridge::publish_snapshot(
+                        &api.shared_state,
+                        &state.game_ctx,
+                        &state.api_control,
+                    );
+                }
 
                 // Mark frame end for Tracy profiler
                 amigo_debug::frame_mark();

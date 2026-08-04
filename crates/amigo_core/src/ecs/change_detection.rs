@@ -1,4 +1,4 @@
-//! Incremental, tick-based change detection for the ECS (ADR-0003).
+//! Incremental, tick-based change detection for the ECS (ADR-0002).
 //!
 //! Instead of per-frame BitSets that are cleared every tick, each component
 //! slot stores a `Tick` (monotonic `u32` counter) recording when it was last

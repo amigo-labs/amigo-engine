@@ -5,6 +5,8 @@
 | Command | Description |
 |---------|-------------|
 | `amigo new <name> [--template T]` | Create a new game project |
+| `amigo new <name> --path <ENGINE_DIR>` | ... against a local engine checkout |
+| `amigo new <name> --rev <REV> \| --tag <TAG>` | ... pinned to an engine git rev or tag |
 | `amigo scene <name> [--preset P]` | Add a scene to the project |
 | `amigo info` | Show project information |
 | `amigo list-templates` | Available project templates |
@@ -14,8 +16,10 @@
 
 | Command | Description |
 |---------|-------------|
-| `amigo build` | Check compilation |
+| `amigo build` | Validate the manifest and run `cargo check` |
 | `amigo run [--headless] [--api]` | Run the game |
+| `amigo run --port <PORT>` | ... with the API server on a specific port |
+| `amigo run --restore-snapshot <PATH>` | ... resuming a dev snapshot |
 | `amigo dev [--port PORT]` | Watch mode: rebuild + restart on changes |
 | `amigo editor` | Open the level editor |
 | `amigo pack` | Pack assets into atlas |
@@ -73,6 +77,10 @@ See [Audio Pipeline](Audio-Pipeline) for details.
 | `amigo connect` | Write `.mcp.json` in current directory |
 | `amigo connect --global` | Write to `~/.claude/claude_code_config.json` |
 | `amigo connect --port PORT` | Use custom engine API port |
+| `amigo mcp-server [--host H] [--port P]` | Run the MCP stdio bridge to the engine API |
+
+`amigo mcp-server` is what the `.mcp.json` written by `amigo connect` launches; it
+was previously undocumented here despite being referenced by the agent-api spec.
 
 ## Utilities
 

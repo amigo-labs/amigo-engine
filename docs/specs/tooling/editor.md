@@ -9,18 +9,25 @@ last_updated: 2026-03-16
 
 ## Purpose
 
-In-engine level editor using the engine's own Pixel UI system. Enabled via `--features editor` feature flag. Zero overhead in release builds. Toggle with `Tab` between Play and Edit mode.
+In-engine level editor, enabled via the `editor` feature flag, with zero overhead
+in release builds since neither the editor nor egui is linked without it.
 
 ## Public API
 
-```rust
-// Plugin registration
-Engine::build()
-    #[cfg(feature = "editor")]
-    .add_plugin(EditorPlugin)
-    .build()
-    .run(MyGame);
+The editor is wired by the `editor` feature rather than registered as a plugin:
+the engine constructs `amigo_editor::EditorState` and an egui renderer in
+`EngineApp::resumed` when the flag is on. There is no `EditorPlugin` type, and no
+`Tab` toggle is bound — earlier revisions of this spec described both.
+
+```sh
+# Run a game with the editor overlay
+amigo editor
+# equivalently
+cargo run --features amigo_engine/editor
 ```
+
+`amigo_editor::EditorRuntime` (`crates/amigo_editor/src/plugin.rs`) is the entry
+point for driving the editor from game code or over the API.
 
 ### Editor UI Widgets (Tier 2, behind `editor` feature flag)
 
@@ -146,7 +153,20 @@ The editor uses the `.amigo` format (RON-based) for level serialization, which i
 ## Non-Goals
 
 - Standalone editor application (always in-engine)
-- Desktop UI toolkit (uses own Pixel UI, not egui or similar)
+- Standalone desktop application — the editor is always an overlay on a running
+  game
+- 3D editing
+
+Superseded non-goal: this said "Desktop UI toolkit (uses own Pixel UI, not egui or
+similar)". The editor **is** an egui application —
+`crates/amigo_editor/src/{egui_ui,editor_v2,inspector}.rs` and
+`crates/amigo_render/src/egui_integration.rs`, and the engine's `editor` feature
+enables `amigo_editor/egui`. egui was chosen for the editor because editor widgets
+(dockable panels, scrolling property grids, text fields, colour pickers) are a
+solved problem there and rebuilding them in the pixel UI would trade months of work
+for aesthetic consistency in a tool that never ships to players. The game-facing UI
+is still the engine's own pixel UI; the split is deliberate, and `index.md`'s
+"No egui" key decision is superseded to say so.
 - 3D editing capabilities
 - Runtime editor in release builds
 

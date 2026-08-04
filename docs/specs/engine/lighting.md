@@ -1,11 +1,17 @@
 ---
 status: done
-crate: amigo_tilemap
+crate: amigo_render, amigo_tilemap
 depends_on: ["engine/core", "engine/dynamic-tilemap", "engine/chunks"]
-last_updated: 2026-03-18
+last_updated: 2026-08-03
 ---
 
 # 2D Lighting
+
+> Ambient and point lights live in `crates/amigo_render/src/lighting.rs`; the
+> composite pass that applies them is `lighting_pipeline.rs`, running between the
+> sprite pass and post-processing. Games set `ctx.lighting`; the pass is skipped
+> while that is neutral. Tile-based light propagation is separate and lives in
+> `crates/amigo_tilemap/src/lighting.rs`.
 
 ## Purpose
 

@@ -18,6 +18,22 @@ irm https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.ps1 |
 
 The binary is installed to `~/.amigo/bin/amigo`. On Windows the installer adds it to your user PATH automatically; on Linux/macOS the install script prints the matching `export PATH=...` line for your shell — add it to your shell profile.
 
+### Pre-built Platforms
+
+| Platform | Architecture   | Pre-built binary |
+| -------- | -------------- | ---------------- |
+| Linux    | x86_64         | yes              |
+| Linux    | aarch64 / ARM  | no — build from source |
+| macOS    | x86_64 (Intel) | yes              |
+| macOS    | aarch64 (Apple Silicon) | yes     |
+| Windows  | x86_64         | yes              |
+| Windows  | ARM64          | no — build from source |
+
+ARM Linux and ARM64 Windows are absent because the engine's audio (`alsa`) and
+input (`udev`) crates resolve their system libraries through `pkg-config`, which
+the release builder cannot cross-compile against without an ARM sysroot. On
+those platforms use **Build from Source** below.
+
 ### Environment Variables
 
 | Variable            | Default        | Description                                |
@@ -33,9 +49,14 @@ Requires the [Rust toolchain](https://rustup.rs/):
 # Install Rust (if not already present)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Build and install the CLI
-cargo install --path tools/amigo_cli
+# Install the CLI straight from the repository
+cargo install --git https://github.com/amigo-labs/amigo-engine amigo_cli
 ```
+
+From a local checkout, `cargo install --path tools/amigo_cli` works too. On
+Linux install the [system dependencies](#system-dependencies-linux) first —
+without them the build fails inside `libudev-sys`, which looks like a Rust
+error but is a missing `libudev.pc`.
 
 ## Requirements for Game Development
 

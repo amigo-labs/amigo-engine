@@ -18,11 +18,19 @@ pub struct PointLight {
 }
 
 /// GPU-friendly representation of a single point light, suitable for uniform buffers.
+///
+/// Field order matters and is not arbitrary: WGSL aligns `vec4<f32>` to 16 bytes,
+/// so a `vec2` before the colour would put the colour at offset 16 on the GPU
+/// while Rust has it at offset 8 — every light would read garbage. Colour first
+/// makes both layouts agree: colour 0..16, position 16..24, radius 24, intensity
+/// 28, falloff 32, padding to a 48-byte stride.
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 #[repr(C)]
 pub struct LightData {
-    pub position: [f32; 2],
     pub color: [f32; 4],
+    /// Light position. `build_uniform_data` leaves this in whatever space the
+    /// caller set; the render pass converts to view-local coordinates.
+    pub position: [f32; 2],
     pub radius: f32,
     pub intensity: f32,
     pub falloff: f32,
@@ -34,8 +42,11 @@ pub struct LightData {
 #[repr(C)]
 pub struct LightingHeader {
     pub ambient_color: [f32; 4],
+    /// Size of the visible world rect, so the shader can map a fragment's UV to
+    /// the same coordinate space the light positions are in.
+    pub view_size: [f32; 2],
     pub light_count: u32,
-    pub _padding: [u32; 3],
+    pub _padding: u32,
 }
 
 /// Collects ambient and point light data and produces a byte buffer for the GPU.
@@ -89,6 +100,22 @@ impl LightingState {
         self.lights.len()
     }
 
+    /// Whether this state would change the image.
+    ///
+    /// White ambient at full intensity with no point lights multiplies the scene
+    /// by 1.0, so running the lighting pass for it would cost a fullscreen pass
+    /// to achieve nothing.
+    pub fn is_active(&self) -> bool {
+        if !self.lights.is_empty() {
+            return true;
+        }
+        let a = &self.ambient;
+        let neutral = (a.color.r * a.intensity - 1.0).abs() < f32::EPSILON
+            && (a.color.g * a.intensity - 1.0).abs() < f32::EPSILON
+            && (a.color.b * a.intensity - 1.0).abs() < f32::EPSILON;
+        !neutral
+    }
+
     /// Serializes the ambient light and up to `max_lights` point lights into a
     /// byte buffer suitable for uploading to a GPU uniform/storage buffer.
     ///
@@ -105,8 +132,9 @@ impl LightingState {
                 self.ambient.color.b * self.ambient.intensity,
                 self.ambient.color.a,
             ],
+            view_size: [1.0, 1.0],
             light_count: count as u32,
-            _padding: [0; 3],
+            _padding: 0,
         };
 
         let header_bytes = bytemuck::bytes_of(&header);
@@ -118,8 +146,8 @@ impl LightingState {
 
         for light in self.lights.iter().take(count) {
             let data = LightData {
-                position: [light.position.0, light.position.1],
                 color: [light.color.r, light.color.g, light.color.b, light.color.a],
+                position: [light.position.0, light.position.1],
                 radius: light.radius,
                 intensity: light.intensity,
                 falloff: light.falloff,

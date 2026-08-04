@@ -18,9 +18,11 @@
 | `amigo_tidal_parser` | TidalCycles mini-notation parser and pattern evaluator |
 | `amigo_audio_pipeline` | Audio-to-TidalCycles conversion pipeline (Demucs, Basic Pitch) |
 | `amigo_editor` | Built-in level editor with Tidal Playground |
-| `amigo_api` | Public API surface for plugins |
-| `amigo_engine` | Top-level crate that re-exports everything |
-| `amigo_steering` | Pathfinding, steering behaviors, flow fields |
+| `amigo_api` | JSON-RPC / WebSocket server for AI and tooling control (headless mode, screenshots, editor commands) |
+| `amigo_engine` | Top-level crate: `Game` trait, scene stack, fixed-timestep loop, contexts, prelude |
+| `amigo_reflect` | Runtime reflection (`Reflect`, `TypeRegistry`) used by the editor inspector |
+| `amigo_reflect_derive` | `#[derive(Reflect)]` |
+| `amigo_steering` | Steering behaviours (seek, flee, separation, arrival). Pathfinding and flow fields live in `amigo_core::pathfinding` |
 
 ## Tool Crates
 
@@ -30,6 +32,7 @@
 | `amigo_mcp` | Claude MCP integration |
 | `amigo_artgen` | Art generation via ComfyUI |
 | `amigo_audiogen` | Audio generation via ACE-Step |
+| `amigo_comfyui` | Shared ComfyUI client and child-process lifecycle for both generators |
 
 ## Game-Type Presets
 

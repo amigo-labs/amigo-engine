@@ -47,17 +47,34 @@ Available via `amigo new <name> --template <TEMPLATE>`:
 | Template | Default |
 |----------|---------|
 | platformer | (default if `--template` omitted) |
-| topdown-rpg | -- |
-| turn-based-rpg | -- |
+| top-down-adventure | -- |
+| action-rpg | -- |
 | roguelike | -- |
+| turn-based-rpg | -- |
 | tower-defense | -- |
-| bullet-hell | -- |
-| puzzle | -- |
+| puzzle-game | -- |
 | farming-sim | -- |
-| fighting | -- |
+| bullet-hell | -- |
+| arcade-shooter | -- |
 | visual-novel | -- |
+| sandbox-survival | -- |
+| god-sim | -- |
+| social-deduction | -- |
+| deckbuilder | -- |
+| auto-battler | -- |
+| idle-game | -- |
+| custom | -- |
 
-Each template sets a resolution, primary scene preset, and scene list appropriate for that game type. Templates are defined in `amigo_core::game_preset::project_templates()`.
+Eighteen templates, defined in `amigo_core::game_preset::project_templates()`;
+`amigo list-templates` prints the live list. Earlier revisions of this table named
+`topdown-rpg`, `puzzle` and `fighting`, none of which are template names.
+
+Each template sets a resolution, a primary scene preset, and a scene list. The
+generated source tree comes from `tools/amigo_cli/src/templates.rs`, which picks a
+gameplay skeleton per preset *family* — free-roam, platformer, grid-step, shooter,
+turn loop, idle, tower defense, or UI-only — rather than one per template. Twenty-one
+presets do not need twenty-one movement models; where a preset has a deeper
+`amigo_core` module behind it, the generated code names it in a comment.
 
 ### Scene Presets
 
@@ -179,7 +196,7 @@ struct ItchConfig {
    - `assets/sprites/`, `assets/levels/`, `assets/audio/`, `assets/tilesets/`, `assets/fonts/`
    - `src/`, `src/scenes/`
 4. Writes `amigo.toml` from the project manifest.
-5. Writes a starter level file at `assets/levels/level_01.amigo` with a 40x23 tile grid and a `player_spawn` entity at (160, 90).
+5. Writes a starter level file at `assets/levels/level_01.amigo` with a 40x23 tile grid and a `player_spawn` entity at (160, 90). The generated skeleton builds its own small map in code rather than loading this file; it is there as the starting point for the editor.
 6. Writes `Cargo.toml` with:
    - `amigo_engine` git dependency with `audio` feature
    - Dev profile: `opt-level = 1`, dependencies at `opt-level = 2`
@@ -196,13 +213,14 @@ struct ItchConfig {
 
 ### `amigo build`
 
-Validates the project without compiling:
+Validates the project *and* type-checks it:
 
 1. Checks that at least one scene is defined.
 2. Verifies the `start_scene` exists in the scene list.
 3. Checks for expected asset directories (`assets/sprites`, `assets/levels`, `assets/audio`).
 4. Counts `.amigo` level files in `assets/levels/`.
 5. Reports scene count and virtual resolution.
+6. Runs `cargo check`.
 
 ### `amigo run`
 
@@ -337,7 +355,7 @@ Uses `amigo_render::atlas::AtlasBuilder` with a maximum atlas size of 4096x4096 
 - Whether to support WASM/web export as a publish target.
 - Whether to add an `update` command for upgrading the engine version in existing projects.
 - Whether `amigo pack` should support incremental packing (only changed assets).
-- Whether `amigo build` should run `cargo check` in addition to manifest validation.
+- ~~Whether `amigo build` should run `cargo check` in addition to manifest validation.~~ **Resolved**: it does.
 
 ## Referenzen
 

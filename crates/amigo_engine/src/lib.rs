@@ -71,10 +71,15 @@
 //! The [`engine`], [`config`], and [`context`] modules live in this crate
 //! and provide the main loop, configuration, and per-frame contexts.
 
+#[cfg(feature = "api")]
+pub mod api_bridge;
 pub mod config;
 pub mod context;
 pub mod engine;
 pub mod splash;
+pub mod stack;
+pub mod timestep;
+pub mod ui_bridge;
 
 // Re-export all sub-crates for convenient access
 pub use amigo_animation;
@@ -94,17 +99,64 @@ pub use amigo_audio;
 pub use config::EngineConfig;
 pub use context::{DrawContext, GameContext};
 pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
+pub use stack::GameStack;
+
+/// The scene action a [`Game`] returns from `update`.
+///
+/// [`amigo_scene::SceneAction`] is generic over the trait object it constructs;
+/// games construct other games, so this is the specialization they use.
+/// `SceneAction::Continue` and `SceneAction::Quit` work through the alias, and
+/// `Push`/`Replace` take any `Fn() -> Box<dyn Game> + Send`:
+///
+/// ```rust,no_run
+/// use amigo_engine::prelude::*;
+/// # struct PauseMenu;
+/// # impl Game for PauseMenu {
+/// #     fn update(&mut self, _: &mut GameContext) -> SceneAction { SceneAction::Continue }
+/// #     fn draw(&self, _: &mut DrawContext) {}
+/// # }
+/// # fn on_pause_pressed() -> SceneAction {
+/// SceneAction::Push(Box::new(|| Box::new(PauseMenu) as Box<dyn Game>))
+/// # }
+/// ```
+pub type SceneAction = amigo_scene::SceneAction<dyn Game>;
 
 /// The Game trait that all games implement.
+///
+/// A `Game` is also a scene: returning [`amigo_scene::SceneAction::Push`],
+/// `Pop` or `Replace` from [`Game::update`] drives the engine's [`GameStack`],
+/// so menus, pause overlays and level transitions are separate `Game` impls
+/// rather than one hand-rolled state enum.
 pub trait Game: 'static {
-    /// Called once when the game starts.
+    /// Called once per instance, the first time it becomes the active game.
     fn init(&mut self, _ctx: &mut GameContext) {}
 
+    /// Called when this game becomes the active top of the stack, right after
+    /// [`Game::init`].
+    fn on_enter(&mut self, _ctx: &mut GameContext) {}
+
+    /// Called when another game is pushed on top of this one.
+    fn on_pause(&mut self, _ctx: &mut GameContext) {}
+
+    /// Called when the game above this one is popped.
+    fn on_resume(&mut self, _ctx: &mut GameContext) {}
+
+    /// Called when this game is popped or replaced, before it is dropped.
+    fn on_exit(&mut self, _ctx: &mut GameContext) {}
+
     /// Update game logic (called at fixed timestep, 60 ticks/sec).
-    fn update(&mut self, ctx: &mut GameContext) -> amigo_scene::SceneAction;
+    fn update(&mut self, ctx: &mut GameContext) -> SceneAction;
 
     /// Render the game (called every frame, with interpolation alpha).
     fn draw(&self, ctx: &mut DrawContext);
+
+    /// A name for this scene, used in dev snapshots and debug output.
+    ///
+    /// Defaults to the implementing type's name. Override it if you want a name
+    /// that survives refactoring, since dev snapshots record it.
+    fn scene_id(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 
     /// Called by `amigo dev` before recompile to capture game-specific state.
     /// Return a JSON blob that will be passed to `on_dev_restore` after restart.
@@ -121,7 +173,8 @@ pub trait Game: 'static {
 /// Prelude with commonly used types.
 pub mod prelude {
     pub use crate::{
-        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, Plugin, PluginContext,
+        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack, Plugin,
+        PluginContext, SceneAction,
     };
     pub use amigo_animation::*;
     pub use amigo_assets::{AssetError, AssetHandle, AssetState, HandleAllocator};
@@ -146,10 +199,13 @@ pub mod prelude {
     pub use amigo_render::lighting::{AmbientLight, LightingState, PointLight};
     pub use amigo_render::particles::{EmitterConfig, EmitterShape, ParticleSystem};
     pub use amigo_render::post_process::{PostEffect, PostProcessPipeline};
+    // `draw_sprite_ex` hands out a `&mut SpriteInstance`, so games need the type
+    // in scope to write a closure against it.
+    pub use amigo_render::sprite_batcher::SpriteInstance;
     pub use amigo_render::{
         ArtStyle, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
     };
-    pub use amigo_scene::SceneAction;
+    pub use amigo_scene::SceneFactory;
     pub use amigo_tilemap::*;
     pub use amigo_ui::{UiContext, UiDrawCommand};
     pub use winit::event::MouseButton;
@@ -157,4 +213,7 @@ pub mod prelude {
 
     #[cfg(feature = "audio")]
     pub use amigo_audio::AudioManager;
+
+    #[cfg(feature = "api")]
+    pub use crate::api_bridge::ApiInbox;
 }

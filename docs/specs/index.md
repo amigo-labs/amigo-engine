@@ -1,8 +1,9 @@
 ---
 status: draft
-last_updated: 2026-03-18
+last_updated: 2026-08-03
 ---
-<!-- Status: 76 done · 2 spec · 0 draft --> 95b366c (Add specs for dev workflow and art/audio generation defaults)
+<!-- Counts below are derived from each spec's own `status:` frontmatter, which is
+     the source of truth. When this table and a spec file disagree, the file wins. -->
 
 # Amigo Engine -- Spec Overview
 
@@ -48,14 +49,13 @@ The engine supports all classic 2D pixel art genres: Tower Defense, Platformer/J
 | `fixed` (I16F16)      | Fixed-point arithmetic for deterministic simulation |
 | `thiserror`           | Ergonomic custom error types                        |
 | `tracing`             | Structured logging + Tracy integration              |
-| `serde` + `serde_ron` | Serialization (state, commands, assets, saves)      |
+| `serde` + `ron`       | Serialization (state, commands, assets, saves)      |
 | `notify`              | Filesystem watcher for hot reload                   |
 | `bumpalo`             | Arena allocator for per-frame temp data             |
 | `tracy-client`        | Performance profiling                               |
 | `asefile`             | Aseprite file parsing                               |
 | `fontdue`             | TTF font rasterization for Pixel UI                 |
 | `image`               | Image loading/processing                            |
-| `laminar`             | UDP networking with reliability layer               |
 | `rustc-hash`          | Fast deterministic hashing (FxHashMap)              |
 
 ### Target Platforms (Phase 1)
@@ -116,11 +116,17 @@ amigo-engine/                   # github.com/amigo-labs/amigo-engine
 |   +-- amigo_api/               # AI/IPC interface (feature flag: "api")
 |   +-- amigo_debug/             # Debug overlay, Tracy integration
 |   +-- amigo_engine/            # Ties everything together, public API
+|   +-- amigo_scene/             # Scene stack (the engine drives Game as a scene)
+|   +-- amigo_reflect/           # Runtime reflection + derive macro (amigo_reflect_derive)
+|   +-- amigo_tidal_parser/      # TidalCycles mini-notation
+|   +-- amigo_audio_pipeline/    # Audio-to-Tidal conversion
+|   +-- amigo_steering/          # Steering behaviours
 +-- tools/
 |   +-- amigo_cli/               # CLI: pack, build, release, new project
 |   +-- amigo_mcp/               # MCP server wrapping amigo_api for Claude Code
 |   +-- amigo_artgen/            # MCP server for AI art generation (ComfyUI)
 |   +-- amigo_audiogen/          # MCP server for AI audio generation (ACE-Step, AudioGen)
+|   +-- amigo_comfyui/           # Shared ComfyUI client + process lifecycle
 +-- assets/
     +-- ...
 ```
@@ -228,7 +234,13 @@ graph TD
 
 ## Status Table
 
-Status values: **draft** = outline, not fully worked out yet · **spec** = fully specified, not yet implemented · **done** = implemented in code
+Status values: **draft** = outline, not fully worked out yet · **spec** = fully
+specified, not yet implemented · **partial** = the types exist but are not wired
+into anything that runs them · **done** = implemented *and* reachable from a game.
+
+`partial` exists because `done` was previously used for "the types exist", which
+is not the same thing: several subsystems were marked done while nothing in the
+engine ever called them.
 
 | Spec                                                      | Status | Crate             | Depends on                    |
 | --------------------------------------------------------- | ------ | ----------------- | ----------------------------- |
@@ -239,16 +251,16 @@ Status values: **draft** = outline, not fully worked out yet · **spec** = fully
 | [engine/tilemap](engine/tilemap.md)                       | done   | amigo_tilemap     | engine/core                   |
 | [engine/pathfinding](engine/pathfinding.md)               | done   | amigo_core        | engine/tilemap                |
 | [engine/animation](engine/animation.md)                   | done   | amigo_animation   | engine/core                   |
-| [engine/camera](engine/camera.md)                         | done   | amigo_camera      | engine/core                   |
+| [engine/camera](engine/camera.md)                         | done   | amigo_render      | engine/core                   |
 | [engine/ui](engine/ui.md)                                 | done   | amigo_ui          | engine/core, engine/rendering |
 | [engine/networking](engine/networking.md)                 | done   | amigo_net         | engine/core                   |
 | [engine/memory-performance](engine/memory-performance.md) | done   | amigo_core        | --                            |
-| [engine/plugin-system](engine/plugin-system.md)           | done   | amigo_plugin      | engine/core                   |
+| [engine/plugin-system](engine/plugin-system.md)           | partial | amigo_engine     | engine/core                   |
 | [engine/dynamic-tilemap](engine/dynamic-tilemap.md)       | done   | amigo_tilemap     | engine/core, engine/tilemap   |
 | [engine/chunks](engine/chunks.md)                         | done   | amigo_tilemap     | engine/core, engine/tilemap   |
-| [engine/lighting](engine/lighting.md)                     | done   | amigo_tilemap     | engine/core, engine/tilemap, engine/rendering |
+| [engine/lighting](engine/lighting.md)                     | done   | amigo_render, amigo_tilemap | engine/core, engine/tilemap, engine/rendering |
 | [engine/liquids](engine/liquids.md)                       | done   | amigo_tilemap     | engine/core, engine/dynamic-tilemap, engine/chunks |
-| [engine/particles](engine/particles.md)                   | done   | amigo_core        | engine/core, engine/rendering |
+| [engine/particles](engine/particles.md)                   | done   | amigo_render      | engine/core, engine/rendering |
 | [engine/inventory](engine/inventory.md)                   | done   | amigo_core        | engine/core                   |
 | [engine/crafting](engine/crafting.md)                     | done   | amigo_core        | engine/core, engine/inventory |
 | [engine/agents](engine/agents.md)                         | done   | amigo_core        | engine/core, engine/pathfinding |
@@ -267,8 +279,8 @@ Status values: **draft** = outline, not fully worked out yet · **spec** = fully
 | [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | done  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
 | [config/data-formats](config/data-formats.md)             | done   | --                | --                            |
-| [config/art-audio-defaults](config/art-audio-defaults.md) | spec   | amigo_artgen, amigo_audiogen | config/amigo-toml, ai-pipelines/artgen, ai-pipelines/audiogen |
-| [tooling/dev-workflow](tooling/dev-workflow.md)            | spec   | amigo_cli, amigo_api, amigo_engine | engine/core, tooling/cli, ai-pipelines/agent-api |
+| [config/art-audio-defaults](config/art-audio-defaults.md) | done   | amigo_artgen, amigo_audiogen | config/amigo-toml, ai-pipelines/artgen, ai-pipelines/audiogen |
+| [tooling/dev-workflow](tooling/dev-workflow.md)            | done   | amigo_cli, amigo_api, amigo_engine | engine/core, tooling/cli, ai-pipelines/agent-api |
 | [engine/fog-of-war](engine/fog-of-war.md)                 | done   | amigo_core        | engine/core                   |
 | [engine/steering](engine/steering.md)                     | done   | amigo_steering    | engine/core                   |
 | [engine/spline](engine/spline.md)                         | done   | amigo_core        | engine/core                   |
@@ -277,15 +289,15 @@ Status values: **draft** = outline, not fully worked out yet · **spec** = fully
 | [engine/bullet-patterns](engine/bullet-patterns.md)       | done   | amigo_core        | engine/core, engine/particles |
 | [engine/procedural](engine/procedural.md)                 | done   | amigo_core        | engine/core, engine/dynamic-tilemap |
 | [engine/dialogue](engine/dialogue.md)                     | done   | amigo_core        | engine/core, engine/ui        |
-| [engine/localization](engine/localization.md)             | done   | amigo_assets      | assets/format                 |
+| [engine/localization](engine/localization.md)             | done   | amigo_core        | assets/format                 |
 | [engine/timeline](engine/timeline.md)                     | done   | amigo_core        | engine/tween, engine/camera   |
 | [engine/behavior-tree](engine/behavior-tree.md)           | done   | amigo_core        | engine/core, engine/agents    |
-| [engine/minimap](engine/minimap.md)                       | done   | amigo_render      | engine/camera, engine/fog-of-war |
+| [engine/minimap](engine/minimap.md)                       | partial | amigo_render     | engine/camera, engine/fog-of-war |
 | [engine/state-rewind](engine/state-rewind.md)             | done   | amigo_core        | engine/save-load, engine/simulation |
 | [engine/achievements](engine/achievements.md)             | done   | amigo_core        | engine/save-load, engine/ui   |
 | [engine/physics](engine/physics.md)                       | done   | amigo_core        | engine/core                   |
 | [engine/font-rendering](engine/font-rendering.md)         | done   | amigo_render      | engine/assets, engine/ui      |
-| [engine/gpu-instancing](engine/gpu-instancing.md)         | done   | amigo_render      | engine/rendering              |
+| [engine/gpu-instancing](engine/gpu-instancing.md)         | partial | amigo_render     | engine/rendering              |
 | [engine/modding](engine/modding.md)                       | done   | amigo_assets      | assets/format                 |
 | [engine/accessibility](engine/accessibility.md)           | done   | amigo_render      | engine/rendering, engine/input, engine/ui |
 | [gametypes/platformer](gametypes/platformer.md)           | done   | amigo_core        | engine/physics, engine/tween  |
@@ -364,7 +376,8 @@ amigo CLI (pack, build, release), typed asset handles (build script), release op
 | ECS Storage           | Hybrid: hot components static, rest dynamic         | Best of both: zero-overhead core, flexible extensions                                         |
 | Arithmetic            | Fixed-Point Q16.16                                      | Deterministic simulation for multiplayer + replays                                            |
 | Audio                 | kira                                                    | Tweening, spatial, streaming, crossfade                                                       |
-| UI                    | Own Pixel UI, two tiers                                 | Game HUD (always) + Editor widgets (feature flag). No egui                                    |
+| UI (game)             | Own Pixel UI, two tiers                                 | Game HUD (always) + widget tier (feature flag), rendered through the sprite batcher            |
+| UI (editor)           | egui                                                    | Superseded "no egui": the editor is an egui app. See below                                     |
 | Text Rendering        | TTF rasterizer (fontdue)                                | Unicode gratis, no font tools needed, pixel-fonts available                                   |
 | Sprites               | Aseprite native                                         | No manual export, tag-based animations                                                        |
 | Sprite Sorting        | Z-index only, Y-sort is game logic                      | Engine sorts by Z, game sets Z based on Y if needed                                           |
@@ -379,7 +392,7 @@ amigo CLI (pack, build, release), typed asset handles (build script), release op
 | Audio Pipeline        | amigo_audiogen MCP + ACE-Step + AudioGen                | Local GPU, dual mode (quick split / clean per-stem), royalty-free                             |
 | Adaptive Music        | Vertical layering + horizontal re-sequencing + stingers | Core melody conditioning, bar-synced transitions, per-world hybrid genres                     |
 | Sound Style           | Hybrid (per world different genre + SFX style)          | Caribbean=shanty, LotR=orchestral, Dune=ambient, Matrix=synthwave, GoT=medieval, ST=80s synth |
-| Transport             | Lockstep over UDP (laminar)                             | Simple, deterministic, co-op TD                                                               |
+| Transport             | Hand-rolled UDP + JSON, `Transport` trait               | `laminar` was the original plan; the implementation is its own reliability layer (ADR-0003)     |
 | Plugin System         | Feature Flags + Plugin Trait (World + Resources split)  | Compile-time modularity + clean lifecycle, no borrow issues                                   |
 | Commands <-> ECS      | Commands = high-level API, ECS = implementation         | Commands travel over network/replay, ECS is internal                                          |
 | Event System          | Double-buffer, events live one tick                     | Deterministic, no stale events, no memory growth                                              |

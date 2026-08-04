@@ -98,6 +98,8 @@ tracing-tracy = { version = "0.11", default-features = false }
 tracy-client = { version = "0.18", default-features = false }
 rayon = "1"
 crossbeam-channel = "0.5"
+# wgpu 24's shader front-end. Used in tests to validate WGSL without a GPU.
+naga = { version = "24", features = ["wgsl-in"] }
 
 [profile.dev]
 opt-level = 1

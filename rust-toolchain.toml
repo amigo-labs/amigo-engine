@@ -1,0 +1,5 @@
+[toolchain]
+# CI uses dtolnay/rust-toolchain@stable; pin local builds to the same channel so
+# `cargo clippy -- -D warnings` reproduces what CI enforces.
+channel = "stable"
+components = ["rustfmt", "clippy"]

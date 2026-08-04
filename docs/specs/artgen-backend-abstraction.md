@@ -1,8 +1,8 @@
 ---
-status: in-progress
-crate: amigo_artgen
+status: done
+crate: amigo_artgen, amigo_comfyui
 depends_on: ["tools/artgen"]
-last_updated: 2026-03-21
+last_updated: 2026-08-03
 type: adr
 ---
 
@@ -107,23 +107,43 @@ Braucht `UNETLoader`, `DualCLIPLoader` (T5 + CLIP-L), `VAELoader`.
 
 ## Akzeptanzkriterien
 
-- [ ] AC1: `ImageBackend` enum mit drei Varianten, `Default` = QwenImage
-- [ ] AC2: `ArtMode` enum mit Pixel/Raster, `Default` = Pixel
-- [ ] AC3: `ArtRequest` hat `backend` und `art_mode` Felder
-- [ ] AC4: `build_workflow()` dispatcht basierend auf Backend zu korrektem Builder
-- [ ] AC5: Qwen-Image Workflow enthält `UNETLoader` + `DualCLIPLoader` Nodes
-- [ ] AC6: FLUX.2 Klein Workflow enthält `FluxGuidance` Node + `sgm_uniform` Scheduler
-- [ ] AC7: Custom Workflow lädt JSON und ersetzt Platzhalter
-- [ ] AC8: `ComfyUiLifecycle::ensure_running()` startet ComfyUI wenn Port nicht erreichbar
-- [ ] AC9: `ComfyUiLifecycle::shutdown()` terminiert Child-Process sauber
-- [ ] AC10: Postprocessing-Weiche: Pixel-Modus → volle Pipeline, Raster-Modus → nur Dimensionen/Transparenz
-- [ ] AC11: `amigo_artgen_list_backends` MCP-Tool gibt alle drei Backends zurück
-- [ ] AC12: Config liest `backend` und `art_mode` aus `amigo.toml [art]`
-- [ ] AC13: Bestehende Tests bleiben grün (Rückwärtskompatibilität)
-- [ ] AC14: Neue Tests für jeden Workflow-Builder
-- [ ] AC15: `REQUIREMENTS_ARTGEN` enthält Abhängigkeiten für Modell-Downloads
-- [ ] AC16: `cargo test -p amigo_artgen` — alle Tests grün
-- [ ] AC17: `cargo build -p amigo_artgen` — kompiliert ohne Warnungen
+Alle erfüllt; nachgeprüft gegen den Code am 2026-08-03. Die Fundstellen stehen
+hinter den jeweiligen Punkten.
+
+- [x] AC1: `ImageBackend` enum mit drei Varianten, `Default` = QwenImage  
+      *(`ImageBackend` — tools/amigo_artgen/src/lib.rs:32)*
+- [x] AC2: `ArtMode` enum mit Pixel/Raster, `Default` = Pixel  
+      *(`ArtMode` — lib.rs:74)*
+- [x] AC3: `ArtRequest` hat `backend` und `art_mode` Felder  
+      *(`ArtRequest.backend` / `.art_mode` — lib.rs:117,119)*
+- [x] AC4: `build_workflow()` dispatcht basierend auf Backend zu korrektem Builder  
+      *(`build_workflow()` — workflows.rs)*
+- [x] AC5: Qwen-Image Workflow enthält `UNETLoader` + `DualCLIPLoader` Nodes  
+      *(`UNETLoader` + `DualCLIPLoader` — workflows.rs)*
+- [x] AC6: FLUX.2 Klein Workflow enthält `FluxGuidance` Node + `sgm_uniform` Scheduler  
+      *(`FluxGuidance` + `sgm_uniform` — workflows.rs)*
+- [x] AC7: Custom Workflow lädt JSON und ersetzt Platzhalter  
+      *(Custom-Workflow-Platzhalter — workflows.rs)*
+- [x] AC8: `ComfyUiLifecycle::ensure_running()` startet ComfyUI wenn Port nicht erreichbar  
+      *(`ComfyUiLifecycle::ensure_running` — tools/amigo_comfyui/src/lib.rs:463)*
+- [x] AC9: `ComfyUiLifecycle::shutdown()` terminiert Child-Process sauber  
+      *(`ComfyUiLifecycle::shutdown` — amigo_comfyui/src/lib.rs:498, plus `Drop`)*
+- [x] AC10: Postprocessing-Weiche: Pixel-Modus → volle Pipeline, Raster-Modus → nur Dimensionen/Transparenz  
+      *(`apply_pipeline_for_mode` — postprocess.rs:371)*
+- [x] AC11: `amigo_artgen_list_backends` MCP-Tool gibt alle drei Backends zurück  
+      *(`amigo_artgen_list_backends` — tools.rs:265)*
+- [x] AC12: Config liest `backend` und `art_mode` aus `amigo.toml [art]`  
+      *(`backend`/`art_mode` aus `[art]` — config.rs:19-26)*
+- [x] AC13: Bestehende Tests bleiben grün (Rückwärtskompatibilität)  
+      *(`cargo test -p amigo_artgen` grün)*
+- [x] AC14: Neue Tests für jeden Workflow-Builder  
+      *(Workflow-Builder-Tests — workflows.rs)*
+- [x] AC15: `REQUIREMENTS_ARTGEN` enthält Abhängigkeiten für Modell-Downloads  
+      *(Modell-Downloads — amigo_cli/src/setup.rs:701-704)*
+- [x] AC16: `cargo test -p amigo_artgen` — alle Tests grün  
+      *(`cargo test -p amigo_artgen` grün)*
+- [x] AC17: `cargo build -p amigo_artgen` — kompiliert ohne Warnungen  
+      *(`cargo build -p amigo_artgen` ohne Warnungen)*
 
 ## Technische Notizen
 

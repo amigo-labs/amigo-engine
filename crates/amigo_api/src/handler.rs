@@ -207,6 +207,10 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         // ── Engine control ──
         "engine.pause" | "pause" => queue_cmd(req, state, "pause", Value::Null),
         "engine.unpause" | "unpause" => queue_cmd(req, state, "unpause", Value::Null),
+        // docs/specs/tooling/dev-workflow.md has `amigo dev` send "engine.quit"
+        // to shut the engine down cleanly between rebuilds, but no such method
+        // existed — the only way out was killing the process.
+        "engine.quit" | "quit" => queue_cmd(req, state, "quit", Value::Null),
         "engine.step" | "debug.step" => handle_step(req, state),
         "engine.command" => handle_command(req, state),
         "set_speed" => handle_set_speed(req, state),

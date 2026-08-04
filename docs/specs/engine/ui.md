@@ -7,6 +7,17 @@ last_updated: 2026-03-16
 
 # UI System (Pixel-Native, Two Tiers)
 
+> **How it reaches the screen.** `UiContext` emits `UiDrawCommand`s; the engine
+> translates them into sprites (`crates/amigo_engine/src/ui_bridge.rs`) and draws
+> them in a screen-space pass *after* post-processing, per conventions A.6. That
+> pass has its own orthographic projection with no camera in it, so a HUD neither
+> scrolls with the world nor scales with camera zoom, and post effects do not bend
+> it. Until that bridge existed, every widget produced draw commands that nothing
+> consumed — the whole widget set drew nothing.
+>
+> Call `ctx.ui` from `update`, not `draw`: the engine clears the command list at
+> the start of each tick and reads it after.
+
 ## Purpose
 
 One UI system, two complexity levels. All rendering through the engine's sprite batcher -- bitmap fonts, sprite-based widgets, pixel-perfect at virtual resolution.

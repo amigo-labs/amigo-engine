@@ -1,3 +1,4 @@
+use amigo_assets::AssetManager;
 use amigo_core::events::EventHub;
 use amigo_core::resources::Resources;
 use amigo_core::save::{SaveConfig, SaveManager};
@@ -6,10 +7,13 @@ use amigo_core::{Color, Rect, RenderVec2, TimeInfo, World};
 use amigo_input::InputState;
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontId, FontManager};
+use amigo_render::lighting::LightingState;
 use amigo_render::particles::ParticleSystem;
+use amigo_render::post_process::PostEffect;
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
 use amigo_tilemap::{TileId, TileLayer};
+use amigo_ui::UiContext;
 
 #[cfg(feature = "audio")]
 use amigo_audio::AudioManager;
@@ -28,6 +32,43 @@ pub struct GameContext {
     pub events: EventHub,
     /// Typed resource storage for game-specific singletons.
     pub resources: Resources,
+    /// Immediate-mode UI for this frame.
+    ///
+    /// Call `ui.begin()` at the start of `update`, build widgets, and the engine
+    /// renders the resulting draw commands in a screen-space pass after
+    /// post-processing. Widget input is read from `ctx.input`.
+    ///
+    /// Before this was wired, `UiContext` existed and produced draw commands that
+    /// nothing consumed, so every widget drew nothing.
+    pub ui: UiContext,
+    /// Ambient and point lights for this frame.
+    ///
+    /// The lighting composite runs between the sprite pass and post-processing.
+    /// It is skipped entirely while this is neutral (white ambient at full
+    /// intensity, no point lights), which is the default.
+    ///
+    /// Before this was wired, `LightingState` could collect lights and pack them
+    /// for the GPU, but there was no shader or pass to consume the bytes.
+    pub lighting: LightingState,
+    /// Post-processing effects to run this frame, applied in order.
+    ///
+    /// The engine copies these into the renderer when they change, so a game can
+    /// set them from `update` without touching the renderer. An empty stack means
+    /// the scene draws straight to the surface with no extra pass.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext) {
+    /// ctx.post_effects = vec![PostEffect::Vignette { intensity: 0.4, smoothness: 0.5 }];
+    /// # }
+    /// ```
+    pub post_effects: Vec<PostEffect>,
+    /// Loaded assets: sprites, and `load_ron` for game data.
+    ///
+    /// This used to live in the engine's private state, so game code could not
+    /// reach `load_ron` at all and had to fall back to `std::fs` with hand-built
+    /// paths.
+    pub assets: AssetManager,
     #[cfg(feature = "audio")]
     pub audio: AudioManager,
     #[cfg(feature = "async_tasks")]
@@ -48,13 +89,16 @@ impl GameContext {
                 autosave_slots: 3,
                 autosave_interval_secs: 300.0,
                 app_name: "amigo_game".to_string(),
-                compression: false,
             }),
             scheduler: TickScheduler::new(),
             particles: ParticleSystem::new(),
             fonts: FontManager::new(),
             events: EventHub::new(),
             resources: Resources::new(),
+            assets: AssetManager::new(assets_path),
+            ui: UiContext::new(),
+            lighting: LightingState::new(),
+            post_effects: Vec::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
             #[cfg(feature = "async_tasks")]
@@ -237,6 +281,51 @@ impl<'a> DrawContext<'a> {
                     });
                 }
                 cx += glyph.advance;
+            }
+        }
+    }
+
+    /// Draw text with the default font, scaled about its top-left corner.
+    ///
+    /// Glyphs are rasterized at the font's own pixel size and the quads are
+    /// scaled, so large factors get blocky — which is what pixel-art UI wants.
+    /// `scale` of 1.0 is identical to [`DrawContext::draw_text`].
+    pub fn draw_text_scaled(&mut self, text: &str, x: f32, y: f32, color: Color, scale: f32) {
+        let Some(font) = self.game_ctx.fonts.default_font() else {
+            return;
+        };
+        let Some(tex_id) = font.texture_id else {
+            return;
+        };
+        let px = font.px;
+        let scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
+
+        let mut cx = x;
+        for ch in text.chars() {
+            if let Some(glyph) = font.glyph_cached(ch) {
+                if glyph.width > 0.0 && glyph.height > 0.0 {
+                    self.sprites.push(SpriteInstance {
+                        texture_id: tex_id,
+                        x: cx + glyph.offset_x * scale,
+                        y: y + (px - glyph.height - glyph.offset_y) * scale,
+                        width: glyph.width * scale,
+                        height: glyph.height * scale,
+                        uv_x: glyph.uv_x,
+                        uv_y: glyph.uv_y,
+                        uv_w: glyph.uv_w,
+                        uv_h: glyph.uv_h,
+                        tint: color,
+                        flip_x: false,
+                        flip_y: false,
+                        z_order: 100,
+                        shaders: Vec::new(),
+                    });
+                }
+                cx += glyph.advance * scale;
             }
         }
     }

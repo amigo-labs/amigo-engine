@@ -1,4 +1,7 @@
 use crate::camera::Camera;
+use crate::lighting::LightingState;
+use crate::lighting_pipeline::LightingPipeline;
+use crate::post_process::PostProcessPipeline;
 use crate::sprite_batcher::SpriteBatcher;
 use crate::texture::{Texture, TextureId};
 use crate::vertex::Vertex;
@@ -55,6 +58,14 @@ pub struct Renderer {
     pub pipeline: wgpu::RenderPipeline,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
+    /// Screen-space projection for the UI pass.
+    ui_uniform_buffer: wgpu::Buffer,
+    ui_uniform_bind_group: wgpu::BindGroup,
+    /// Sprites for the UI pass, drawn after post-processing in screen space.
+    ///
+    /// Per docs/specs/conventions.md A.6 the UI stage sits after the
+    /// post-processing stack, so UI cannot share the world batch.
+    pub ui_batcher: SpriteBatcher,
     pub texture_bind_group_layout: wgpu::BindGroupLayout,
     pub textures: FxHashMap<TextureId, Texture>,
     pub white_texture_id: TextureId,
@@ -62,6 +73,17 @@ pub struct Renderer {
     pub camera: Camera,
     pub clear_color: Color,
     pub art_style: ArtStyle,
+    /// Post-processing chain. Inert until effects are set; when it has any, the
+    /// sprite pass renders into its offscreen target and it composites to the
+    /// surface. Nothing consumed this pipeline before — it was constructible and
+    /// complete, but no render path ever ran it.
+    pub post_process: PostProcessPipeline,
+    /// Lighting composite. Runs between the sprite pass and post-processing, and
+    /// only when `lighting.is_active()` — neutral ambient with no lights would
+    /// cost a fullscreen pass to multiply by 1.0.
+    pub lighting_pipeline: LightingPipeline,
+    /// Ambient and point lights for this frame.
+    pub lighting: LightingState,
     next_texture_id: u32,
     draw_call_count: u32,
 }
@@ -164,6 +186,24 @@ impl Renderer {
             }],
         });
 
+        // A second projection for the UI pass. UI coordinates are screen space in
+        // virtual-resolution units, so it must not carry the camera's translation
+        // or zoom — a world-space HUD would scroll and scale with the camera.
+        let ui_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("ui_uniform_buffer"),
+            contents: bytemuck::cast_slice(&[0.0f32; 16]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let ui_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ui_uniform_bind_group"),
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ui_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         // Texture bind group layout
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -242,6 +282,19 @@ impl Renderer {
 
         let camera = Camera::new(virtual_width as f32, virtual_height as f32);
 
+        let post_process = PostProcessPipeline::new(
+            &device,
+            surface_config.width.max(1),
+            surface_config.height.max(1),
+            surface_config.format,
+        );
+        let lighting_pipeline = LightingPipeline::new(
+            &device,
+            surface_config.width.max(1),
+            surface_config.height.max(1),
+            surface_config.format,
+        );
+
         Self {
             device,
             queue,
@@ -250,6 +303,9 @@ impl Renderer {
             pipeline,
             uniform_buffer,
             uniform_bind_group,
+            ui_uniform_buffer,
+            ui_uniform_bind_group,
+            ui_batcher: SpriteBatcher::new(),
             texture_bind_group_layout,
             textures,
             white_texture_id: white_id,
@@ -257,6 +313,9 @@ impl Renderer {
             camera,
             clear_color: Color::CORNFLOWER_BLUE,
             art_style: ArtStyle::PixelArt,
+            post_process,
+            lighting_pipeline,
+            lighting: LightingState::new(),
             next_texture_id: 1,
             draw_call_count: 0,
         }
@@ -267,6 +326,10 @@ impl Renderer {
             self.surface_config.width = width;
             self.surface_config.height = height;
             self.surface.configure(&self.device, &self.surface_config);
+            // The post-process offscreen target has to track the surface, or the
+            // composite pass would sample a stale-sized texture after a resize.
+            self.post_process.resize(&self.device, width, height);
+            self.lighting_pipeline.resize(&self.device, width, height);
         }
     }
 
@@ -307,6 +370,7 @@ impl Renderer {
         self.queue.submit(std::iter::once(frame.encoder.finish()));
         frame.output.present();
         self.batcher.clear();
+        self.ui_batcher.clear();
         Ok(())
     }
 
@@ -361,11 +425,24 @@ impl Renderer {
                 label: Some("render_encoder"),
             });
 
+        // Stage chain, per conventions A.6: sprites -> lighting -> post -> UI.
+        // Each inactive stage drops out of the chain entirely, so a game using
+        // neither draws straight to the surface exactly as before.
+        let post_enabled = self.post_process.enabled();
+        let lighting_enabled = self.lighting.is_active();
+        let scene_view = if lighting_enabled {
+            self.lighting_pipeline.scene_view()
+        } else if post_enabled {
+            self.post_process.render_target_view()
+        } else {
+            &view
+        };
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("sprite_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: scene_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -403,6 +480,33 @@ impl Renderer {
             }
         }
 
+        if lighting_enabled {
+            // Lighting writes into post's input when post is active, otherwise
+            // straight to the surface.
+            let target = if post_enabled {
+                self.post_process.render_target_view()
+            } else {
+                &view
+            };
+            self.lighting_pipeline.apply(
+                &mut encoder,
+                &self.device,
+                &self.queue,
+                &self.lighting,
+                self.camera.view_rect(),
+                target,
+            );
+        }
+
+        if post_enabled {
+            self.post_process
+                .apply(&mut encoder, &self.device, &self.queue, &view);
+        }
+
+        // UI pass: after post-processing, in screen space, loading rather than
+        // clearing so it composites over the scene.
+        self.draw_ui_pass(&mut encoder, &view);
+
         Ok(FrameInProgress {
             encoder,
             view,
@@ -410,11 +514,99 @@ impl Renderer {
         })
     }
 
+    /// Draw `ui_batcher` over `target` with a screen-space projection.
+    ///
+    /// A no-op when nothing queued UI this frame, so games that draw no HUD pay
+    /// only for the emptiness check.
+    fn draw_ui_pass(&mut self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
+        let batches = self.ui_batcher.build();
+        if batches.is_empty() || self.ui_batcher.vertices().is_empty() {
+            return;
+        }
+        self.draw_call_count += batches.len() as u32;
+
+        // Orthographic projection over the virtual resolution, y down, with no
+        // camera translation, zoom or shake.
+        let (w, h) = (
+            self.camera.virtual_width.max(1.0),
+            self.camera.virtual_height.max(1.0),
+        );
+        let proj: [f32; 16] = [
+            2.0 / w,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -2.0 / h,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            -1.0,
+            1.0,
+            0.0,
+            1.0,
+        ];
+        self.queue
+            .write_buffer(&self.ui_uniform_buffer, 0, bytemuck::cast_slice(&proj));
+
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ui_vertex_buffer"),
+                contents: bytemuck::cast_slice(self.ui_batcher.vertices()),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let index_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ui_index_buffer"),
+                contents: bytemuck::cast_slice(self.ui_batcher.indices()),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("ui_render_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    // Load, not Clear: the scene is already there.
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.ui_uniform_bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        for batch in &batches {
+            if let Some(texture) = self.textures.get(&batch.texture_id) {
+                pass.set_bind_group(1, &texture.bind_group, &[]);
+                pass.draw_indexed(
+                    batch.index_offset..batch.index_offset + batch.index_count,
+                    0,
+                    0..1,
+                );
+            } else {
+                warn!("UI pass: missing texture {:?}", batch.texture_id);
+            }
+        }
+    }
+
     /// Finish a frame that was started with `begin_frame()`.
     pub fn end_frame(&mut self, frame: FrameInProgress) {
         self.queue.submit(std::iter::once(frame.encoder.finish()));
         frame.output.present();
         self.batcher.clear();
+        self.ui_batcher.clear();
     }
 
     /// Capture the current frame to a PNG file at `path`.
