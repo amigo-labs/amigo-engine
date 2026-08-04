@@ -42,7 +42,6 @@ pub struct SaveConfig {
     pub autosave_slots: u32,        // default: 3
     pub autosave_interval_secs: f64, // default: 300.0
     pub app_name: String,
-    pub compression: bool,          // default: true
 }
 ```
 
@@ -108,35 +107,40 @@ impl SaveManager {
 
 Für Spiele mit großem State (City Builder: 50.000+ Citizens, RTS: 500+ Units, Sandbox: Millionen Tiles) gelten zusätzliche Strategien:
 
-### Kompression (LZ4)
+### Kompression — nicht implementiert
 
-Wenn `SaveConfig::compression = true`, wird der serialisierte JSON-Payload mit LZ4 komprimiert bevor er auf Disk geschrieben wird. LZ4 ist für Geschwindigkeit optimiert (~400 MB/s Kompression) und reduziert typische Spielstände um 70-85%.
+Diese Spec beschrieb LZ4-Kompression hinter einem `SaveConfig::compression`-Flag,
+mit `compress`/`decompress` auf dem `SaveManager`. Keines davon existierte: das
+Flag wurde nie gelesen, es gab keine `lz4`-Abhängigkeit, und Spielstände wurden
+immer unkomprimiert geschrieben. Ein Flag, das nichts tut, ist schlimmer als kein
+Flag — wer `compression = true` setzte, glaubte an eine Zusage, die niemand
+einhielt. Das Feld ist entfernt.
 
-```rust
-impl SaveManager {
-    /// Intern: Komprimiert data bytes mit LZ4 wenn compression aktiviert.
-    fn compress(&self, data: &[u8]) -> Vec<u8>;
-    /// Intern: Dekomprimiert LZ4-Daten.
-    fn decompress(&self, data: &[u8]) -> Result<Vec<u8>, SaveError>;
-}
-```
+Was real ist: CRC32-Prüfsummen gegen Korruption (`crates/amigo_core/src/save.rs`),
+Slot-Verwaltung, rotierende Autosaves und plattformgerechte Pfade.
+
+Wer Kompression braucht, komprimiert vorerst im Spiel-Layer, bevor der State an
+`SaveManager` geht. Eine Engine-seitige Umsetzung müsste sich entscheiden, ob das
+Format-Versionierung mitbringt — siehe „Known limitations" unten.
 
 ### Serialisierungs-Budget
 
-| Spieltyp | Typischer State | JSON | JSON + LZ4 |
-|----------|----------------|------|-------------|
-| Tower Defense | 200 Entities, 30x20 Map | ~50 KB | ~10 KB |
-| Roguelike | 30 Items, 50x50 Floor | ~30 KB | ~6 KB |
-| RTS (500 Units) | 500 Units + 100 Buildings + 100x100 Map | ~500 KB | ~80 KB |
-| City Builder (50K Citizens) | 50K Citizens (statistical) + 200x200 Map + Buildings | ~2 MB | ~300 KB |
-| Sandbox (1M Tiles) | Chunk-based, nur dirty chunks | ~5 MB | ~800 KB |
+Die LZ4-Spalte ist entfernt; sie beschrieb eine Kompression, die es nicht gibt.
+
+| Spieltyp | Typischer State | JSON |
+|----------|----------------|------|
+| Tower Defense | 200 Entities, 30x20 Map | ~50 KB |
+| Roguelike | 30 Items, 50x50 Floor | ~30 KB |
+| RTS (500 Units) | 500 Units + 100 Buildings + 100x100 Map | ~500 KB |
+| City Builder (50K Citizens) | 50K Citizens (statistical) + 200x200 Map + Buildings | ~2 MB |
+| Sandbox (1M Tiles) | Chunk-based, nur dirty chunks | ~5 MB |
 
 ### Game-Layer Optimierungen
 
 Die SaveManager-API serialisiert generic `T: Serialize`. Große Spiele sollten ihren State save-freundlich strukturieren:
 
 - **Citizens (City Builder)**: Nur `(home_id, workplace_id, needs_array, state_enum, age)` pro Citizen serialisieren — nicht volle ECS-Entities.
-- **Tilemap (Sandbox)**: Run-Length Encoding (RLE) auf Tile-Daten vor Serialisierung. Dann JSON + LZ4.
+- **Tilemap (Sandbox)**: Run-Length Encoding (RLE) auf Tile-Daten vor Serialisierung.
 - **Units (RTS)**: Voller State pro Unit (Position, HP, Command Queue) — kein Shortcut möglich.
 
 ## Non-Goals

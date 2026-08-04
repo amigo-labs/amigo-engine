@@ -89,7 +89,6 @@ impl GameContext {
                 autosave_slots: 3,
                 autosave_interval_secs: 300.0,
                 app_name: "amigo_game".to_string(),
-                compression: false,
             }),
             scheduler: TickScheduler::new(),
             particles: ParticleSystem::new(),

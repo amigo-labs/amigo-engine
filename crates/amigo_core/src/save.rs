@@ -74,9 +74,6 @@ pub struct SaveConfig {
     pub autosave_interval_secs: f64,
 
     pub app_name: String,
-
-    #[serde(default = "default_compression")]
-    pub compression: bool,
 }
 
 fn default_max_slots() -> u32 {
@@ -88,10 +85,6 @@ fn default_autosave_slots() -> u32 {
 fn default_autosave_interval_secs() -> f64 {
     300.0
 }
-fn default_compression() -> bool {
-    true
-}
-
 // ---------------------------------------------------------------------------
 // SlotInfo
 // ---------------------------------------------------------------------------
@@ -415,7 +408,6 @@ mod tests {
             autosave_slots: 2,
             autosave_interval_secs: 10.0,
             app_name: "test_autosave".to_string(),
-            compression: false,
         };
         let mut mgr = SaveManager::new(config);
 

@@ -136,7 +136,7 @@ pub struct World {
     #[cfg(feature = "reflect")]
     reflect_accessors: FxHashMap<TypeId, ReflectAccessor>,
 
-    // Monotonic world tick for incremental change detection (ADR-0003)
+    // Monotonic world tick for incremental change detection (ADR-0002)
     #[cfg(feature = "change_detection")]
     world_tick: super::change_detection::Tick,
 }
@@ -296,7 +296,7 @@ impl World {
         }
     }
 
-    // ── Tick-based change detection (ADR-0003) ──
+    // ── Tick-based change detection (ADR-0002) ──
 
     /// Advance the world tick by one. Call once per frame / schedule run.
     #[cfg(feature = "change_detection")]

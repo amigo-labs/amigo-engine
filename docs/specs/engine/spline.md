@@ -1,11 +1,16 @@
-# Spline Paths
-
 ---
 status: done
 crate: amigo_core
 depends_on: ["engine/core"]
-last_updated: 2026-03-18
+last_updated: 2026-08-03
 ---
+
+# Spline Paths
+
+> Frontmatter has to come before the H1 or it is not frontmatter — it sat after the
+> heading here, so tooling reading `status:` saw nothing. A near-duplicate at
+> `docs/specs/spline.md` (with no frontmatter at all) has been merged into this
+> file, which is the path `index.md` links.
 
 ## Überblick
 

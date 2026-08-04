@@ -15,11 +15,18 @@ Cross-cutting conventions that apply to all modules.
 
 Error handling uses three layers:
 
-**Engine init** (wgpu, window, audio): `Result<T, EngineError>`. Fatal if fails, clear message to user.
+**Engine init** (wgpu, window, audio): designed as `Result<T, EngineError>`.
+**Not implemented** — `EngineError` does not exist anywhere in the workspace. Init
+failures today are a mix of `error!` plus early return (window and API server) and
+`expect` panics (`Renderer::new`, window creation). The type below is the intended
+shape, not the current one; introducing it now without changing those call sites
+would just add another type nothing returns.
 
 **Game loop** (update/draw): No `Result` in hot path. Asset errors are graceful (fallback sprite, log warning). Panics only for real programming bugs.
 
 **Asset loading**: `Result<T, AssetError>`. Dev mode: warning with fuzzy-match suggestion (`"playe" -> did you mean "player"?`). Release mode: fallback magenta rect, silent log.
+
+Intended shape:
 
 ```rust
 #[derive(Debug, thiserror::Error)]

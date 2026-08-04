@@ -86,23 +86,23 @@ if entering_combat {
 }
 ```
 
-### Presets (.preset.yaml)
+### Presets (.preset.json)
 
-```yaml
-name: "Boss Fight Version"
-base_file: "overworld.amigo.tidal"
-bpm: 180
-transform: "fast 1.5"
-stems:
-  melody:
-    instrument: sawtooth
-    volume: 1.0
-  bass:
-    instrument: square_wave
-    volume: 0.9
-  percussion:
-    instrument: noise_channel
-    volume: 0.85
-  harmony:
-    enabled: false
+Presets are JSON. This page previously showed YAML; `save_preset`/`load_preset`
+(`crates/amigo_editor/src/tidal_playground.rs`) use `serde_json`, and there is no
+YAML crate in the workspace.
+
+```json
+{
+  "name": "Boss Fight Version",
+  "base_file": "overworld.amigo.tidal",
+  "bpm": 180,
+  "transform": "fast 1.5",
+  "stems": {
+    "melody":     { "instrument": "sawtooth",      "volume": 1.0 },
+    "bass":       { "instrument": "square_wave",   "volume": 0.9 },
+    "percussion": { "instrument": "noise_channel", "volume": 0.85 },
+    "harmony":    { "enabled": false }
+  }
+}
 ```
