@@ -1,7 +1,13 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Amigo Engine CLI installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.sh | sh
-set -euo pipefail
+#
+# POSIX sh on purpose: the documented invocation pipes into `sh`, which is dash on
+# Debian and Ubuntu. `set -o pipefail` is a bashism that dash rejects outright, so
+# with a bash shebang this script died on line 4 before doing anything. Both
+# pipelines here are guarded explicitly instead (`if ! curl` and the -z check on
+# the resolved version), so pipefail bought nothing.
+set -eu
 
 REPO="amigo-labs/amigo-engine"
 INSTALL_DIR="${AMIGO_INSTALL_DIR:-$HOME/.amigo/bin}"
@@ -82,6 +88,11 @@ if [ "$VERSION" = "latest" ]; then
     fi
 fi
 
+# Now that a tag is resolved, the source-build fallback can pin to it. The
+# unpinned BUILD_FROM_SOURCE above is used before this point, where the platform
+# is unsupported and no version has been looked up yet.
+BUILD_FROM_SOURCE_PINNED="cargo install --git https://github.com/${REPO} --tag ${VERSION} amigo_cli"
+
 echo "Installing amigo ${VERSION} for ${OS}/${ARCH}..."
 
 # ---------------------------------------------------------------------------
@@ -104,8 +115,8 @@ if ! curl -fSL --progress-bar "$DOWNLOAD_URL" -o "${TMPDIR}/${ASSET_NAME}"; then
     echo "binaries exists at:"
     echo "  https://github.com/${REPO}/releases"
     echo ""
-    echo "Alternatively, build from source (needs the Rust toolchain):"
-    echo "  ${BUILD_FROM_SOURCE}"
+    echo "Alternatively, build ${VERSION} from source (needs the Rust toolchain):"
+    echo "  ${BUILD_FROM_SOURCE_PINNED}"
     exit 1
 fi
 

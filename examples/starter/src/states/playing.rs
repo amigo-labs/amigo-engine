@@ -17,11 +17,13 @@ pub struct PlayingState {
     tiles: Vec<u8>,
     map_w: u32,
     map_h: u32,
-    /// Decoration positions read out of the ECS during `update`.
+    /// Decoration positions read out of the ECS, refreshed every `update`.
     ///
     /// `draw` only gets a [`DrawContext`], which does not expose the world, so
     /// anything drawn from ECS state has to be collected while the game still
-    /// has `&mut GameContext`.
+    /// has `&mut GameContext`. Collecting once in `on_enter` would be enough for
+    /// these three static props, but it goes stale the moment decorations move,
+    /// spawn or despawn — so the pattern worth copying is to re-collect per tick.
     decorations: Vec<RenderVec2>,
 }
 
@@ -105,6 +107,8 @@ impl Game for PlayingState {
         self.player.spawn(ctx, 64.0, 64.0, STATE_SCOPE);
         self.spawn_decorations(ctx);
         ctx.world.flush();
+        // Not redundant with the per-tick collection in `update`: a frame can
+        // render before the first tick runs, and would draw no decorations.
         self.collect_decorations(ctx);
 
         // Dusk: a dim blue ambient with a warm light on the player. Neutral
@@ -137,6 +141,10 @@ impl Game for PlayingState {
 
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
         self.player.update(ctx, &self.tiles, self.map_w);
+
+        // Refresh the draw list from the ECS. Cheap here, and correct even once
+        // decorations start moving or being spawned during play.
+        self.collect_decorations(ctx);
 
         // Camera follows the player
         let target = RenderVec2 {
@@ -212,7 +220,7 @@ impl Game for PlayingState {
             }
         }
 
-        // Decorations, from the positions collected out of the ECS in `update`
+        // Decorations, from the positions collected out of the ECS this tick
         for pos in &self.decorations {
             ctx.draw_rect(
                 Rect::new(pos.x, pos.y, 8.0, 8.0),

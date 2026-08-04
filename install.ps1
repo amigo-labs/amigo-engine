@@ -54,6 +54,11 @@ if ($Version -eq "latest") {
     }
 }
 
+# Now that a tag is resolved, the source-build fallback can pin to it. The
+# unpinned $BuildFromSource above is used before this point, where the
+# architecture is unsupported and no version has been looked up yet.
+$BuildFromSourcePinned = "cargo install --git https://github.com/$Repo --tag $Version amigo_cli"
+
 Write-Host "Installing amigo $Version for Windows/$Arch..."
 
 # ---------------------------------------------------------------------------
@@ -81,8 +86,8 @@ If this is a new installation, make sure a release with attached binaries
 exists at:
   https://github.com/$Repo/releases
 
-Alternatively, build from source (needs the Rust toolchain):
-  $BuildFromSource
+Alternatively, build $Version from source (needs the Rust toolchain):
+  $BuildFromSourcePinned
 "@
     Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
     exit 1

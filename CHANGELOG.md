@@ -18,6 +18,18 @@ Notable changes per release. Format loosely follows
   platform. The aarch64 Linux leg is dropped, and the publish step now asserts one
   archive per matrix entry so a partial release fails loudly instead of looking
   successful.
+- **`install.sh` could not run the way it is documented.** The usage line, the
+  README and the wiki all pipe it into `sh`, but the shebang was `bash` and line 4
+  ran `set -euo pipefail` — a bashism dash rejects outright, so on Debian and Ubuntu
+  (`/bin/sh` → dash) the script aborted with `Illegal option -o pipefail` before
+  detecting anything. It is POSIX `sh` now; both pipelines were already guarded
+  explicitly, so `pipefail` was buying nothing.
+- Both installers' build-from-source fallback pointed at the default branch even
+  though the script had just resolved a release tag, so `AMIGO_VERSION=v0.1.0`
+  followed by a failed download suggested a command that installs `main`. The
+  fallback shown after a download failure now pins `--tag`. The two earlier
+  unsupported-platform exits keep the unpinned form deliberately: they run before
+  the version is resolved, where `--tag ''` would be worse than no tag at all.
 - `install.sh` offered `linux-aarch64` and `install.ps1` offered
   `aarch64-pc-windows-msvc`; neither is built, so both were guaranteed 404s. Both
   now explain that the platform builds from source, and their build-from-source
