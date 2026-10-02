@@ -24,6 +24,8 @@ Notable changes per release. Format loosely follows
 - `cargo update` closes nine RustSec advisories in the lockfile (rustls,
   rustls-webpki, crossbeam-epoch, quick-xml, webbrowser). CI now runs
   `cargo deny check`.
+- The kira 0.9 → 0.12 upgrade drops `ringbuf` 0.3 (RUSTSEC-2026-0293), the
+  last open advisory; `deny.toml` no longer ignores any.
 
 ### Breaking
 
@@ -83,6 +85,13 @@ Notable changes per release. Format loosely follows
   stopped). The tile-light flood fill grew exponentially near the map edge.
 - `TaskPool` workers died with a panicking task; `autosave_slots = 0`
   panicked instead of disabling autosave.
+
+### Changed — dependencies
+
+- kira 0.12 (audio; decibel volumes and sub-tracks behind the unchanged
+  `amigo_audio` API, without kira's new libdbus default), ureq 3 (ComfyUI client:
+  one pooled agent, downloads above 10 MB, no environment proxies for the
+  local server), toml 1, ron 0.12, notify 8, pollster 1, tracing-tracy 0.12.
 
 ### Changed — tooling
 
