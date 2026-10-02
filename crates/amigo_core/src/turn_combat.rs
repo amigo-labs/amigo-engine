@@ -444,7 +444,7 @@ impl Battle {
                 self.round += 1;
                 self.calculate_turn_order();
                 self.current_turn = 0;
-                self.advance_to_next_alive();
+                effects.extend(self.advance_to_next_alive());
             }
 
             BattlePhase::WaitingForAction { combatant } => {
@@ -459,25 +459,21 @@ impl Battle {
             }
 
             BattlePhase::EndOfTurn => {
-                let idx = if self.current_turn > 0 && self.current_turn <= self.turn_order.len() {
-                    self.turn_order[self.current_turn - 1]
-                } else if !self.turn_order.is_empty() {
-                    self.turn_order[0]
-                } else {
-                    0
-                };
-
-                // Tick status effects
-                effects.extend(self.tick_statuses(idx));
-
-                // Reset defend
-                if idx < self.combatants.len() {
-                    self.combatants[idx].is_defending = false;
+                // `current_turn` still points at the combatant who just
+                // acted; it only advances below. Reading `current_turn - 1`
+                // ticked the previous combatant instead: with [Hero, Slime]
+                // the Hero's statuses ticked twice a round and the Slime's
+                // never (no poison damage, buffs and Defend never expiring).
+                if let Some(&idx) = self.turn_order.get(self.current_turn) {
+                    effects.extend(self.tick_statuses(idx));
+                    if let Some(c) = self.combatants.get_mut(idx) {
+                        c.is_defending = false;
+                    }
                 }
 
                 // Next turn or next round
                 self.current_turn += 1;
-                self.advance_to_next_alive();
+                effects.extend(self.advance_to_next_alive());
             }
 
             BattlePhase::CheckResult => {
@@ -507,23 +503,25 @@ impl Battle {
         effects
     }
 
-    fn advance_to_next_alive(&mut self) {
+    /// Move to the next combatant who can act. A living combatant who cannot
+    /// (asleep, frozen) loses the turn but still has its statuses ticked —
+    /// otherwise the status that stops it from acting never expires.
+    fn advance_to_next_alive(&mut self) -> Vec<BattleEffect> {
+        let mut effects = Vec::new();
         while self.current_turn < self.turn_order.len() {
             let idx = self.turn_order[self.current_turn];
             if idx < self.combatants.len() && self.combatants[idx].is_alive() {
                 if self.combatants[idx].can_act() {
                     self.phase = BattlePhase::WaitingForAction { combatant: idx };
-                } else {
-                    // Can't act (stunned etc), skip
-                    self.current_turn += 1;
-                    continue;
+                    return effects;
                 }
-                return;
+                effects.extend(self.tick_statuses(idx));
             }
             self.current_turn += 1;
         }
         // All turns done → check result
         self.phase = BattlePhase::CheckResult;
+        effects
     }
 
     fn calculate_turn_order(&mut self) {
@@ -961,6 +959,53 @@ mod tests {
             .iter()
             .any(|e| matches!(e, BattleEffect::Damage { amount: 5, .. }));
         assert!(poison_dmg);
+    }
+
+    #[test]
+    fn end_of_turn_ticks_the_combatant_who_acted() {
+        // The poisoned Slime acts second; its poison used to never tick.
+        let hero = make_combatant("Hero", 100, 20, 10, 15, 0);
+        let mut slime = make_combatant("Slime", 999, 1, 1, 1, 1);
+        slime
+            .statuses
+            .push(StatusEffect::new(StatusType::Poison, 2, 5));
+        let mut battle = Battle::new(vec![hero], vec![slime]);
+        battle.start();
+        battle.step(); // turn order
+
+        let mut damaged = Vec::new();
+        for _ in 0..2 {
+            battle.submit_action(TurnAction::Defend);
+            battle.step(); // execute
+            for effect in battle.step() {
+                if let BattleEffect::Damage { target, amount, .. } = effect {
+                    damaged.push((target, amount));
+                }
+            }
+        }
+        assert_eq!(damaged, vec![(1, 5)], "only the Slime is poisoned");
+    }
+
+    #[test]
+    fn a_sleeping_combatant_still_wakes_up() {
+        let mut hero = make_combatant("Hero", 100, 20, 10, 15, 0);
+        hero.statuses
+            .push(StatusEffect::new(StatusType::Sleep, 1, 0));
+        let slime = make_combatant("Slime", 999, 1, 1, 1, 1);
+        let mut battle = Battle::new(vec![hero], vec![slime]);
+        battle.start();
+        battle.step(); // turn order: the Hero is skipped, its Sleep ticks
+
+        for _ in 0..12 {
+            if battle.combatants[0].can_act() {
+                return;
+            }
+            if matches!(battle.phase, BattlePhase::WaitingForAction { .. }) {
+                battle.submit_action(TurnAction::Defend);
+            }
+            battle.step();
+        }
+        panic!("Sleep never expired: {:?}", battle.combatants[0].statuses);
     }
 
     #[test]
