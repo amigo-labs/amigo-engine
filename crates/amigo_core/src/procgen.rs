@@ -956,11 +956,13 @@ pub fn generate_dungeon(config: &DungeonConfig) -> DungeonResult {
         }
         let rw = min_room + (xorshift() as u32 % room_span);
         let rh = min_room + (xorshift() as u32 % room_span);
-        if rw.saturating_add(2) >= w || rh.saturating_add(2) >= h {
+        // With a one-tile border on each side the origin ranges over
+        // 1..=w - rw - 1: w - rw - 1 choices, and none once rw + 2 > w.
+        if rw.saturating_add(2) > w || rh.saturating_add(2) > h {
             continue;
         }
-        let rx = 1 + (xorshift() as u32 % (w - (rw + 2)));
-        let ry = 1 + (xorshift() as u32 % (h - (rh + 2)));
+        let rx = 1 + (xorshift() as u32 % (w - rw - 1));
+        let ry = 1 + (xorshift() as u32 % (h - rh - 1));
 
         // Check overlap with padding
         let overlaps = rooms.iter().any(|r| {
@@ -1347,6 +1349,38 @@ mod tests {
             let result = generate_dungeon(&config);
             assert_eq!(result.tiles.len(), (width * width) as usize);
         }
+    }
+
+    fn single_room(size: u32, room: u32, seed: u64) -> DungeonResult {
+        generate_dungeon(&DungeonConfig {
+            width: size,
+            height: size,
+            seed,
+            min_room_size: room,
+            max_room_size: room,
+            max_rooms: 1,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn a_room_that_fits_with_exactly_its_border_is_placed() {
+        let result = single_room(16, 14, 7);
+
+        assert_eq!(result.rooms.len(), 1, "14 + 2 border tiles fit in 16");
+        let room = &result.rooms[0];
+        assert_eq!((room.x, room.y, room.width, room.height), (1, 1, 14, 14));
+    }
+
+    #[test]
+    fn every_valid_room_origin_can_be_chosen() {
+        // 17 - 14 - 1 = 2 origins per axis; the last one used to be excluded.
+        let mut xs: Vec<u32> = (1..=32)
+            .map(|seed| single_room(17, 14, seed).rooms[0].x)
+            .collect();
+        xs.sort_unstable();
+        xs.dedup();
+        assert_eq!(xs, [1, 2]);
     }
 
     #[test]

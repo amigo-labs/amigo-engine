@@ -73,7 +73,9 @@ Notable changes per release. Format loosely follows
 - `Inventory::add` stored stacks above `max_stack` and then underflowed.
 - Dialog nodes skipped in a cycle overflowed the stack (an abort).
 - Level files with short tile layers panicked in `tile_at`; dungeon configs
-  with oversized or inverted room bounds divided by zero.
+  with oversized or inverted room bounds divided by zero. Room placement also
+  rejected rooms that fit with exactly their border and never used the last
+  valid origin, so dungeon layouts for a given seed change.
 - The deckbuilder lost the cards left in hand when a combat was won.
 - The player at entity index 0 could never be voted out.
 - Damage over time below 60 dps did nothing at 60 Hz; a player with a bomb
