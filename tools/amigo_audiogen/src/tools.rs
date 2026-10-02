@@ -958,7 +958,11 @@ pub fn dispatch_tool_with_defaults(
             };
 
             let section = parse_section(&p.section);
-            let base_name = format!("{}_{}_{}bpm", p.world, p.section, bpm);
+            // `world` and `section` come from the MCP client (i.e. from a
+            // model's tool call), so they are sanitized like every other
+            // generator's names: `world: "../../../../tmp/x"` used to write
+            // outside the project.
+            let base_name = format!("{}_{}_{}bpm", sanitize(&p.world), sanitize(&p.section), bpm);
             let output_path = format!("assets/generated/audio/{}.wav", base_name);
 
             // Build ComfyUI workflow and generate
