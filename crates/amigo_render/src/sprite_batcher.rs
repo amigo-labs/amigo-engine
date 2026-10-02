@@ -95,14 +95,16 @@ impl SpriteBatcher {
         self.sprites.push(sprite);
     }
 
-    /// Sort sprites and generate vertex/index data. Returns batches grouped by texture.
+    /// Sort sprites and generate vertex/index data. Returns one batch per run
+    /// of consecutive sprites that share a texture.
     pub fn build(&mut self) -> Vec<SpriteBatch> {
-        // Sort by z_order, then by texture to minimize draw calls
-        self.sprites.sort_by(|a, b| {
-            a.z_order
-                .cmp(&b.z_order)
-                .then(a.texture_id.0.cmp(&b.texture_id.0))
-        });
+        // Sort by z_order only. The sort is stable, so sprites on the same z
+        // keep their submission order: painter's order is what callers mean.
+        // Sorting by texture within a z (to save draw calls) layered same-z
+        // sprites by texture-load order instead — a full-screen fade drawn
+        // with the white texture (id 0) ended up under every sprite, health
+        // bars under enemies, and a hot reload reordered layers.
+        self.sprites.sort_by_key(|s| s.z_order);
 
         self.vertices.clear();
         self.indices.clear();
@@ -208,5 +210,39 @@ impl SpriteBatcher {
 impl Default for SpriteBatcher {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sprite(texture: u32, z_order: i32) -> SpriteInstance {
+        SpriteInstance {
+            texture_id: TextureId(texture),
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            uv_x: 0.0,
+            uv_y: 0.0,
+            uv_w: 1.0,
+            uv_h: 1.0,
+            tint: Color::WHITE,
+            flip_x: false,
+            flip_y: false,
+            z_order,
+            shaders: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn same_z_sprites_draw_in_submission_order() {
+        let mut batcher = SpriteBatcher::new();
+        batcher.push(sprite(5, 0)); // a sprite
+        batcher.push(sprite(0, 0)); // then a fade rect over it (white texture)
+        batcher.push(sprite(3, -1)); // background, lower z
+        let order: Vec<u32> = batcher.build().iter().map(|b| b.texture_id.0).collect();
+        assert_eq!(order, vec![3, 5, 0]);
     }
 }
