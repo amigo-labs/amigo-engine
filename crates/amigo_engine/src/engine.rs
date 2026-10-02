@@ -4,7 +4,7 @@ use crate::splash::{self, SplashState};
 use crate::stack::GameStack;
 use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
-use amigo_core::Color;
+use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
 use amigo_render::renderer::Renderer;
 use amigo_render::sprite_batcher::SpriteInstance;
@@ -753,8 +753,18 @@ impl ApplicationHandler for EngineApp {
                         .input
                         .handle_mouse_move(position.x as f32, position.y as f32);
 
-                    // Update world-space mouse position
+                    // Pixel UI draws over the virtual resolution stretched to
+                    // the window, so its cursor is the window position scaled
+                    // by virtual / window size.
                     let (ww, wh) = state.renderer.window_size();
+                    let camera = &state.game_ctx.camera;
+                    let ui_pos = RenderVec2::new(
+                        position.x as f32 * camera.virtual_width / (ww.max(1) as f32),
+                        position.y as f32 * camera.virtual_height / (wh.max(1) as f32),
+                    );
+                    state.game_ctx.input.set_mouse_ui_pos(ui_pos);
+
+                    // Update world-space mouse position
                     let world_pos = state.game_ctx.camera.screen_to_world(
                         position.x as f32,
                         position.y as f32,

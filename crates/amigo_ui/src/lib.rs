@@ -146,7 +146,7 @@ impl UiContext {
             y,
         });
 
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let hovering = rect.contains(mouse.x, mouse.y);
 
         if hovering && input.mouse_pressed(winit::event::MouseButton::Left) {
@@ -204,7 +204,7 @@ impl UiContext {
         self.pixel_text(label, x + box_size + 4.0, y + 2.0, Color::WHITE);
 
         // Handle click
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let click_area = Rect::new(x, y, box_size + 4.0 + label.len() as f32 * 8.0, box_size);
         if click_area.contains(mouse.x, mouse.y)
             && input.mouse_pressed(winit::event::MouseButton::Left)
@@ -235,7 +235,7 @@ impl UiContext {
         self.filled_rect(handle, Color::WHITE);
 
         // Handle drag
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let interact = Rect::new(x - 4.0, y - 4.0, width + 8.0, height + 8.0);
         if interact.contains(mouse.x, mouse.y) && input.mouse_held(winit::event::MouseButton::Left)
         {
@@ -271,7 +271,7 @@ impl UiContext {
         let arrow = if *open { "v" } else { ">" };
         self.pixel_text(arrow, x + width - 12.0, y + 4.0, Color::WHITE);
 
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let clicked = input.mouse_pressed(winit::event::MouseButton::Left);
 
         // Toggle dropdown on header click
@@ -334,7 +334,7 @@ impl UiContext {
         let h = 16.0;
         let rect = Rect::new(x, y, w, h);
 
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let hovering = rect.contains(mouse.x, mouse.y);
 
         let bg = if hovering {
@@ -393,7 +393,7 @@ impl UiContext {
         self.rect_outline(rect, border_color);
 
         // Click to focus
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         if input.mouse_pressed(winit::event::MouseButton::Left) {
             *focused = rect.contains(mouse.x, mouse.y);
         }
@@ -459,7 +459,7 @@ impl UiContext {
         let _id = self.gen_id();
         let swatch = 12.0;
         let gap = 2.0;
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let clicked = input.mouse_pressed(winit::event::MouseButton::Left);
 
         for (i, &color) in palette.iter().enumerate() {
@@ -512,7 +512,7 @@ impl UiContext {
             Color::new(0.15, 0.15, 0.15, 0.9),
         );
 
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let clicked = input.mouse_pressed(winit::event::MouseButton::Left);
         let mut clicked_index = None;
         let scroll = scroll_offset.min(items.len().saturating_sub(visible_count));
@@ -585,7 +585,7 @@ impl UiContext {
         let _id = self.gen_id();
         let item_h = 16.0;
         let indent = 16.0;
-        let mouse = input.mouse_pos();
+        let mouse = input.mouse_ui_pos();
         let clicked = input.mouse_pressed(winit::event::MouseButton::Left);
         let mut clicked_index = None;
         let mut cy = y;
@@ -651,5 +651,25 @@ impl UiContext {
         }
 
         clicked_index
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use amigo_core::RenderVec2;
+    use winit::event::{ElementState, MouseButton};
+
+    #[test]
+    fn widgets_hit_test_against_the_ui_cursor_not_window_pixels() {
+        let mut input = InputState::new();
+        // A 1280x720 window over a 480x270 virtual resolution: the cursor
+        // over the checkbox at virtual (40, 40) sits at window (107, 107).
+        input.handle_mouse_move(107.0, 107.0);
+        input.set_mouse_ui_pos(RenderVec2::new(40.0, 40.0));
+        input.handle_mouse_button(MouseButton::Left, ElementState::Pressed);
+
+        let mut ui = UiContext::new();
+        assert!(ui.checkbox("sound", 36.0, 36.0, false, &input));
     }
 }
