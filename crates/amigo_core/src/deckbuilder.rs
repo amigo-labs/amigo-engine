@@ -302,10 +302,7 @@ pub fn start_combat(state: &mut DbState, enemies: Vec<EnemyState>) -> Vec<DbEven
     });
 
     // Draw starting hand.
-    let drawn = state.deck.draw(state.config.hand_size);
-    for card in drawn {
-        state.hand.add(card);
-    }
+    draw_into_hand(state, state.config.hand_size);
 
     events.push(DbEvent::PhaseChanged {
         from: old,
@@ -359,6 +356,11 @@ pub fn play_card(
             // relics/upgrades changed max_hp during combat).
             state.player_hp = combat.player_hp;
             state.player_max_hp = combat.player_max_hp;
+            // The cards still in hand go back to the deck; left in the hand,
+            // the next combat's draw overflowed it and those cards vanished.
+            for card in state.hand.discard_all() {
+                state.deck.discard(card);
+            }
             events.push(DbEvent::CombatWon);
             state.phase = DbPhase::Reward;
         }
@@ -395,10 +397,7 @@ pub fn end_turn(state: &mut DbState) -> Vec<DbEvent> {
     }
 
     // Draw new hand.
-    let drawn = state.deck.draw(state.config.hand_size);
-    for card in drawn {
-        state.hand.add(card);
-    }
+    draw_into_hand(state, state.config.hand_size);
 
     if let Some(ref combat) = state.combat {
         events.push(DbEvent::TurnStarted {
@@ -413,6 +412,16 @@ pub fn end_turn(state: &mut DbState) -> Vec<DbEvent> {
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
+
+/// Draw `count` cards into the hand. Cards the hand has no room for go to the
+/// discard pile instead of being dropped.
+fn draw_into_hand(state: &mut DbState, count: u8) {
+    for card in state.deck.draw(count) {
+        if let Some(overflow) = state.hand.add(card) {
+            state.deck.discard(overflow);
+        }
+    }
+}
 
 fn xorshift64(mut s: u64) -> u64 {
     if s == 0 {
@@ -612,5 +621,34 @@ mod tests {
         // HP persisted from combat back to run state
         assert_eq!(state.player_hp, 30);
         assert_eq!(state.player_max_hp, 45);
+    }
+
+    #[test]
+    fn winning_a_combat_keeps_every_card_in_the_deck() {
+        let registry = make_registry_with_cost(0, 0);
+        let config = DeckbuilderConfig {
+            starting_deck: vec![CardId(0); 10],
+            hand_size: 5,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut state = DbState::new(config);
+        let dead = || EnemyState {
+            id: 0,
+            name: "Dead Slime".into(),
+            hp: 0,
+            max_hp: 20,
+            block: 0,
+            intent: EnemyIntent::Unknown,
+        };
+
+        start_combat(&mut state, vec![dead()]);
+        play_card(&mut state, 0, None, &registry); // wins with 4 cards in hand
+        assert_eq!(state.phase, DbPhase::Reward);
+        assert_eq!(state.deck.total() + state.hand.cards.len(), 10);
+
+        start_combat(&mut state, vec![dead()]);
+        assert_eq!(state.hand.cards.len(), 5);
+        assert_eq!(state.deck.total() + state.hand.cards.len(), 10);
     }
 }
