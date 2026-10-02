@@ -34,13 +34,34 @@ fn exceeded_deadline(started: Option<std::time::Instant>) -> bool {
     started.is_some_and(|s| s.elapsed() > REQUEST_DEADLINE)
 }
 
-/// Send a JSON-RPC error and log why the connection is being closed.
+/// Send a JSON-RPC error, log why the connection is being closed, and close it.
 fn reject(writer: &mut TcpStream, peer: Option<std::net::SocketAddr>, message: &str) {
     warn!("Closing API connection from {:?}: {}", peer, message);
     let response = RpcResponse::error(None, INVALID_REQUEST, message.to_string());
     if let Ok(mut json) = serde_json::to_string(&response) {
         json.push('\n');
         let _ = writer.write_all(json.as_bytes());
+    }
+    close_gracefully(writer);
+}
+
+/// Close a connection so the response just written still reaches the client.
+///
+/// Dropping a socket that has unread input makes the OS send a reset, and on
+/// Windows the peer then discards data it has not read yet, the error
+/// response included. Shut down the write side and drain (bounded in time
+/// and bytes) whatever the client is still sending first.
+fn close_gracefully(stream: &mut TcpStream) {
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(100)));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    let mut sink = [0u8; 8192];
+    let mut drained = 0usize;
+    while std::time::Instant::now() < deadline && drained < MAX_REQUEST_BYTES * 4 {
+        match stream.read(&mut sink) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => drained += n,
+        }
     }
 }
 
@@ -252,6 +273,7 @@ fn handle_client(stream: TcpStream, state: SharedState, running: Arc<AtomicBool>
                 warn!("API client {peer:?} sent a non-JSON line; closing the connection");
                 let response = RpcResponse::error(None, PARSE_ERROR, format!("Parse error: {}", e));
                 write_response(&mut writer, &response);
+                close_gracefully(&mut writer);
                 break;
             }
         };

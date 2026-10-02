@@ -172,8 +172,8 @@ fn queue_cmd(req: &RpcRequest, state: &SharedState, action: &str, params: Value)
 /// (or reads from) it.
 ///
 /// Allowed are relative paths that stay inside the working directory (no
-/// `..`) and absolute paths under the system temp directory, where the
-/// screenshot default lives. Anything else is refused: any local process can
+/// `..`) and absolute paths under the system temp directory (or `/tmp` on
+/// Unix), where the screenshot default lives. Anything else is refused: any local process can
 /// reach the API port, so a request must not be able to overwrite files like
 /// `~/.bashrc` that the user never pointed the engine at.
 pub fn check_request_path(raw: &str) -> Result<(), String> {
@@ -184,7 +184,11 @@ pub fn check_request_path(raw: &str) -> Result<(), String> {
         return Err(format!("path '{raw}' must not contain '..'"));
     }
     let rooted = path.has_root() || matches!(path.components().next(), Some(Component::Prefix(_)));
-    if rooted && !path.starts_with(std::env::temp_dir()) {
+    // `/tmp` is accepted on Unix as well: on macOS temp_dir() is a per-user
+    // directory under /var/folders, while tools and agents write to /tmp.
+    let in_temp =
+        path.starts_with(std::env::temp_dir()) || (cfg!(unix) && path.starts_with("/tmp"));
+    if rooted && !in_temp {
         return Err(format!(
             "path '{raw}' must be relative to the project directory or inside {}",
             std::env::temp_dir().display()
@@ -1347,17 +1351,16 @@ mod tests {
     #[test]
     fn screenshot_queues_request() {
         let state = new_shared_state();
+        let path = std::env::temp_dir().join("test.png");
+        let path = path.to_string_lossy();
         let resp = handle_request(
-            &make_request(
-                "screenshot",
-                json!({"path": "/tmp/test.png", "overlays": ["grid"]}),
-            ),
+            &make_request("screenshot", json!({"path": path, "overlays": ["grid"]})),
             &state,
         );
-        assert!(resp.error.is_none());
+        assert!(resp.error.is_none(), "{:?}", resp.error);
         let s = state.lock().unwrap();
         assert_eq!(s.screenshot_queue.len(), 1);
-        assert_eq!(s.screenshot_queue[0].path, "/tmp/test.png");
+        assert_eq!(s.screenshot_queue[0].path, path);
         assert_eq!(s.screenshot_queue[0].overlays, vec!["grid"]);
     }
 
