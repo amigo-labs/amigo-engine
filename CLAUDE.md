@@ -30,20 +30,28 @@ engine over JSON-RPC, or assert on the CPU-side draw lists.
 
 ## The gate
 
-CI and `just ci` run the same thing. `just` may not be installed; the
-recipes in `justfile` are then run individually:
+CI runs the `justfile` recipes, not copies of them, so `just ci` reproduces
+CI exactly. `just` may not be installed; the recipes are then run
+individually:
 
 ```sh
 cargo fmt --all -- --check
 cargo check --workspace
-cargo clippy --workspace -- -D warnings     # warnings are errors
+cargo clippy --workspace --all-targets -- -D warnings   # warnings are errors
 cargo test --workspace
 ```
 
-Plus, before pushing, the feature-flag matrix and docs from `justfile`:
-`clippy-features`, `test-features`, `test-doc`, and `doc` with
-`RUSTDOCFLAGS="-D warnings"`. Feature combinations break in ways the default
-build does not — `amigo_core --all-features` in particular.
+Plus, before pushing, the rest of `just ci`: `clippy-features` (every crate
+once per feature via cargo-hack, then `--all-features`), `test-features`,
+`test-doc` (doc tests of every library crate), and `doc` (rustdoc for every
+library crate with `RUSTDOCFLAGS="-D warnings"`). Feature combinations break
+in ways the default build does not. CI also runs `cargo deny check`
+(advisories, licenses, sources; see `deny.toml`) and the tests on Windows and
+macOS.
+
+The full matrix fills the disk of a cloud session quickly; set
+`CARGO_INCREMENTAL=0` there and delete `target/debug/incremental` if a build
+dies with "No space left on device".
 
 ## Layout
 

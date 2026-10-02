@@ -1,0 +1,60 @@
+# cargo-deny configuration: `cargo deny check` (CI job "Dependencies").
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check the dependency graph every feature can pull in, not only the defaults:
+# tracy, egui and the API server are all opt-in.
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Flag unmaintained crates only where we pick the dependency ourselves.
+# Transitive ones (paste and instant via kira/notify, ttf-parser via fontdue
+# and egui) have no maintained replacement we can switch to from here.
+unmaintained = "workspace"
+ignore = [
+    # ringbuf 0.3: double free when an element's Drop panics. kira 0.9 pins
+    # it; kira's ring buffers hold plain audio frames, whose Drop cannot panic.
+    # Remove once kira is upgraded.
+    { id = "RUSTSEC-2026-0293", reason = "pinned by kira 0.9; fixed by the kira upgrade" },
+]
+
+[licenses]
+version = 2
+# The engine is MIT OR Apache-2.0; everything it links must be compatible with
+# shipping under either.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    # File-level copyleft, fine to link unmodified: symphonia (kira's decoders)
+    # and triple_buffer. Modifying their sources would require publishing the
+    # modified files.
+    "MPL-2.0",
+    # Mozilla's CA certificate data in webpki-roots (ureq's TLS).
+    "CDLA-Permissive-2.0",
+    # egui's bundled default fonts (epaint_default_fonts), editor only.
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions are reported, not fatal: most come from upstream crates
+# (asefile still pulls image 0.24), and Dependabot keeps chipping at them.
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace members depend on each other by path without a version.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
