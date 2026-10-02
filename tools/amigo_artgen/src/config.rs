@@ -1,10 +1,10 @@
-//! Read/write art generation defaults from amigo.toml [art] section.
+//! Read/write art generation defaults from `amigo.toml` `[art]` section.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Project-level art generation defaults stored in amigo.toml [art].
+/// Project-level art generation defaults stored in `amigo.toml` `[art]`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArtDefaults {
@@ -44,7 +44,7 @@ impl ArtDefaults {
     }
 }
 
-/// Load [art] defaults from amigo.toml in the given project directory.
+/// Load `[art]` defaults from `amigo.toml` in the given project directory.
 pub fn load_art_defaults(project_dir: &Path) -> ArtDefaults {
     let path = project_dir.join("amigo.toml");
     let content = match std::fs::read_to_string(&path) {
@@ -67,7 +67,7 @@ pub fn load_art_defaults(project_dir: &Path) -> ArtDefaults {
     }
 }
 
-/// Merge updates into the [art] section of amigo.toml.
+/// Merge updates into the `[art]` section of `amigo.toml`.
 ///
 /// Returns `Ok(())` on success, or an error message if the file could not be written.
 pub fn save_art_defaults(

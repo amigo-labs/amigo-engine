@@ -8,7 +8,7 @@ use std::time::Instant;
 pub struct ReplayFrame {
     /// The simulation tick this frame represents.
     pub tick: u64,
-    /// Serialized commands for this tick (each inner Vec<u8> is one command batch).
+    /// Serialized commands for this tick (each inner `Vec<u8>` is one command batch).
     pub commands: Vec<Vec<u8>>,
 }
 

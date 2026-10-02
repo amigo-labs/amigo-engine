@@ -809,7 +809,7 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_audiogen_set_defaults".into(),
-            description: "Save audio generation defaults to amigo.toml [audio] section. \
+            description: "Save audio generation defaults to `amigo.toml` `[audio]` section. \
                 Merges with existing values. Use after asking the user for preferences.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -926,7 +926,7 @@ pub fn dispatch_tool(
 }
 
 /// Like `dispatch_tool`, but accepts an explicit project directory for
-/// resolving [audio] defaults from amigo.toml.
+/// resolving `[audio]` defaults from `amigo.toml`.
 pub fn dispatch_tool_with_defaults(
     name: &str,
     params: serde_json::Value,
