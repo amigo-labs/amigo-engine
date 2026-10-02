@@ -889,7 +889,6 @@ impl ApplicationHandler for EngineApp {
                 // Fixed timestep simulation. `tick_budget` above already decided
                 // how many ticks this frame gets, from elapsed time plus any API
                 // step request.
-                let ticks_ran = budget.total() > 0;
                 for _ in 0..budget.total() {
                     let _tick_span = info_span!("tick").entered();
 
@@ -929,16 +928,16 @@ impl ApplicationHandler for EngineApp {
                         state.game_ctx.events.flush();
                     }
                     state.game_ctx.particles.update(tick_duration as f32);
-                }
 
-                // Clear edge-detected input (just pressed/released) only
-                // after the simulation consumed it, and only if a tick
-                // actually ran this frame. Clearing at tick START would wipe
-                // the events winit delivered before this redraw, so
-                // `just_pressed` would never be observable; clearing on
-                // zero-tick frames would drop presses that arrive between
-                // ticks.
-                if ticks_ran {
+                    // Clear edge-detected input (just pressed/released) at
+                    // the END of every tick, so each press is seen by exactly
+                    // one tick. Clearing once after the loop let every tick
+                    // of a 2+-tick frame (30/50 Hz displays, a hitch, an API
+                    // `tick N`) see the same press: Esc opened a pause menu
+                    // and the menu saw it again and closed itself. Clearing at
+                    // tick START would instead wipe the events winit delivered
+                    // before this redraw, and zero-tick frames keep their
+                    // presses for the next tick. Headless does the same.
                     state.game_ctx.input.begin_frame();
                 }
 
