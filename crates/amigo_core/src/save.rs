@@ -251,8 +251,14 @@ impl SaveManager {
     ///
     /// Autosave slots use ids starting from `max_slots + 1` up to
     /// `max_slots + autosave_slots`. Returns the slot id used.
+    ///
+    /// With `autosave_slots == 0` (autosave disabled) there is no slot to
+    /// write, so this returns [`SaveError::SlotNotFound`] instead of saving.
     pub fn autosave<T: Serialize>(&mut self, data: &T, play_time: f64) -> Result<u32, SaveError> {
-        let index = self.next_autosave_index;
+        if self.config.autosave_slots == 0 {
+            return Err(SaveError::SlotNotFound(self.config.max_slots + 1));
+        }
+        let index = self.next_autosave_index % self.config.autosave_slots;
         self.next_autosave_index = (index + 1) % self.config.autosave_slots;
         self.time_since_autosave = 0.0;
 
@@ -267,7 +273,12 @@ impl SaveManager {
     ///
     /// Call this every frame / tick with the frame delta. When it returns
     /// `true` you should call [`autosave`](Self::autosave).
+    ///
+    /// Always `false` when autosave is disabled (`autosave_slots == 0`).
     pub fn should_autosave(&mut self, elapsed: f64) -> bool {
+        if self.config.autosave_slots == 0 {
+            return false;
+        }
         self.time_since_autosave += elapsed;
         self.time_since_autosave >= self.config.autosave_interval_secs
     }
@@ -417,5 +428,23 @@ mod tests {
         assert!(mgr.should_autosave(2.0));
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn zero_autosave_slots_disables_autosave_instead_of_panicking() {
+        let config = SaveConfig {
+            max_slots: 5,
+            autosave_slots: 0,
+            autosave_interval_secs: 1.0,
+            app_name: "test_autosave_disabled".to_string(),
+        };
+        let mut mgr = SaveManager::new(config);
+
+        assert!(!mgr.should_autosave(100.0));
+        // Used to compute `(index + 1) % 0` and panic before touching disk.
+        assert!(matches!(
+            mgr.autosave(&42u32, 0.0),
+            Err(SaveError::SlotNotFound(6))
+        ));
     }
 }
