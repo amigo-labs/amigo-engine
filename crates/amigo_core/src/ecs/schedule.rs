@@ -240,7 +240,12 @@ impl SystemGraph {
         Ok(())
     }
 
-    /// Execute all systems for one tick in schedule order.
+    /// Execute all systems for one tick in schedule order, one at a time.
+    ///
+    /// Systems the schedule groups into a batch still run sequentially here,
+    /// in batch order, so this is sound whatever the systems touch — including
+    /// components they did not declare and structural changes. Use
+    /// [`run_parallel`](Self::run_parallel) to spread batches across threads.
     ///
     /// # Panics
     /// Panics if [`build`](Self::build) has not been called (or was invalidated
@@ -251,59 +256,81 @@ impl SystemGraph {
             "SystemGraph::build() must be called before run()"
         );
 
+        let Self {
+            systems, schedules, ..
+        } = self;
         for stage in SystemStage::ALL {
-            let schedule = match self.schedules.get(&stage) {
-                Some(s) => s,
-                None => continue,
+            let Some(schedule) = schedules.get(&stage) else {
+                continue;
             };
+            for &idx in schedule.steps.iter().flatten() {
+                let mut ctx = SystemContext { world };
+                systems[idx].run(&mut ctx);
+            }
+        }
+    }
 
+    /// Execute all systems for one tick, dispatching each batch of systems
+    /// with pairwise-disjoint declared access in parallel via rayon.
+    ///
+    /// Every batch member receives its own `&mut World`, so the borrow checker
+    /// cannot see what each one touches; the declarations stand in for it.
+    ///
+    /// # Safety
+    /// For every system that declares access with `.reads::<T>()` /
+    /// `.writes::<T>()` (systems declaring nothing always run alone and are
+    /// exempt), the caller guarantees that the system:
+    ///
+    /// - reads and writes only the component storages it declared, and
+    /// - makes no structural change to the world: no `spawn`, `despawn` or
+    ///   `flush`, and no `insert_dynamic` of a type that is not registered yet
+    ///   (registration can rehash the dynamic-storage map under a sibling
+    ///   system; call [`World::register_dynamic`](super::world::World::register_dynamic)
+    ///   up front).
+    ///
+    /// Breaking either is a data race. Debug builds compare a structural
+    /// fingerprint around each batch and panic on a detected structural
+    /// change, but by then the race has already happened.
+    ///
+    /// # Panics
+    /// Panics if [`build`](Self::build) has not been called.
+    pub unsafe fn run_parallel(&mut self, world: &mut super::world::World) {
+        assert!(
+            self.built,
+            "SystemGraph::build() must be called before run_parallel()"
+        );
+
+        let Self {
+            systems, schedules, ..
+        } = self;
+        for stage in SystemStage::ALL {
+            let Some(schedule) = schedules.get(&stage) else {
+                continue;
+            };
             for step in &schedule.steps {
-                if step.len() == 1 {
-                    // Single system -- run directly, no threading overhead.
-                    let idx = step[0];
-                    // SAFETY: we need a mutable ref to systems[idx] while also
-                    // holding &mut world. We use unsafe pointer arithmetic to
-                    // split the borrow since each step only touches one system.
-                    let sys = unsafe { &mut *std::ptr::addr_of_mut!(self.systems[idx]) };
+                if let [idx] = step[..] {
                     let mut ctx = SystemContext { world };
-                    sys.run(&mut ctx);
+                    systems[idx].run(&mut ctx);
                 } else {
-                    // Multiple systems with disjoint access -- dispatch in
-                    // parallel via rayon.
-                    #[cfg(feature = "system_graph")]
-                    {
-                        Self::dispatch_parallel(&mut self.systems, step, world);
-                    }
+                    // SAFETY: forwarded from this function's contract.
+                    unsafe { Self::dispatch_parallel(systems, step, world) };
                 }
             }
         }
     }
 
     /// Dispatch a batch of non-conflicting systems in parallel using rayon.
-    #[cfg(feature = "system_graph")]
-    fn dispatch_parallel(
-        systems: &mut Vec<SystemDescriptor>,
+    ///
+    /// # Safety
+    /// `indices` must be distinct and in bounds, and every system they name
+    /// must satisfy the contract of [`run_parallel`](Self::run_parallel).
+    unsafe fn dispatch_parallel(
+        systems: &mut [SystemDescriptor],
         indices: &[usize],
         world: &mut super::world::World,
     ) {
-        // Tripwire for the one contract violation we can detect cheaply: a
-        // system in a parallel batch that changes the world's *structure*.
-        // Spawn / despawn / dynamic-type registration are not expressible as
-        // `.reads()` / `.writes()` declarations, so `has_conflict` cannot see
-        // them and such a system will silently be batched with others.
         let fingerprint_before = world.structural_fingerprint();
 
-        // SAFETY: Systems only share a batch when every one of them declared
-        // its component access via `.reads::<T>()` / `.writes::<T>()` and
-        // those declarations are pairwise disjoint (see `has_conflict`;
-        // undeclared systems always run alone). Sending the pointers is sound
-        // because `World: Send` and `SystemDescriptor: Send` (enforced by the
-        // bounds on `SendPtr`). The declarations themselves remain a
-        // caller-supplied contract: a system that touches components it did
-        // not declare can still race, and no assertion here can catch that. A
-        // future iteration should replace the raw `&mut World` reconstruction
-        // with per-component borrows so the contract is checked by the type
-        // system rather than by convention (see ADR-0002, "Parallel dispatch").
         let world_ptr = SendPtr(world as *mut super::world::World);
         let systems_ptr = SendPtr(systems.as_mut_ptr());
 
@@ -312,7 +339,14 @@ impl SystemGraph {
                 let wp = world_ptr;
                 let sp = systems_ptr;
                 s.spawn(move |_| {
+                    // SAFETY: `idx` is in bounds and distinct from every other
+                    // index in this batch (`build` puts each system in exactly
+                    // one step), so each task gets the only `&mut` to its
+                    // descriptor.
                     let sys = unsafe { &mut *sp.ptr().add(idx) };
+                    // SAFETY: the tasks alias `*world`; the caller guarantees
+                    // their accesses are disjoint and non-structural, so no
+                    // two of them touch the same memory with a write.
                     let w = unsafe { &mut *wp.ptr() };
                     let mut ctx = SystemContext { world: w };
                     sys.run(&mut ctx);
@@ -324,12 +358,11 @@ impl SystemGraph {
             fingerprint_before,
             world.structural_fingerprint(),
             "a system in a parallel batch performed a structural change \
-             (spawn, despawn, or dynamic component registration). Structural \
-             changes cannot be declared via .reads()/.writes(), so the \
-             scheduler cannot prove they are conflict-free and they race \
-             against the other systems in the batch. Move the structural work \
-             into a system that declares no access (those always run alone), \
-             or defer it via World::despawn + flush between stages."
+             (spawn, despawn, or dynamic component registration), which \
+             SystemGraph::run_parallel's safety contract forbids. Move the \
+             structural work into a system that declares no access (those \
+             always run alone), register dynamic types before the run, or use \
+             SystemGraph::run."
         );
     }
 
@@ -611,18 +644,19 @@ mod tests {
 
         let mut world = super::super::world::World::new();
         graph.run(&mut world);
-
         assert_eq!(counter.load(Ordering::Relaxed), 2);
+
+        // SAFETY: neither system touches the world at all.
+        unsafe { graph.run_parallel(&mut world) };
+        assert_eq!(counter.load(Ordering::Relaxed), 4);
     }
 
-    /// Spawning from inside a parallel batch is a contract violation that
-    /// `has_conflict` cannot see, because structural changes are not
-    /// expressible as read/write declarations. The scheduler must trip loudly
-    /// rather than corrupt the world silently.
+    /// Two systems the schedule would batch together may still make
+    /// structural changes under `run`, which executes the batch one system at
+    /// a time. (Under `run_parallel` the same graph would break its safety
+    /// contract.)
     #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "structural change")]
-    fn structural_change_in_parallel_batch_is_detected() {
+    fn structural_changes_in_a_batch_are_sound_under_run() {
         struct CompA;
         struct CompB;
 
@@ -633,10 +667,18 @@ mod tests {
             })
             .writes::<CompA>(),
         );
-        graph.add_system(noop_system("innocent").writes::<CompB>());
+        graph.add_system(
+            SystemDescriptor::new("registrar", |ctx: &mut SystemContext<'_>| {
+                let e = ctx.world.spawn();
+                ctx.world.insert_dynamic(e, CompB);
+            })
+            .writes::<CompB>(),
+        );
         graph.build().expect("should build");
 
         let mut world = super::super::world::World::new();
         graph.run(&mut world);
+        assert_eq!(world.entity_count(), 2);
+        assert!(world.dynamic::<CompB>().is_some());
     }
 }
