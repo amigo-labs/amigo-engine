@@ -1,13 +1,15 @@
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 
 /// Identifies a registered callback in the scheduler.
 ///
 /// This is a lightweight handle -- the scheduler does not store closures,
 /// only interval metadata keyed by this ID.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CallbackId(pub u32);
 
 /// Entry tracking when a callback should next fire.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ScheduleEntry {
     /// Run every `interval` ticks.
     interval: u64,
@@ -20,6 +22,11 @@ struct ScheduleEntry {
 /// No closures are stored -- the caller checks [`TickScheduler::should_run`] each tick and
 /// dispatches externally.
 ///
+/// The scheduler is part of the simulation state: it is `Clone` and
+/// serializable so rollback and rewind snapshots can restore it together with
+/// the world. Restoring a world without it would keep `last_run` from the
+/// abandoned timeline and skip callbacks during re-simulation.
+///
 /// ```ignore
 /// let mut sched = TickScheduler::new();
 /// let physics = CallbackId(0);
@@ -29,6 +36,7 @@ struct ScheduleEntry {
 /// assert!(!sched.should_run(physics, 1));
 /// assert!(sched.should_run(physics, 2));
 /// ```
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TickScheduler {
     entries: FxHashMap<CallbackId, ScheduleEntry>,
 }
@@ -75,7 +83,7 @@ impl TickScheduler {
             return true;
         }
 
-        if current_tick >= entry.last_run + entry.interval {
+        if current_tick >= entry.last_run.saturating_add(entry.interval) {
             entry.last_run = current_tick;
             return true;
         }
@@ -101,12 +109,6 @@ impl TickScheduler {
     /// Returns `true` if no callbacks are registered.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
-    }
-}
-
-impl Default for TickScheduler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -193,5 +195,41 @@ mod tests {
 
         assert!(sched.should_run(fast, 4));
         assert!(sched.should_run(slow, 4));
+    }
+
+    #[test]
+    fn restoring_a_snapshot_replays_the_same_callbacks() {
+        let id = CallbackId(7);
+        let mut sched = TickScheduler::new();
+        sched.every(5, id);
+        let fired_live: Vec<u64> = (0..=100).filter(|&t| sched.should_run(id, t)).collect();
+
+        // Roll back to tick 95 and re-simulate: a scheduler restored from a
+        // snapshot taken at 95 must fire at 100 again, as it did live.
+        let mut sched = TickScheduler::new();
+        sched.every(5, id);
+        (0..=95).for_each(|t| {
+            sched.should_run(id, t);
+        });
+        let snapshot = sched.clone();
+        (96..=100).for_each(|t| {
+            sched.should_run(id, t);
+        });
+        let mut restored = snapshot;
+        let refired: Vec<u64> = (96..=100).filter(|&t| restored.should_run(id, t)).collect();
+        assert_eq!(refired, vec![100]);
+        assert!(fired_live.contains(&100));
+    }
+
+    #[test]
+    fn huge_interval_does_not_overflow() {
+        let id = CallbackId(1);
+        let mut sched = TickScheduler::new();
+        sched.every(u64::MAX - 1, id);
+        assert!(sched.should_run(id, 0));
+        assert!(!sched.should_run(id, 3));
+        assert!(sched.should_run(id, u64::MAX - 1));
+        // `last_run + interval` exceeds u64 here; it must not panic.
+        let _ = sched.should_run(id, u64::MAX);
     }
 }
