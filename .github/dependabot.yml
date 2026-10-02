@@ -1,0 +1,39 @@
+# Dependency update PRs. Cargo updates are grouped so that crates which must
+# move in lockstep land together: egui-wgpu is built against one wgpu version,
+# and naga (used in tests to validate WGSL) must match wgpu's front-end.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      gpu-stack:
+        patterns:
+          - "wgpu*"
+          - "naga"
+          - "egui*"
+          - "winit"
+      tracy:
+        patterns:
+          - "tracing-tracy"
+          - "tracy-client"
+      patch-and-minor:
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "wgpu*"
+          - "naga"
+          - "egui*"
+          - "winit"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
