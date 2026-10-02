@@ -176,6 +176,12 @@ fn queue_cmd(req: &RpcRequest, state: &SharedState, action: &str, params: Value)
 /// Unix), where the screenshot default lives. Anything else is refused: any local process can
 /// reach the API port, so a request must not be able to overwrite files like
 /// `~/.bashrc` that the user never pointed the engine at.
+///
+/// Symlinks are followed as a write would follow them, so a link inside the
+/// project or the temp dir cannot lead out of it. The file is written later,
+/// on the engine thread, so a link swapped in after this check is not caught;
+/// closing that gap needs writes relative to a directory handle, which `std`
+/// does not offer portably.
 pub fn check_request_path(raw: &str) -> Result<(), String> {
     use std::path::{Component, Path};
 
@@ -194,7 +200,69 @@ pub fn check_request_path(raw: &str) -> Result<(), String> {
             std::env::temp_dir().display()
         ));
     }
+
+    let absolute = if rooted {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("path '{raw}': no working directory: {e}"))?
+            .join(path)
+    };
+    let resolved = resolve_existing_prefix(&absolute)
+        .map_err(|e| format!("path '{raw}' cannot be resolved: {e}"))?;
+    if !allowed_roots()
+        .iter()
+        .any(|root| resolved.starts_with(root))
+    {
+        return Err(format!(
+            "path '{raw}' leads through a symlink to {}, outside the project directory and {}",
+            resolved.display(),
+            std::env::temp_dir().display()
+        ));
+    }
     Ok(())
+}
+
+/// The directories a request path may resolve into, canonicalized: the
+/// working directory and the temp dirs [`check_request_path`] accepts.
+fn allowed_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = vec![std::env::temp_dir()];
+    roots.extend(std::env::current_dir());
+    if cfg!(unix) {
+        roots.push("/tmp".into());
+    }
+    roots
+        .into_iter()
+        .filter_map(|r| r.canonicalize().ok())
+        .collect()
+}
+
+/// Canonicalize the longest prefix of `path` that exists and append the rest.
+///
+/// The missing tail cannot contain a symlink, so the result is where a write
+/// to `path` would land now. An existing entry that does not canonicalize, such
+/// as a dangling symlink, is an error.
+fn resolve_existing_prefix(path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    let mut existing = path;
+    let mut missing = Vec::new();
+    loop {
+        match existing.symlink_metadata() {
+            Ok(_) => break,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no part of the path exists",
+            ));
+        };
+        missing.push(name);
+        existing = parent;
+    }
+    let mut resolved = existing.canonicalize()?;
+    resolved.extend(missing.iter().rev());
+    Ok(resolved)
 }
 
 /// [`require_str`] for a filesystem path, validated by [`check_request_path`].
@@ -767,31 +835,43 @@ fn handle_audio_set_volume(req: &RpcRequest, state: &SharedState) -> RpcResponse
 // Save / Load / Replay handlers
 // ---------------------------------------------------------------------------
 
+// Commands the engine does not handle itself reach the game's command inbox,
+// and game code will open whatever path it is handed, so these paths are
+// checked here like the engine's own.
+
 fn handle_save(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let path = req
         .params
         .get("path")
         .and_then(|v| v.as_str())
         .unwrap_or("saves/quicksave.ron");
+    if let Err(e) = check_request_path(path) {
+        return RpcResponse::error(req.id, INVALID_PARAMS, e);
+    }
     let slot = req.params.get("slot").and_then(|v| v.as_str());
     queue_cmd(req, state, "save", json!({"path": path, "slot": slot}))
 }
 
 fn handle_load(req: &RpcRequest, state: &SharedState) -> RpcResponse {
     let path = req.params.get("path").and_then(|v| v.as_str());
+    if let Some(path) = path
+        && let Err(e) = check_request_path(path)
+    {
+        return RpcResponse::error(req.id, INVALID_PARAMS, e);
+    }
     let slot = req.params.get("slot").and_then(|v| v.as_str());
     queue_cmd(req, state, "load", json!({"path": path, "slot": slot}))
 }
 
 fn handle_replay_record_stop(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    match require_str(&req.params, "path") {
+    match require_path(&req.params, "path") {
         Ok(path) => queue_cmd(req, state, "replay.record_stop", json!({"path": path})),
         Err(e) => RpcResponse::error(req.id, INVALID_PARAMS, e),
     }
 }
 
 fn handle_replay_play(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    match require_str(&req.params, "path") {
+    match require_path(&req.params, "path") {
         Ok(path) => {
             let from_tick = req.params.get("from_tick").and_then(|v| v.as_u64());
             queue_cmd(
@@ -810,11 +890,17 @@ fn handle_replay_play(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_debug_dump_state(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let path = req
-        .params
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or("/tmp/state.ron");
+    // The temp dir rather than a literal /tmp, which Windows does not have.
+    let path = match req.params.get("path").and_then(|v| v.as_str()) {
+        Some(path) => path.to_string(),
+        None => std::env::temp_dir()
+            .join("state.ron")
+            .to_string_lossy()
+            .into_owned(),
+    };
+    if let Err(e) = check_request_path(&path) {
+        return RpcResponse::error(req.id, INVALID_PARAMS, e);
+    }
     queue_cmd(req, state, "debug.dump_state", json!({"path": path}))
 }
 
@@ -1568,6 +1654,104 @@ mod tests {
             let resp = handle_request(&make_request(method, params.clone()), &state);
             assert!(resp.error.is_none(), "{method} {params}: {:?}", resp.error);
         }
+    }
+
+    #[test]
+    fn every_path_a_command_carries_is_checked() {
+        // Commands the engine does not handle go to the game's inbox, where
+        // game code opens the path as given.
+        let state = new_shared_state();
+        for method in [
+            "save",
+            "load",
+            "replay.record_stop",
+            "replay.play",
+            "debug.dump_state",
+            "editor.load",
+        ] {
+            let resp = handle_request(
+                &make_request(method, json!({"path": "../outside.ron"})),
+                &state,
+            );
+            let err = resp
+                .error
+                .unwrap_or_else(|| panic!("{method} was accepted"));
+            assert_eq!(err.code, INVALID_PARAMS, "{method}");
+        }
+        assert!(crate::lock_or_recover(&state).pending_commands.is_empty());
+
+        for (method, params) in [
+            ("save", json!({})),
+            ("load", json!({"slot": "1"})),
+            ("debug.dump_state", json!({})),
+            ("replay.record_stop", json!({"path": "replays/run.ron"})),
+        ] {
+            let resp = handle_request(&make_request(method, params.clone()), &state);
+            assert!(resp.error.is_none(), "{method} {params}: {:?}", resp.error);
+        }
+    }
+
+    /// A fresh directory under the temp dir, removed when dropped.
+    #[cfg(unix)]
+    struct ScratchDir(std::path::PathBuf);
+
+    #[cfg(unix)]
+    impl ScratchDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("amigo-api-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_cannot_lead_a_request_path_out_of_the_temp_dir() {
+        let scratch = ScratchDir::new("symlink-escape");
+        let to_root = scratch.0.join("to_root");
+        let dangling = scratch.0.join("dangling");
+        std::os::unix::fs::symlink("/", &to_root).unwrap();
+        std::os::unix::fs::symlink("/nonexistent-amigo-target/.bashrc", &dangling).unwrap();
+
+        for path in [
+            to_root.join(".bashrc"),
+            to_root.join("new/dir/x.ron"),
+            dangling,
+        ] {
+            assert!(
+                check_request_path(path.to_str().unwrap()).is_err(),
+                "{} was accepted",
+                path.display()
+            );
+        }
+        let plain = scratch.0.join("not/created/yet.ron");
+        assert_eq!(check_request_path(plain.to_str().unwrap()), Ok(()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolution_follows_a_symlinked_directory_inside_a_project() {
+        // A project-relative `out/.bashrc` where `out` links somewhere else
+        // must be judged by where it lands.
+        let scratch = ScratchDir::new("symlink-project");
+        let project = scratch.0.join("project");
+        let elsewhere = scratch.0.join("elsewhere");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, project.join("out")).unwrap();
+
+        let resolved = resolve_existing_prefix(&project.join("out/.bashrc")).unwrap();
+
+        assert_eq!(resolved, elsewhere.canonicalize().unwrap().join(".bashrc"));
+        assert!(!resolved.starts_with(project.canonicalize().unwrap()));
     }
 
     #[test]

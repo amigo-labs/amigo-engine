@@ -12,7 +12,9 @@ Notable changes per release. Format loosely follows
   but a cross-origin `fetch` could smuggle a request line into an HTTP body,
   and `dev.save_snapshot` / `screenshot` wrote to any path (e.g. `~/.bashrc`).
   A non-JSON line now closes the connection, and request paths must stay in
-  the project directory or the system temp dir.
+  the project directory or the system temp dir, also through symlinks. The
+  check covers every command that carries a path, including those passed on
+  to the game (`save`, `load`, `replay.*`, `debug.dump_state`).
 - **Code injection in the audio pipeline.** The MIDI path was spliced into
   `python -c` source; a stem file named `x'); __import__('os').system(...)`
   ran arbitrary Python. Paths now travel through `sys.argv`, stem names must
