@@ -360,7 +360,7 @@ mod tests {
         let reg = test_registry();
         let mut inv = Inventory::new(2);
         inv.slots[0].item = Some(ItemInstance::with_stack(1, 25)); // over max 20
-                                                                   // Used to compute 20 - 25 in u32: a debug panic, unbounded in release.
+        // Used to compute 20 - 25 in u32: a debug panic, unbounded in release.
         assert!(inv.add(ItemInstance::with_stack(1, 1), &reg).is_none());
         assert_eq!(inv.slots[0].item.as_ref().unwrap().stack_count, 25);
         assert_eq!(inv.slots[1].item.as_ref().unwrap().stack_count, 1);

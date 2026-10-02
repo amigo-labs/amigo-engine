@@ -955,7 +955,7 @@ mod tests {
 
     #[test]
     fn fog_explored_pin_half_opacity() {
-        use amigo_core::fog_of_war::{update_visibility, FogOfWarGrid};
+        use amigo_core::fog_of_war::{FogOfWarGrid, update_visibility};
         use amigo_core::math::IVec2;
 
         let mut mm = Minimap::new(MinimapConfig {
@@ -1205,7 +1205,7 @@ mod tests {
         ];
         let rgba = mm.pixels_to_rgba(&pixels);
         assert_eq!(rgba.len(), 16); // 2x2x4
-                                    // First pixel: red (255,0,0,255)
+        // First pixel: red (255,0,0,255)
         assert_eq!(rgba[0], 255);
         assert_eq!(rgba[1], 0);
         assert_eq!(rgba[2], 0);

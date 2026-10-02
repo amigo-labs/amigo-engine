@@ -28,11 +28,7 @@ struct PairKey(EntityId, EntityId);
 
 impl PairKey {
     fn new(a: EntityId, b: EntityId) -> Self {
-        if a < b {
-            Self(a, b)
-        } else {
-            Self(b, a)
-        }
+        if a < b { Self(a, b) } else { Self(b, a) }
     }
 }
 

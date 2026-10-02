@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(buf.get(0, 1)[3], 255); // left
         assert_eq!(buf.get(2, 1)[3], 255); // right
         assert_eq!(buf.get(1, 2)[3], 255); // bottom
-                                           // Diagonal should still be transparent
+        // Diagonal should still be transparent
         assert_eq!(buf.get(0, 0)[3], 0);
     }
 

@@ -4,7 +4,7 @@ use crate::enemy::{DeadEnemy, EnemyDef, EnemyInstance, EnemyManager};
 use crate::game_state::{GamePhase, TdGameState};
 use crate::pathfinding::WaypointPath;
 use crate::projectile::{ProjectileHit, ProjectileManager, ProjectileTarget, SpawnProjectile};
-use crate::tower::{select_target, TargetCandidate, TowerAttackType, TowerDef, TowerInstance};
+use crate::tower::{TargetCandidate, TowerAttackType, TowerDef, TowerInstance, select_target};
 use crate::waves::SpawnEvent;
 
 // ---------------------------------------------------------------------------

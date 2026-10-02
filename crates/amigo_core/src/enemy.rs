@@ -339,7 +339,7 @@ mod tests {
         let def = test_def();
         let mut enemy = EnemyInstance::from_def(&def);
         enemy.path_follower = PathFollower::new(0.0); // stand still, don't leak
-                                                      // 30 dps for 2 s: 0.5 HP per 60 Hz tick used to truncate to 0.
+        // 30 dps for 2 s: 0.5 HP per 60 Hz tick used to truncate to 0.
         enemy
             .status_effects
             .apply(StatusEffect::new(EffectType::Poison, 30.0, 2.0));

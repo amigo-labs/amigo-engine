@@ -281,7 +281,7 @@ mod tests {
         // "b" at tick 1
 
         reg.tick(); // tick = 2
-                    // Touch "a" so it becomes more recent than "b"
+        // Touch "a" so it becomes more recent than "b"
         reg.request("a");
 
         // Now evict down to 1: "b" should be evicted (tick 1), "a" was touched at tick 2

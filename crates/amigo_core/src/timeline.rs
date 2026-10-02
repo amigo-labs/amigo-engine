@@ -567,12 +567,16 @@ mod tests {
         let (state, events) = player.update(1.5);
         assert_eq!(state, PlaybackState::Playing);
         // Should have tween value + sfx event (sfx at 1.0 crossed)
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, TimelineEvent::TweenValue { .. })));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, TimelineEvent::PlaySfx { name } if name == "explosion")));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, TimelineEvent::TweenValue { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, TimelineEvent::PlaySfx { name } if name == "explosion"))
+        );
     }
 
     #[test]
@@ -581,9 +585,11 @@ mod tests {
         player.play(simple_timeline());
         player.update(1.5); // Fires sfx
         let (_, events) = player.update(0.5); // Advances to 2.0, sfx already fired
-        assert!(!events
-            .iter()
-            .any(|e| matches!(e, TimelineEvent::PlaySfx { .. })));
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, TimelineEvent::PlaySfx { .. }))
+        );
     }
 
     #[test]
@@ -685,9 +691,11 @@ mod tests {
         player.update(1.5); // Fires sfx at 1.0
         player.seek(0.5); // Seek back before sfx
         let (_, events) = player.update(1.0); // Should re-fire sfx
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, TimelineEvent::PlaySfx { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, TimelineEvent::PlaySfx { .. }))
+        );
     }
 
     #[test]

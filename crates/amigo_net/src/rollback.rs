@@ -3,8 +3,8 @@
 //! Implements GGPO-style rollback with input prediction, snapshot/restore,
 //! and resimulation on mismatch.
 
-use crate::checksum::StateHasher;
 use crate::PlayerId;
+use crate::checksum::StateHasher;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
@@ -357,8 +357,8 @@ impl<S: RollbackState> RollbackSession<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::checksum::StateHasher;
     use crate::PlayerId;
+    use crate::checksum::StateHasher;
 
     // ── Mock state ──────────────────────────────────────────────
 

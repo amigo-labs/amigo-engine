@@ -482,8 +482,8 @@ mod tests {
         let mut bp = GpuBroadPhase::new(device, queue);
 
         assert!(bp.find_candidates(&[]).is_empty());
-        assert!(bp
-            .find_candidates(&[(
+        assert!(
+            bp.find_candidates(&[(
                 id(1),
                 Rect {
                     x: 0.0,
@@ -492,6 +492,7 @@ mod tests {
                     h: 1.0
                 }
             )])
-            .is_empty());
+            .is_empty()
+        );
     }
 }

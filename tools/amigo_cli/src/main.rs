@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::process;
 
-use amigo_core::game_preset::{project_templates, GameProject, ScenePreset};
-use amigo_editor::{save_level, AmigoLevel, EntityPlacement, LayerData};
+use amigo_core::game_preset::{GameProject, ScenePreset, project_templates};
+use amigo_editor::{AmigoLevel, EntityPlacement, LayerData, save_level};
 
 mod pipeline_cmd;
 mod setup;
@@ -1642,7 +1642,9 @@ fn cmd_editor(_args: &[String]) {
         process::exit(1);
     }
 
-    println!("Launching the game with the Amigo editor overlay (cargo run --features amigo_engine/editor)...");
+    println!(
+        "Launching the game with the Amigo editor overlay (cargo run --features amigo_engine/editor)..."
+    );
 
     let status = std::process::Command::new("cargo")
         .arg("run")

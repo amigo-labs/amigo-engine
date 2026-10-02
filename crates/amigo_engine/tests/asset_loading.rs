@@ -5,8 +5,8 @@
 //! still needed the loose `assets/` tree next to the binary. The engine's loader
 //! is exercised here through the same `AssetManager` calls it makes.
 
-use amigo_assets::pak::{AssetKind, PakWriter};
 use amigo_assets::AssetManager;
+use amigo_assets::pak::{AssetKind, PakWriter};
 use std::path::{Path, PathBuf};
 
 /// The engine's own loader, so this cannot drift from what the engine does.

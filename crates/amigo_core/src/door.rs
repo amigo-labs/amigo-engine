@@ -329,9 +329,11 @@ mod tests {
 
         // Timer expires.
         let events = mgr.update(6.0);
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, DoorEvent::Unlocked { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, DoorEvent::Unlocked { .. }))
+        );
         assert_eq!(mgr.state(DoorId(3)), Some(DoorState::Closed));
     }
 

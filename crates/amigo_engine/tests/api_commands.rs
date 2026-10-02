@@ -5,11 +5,11 @@
 
 #![cfg(feature = "api")]
 
-use amigo_api::handler::{handle_request, new_shared_state};
 use amigo_api::RpcRequest;
-use amigo_engine::api_bridge::{drain_api_commands, ApiControl, ApiInbox};
+use amigo_api::handler::{handle_request, new_shared_state};
+use amigo_engine::api_bridge::{ApiControl, ApiInbox, drain_api_commands};
 use amigo_engine::prelude::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 struct Noop;
 impl Game for Noop {

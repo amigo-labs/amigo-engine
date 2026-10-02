@@ -178,17 +178,17 @@ pub mod prelude {
     };
     pub use amigo_animation::*;
     pub use amigo_assets::{AssetError, AssetHandle, AssetState, HandleAllocator};
-    pub use amigo_core::ecs::{self, join, join3, join4, join_mut, Component, SparseSet};
+    pub use amigo_core::ecs::{self, Component, SparseSet, join, join_mut, join3, join4};
     pub use amigo_core::events::EventHub;
-    pub use amigo_core::math::{vec2, IVec2};
+    pub use amigo_core::math::{IVec2, vec2};
     pub use amigo_core::resources::Resources;
     pub use amigo_core::save::{SaveConfig, SaveError, SaveManager, SlotInfo};
     pub use amigo_core::scheduler::{CallbackId, TickScheduler};
-    pub use amigo_core::{
-        find_path, CollisionShape, CollisionWorld, FlowField, PathFollower, PathRequest,
-        SpatialHash, Walkable, WaypointPath,
-    };
     pub use amigo_core::{Biome, Era, Mood, MusicStyle, Palette, VisualStyle, WorldContext};
+    pub use amigo_core::{
+        CollisionShape, CollisionWorld, FlowField, PathFollower, PathRequest, SpatialHash,
+        Walkable, WaypointPath, find_path,
+    };
     pub use amigo_core::{Color, EntityId, Fix, Rect, RenderVec2, SimVec2, TimeInfo, World};
     pub use amigo_debug::DebugOverlay;
     pub use amigo_input::InputState;

@@ -5,7 +5,7 @@
 #![cfg(feature = "api")]
 
 use amigo_engine::api_bridge::{
-    apply_dev_snapshot, build_dev_snapshot, load_dev_snapshot, ApiControl,
+    ApiControl, apply_dev_snapshot, build_dev_snapshot, load_dev_snapshot,
 };
 use amigo_engine::prelude::*;
 use serde_json::json;

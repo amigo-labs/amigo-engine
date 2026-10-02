@@ -491,9 +491,11 @@ mod tests {
 
         // End turn.
         let events = end_turn(&mut state);
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, DbEvent::TurnStarted { turn: 2, .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, DbEvent::TurnStarted { turn: 2, .. }))
+        );
     }
 
     #[test]

@@ -2115,10 +2115,12 @@ mod tests {
         if v.get("error").is_none() {
             let hints = &v["hints"];
             assert!(hints["defaults_missing"].is_array());
-            assert!(hints["suggestion"]
-                .as_str()
-                .unwrap()
-                .contains("amigo_audiogen_set_defaults"));
+            assert!(
+                hints["suggestion"]
+                    .as_str()
+                    .unwrap()
+                    .contains("amigo_audiogen_set_defaults")
+            );
         }
     }
 

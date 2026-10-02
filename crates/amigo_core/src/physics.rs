@@ -1,4 +1,4 @@
-use crate::collision::{check_shapes, shape_to_aabb, CollisionShape, ContactInfo, SpatialHash};
+use crate::collision::{CollisionShape, ContactInfo, SpatialHash, check_shapes, shape_to_aabb};
 use crate::ecs::EntityId;
 use crate::math::RenderVec2;
 use crate::rect::Rect;

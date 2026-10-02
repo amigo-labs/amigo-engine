@@ -13,8 +13,8 @@
 //! genuinely owns (time control and the camera) are applied here; the rest land
 //! in [`ApiInbox`] where game code can reach them via `ctx.resources`.
 
-use crate::stack::GameStack;
 use crate::GameContext;
+use crate::stack::GameStack;
 use amigo_api::handler::{ApiCommand, DevSnapshot, SharedState};
 use amigo_core::RenderVec2;
 use amigo_render::CameraMode;

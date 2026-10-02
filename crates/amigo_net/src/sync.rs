@@ -294,9 +294,11 @@ mod tests {
         // Entity 1 disappears.
         let tick2 = vec![snap(0, 100, 200)];
         let deltas = encoder.encode(&tick2);
-        assert!(deltas
-            .iter()
-            .any(|d| matches!(d, EntityPositionDelta::Removed { entity_index: 1 })));
+        assert!(
+            deltas
+                .iter()
+                .any(|d| matches!(d, EntityPositionDelta::Removed { entity_index: 1 }))
+        );
     }
 
     #[test]

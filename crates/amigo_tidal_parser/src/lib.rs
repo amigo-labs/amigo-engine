@@ -27,6 +27,6 @@ pub use ast::{
     Composition, CompositionMeta, Instrument, NoteValue, Pattern, PatternAtom, PitchClass, Stem,
     Transform, Voice,
 };
-pub use eval::{apply_transform, evaluate_pattern, NoteEvent};
+pub use eval::{NoteEvent, apply_transform, evaluate_pattern};
 pub use file::{format_amigo_tidal, load, parse_amigo_tidal, save};
 pub use parser::parse_mini;

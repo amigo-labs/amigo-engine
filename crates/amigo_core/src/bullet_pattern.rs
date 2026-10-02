@@ -586,9 +586,11 @@ mod tests {
         pool.spawn(50.0, 50.0, 200.0, 0.0, 1000, 2.0, 1.0, 0);
 
         let events = pool.tick();
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, BulletEvent::OutOfBounds { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, BulletEvent::OutOfBounds { .. }))
+        );
         assert_eq!(pool.active_count, 0);
     }
 

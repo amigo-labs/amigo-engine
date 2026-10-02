@@ -1,5 +1,5 @@
-use crate::handler::{handle_request, SharedState};
-use crate::{RpcRequest, RpcResponse, INVALID_REQUEST, PARSE_ERROR};
+use crate::handler::{SharedState, handle_request};
+use crate::{INVALID_REQUEST, PARSE_ERROR, RpcRequest, RpcResponse};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

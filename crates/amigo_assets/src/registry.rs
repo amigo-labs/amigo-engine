@@ -610,9 +610,10 @@ mod tests {
         assert_eq!(cfg.sections.len(), 1);
         assert_eq!(cfg.sections[0].layers.len(), 1);
         assert_eq!(cfg.stingers.len(), 1);
-        assert!(cfg
-            .transitions
-            .contains_key(&("calm".into(), "battle".into())));
+        assert!(
+            cfg.transitions
+                .contains_key(&("calm".into(), "battle".into()))
+        );
     }
 
     #[test]
@@ -804,9 +805,11 @@ mod tests {
             },
         );
         let warnings = reg.validate(Path::new("/nonexistent"));
-        assert!(warnings
-            .iter()
-            .any(|w| w.message.contains("Duplicate section")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.message.contains("Duplicate section"))
+        );
     }
 
     #[test]
@@ -831,9 +834,11 @@ mod tests {
             },
         );
         let warnings = reg.validate(Path::new("/nonexistent"));
-        assert!(warnings
-            .iter()
-            .any(|w| w.message.contains("undefined stinger")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.message.contains("undefined stinger"))
+        );
     }
 
     #[test]

@@ -3,12 +3,12 @@
 
 use amigo_core::ecs::{EntityId, SparseSet};
 use amigo_core::math::{Fix, SimVec2};
-use kira::manager::backend::DefaultBackend;
-use kira::manager::AudioManager as KiraManager;
-use kira::sound::static_sound::StaticSoundHandle;
-use kira::sound::PlaybackState;
-use kira::tween::Tween;
 use kira::Volume;
+use kira::manager::AudioManager as KiraManager;
+use kira::manager::backend::DefaultBackend;
+use kira::sound::PlaybackState;
+use kira::sound::static_sound::StaticSoundHandle;
+use kira::tween::Tween;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};

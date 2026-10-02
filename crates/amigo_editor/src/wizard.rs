@@ -1,6 +1,6 @@
 use amigo_core::game_preset::{
-    project_templates, GameProject, ProjectTemplate, SceneDef, ScenePreset, SceneTransition,
-    TransitionTrigger,
+    GameProject, ProjectTemplate, SceneDef, ScenePreset, SceneTransition, TransitionTrigger,
+    project_templates,
 };
 
 // ---------------------------------------------------------------------------

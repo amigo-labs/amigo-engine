@@ -5,7 +5,7 @@
 //! Usage:
 //!   amigo mcp-server [--host HOST] [--port PORT]
 
-use amigo_mcp::{transport, McpServerConfig};
+use amigo_mcp::{McpServerConfig, transport};
 use std::io;
 
 fn main() -> io::Result<()> {

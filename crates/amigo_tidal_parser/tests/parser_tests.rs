@@ -1,6 +1,6 @@
 use amigo_tidal_parser::lexer::tokenize;
-use amigo_tidal_parser::parser::parse_mini;
 use amigo_tidal_parser::parser::Parser;
+use amigo_tidal_parser::parser::parse_mini;
 use amigo_tidal_parser::{NoteValue, Pattern, PatternAtom, PitchClass, Transform};
 
 #[test]

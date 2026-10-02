@@ -3,7 +3,7 @@
 //! Provides `UdpTransport` which implements the `Transport` trait using
 //! standard library UDP sockets with the engine's packet protocol.
 
-use crate::protocol::{Packet, PacketKind, SeqNum, MAX_PACKET_SIZE};
+use crate::protocol::{MAX_PACKET_SIZE, Packet, PacketKind, SeqNum};
 use crate::{PlayerId, Transport};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

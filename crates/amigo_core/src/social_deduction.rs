@@ -721,9 +721,11 @@ mod tests {
 
         // Kill one crewmate.
         let events = attempt_kill(&mut state, impostor, crewmates[0], 1.0);
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, SdEvent::PlayerKilled { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SdEvent::PlayerKilled { .. }))
+        );
 
         // Now impostor count (1) == crewmate count (1) → ImpostorParity.
         assert_eq!(
@@ -764,10 +766,12 @@ mod tests {
             }
         }
         assert_eq!(ejected, Some(eid(0)));
-        assert!(state
-            .players
-            .iter()
-            .any(|p| p.entity == eid(0) && p.ejected));
+        assert!(
+            state
+                .players
+                .iter()
+                .any(|p| p.entity == eid(0) && p.ejected)
+        );
     }
 
     #[test]
@@ -781,9 +785,11 @@ mod tests {
         assign_roles(&mut state, &entities);
 
         let events = report_body(&mut state, eid(1), eid(2));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, SdEvent::BodyReported { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SdEvent::BodyReported { .. }))
+        );
         assert!(matches!(state.phase, Phase::Discussion { .. }));
     }
 

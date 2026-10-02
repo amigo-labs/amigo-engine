@@ -4,7 +4,7 @@
 //! to any recorded frame. Enables Braid-style time-rewind mechanics and
 //! debugging tools.
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 // ---------------------------------------------------------------------------
 // Compression Mode

@@ -1,7 +1,7 @@
 use crate::metrics::MetricsCollector;
-use crate::{RpcRequest, RpcResponse, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND};
+use crate::{INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND, RpcRequest, RpcResponse};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -1953,9 +1953,11 @@ mod tests {
         let resp = handle_request(&make_request("metrics.clear", json!({})), &state);
         assert!(resp.error.is_none());
         let s = state.lock().unwrap();
-        assert!(s.metrics.snapshot()["death_positions"]
-            .as_array()
-            .unwrap()
-            .is_empty());
+        assert!(
+            s.metrics.snapshot()["death_positions"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 }

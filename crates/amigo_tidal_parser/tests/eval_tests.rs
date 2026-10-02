@@ -1,5 +1,5 @@
 use amigo_tidal_parser::ast::*;
-use amigo_tidal_parser::{apply_transform, evaluate_pattern, NoteValue, PitchClass, Transform};
+use amigo_tidal_parser::{NoteValue, PitchClass, Transform, apply_transform, evaluate_pattern};
 
 fn note(pc: PitchClass, oct: i8) -> Pattern {
     Pattern::Atom(PatternAtom::Note(NoteValue::new(pc, oct)))

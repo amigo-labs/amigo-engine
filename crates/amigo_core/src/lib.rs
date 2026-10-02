@@ -105,7 +105,7 @@ pub use command::{CommandLog, CommandQueue};
 pub use economy::Economy;
 pub use ecs::{EntityId, SparseSet, World};
 pub use events::EventHub;
-pub use fog_of_war::{update_visibility, FogOfWarGrid, TileVisibility};
+pub use fog_of_war::{FogOfWarGrid, TileVisibility, update_visibility};
 pub use frame_arena::FrameArena;
 pub use localization::{
     LocaleError, LocaleId, LocaleManager, PluralCategory, PluralRuleFn, StringEntry,
@@ -117,12 +117,12 @@ pub use metroidvania::{
     PatternSequence, PhaseConfig, RoomConnection, RoomId, RoomNode, RoomTransitionSystem,
     SkillUnlockSystem, TransitionResult, ZoneId,
 };
-pub use pathfinding::{find_path, FlowField, PathFollower, PathRequest, Walkable, WaypointPath};
+pub use pathfinding::{FlowField, PathFollower, PathRequest, Walkable, WaypointPath, find_path};
 pub use physics::{
-    sync_ecs_to_physics, sync_physics_to_ecs, BodyType, PhysicsContact, PhysicsWorld, RigidBody,
+    BodyType, PhysicsContact, PhysicsWorld, RigidBody, sync_ecs_to_physics, sync_physics_to_ecs,
 };
 pub use projectile::ProjectileManager;
-pub use raycast::{raycast, raycast_bodies, raycast_tiles, sensor, RayHit, TileBlock, TileQuery};
+pub use raycast::{RayHit, TileBlock, TileQuery, raycast, raycast_bodies, raycast_tiles, sensor};
 pub use rect::Rect;
 pub use resources::Resources;
 pub use save::{SaveConfig, SaveError, SaveManager, SlotInfo};

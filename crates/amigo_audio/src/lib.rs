@@ -4,12 +4,12 @@
 pub mod graph;
 pub mod spatial;
 
+use kira::Volume;
 use kira::manager::backend::DefaultBackend;
 use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
-use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
 use kira::sound::PlaybackRate;
+use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
 use kira::tween::Tween;
-use kira::Volume;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -1320,7 +1320,7 @@ impl AdaptiveMusicEngine {
                     let oi = *old_section_idx;
                     let follow_up = *then.clone();
                     self.active_section = Some(oi); // ensure old is still active
-                                                    // Don't put transition back — we'll set a new one via transition_to
+                    // Don't put transition back — we'll set a new one via transition_to
                     let _ = self.transition_to(ni, follow_up);
                     return;
                 }

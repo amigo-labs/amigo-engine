@@ -440,9 +440,11 @@ mod tests {
         // All voted — should auto-close on next update.
         let events = session.update(0.016);
         assert_eq!(session.phase(), VotePhase::Resolved);
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, VoteEvent::Resolved { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, VoteEvent::Resolved { .. }))
+        );
         assert_eq!(
             *session.outcome().unwrap(),
             VoteOutcome::Decided {

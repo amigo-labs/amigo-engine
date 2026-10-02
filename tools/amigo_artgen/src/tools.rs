@@ -4,8 +4,8 @@
 //! pipeline. The backend (Qwen-Image, FLUX.2 Klein, Custom) is resolved
 //! from project config or passed explicitly.
 
-use crate::config::{load_art_defaults, save_art_defaults};
 use crate::ImageBackend;
+use crate::config::{load_art_defaults, save_art_defaults};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -718,10 +718,12 @@ mod tests {
         let v = result.unwrap();
         let hints = &v["hints"];
         assert!(hints["defaults_missing"].is_array());
-        assert!(hints["suggestion"]
-            .as_str()
-            .unwrap()
-            .contains("amigo_artgen_set_defaults"));
+        assert!(
+            hints["suggestion"]
+                .as_str()
+                .unwrap()
+                .contains("amigo_artgen_set_defaults")
+        );
     }
 
     #[test]

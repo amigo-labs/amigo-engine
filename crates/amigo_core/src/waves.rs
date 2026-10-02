@@ -165,7 +165,7 @@ impl WaveSpawner {
             WavePhase::Idle => 0,
             WavePhase::Complete => self.current_wave + 1,
             WavePhase::Waiting | WavePhase::Spawning | WavePhase::Active | WavePhase::Victory => {
-                return
+                return;
             }
         };
         if next < self.waves.len() {

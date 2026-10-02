@@ -1,8 +1,8 @@
+use crate::Game;
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
 use crate::splash::{self, SplashState};
 use crate::stack::GameStack;
-use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
@@ -207,7 +207,9 @@ impl Engine {
             Ok(el) => el,
             Err(e) => {
                 error!("Failed to create a window event loop: {e}");
-                error!("No display seems to be available. On a headless machine, run with `amigo run --headless` (requires the 'api' feature).");
+                error!(
+                    "No display seems to be available. On a headless machine, run with `amigo run --headless` (requires the 'api' feature)."
+                );
                 return;
             }
         };

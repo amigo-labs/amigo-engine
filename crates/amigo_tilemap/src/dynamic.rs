@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use crate::chunk::{ChunkCoord, ChunkMap, CHUNK_SIZE};
+use crate::chunk::{CHUNK_SIZE, ChunkCoord, ChunkMap};
 
 // ---------------------------------------------------------------------------
 // Tile properties
@@ -375,9 +375,11 @@ mod tests {
         assert_eq!(world.get_tile(TileLayer::Foreground, 3, 3), 0);
 
         let events = world.take_events();
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, TileEvent::Destroyed { x: 3, y: 3, .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, TileEvent::Destroyed { x: 3, y: 3, .. }))
+        );
     }
 
     // ── Dirty tracking ────────────────────────────────────────────

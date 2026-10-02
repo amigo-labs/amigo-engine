@@ -6,7 +6,7 @@
 //! Communicates with a local ComfyUI instance to queue generation prompts,
 //! poll for completion, and retrieve output images or audio.
 
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;

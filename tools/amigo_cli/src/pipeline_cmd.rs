@@ -325,7 +325,9 @@ fn cmd_play(args: &[String]) {
             for stem in &comp.stems {
                 println!("  - {} ({} voices)", stem.name, stem.voices.len());
             }
-            println!("\n(Audio playback requires the editor — use `amigo editor` to open the Tidal Playground)");
+            println!(
+                "\n(Audio playback requires the editor — use `amigo editor` to open the Tidal Playground)"
+            );
         }
         Err(e) => {
             eprintln!("Failed to load {}: {e}", file_path.display());

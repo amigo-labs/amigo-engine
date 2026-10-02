@@ -617,8 +617,8 @@ mod tests {
 
     #[test]
     fn parallel_batch_runs_every_system() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         struct CompA;
         struct CompB;

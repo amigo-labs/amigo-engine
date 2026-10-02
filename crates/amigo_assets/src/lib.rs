@@ -12,7 +12,7 @@ pub mod registry;
 #[cfg(feature = "asset_streaming")]
 pub mod streaming;
 
-pub use aseprite::{load_aseprite, AsepriteData};
+pub use aseprite::{AsepriteData, load_aseprite};
 pub use asset_manager::{AssetManager, SpriteData};
 pub use descriptors::{EntityDescriptor, MapDescriptor, SpriteDescriptor, TilesetDescriptor};
 pub use handle::{AssetHandle, AssetState, HandleAllocator};

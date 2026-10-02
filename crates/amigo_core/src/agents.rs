@@ -381,11 +381,7 @@ impl Agent {
                     .max(sleep_urgency)
                     .max(safety_urgency)
                     .max(social_urgency);
-                if max_urgency < 0.3 {
-                    0.7
-                } else {
-                    0.1
-                }
+                if max_urgency < 0.3 { 0.7 } else { 0.1 }
             }
             AgentAction::Worship => 0.1,
             AgentAction::Idle => 0.05, // Lowest priority fallback

@@ -937,7 +937,7 @@ mod tests {
         let prompt = build_workflow(&req, &style);
 
         assert!(prompt.prompt.contains_key("10")); // LoRA loader
-                                                   // Sampler should reference LoRA output
+        // Sampler should reference LoRA output
         let sampler = &prompt.prompt["7"];
         assert_eq!(sampler["inputs"]["model"], json!(["10", 0]));
     }

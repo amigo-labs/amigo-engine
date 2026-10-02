@@ -10,13 +10,13 @@
 //! [stinger_bus] ──────────────────┘
 //! ```
 
-use kira::manager::backend::DefaultBackend;
+use kira::Volume;
 use kira::manager::AudioManager as KiraManager;
+use kira::manager::backend::DefaultBackend;
 use kira::track::TrackBuilder;
 use kira::track::TrackHandle;
 use kira::track::TrackRoutes;
 use kira::tween::Tween;
-use kira::Volume;
 use rustc_hash::FxHashMap;
 use tracing::warn;
 

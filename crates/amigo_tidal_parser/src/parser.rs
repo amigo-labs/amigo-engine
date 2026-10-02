@@ -253,7 +253,7 @@ impl Parser {
         loop {
             match self.peek() {
                 Some(Token::Hash | Token::Dollar | Token::Comma | Token::BracketClose) | None => {
-                    break
+                    break;
                 }
                 _ => {
                     let elem = self.parse_pattern_element()?;

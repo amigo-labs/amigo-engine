@@ -900,9 +900,11 @@ mod tests {
         // Attack the enemy
         battle.submit_action(TurnAction::Attack { target: 1 });
         let effects = battle.step();
-        assert!(effects
-            .iter()
-            .any(|e| matches!(e, BattleEffect::Damage { target: 1, .. })));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, BattleEffect::Damage { target: 1, .. }))
+        );
 
         // Process end of turn, then slime's turn or check result
         loop {
