@@ -1428,10 +1428,10 @@ fn cmd_dev(args: &[String]) {
         eprintln!("Failed to watch src/: {e}");
         process::exit(1);
     }
-    if Path::new("assets").exists() {
-        if let Err(e) = watcher.watch(Path::new("assets"), RecursiveMode::Recursive) {
-            eprintln!("warning: failed to watch assets/: {e}");
-        }
+    if Path::new("assets").exists()
+        && let Err(e) = watcher.watch(Path::new("assets"), RecursiveMode::Recursive)
+    {
+        eprintln!("warning: failed to watch assets/: {e}");
     }
     if let Err(e) = watcher.watch(&manifest_path(), RecursiveMode::NonRecursive) {
         eprintln!("warning: failed to watch amigo.toml: {e}");

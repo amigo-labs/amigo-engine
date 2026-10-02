@@ -223,10 +223,10 @@ pub fn raycast_bodies(
             continue;
         }
         // Test ray against each candidate's shape
-        if let Some(hit) = ray_vs_entity(origin, dx, dy, max_distance, entity, world) {
-            if closest.as_ref().is_none_or(|c| hit.distance < c.distance) {
-                closest = Some(hit);
-            }
+        if let Some(hit) = ray_vs_entity(origin, dx, dy, max_distance, entity, world)
+            && closest.as_ref().is_none_or(|c| hit.distance < c.distance)
+        {
+            closest = Some(hit);
         }
     }
 

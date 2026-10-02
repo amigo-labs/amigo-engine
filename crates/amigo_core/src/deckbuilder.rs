@@ -350,20 +350,20 @@ pub fn play_card(
     });
 
     // Check if all enemies dead.
-    if let Some(ref combat) = state.combat {
-        if combat.enemies.iter().all(|e| e.hp <= 0) {
-            // Persist HP back to run state (both current and max, in case
-            // relics/upgrades changed max_hp during combat).
-            state.player_hp = combat.player_hp;
-            state.player_max_hp = combat.player_max_hp;
-            // The cards still in hand go back to the deck; left in the hand,
-            // the next combat's draw overflowed it and those cards vanished.
-            for card in state.hand.discard_all() {
-                state.deck.discard(card);
-            }
-            events.push(DbEvent::CombatWon);
-            state.phase = DbPhase::Reward;
+    if let Some(ref combat) = state.combat
+        && combat.enemies.iter().all(|e| e.hp <= 0)
+    {
+        // Persist HP back to run state (both current and max, in case
+        // relics/upgrades changed max_hp during combat).
+        state.player_hp = combat.player_hp;
+        state.player_max_hp = combat.player_max_hp;
+        // The cards still in hand go back to the deck; left in the hand,
+        // the next combat's draw overflowed it and those cards vanished.
+        for card in state.hand.discard_all() {
+            state.deck.discard(card);
         }
+        events.push(DbEvent::CombatWon);
+        state.phase = DbPhase::Reward;
     }
 
     events

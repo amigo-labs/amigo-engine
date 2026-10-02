@@ -112,6 +112,22 @@ jobs:
           name: api-docs
           path: target/doc/
 
+  msrv:
+    name: MSRV (rust-version)
+    runs-on: ubuntu-latest
+    env:
+      # Overrides rust-toolchain.toml (stable); keep in sync with
+      # rust-version in the root Cargo.toml.
+      RUSTUP_TOOLCHAIN: "1.93"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93"
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/install-system-deps
+      - run: cargo check --workspace --all-targets --locked
+
   deny:
     name: Dependencies (cargo-deny)
     runs-on: ubuntu-latest

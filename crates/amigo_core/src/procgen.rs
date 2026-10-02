@@ -748,7 +748,7 @@ impl WfcSolver {
         let possible: Vec<u32> = cell
             .iter()
             .enumerate()
-            .filter(|(_, &b)| b)
+            .filter(|&(_, &b)| b)
             .map(|(i, _)| i as u32)
             .collect();
         if possible.is_empty() {
@@ -1215,24 +1215,24 @@ mod tests {
 
     #[test]
     fn world_generator_correct_size() {
-        let gen = WorldGenerator::new(42, 64, 64)
+        let world_gen = WorldGenerator::new(42, 64, 64)
             .with_biome(BiomeDef::new(1, "Plains").with_ground(1))
             .with_sea_level(0.3);
 
-        let tiles = gen.generate_tiles();
+        let tiles = world_gen.generate_tiles();
         assert_eq!(tiles.len(), 64 * 64);
 
-        let collision = gen.generate_collision();
+        let collision = world_gen.generate_collision();
         assert_eq!(collision.len(), 64 * 64);
     }
 
     #[test]
     fn world_has_water_and_land() {
-        let gen = WorldGenerator::new(42, 64, 64)
+        let world_gen = WorldGenerator::new(42, 64, 64)
             .with_biome(BiomeDef::new(1, "Plains").with_ground(1))
             .with_sea_level(0.4);
 
-        let tiles = gen.generate_tiles();
+        let tiles = world_gen.generate_tiles();
         let water_count = tiles.iter().filter(|&&t| t == 0).count();
         let land_count = tiles.iter().filter(|&&t| t != 0).count();
 

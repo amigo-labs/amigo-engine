@@ -196,11 +196,11 @@ pub fn update_visibility(observer_pos: IVec2, radius: u32, grid: &mut FogOfWarGr
                 continue;
             }
 
-            if let Some(idx) = grid.index_of(nx, ny) {
-                if !visited[idx] {
-                    visited[idx] = true;
-                    queue.push_back((nx, ny));
-                }
+            if let Some(idx) = grid.index_of(nx, ny)
+                && !visited[idx]
+            {
+                visited[idx] = true;
+                queue.push_back((nx, ny));
             }
         }
     }

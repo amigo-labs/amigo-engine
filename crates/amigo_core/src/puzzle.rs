@@ -113,10 +113,10 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
         for y in 0..self.height {
             for x in 0..self.width {
                 let i = (y * self.width + x) as usize;
-                if let Some(val) = self.cells[i] {
-                    if predicate(val) {
-                        result.push((x, y));
-                    }
+                if let Some(val) = self.cells[i]
+                    && predicate(val)
+                {
+                    result.push((x, y));
                 }
             }
         }

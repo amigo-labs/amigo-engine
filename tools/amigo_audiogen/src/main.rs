@@ -47,7 +47,9 @@ fn main() {
         .unwrap_or("http://localhost:8188");
 
     // Export ComfyUI URL so tools::create_comfyui_client() can pick it up
-    std::env::set_var("AMIGO_COMFYUI_URL", server_url);
+    // SAFETY: this runs at the top of main, before the server spawns any
+    // thread, so nothing can read the environment concurrently.
+    unsafe { std::env::set_var("AMIGO_COMFYUI_URL", server_url) };
 
     eprintln!(
         "amigo-audiogen MCP server starting (ComfyUI: {})...",

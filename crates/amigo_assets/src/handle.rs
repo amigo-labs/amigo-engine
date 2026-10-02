@@ -98,29 +98,29 @@ impl HandleAllocator {
 
     /// Mark a handle's asset as loaded.
     pub fn mark_loaded<T>(&mut self, handle: AssetHandle<T>) {
-        if let Some(slot) = self.slots.get_mut(handle.index as usize) {
-            if slot.generation == handle.generation {
-                slot.state = AssetState::Loaded;
-            }
+        if let Some(slot) = self.slots.get_mut(handle.index as usize)
+            && slot.generation == handle.generation
+        {
+            slot.state = AssetState::Loaded;
         }
     }
 
     /// Mark a handle's asset as failed.
     pub fn mark_failed<T>(&mut self, handle: AssetHandle<T>) {
-        if let Some(slot) = self.slots.get_mut(handle.index as usize) {
-            if slot.generation == handle.generation {
-                slot.state = AssetState::Failed;
-            }
+        if let Some(slot) = self.slots.get_mut(handle.index as usize)
+            && slot.generation == handle.generation
+        {
+            slot.state = AssetState::Failed;
         }
     }
 
     /// Free a handle's slot so it can be reused.
     pub fn free<T>(&mut self, handle: AssetHandle<T>) {
-        if let Some(slot) = self.slots.get_mut(handle.index as usize) {
-            if slot.generation == handle.generation {
-                slot.state = AssetState::Unloaded;
-                self.free_list.push(handle.index);
-            }
+        if let Some(slot) = self.slots.get_mut(handle.index as usize)
+            && slot.generation == handle.generation
+        {
+            slot.state = AssetState::Unloaded;
+            self.free_list.push(handle.index);
         }
     }
 

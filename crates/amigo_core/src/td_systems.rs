@@ -143,12 +143,12 @@ pub fn apply_hits_system(
             let dealt = enemy.take_damage(hit.damage, hit.damage_type);
 
             // Track damage on the tower that owns this projectile
-            if let Some(owner_id) = hit.owner {
-                if let Some((_, tower)) = towers.iter_mut().find(|(eid, _)| *eid == owner_id) {
-                    tower.total_damage_dealt += dealt as u64;
-                    if !enemy.alive {
-                        tower.total_kills += 1;
-                    }
+            if let Some(owner_id) = hit.owner
+                && let Some((_, tower)) = towers.iter_mut().find(|(eid, _)| *eid == owner_id)
+            {
+                tower.total_damage_dealt += dealt as u64;
+                if !enemy.alive {
+                    tower.total_kills += 1;
                 }
             }
         }

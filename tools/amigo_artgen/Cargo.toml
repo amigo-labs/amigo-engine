@@ -2,6 +2,7 @@
 name = "amigo_artgen"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "MCP server for AI art generation via ComfyUI"

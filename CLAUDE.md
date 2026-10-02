@@ -7,7 +7,7 @@ Guidance for Claude Code when working in this repository.
 `amigo-engine` is a 2D pixel-art game engine in pure Rust: deterministic
 fixed-point ECS, a wgpu renderer, an egui-based level editor, AI asset
 pipelines (ComfyUI), and TidalCycles-based chiptune music. Cargo workspace,
-edition 2021, MIT OR Apache-2.0.
+edition 2024 (MSRV in `rust-version`), MIT OR Apache-2.0.
 
 ## Before you build: system libraries
 
@@ -107,6 +107,7 @@ implement → verify).
 ## Adding a crate
 
 Add it to `[workspace.members]` and `[workspace.dependencies]` in the root
-`Cargo.toml` (path dependency), use `version.workspace = true` and
-`edition.workspace = true`, and put shared external deps in
+`Cargo.toml` (path dependency with the workspace `version`, which cargo-deny's
+wildcard ban needs), inherit `version`, `edition`, `rust-version`, `license`
+and `repository` with `.workspace = true`, and put shared external deps in
 `[workspace.dependencies]` rather than the crate's own manifest.

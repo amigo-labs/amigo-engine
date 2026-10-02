@@ -245,12 +245,12 @@ impl TypewriterEffect {
         }
 
         // Check if the last revealed character is punctuation.
-        if self.visible_chars > prev && self.visible_chars < total_chars {
-            if let Some(ch) = self.full_text.chars().nth(self.visible_chars - 1) {
-                if matches!(ch, '.' | '!' | '?' | ',') {
-                    self.pause_remaining = self.punctuation_pause;
-                }
-            }
+        if self.visible_chars > prev
+            && self.visible_chars < total_chars
+            && let Some(ch) = self.full_text.chars().nth(self.visible_chars - 1)
+            && matches!(ch, '.' | '!' | '?' | ',')
+        {
+            self.pause_remaining = self.punctuation_pause;
         }
 
         // Return the newly revealed slice.

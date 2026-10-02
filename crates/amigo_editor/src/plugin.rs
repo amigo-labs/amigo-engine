@@ -103,12 +103,11 @@ impl EditorRuntime {
                 }
                 PlayState::Playing | PlayState::Paused => {
                     // Restore level from snapshot
-                    if let Some(data) = self.play_mode.stop_play() {
-                        if let Ok(s) = std::str::from_utf8(&data) {
-                            if let Ok(restored) = ron::from_str::<AmigoLevel>(s) {
-                                self.level = restored;
-                            }
-                        }
+                    if let Some(data) = self.play_mode.stop_play()
+                        && let Ok(s) = std::str::from_utf8(&data)
+                        && let Ok(restored) = ron::from_str::<AmigoLevel>(s)
+                    {
+                        self.level = restored;
                     }
                     self.state.active = true;
                 }

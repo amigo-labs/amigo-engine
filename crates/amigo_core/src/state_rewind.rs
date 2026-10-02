@@ -262,10 +262,10 @@ impl<T: Clone + Serialize + DeserializeOwned + PartialEq> RewindBuffer<T> {
     fn find_frame_index(&self, tick: u64) -> Option<usize> {
         for i in 0..self.len {
             let idx = (self.head + i) % self.capacity;
-            if let Some(frame) = &self.frames[idx] {
-                if frame.tick == tick {
-                    return Some(idx);
-                }
+            if let Some(frame) = &self.frames[idx]
+                && frame.tick == tick
+            {
+                return Some(idx);
             }
         }
         None
@@ -362,10 +362,10 @@ impl<T: Clone + Serialize + DeserializeOwned + PartialEq> RewindBuffer<T> {
             return;
         }
         let tick = next.tick;
-        if let Some(state) = self.reconstruct(tick) {
-            if let Some(frame) = &mut self.frames[next_idx] {
-                frame.data = FrameData::Full(state);
-            }
+        if let Some(state) = self.reconstruct(tick)
+            && let Some(frame) = &mut self.frames[next_idx]
+        {
+            frame.data = FrameData::Full(state);
         }
     }
 

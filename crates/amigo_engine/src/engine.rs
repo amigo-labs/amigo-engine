@@ -727,25 +727,21 @@ impl ApplicationHandler for EngineApp {
                 }
 
                 // Debug overlay toggle (always active, even when egui has focus)
-                if event.state == ElementState::Pressed {
-                    if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
-                        match code {
-                            KeyCode::F1 => state.debug.toggle(),
-                            KeyCode::F2 => state.debug.show_grid = !state.debug.show_grid,
-                            KeyCode::F3 => state.debug.show_collision = !state.debug.show_collision,
-                            KeyCode::F4 => state.debug.show_paths = !state.debug.show_paths,
-                            KeyCode::F5 => {
-                                state.debug.show_entity_ids = !state.debug.show_entity_ids
-                            }
-                            KeyCode::F6 => state.debug.show_tile_ids = !state.debug.show_tile_ids,
-                            KeyCode::F7 => {
-                                state.debug.show_audio_debug = !state.debug.show_audio_debug
-                            }
-                            KeyCode::F8 => {
-                                state.debug.show_network_debug = !state.debug.show_network_debug
-                            }
-                            _ => {}
+                if event.state == ElementState::Pressed
+                    && let winit::keyboard::PhysicalKey::Code(code) = event.physical_key
+                {
+                    match code {
+                        KeyCode::F1 => state.debug.toggle(),
+                        KeyCode::F2 => state.debug.show_grid = !state.debug.show_grid,
+                        KeyCode::F3 => state.debug.show_collision = !state.debug.show_collision,
+                        KeyCode::F4 => state.debug.show_paths = !state.debug.show_paths,
+                        KeyCode::F5 => state.debug.show_entity_ids = !state.debug.show_entity_ids,
+                        KeyCode::F6 => state.debug.show_tile_ids = !state.debug.show_tile_ids,
+                        KeyCode::F7 => state.debug.show_audio_debug = !state.debug.show_audio_debug,
+                        KeyCode::F8 => {
+                            state.debug.show_network_debug = !state.debug.show_network_debug
                         }
+                        _ => {}
                     }
                 }
             }

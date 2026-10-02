@@ -452,15 +452,15 @@ fn collect_files_with_ext(dir: &std::path::Path, extensions: &[&str]) -> Vec<(St
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if extensions.contains(&ext) {
-                    let name = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    files.push((name, path));
-                }
+            if let Some(ext) = path.extension().and_then(|e| e.to_str())
+                && extensions.contains(&ext)
+            {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                files.push((name, path));
             }
         }
     }

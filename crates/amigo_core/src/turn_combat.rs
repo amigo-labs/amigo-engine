@@ -914,10 +914,10 @@ mod tests {
             if battle.needs_player_input() {
                 break;
             }
-            if let BattlePhase::WaitingForAction { combatant } = battle.phase {
-                if battle.combatants[combatant].team == 1 {
-                    battle.submit_action(TurnAction::Attack { target: 0 });
-                }
+            if let BattlePhase::WaitingForAction { combatant } = battle.phase
+                && battle.combatants[combatant].team == 1
+            {
+                battle.submit_action(TurnAction::Attack { target: 0 });
             }
             if effects.is_empty() && battle.phase == BattlePhase::TurnOrder {
                 battle.step(); // next round

@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/amigo_core",
     "crates/amigo_steering",
@@ -38,7 +38,10 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+# The oldest toolchain the locked dependencies build with (fixed 1.31 needs
+# 1.93). CI checks it; raise it when an upgrade needs a newer compiler.
+rust-version = "1.93"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/amigo-labs/amigo-engine"
 

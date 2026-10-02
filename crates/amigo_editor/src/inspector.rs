@@ -181,11 +181,11 @@ fn draw_field_read_only(ui: &mut egui::Ui, field: &FieldMut<'_>) {
             ui.label(format!("{}", val));
             return;
         }
-    } else if type_id == TypeId::of::<String>() {
-        if let Some(val) = field.value.downcast_ref::<String>() {
-            ui.label(val.as_str());
-            return;
-        }
+    } else if type_id == TypeId::of::<String>()
+        && let Some(val) = field.value.downcast_ref::<String>()
+    {
+        ui.label(val.as_str());
+        return;
     }
     ui.label(format!("({}: ?)", field.info.type_name));
 }

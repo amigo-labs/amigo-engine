@@ -162,10 +162,11 @@ impl LoadedLevel {
 
     /// Get tile at (x, y) from a specific layer.
     pub fn tile_at_layer(&self, layer_name: &str, x: u32, y: u32) -> u16 {
-        if let Some(layer) = self.find_layer(layer_name) {
-            if x < layer.width && y < layer.height {
-                return layer.tile(x, y);
-            }
+        if let Some(layer) = self.find_layer(layer_name)
+            && x < layer.width
+            && y < layer.height
+        {
+            return layer.tile(x, y);
         }
         0
     }

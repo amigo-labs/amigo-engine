@@ -321,10 +321,10 @@ impl DialogRunner {
         // Calculate available choices
         self.available_choices.clear();
         for (i, choice) in node.choices.iter().enumerate() {
-            if let Some(cond) = &choice.condition {
-                if !state.check_condition(cond) {
-                    continue;
-                }
+            if let Some(cond) = &choice.condition
+                && !state.check_condition(cond)
+            {
+                continue;
             }
             self.available_choices.push(i);
         }

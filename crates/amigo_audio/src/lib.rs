@@ -154,11 +154,11 @@ impl SfxManager {
         let rt = self.runtime.entry(name.to_string()).or_default();
 
         // Cooldown check
-        if let (Some(cd), Some(last)) = (cooldown, rt.last_played) {
-            if now.duration_since(last).as_secs_f32() < cd {
-                debug!("SFX '{name}' on cooldown");
-                return;
-            }
+        if let (Some(cd), Some(last)) = (cooldown, rt.last_played)
+            && now.duration_since(last).as_secs_f32() < cd
+        {
+            debug!("SFX '{name}' on cooldown");
+            return;
         }
 
         // Prune finished handles
@@ -238,11 +238,11 @@ impl SfxManager {
         let rt = self.runtime.entry(name.to_string()).or_default();
 
         // Cooldown check
-        if let (Some(cd), Some(last)) = (cooldown, rt.last_played) {
-            if now.duration_since(last).as_secs_f32() < cd {
-                debug!("SFX '{name}' on cooldown");
-                return None;
-            }
+        if let (Some(cd), Some(last)) = (cooldown, rt.last_played)
+            && now.duration_since(last).as_secs_f32() < cd
+        {
+            debug!("SFX '{name}' on cooldown");
+            return None;
         }
 
         // Prune finished handles

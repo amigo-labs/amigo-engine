@@ -610,7 +610,7 @@ impl UiContext {
             }
         }
 
-        for (i, ref label, depth, expanded) in &visible_nodes {
+        for (i, label, depth, expanded) in &visible_nodes {
             let i = *i;
             let depth = *depth;
             let expanded = *expanded;

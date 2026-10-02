@@ -9,7 +9,8 @@
     <img src="https://github.com/amigo-labs/amigo-engine/actions/workflows/ci.yml/badge.svg" alt="CI" />
   </a>
   <img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/rust-2021-orange" alt="Rust Edition" />
+  <img src="https://img.shields.io/badge/edition-2024-orange" alt="Rust edition 2024" />
+  <img src="https://img.shields.io/badge/rust-1.93%2B-orange" alt="Rust 1.93 or newer" />
 </p>
 
 <p align="center">

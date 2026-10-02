@@ -340,7 +340,7 @@ impl ModManager {
         let mut queue: Vec<usize> = in_degree
             .iter()
             .enumerate()
-            .filter(|(_, &d)| d == 0)
+            .filter(|&(_, &d)| d == 0)
             .map(|(i, _)| i)
             .collect();
         let mut order = Vec::new();
@@ -436,10 +436,10 @@ fn version_compatible(range: &str, actual: &str) -> bool {
             if !version_lt(actual, version.trim()) {
                 return false;
             }
-        } else if let Some(version) = constraint.strip_prefix('=') {
-            if actual != version.trim() {
-                return false;
-            }
+        } else if let Some(version) = constraint.strip_prefix('=')
+            && actual != version.trim()
+        {
+            return false;
         }
     }
     true

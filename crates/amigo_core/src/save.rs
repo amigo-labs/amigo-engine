@@ -216,10 +216,10 @@ impl SaveManager {
             if !meta_path.exists() {
                 continue;
             }
-            if let Ok(bytes) = fs::read(&meta_path) {
-                if let Ok(info) = serde_json::from_slice::<SlotInfo>(&bytes) {
-                    slots.push(info);
-                }
+            if let Ok(bytes) = fs::read(&meta_path)
+                && let Ok(info) = serde_json::from_slice::<SlotInfo>(&bytes)
+            {
+                slots.push(info);
             }
         }
 

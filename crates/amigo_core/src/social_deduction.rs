@@ -275,30 +275,30 @@ pub fn sd_tick(state: &mut SdState, dt: f32) -> Vec<SdEvent> {
             let _door_events = state.doors.update(dt);
 
             // Update sabotage.
-            if let Some(ref mut sab) = state.active_sabotage {
-                if !sab.resolved {
-                    sab.timer -= dt;
-                    if sab.timer <= 0.0 {
-                        // Critical sabotage failed — impostors win.
-                        if matches!(sab.kind, SabotageKind::CriticalSystem { .. }) {
-                            state.winner = Some((Role::Impostor, WinCondition::SabotageUnresolved));
-                            let old = state.phase;
-                            state.phase = Phase::Results;
-                            events.push(SdEvent::GameOver {
-                                winner: Role::Impostor,
-                                condition: WinCondition::SabotageUnresolved,
-                            });
-                            events.push(SdEvent::PhaseChanged {
-                                from: old,
-                                to: Phase::Results,
-                            });
-                            return events;
-                        }
-                        sab.resolved = true;
-                        events.push(SdEvent::SabotageResolved {
-                            kind: sab.kind.clone(),
+            if let Some(ref mut sab) = state.active_sabotage
+                && !sab.resolved
+            {
+                sab.timer -= dt;
+                if sab.timer <= 0.0 {
+                    // Critical sabotage failed — impostors win.
+                    if matches!(sab.kind, SabotageKind::CriticalSystem { .. }) {
+                        state.winner = Some((Role::Impostor, WinCondition::SabotageUnresolved));
+                        let old = state.phase;
+                        state.phase = Phase::Results;
+                        events.push(SdEvent::GameOver {
+                            winner: Role::Impostor,
+                            condition: WinCondition::SabotageUnresolved,
                         });
+                        events.push(SdEvent::PhaseChanged {
+                            from: old,
+                            to: Phase::Results,
+                        });
+                        return events;
                     }
+                    sab.resolved = true;
+                    events.push(SdEvent::SabotageResolved {
+                        kind: sab.kind.clone(),
+                    });
                 }
             }
 
@@ -345,45 +345,45 @@ pub fn sd_tick(state: &mut SdState, dt: f32) -> Vec<SdEvent> {
         }
         Phase::Voting => {
             let vote_events = state.vote_session.update(dt);
-            if state.vote_session.phase() == crate::voting::VotePhase::Resolved {
-                if let Some(outcome) = state.vote_session.outcome().cloned() {
-                    let old = state.phase;
-                    state.phase = Phase::Ejection;
-                    events.push(SdEvent::PhaseChanged {
-                        from: old,
-                        to: Phase::Ejection,
-                    });
+            if state.vote_session.phase() == crate::voting::VotePhase::Resolved
+                && let Some(outcome) = state.vote_session.outcome().cloned()
+            {
+                let old = state.phase;
+                state.phase = Phase::Ejection;
+                events.push(SdEvent::PhaseChanged {
+                    from: old,
+                    to: Phase::Ejection,
+                });
 
-                    // Process ejection.
-                    if let VoteOutcome::Decided { winner, .. } = outcome {
-                        // Choices are `player slot + 1`; 0 is skip (see
-                        // `cast_vote`).
-                        if let Some(slot) = (winner as usize).checked_sub(1) {
-                            if let Some(player) = state.players.get_mut(slot) {
-                                player.alive = false;
-                                player.ejected = true;
-                                let was_impostor = player.role == Role::Impostor;
-                                events.push(SdEvent::PlayerEjected {
-                                    entity: player.entity,
-                                    was_impostor,
-                                });
-                            }
-                        }
-                    }
-
-                    // Check win after ejection.
-                    if let Some((winner, condition)) = check_win_conditions(state) {
-                        state.winner = Some((winner, condition));
-                        state.phase = Phase::Results;
-                        events.push(SdEvent::GameOver { winner, condition });
-                    } else {
-                        // Back to playing.
-                        state.phase = Phase::Playing;
-                        events.push(SdEvent::PhaseChanged {
-                            from: Phase::Ejection,
-                            to: Phase::Playing,
+                // Process ejection.
+                if let VoteOutcome::Decided { winner, .. } = outcome {
+                    // Choices are `player slot + 1`; 0 is skip (see
+                    // `cast_vote`).
+                    if let Some(slot) = (winner as usize).checked_sub(1)
+                        && let Some(player) = state.players.get_mut(slot)
+                    {
+                        player.alive = false;
+                        player.ejected = true;
+                        let was_impostor = player.role == Role::Impostor;
+                        events.push(SdEvent::PlayerEjected {
+                            entity: player.entity,
+                            was_impostor,
                         });
                     }
+                }
+
+                // Check win after ejection.
+                if let Some((winner, condition)) = check_win_conditions(state) {
+                    state.winner = Some((winner, condition));
+                    state.phase = Phase::Results;
+                    events.push(SdEvent::GameOver { winner, condition });
+                } else {
+                    // Back to playing.
+                    state.phase = Phase::Playing;
+                    events.push(SdEvent::PhaseChanged {
+                        from: Phase::Ejection,
+                        to: Phase::Playing,
+                    });
                 }
             }
             let _ = vote_events; // Consumed internally.
@@ -607,12 +607,11 @@ pub fn effective_vision_radius(state: &SdState, entity: EntityId) -> u32 {
     }
 
     // Check lights sabotage.
-    if let Some(ref sab) = state.active_sabotage {
-        if let SabotageKind::Lights { reduced_radius, .. } = sab.kind {
-            if !sab.resolved {
-                return reduced_radius;
-            }
-        }
+    if let Some(ref sab) = state.active_sabotage
+        && let SabotageKind::Lights { reduced_radius, .. } = sab.kind
+        && !sab.resolved
+    {
+        return reduced_radius;
     }
 
     player.vision_radius

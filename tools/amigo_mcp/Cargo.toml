@@ -2,6 +2,7 @@
 name = "amigo_mcp"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "MCP server that bridges Claude Code to the Amigo Engine API"

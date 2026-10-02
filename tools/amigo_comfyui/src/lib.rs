@@ -169,42 +169,40 @@ impl ComfyUiClient {
             return Ok(PromptStatus::Queued);
         }
 
-        if let Some(outputs) = entry["outputs"].as_object() {
-            if !outputs.is_empty() {
-                return Ok(PromptStatus::Completed);
-            }
+        if let Some(outputs) = entry["outputs"].as_object()
+            && !outputs.is_empty()
+        {
+            return Ok(PromptStatus::Completed);
         }
 
-        if let Some(err) = entry["status"]["status_str"].as_str() {
-            if err == "error" {
-                // `messages` is an array of [event_name, payload] pairs;
-                // pull out anything human-readable rather than always
-                // reporting "unknown error".
-                let msg = entry["status"]["messages"]
-                    .as_array()
-                    .map(|msgs| {
-                        msgs.iter()
-                            .filter_map(|m| {
-                                let name = m.get(0)?.as_str()?;
-                                let detail = m
-                                    .get(1)
-                                    .and_then(|p| {
-                                        p.get("exception_message").and_then(|v| v.as_str())
-                                    })
-                                    .unwrap_or("");
-                                Some(if detail.is_empty() {
-                                    name.to_string()
-                                } else {
-                                    format!("{name}: {detail}")
-                                })
+        if let Some(err) = entry["status"]["status_str"].as_str()
+            && err == "error"
+        {
+            // `messages` is an array of [event_name, payload] pairs;
+            // pull out anything human-readable rather than always
+            // reporting "unknown error".
+            let msg = entry["status"]["messages"]
+                .as_array()
+                .map(|msgs| {
+                    msgs.iter()
+                        .filter_map(|m| {
+                            let name = m.get(0)?.as_str()?;
+                            let detail = m
+                                .get(1)
+                                .and_then(|p| p.get("exception_message").and_then(|v| v.as_str()))
+                                .unwrap_or("");
+                            Some(if detail.is_empty() {
+                                name.to_string()
+                            } else {
+                                format!("{name}: {detail}")
                             })
-                            .collect::<Vec<_>>()
-                            .join("; ")
-                    })
-                    .filter(|joined| !joined.is_empty())
-                    .unwrap_or_else(|| "unknown error".to_string());
-                return Ok(PromptStatus::Failed { error: msg });
-            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
+                .filter(|joined| !joined.is_empty())
+                .unwrap_or_else(|| "unknown error".to_string());
+            return Ok(PromptStatus::Failed { error: msg });
         }
 
         Ok(PromptStatus::Running)
@@ -351,14 +349,12 @@ impl ComfyUiClient {
         let mut models = Vec::new();
         if let Some(names) =
             resp["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"].as_array()
+            && let Some(first) = names.first()
+            && let Some(arr) = first.as_array()
         {
-            if let Some(first) = names.first() {
-                if let Some(arr) = first.as_array() {
-                    for item in arr {
-                        if let Some(name) = item.as_str() {
-                            models.push(name.to_string());
-                        }
-                    }
+            for item in arr {
+                if let Some(name) = item.as_str() {
+                    models.push(name.to_string());
                 }
             }
         }
@@ -524,10 +520,9 @@ impl ComfyUiLifecycle {
                 .args(&parts[1..])
                 .arg("--version")
                 .output()
+                && output.status.success()
             {
-                if output.status.success() {
-                    return Ok(cmd.to_string());
-                }
+                return Ok(cmd.to_string());
             }
         }
 

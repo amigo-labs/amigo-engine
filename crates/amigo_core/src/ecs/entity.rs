@@ -101,7 +101,7 @@ impl GenerationalArena {
         self.alive
             .iter()
             .enumerate()
-            .filter(|(_, &alive)| alive)
+            .filter(|&(_, &alive)| alive)
             .map(|(i, _)| EntityId {
                 index: i as u32,
                 generation: self.generations[i],

@@ -322,29 +322,28 @@ impl PlatformerController {
             self.dash_cooldown_counter -= 1;
         }
 
-        if let Some(ref dash_cfg) = self.config.dash {
-            if input.dash_pressed
-                && self.can_dash
-                && self.dash_cooldown_counter == 0
-                && !self.dash_active
-            {
-                self.dash_active = true;
-                let dash_duration = dash_cfg.dash_duration;
-                let dash_speed = dash_cfg.dash_speed;
-                let cooldown = dash_cfg.cooldown;
-                self.dash_counter = dash_duration;
-                self.dash_dir_x = if input.move_x != 0.0 {
-                    input.move_x.signum()
-                } else {
-                    1.0
-                };
-                self.dash_dir_y = 0.0;
-                self.velocity_x = self.dash_dir_x * dash_speed;
-                self.velocity_y = 0.0;
-                self.dash_cooldown_counter = cooldown;
-                self.can_dash = false;
-                events.push(PlatformerEvent::DashStarted);
-            }
+        if let Some(ref dash_cfg) = self.config.dash
+            && input.dash_pressed
+            && self.can_dash
+            && self.dash_cooldown_counter == 0
+            && !self.dash_active
+        {
+            self.dash_active = true;
+            let dash_duration = dash_cfg.dash_duration;
+            let dash_speed = dash_cfg.dash_speed;
+            let cooldown = dash_cfg.cooldown;
+            self.dash_counter = dash_duration;
+            self.dash_dir_x = if input.move_x != 0.0 {
+                input.move_x.signum()
+            } else {
+                1.0
+            };
+            self.dash_dir_y = 0.0;
+            self.velocity_x = self.dash_dir_x * dash_speed;
+            self.velocity_y = 0.0;
+            self.dash_cooldown_counter = cooldown;
+            self.can_dash = false;
+            events.push(PlatformerEvent::DashStarted);
         }
 
         if self.dash_active {
@@ -445,11 +444,12 @@ impl PlatformerController {
             self.velocity_y += gravity;
 
             // Wall slide — cap fall speed when touching a wall
-            if self.wall_dir != 0 && self.velocity_y > 0.0 {
-                if let Some(ref wall_cfg) = self.config.wall {
-                    let slide_speed = wall_cfg.slide_speed;
-                    self.velocity_y = self.velocity_y.min(slide_speed);
-                }
+            if self.wall_dir != 0
+                && self.velocity_y > 0.0
+                && let Some(ref wall_cfg) = self.config.wall
+            {
+                let slide_speed = wall_cfg.slide_speed;
+                self.velocity_y = self.velocity_y.min(slide_speed);
             }
 
             self.velocity_y = self.velocity_y.min(self.config.max_fall_speed);

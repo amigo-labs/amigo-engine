@@ -348,17 +348,17 @@ impl PhysicsWorld {
 
         // --- Positional correction (push bodies apart) ---
         let correction_ratio = contact.penetration / inv_total;
-        if let Some(a) = self.bodies.get_mut(&id_a) {
-            if a.body_type == BodyType::Dynamic {
-                a.position.x += normal.x * correction_ratio * inv_a;
-                a.position.y += normal.y * correction_ratio * inv_a;
-            }
+        if let Some(a) = self.bodies.get_mut(&id_a)
+            && a.body_type == BodyType::Dynamic
+        {
+            a.position.x += normal.x * correction_ratio * inv_a;
+            a.position.y += normal.y * correction_ratio * inv_a;
         }
-        if let Some(b) = self.bodies.get_mut(&id_b) {
-            if b.body_type == BodyType::Dynamic {
-                b.position.x -= normal.x * correction_ratio * inv_b;
-                b.position.y -= normal.y * correction_ratio * inv_b;
-            }
+        if let Some(b) = self.bodies.get_mut(&id_b)
+            && b.body_type == BodyType::Dynamic
+        {
+            b.position.x -= normal.x * correction_ratio * inv_b;
+            b.position.y -= normal.y * correction_ratio * inv_b;
         }
 
         // --- Impulse resolution ---
@@ -375,17 +375,17 @@ impl PhysicsWorld {
         let impulse_x = j * normal.x;
         let impulse_y = j * normal.y;
 
-        if let Some(a) = self.bodies.get_mut(&id_a) {
-            if a.body_type == BodyType::Dynamic {
-                a.velocity.x += impulse_x * inv_a;
-                a.velocity.y += impulse_y * inv_a;
-            }
+        if let Some(a) = self.bodies.get_mut(&id_a)
+            && a.body_type == BodyType::Dynamic
+        {
+            a.velocity.x += impulse_x * inv_a;
+            a.velocity.y += impulse_y * inv_a;
         }
-        if let Some(b) = self.bodies.get_mut(&id_b) {
-            if b.body_type == BodyType::Dynamic {
-                b.velocity.x -= impulse_x * inv_b;
-                b.velocity.y -= impulse_y * inv_b;
-            }
+        if let Some(b) = self.bodies.get_mut(&id_b)
+            && b.body_type == BodyType::Dynamic
+        {
+            b.velocity.x -= impulse_x * inv_b;
+            b.velocity.y -= impulse_y * inv_b;
         }
 
         // --- Friction impulse ---
@@ -415,17 +415,17 @@ impl PhysicsWorld {
         // Coulomb friction: clamp tangent impulse
         let jt = jt.clamp(-j.abs() * friction, j.abs() * friction);
 
-        if let Some(a) = self.bodies.get_mut(&id_a) {
-            if a.body_type == BodyType::Dynamic {
-                a.velocity.x += jt * tx * inv_a;
-                a.velocity.y += jt * ty * inv_a;
-            }
+        if let Some(a) = self.bodies.get_mut(&id_a)
+            && a.body_type == BodyType::Dynamic
+        {
+            a.velocity.x += jt * tx * inv_a;
+            a.velocity.y += jt * ty * inv_a;
         }
-        if let Some(b) = self.bodies.get_mut(&id_b) {
-            if b.body_type == BodyType::Dynamic {
-                b.velocity.x -= jt * tx * inv_b;
-                b.velocity.y -= jt * ty * inv_b;
-            }
+        if let Some(b) = self.bodies.get_mut(&id_b)
+            && b.body_type == BodyType::Dynamic
+        {
+            b.velocity.x -= jt * tx * inv_b;
+            b.velocity.y -= jt * ty * inv_b;
         }
     }
 }
@@ -451,10 +451,10 @@ pub fn sync_physics_to_ecs(world: &PhysicsWorld, positions: &mut crate::ecs::Spa
 /// Call before `PhysicsWorld::step()`.
 pub fn sync_ecs_to_physics(positions: &crate::ecs::SparseSet<Position>, world: &mut PhysicsWorld) {
     for (&entity, body) in world.bodies.iter_mut() {
-        if body.body_type == BodyType::Kinematic {
-            if let Some(pos) = positions.get(entity) {
-                body.position = *pos;
-            }
+        if body.body_type == BodyType::Kinematic
+            && let Some(pos) = positions.get(entity)
+        {
+            body.position = *pos;
         }
     }
 }

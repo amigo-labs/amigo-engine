@@ -137,15 +137,15 @@ impl Inventory {
             if remaining == 0 {
                 break;
             }
-            if let Some(item) = &mut slot.item {
-                if item.def_id == def_id {
-                    if item.stack_count <= remaining {
-                        remaining -= item.stack_count;
-                        slot.item = None;
-                    } else {
-                        item.stack_count -= remaining;
-                        remaining = 0;
-                    }
+            if let Some(item) = &mut slot.item
+                && item.def_id == def_id
+            {
+                if item.stack_count <= remaining {
+                    remaining -= item.stack_count;
+                    slot.item = None;
+                } else {
+                    item.stack_count -= remaining;
+                    remaining = 0;
                 }
             }
         }

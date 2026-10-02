@@ -63,12 +63,13 @@ impl Parser {
         let mut cycle_length = 1.0;
 
         // Skip optional voice label (d1-d9, lexed as Note(D, 1..=9)).
-        if let Some(Token::Note(nv)) = self.peek() {
-            if nv.pitch_class == crate::ast::PitchClass::D && (1..=9).contains(&nv.octave) {
-                // Check if next token is $ (confirming this is a voice label, not a note).
-                if self.tokens.get(self.pos + 1) == Some(&Token::Dollar) {
-                    self.advance(); // consume the voice label
-                }
+        if let Some(Token::Note(nv)) = self.peek()
+            && nv.pitch_class == crate::ast::PitchClass::D
+            && (1..=9).contains(&nv.octave)
+        {
+            // Check if next token is $ (confirming this is a voice label, not a note).
+            if self.tokens.get(self.pos + 1) == Some(&Token::Dollar) {
+                self.advance(); // consume the voice label
             }
         }
 

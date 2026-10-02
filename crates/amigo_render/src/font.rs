@@ -442,35 +442,36 @@ impl FontAtlas {
                 let bold_extra = if seg.bold { 1.0 * seg_scale } else { 0.0 };
 
                 // Word wrap
-                if let Some(max_w) = params.max_width {
-                    if cursor_x + advance + bold_extra > max_w && cursor_x > 0.0 {
-                        // Wrap at last space or at current position
-                        if let Some(space_idx) = last_space_idx {
-                            // Move glyphs after last space to next line
-                            line_widths.push(
-                                glyphs
-                                    .get(space_idx)
-                                    .map(|g| g.x + g.glyph_info.advance * g.scale)
-                                    .unwrap_or(cursor_x),
-                            );
-                            let wrap_x = glyphs.get(space_idx + 1).map(|g| g.x).unwrap_or(cursor_x);
-                            cursor_y += line_h;
-                            let shift = wrap_x;
-                            for g in &mut glyphs[space_idx + 1..] {
-                                g.x -= shift;
-                                g.y = cursor_y;
-                            }
-                            cursor_x -= shift;
-                        } else {
-                            line_widths.push(cursor_x);
-                            cursor_x = 0.0;
-                            cursor_y += line_h;
+                if let Some(max_w) = params.max_width
+                    && cursor_x + advance + bold_extra > max_w
+                    && cursor_x > 0.0
+                {
+                    // Wrap at last space or at current position
+                    if let Some(space_idx) = last_space_idx {
+                        // Move glyphs after last space to next line
+                        line_widths.push(
+                            glyphs
+                                .get(space_idx)
+                                .map(|g| g.x + g.glyph_info.advance * g.scale)
+                                .unwrap_or(cursor_x),
+                        );
+                        let wrap_x = glyphs.get(space_idx + 1).map(|g| g.x).unwrap_or(cursor_x);
+                        cursor_y += line_h;
+                        let shift = wrap_x;
+                        for g in &mut glyphs[space_idx + 1..] {
+                            g.x -= shift;
+                            g.y = cursor_y;
                         }
-                        if cursor_x > max_width_seen {
-                            max_width_seen = cursor_x;
-                        }
-                        last_space_idx = None;
+                        cursor_x -= shift;
+                    } else {
+                        line_widths.push(cursor_x);
+                        cursor_x = 0.0;
+                        cursor_y += line_h;
                     }
+                    if cursor_x > max_width_seen {
+                        max_width_seen = cursor_x;
+                    }
+                    last_space_idx = None;
                 }
 
                 if ch == ' ' {

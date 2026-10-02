@@ -451,10 +451,10 @@ fn handle_list_entities(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         .entities
         .iter()
         .filter(|e| {
-            if let Some(f) = filter {
-                if !e.entity_type.contains(f) {
-                    return false;
-                }
+            if let Some(f) = filter
+                && !e.entity_type.contains(f)
+            {
+                return false;
             }
             if let Some(center) = near {
                 let dx = (e.pos[0] - center[0]) as f64;
@@ -903,10 +903,10 @@ fn handle_get_property(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_dev_save_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    if let Some(path) = req.params.get("path").and_then(|v| v.as_str()) {
-        if let Err(e) = check_request_path(path) {
-            return RpcResponse::error(req.id, INVALID_PARAMS, e);
-        }
+    if let Some(path) = req.params.get("path").and_then(|v| v.as_str())
+        && let Err(e) = check_request_path(path)
+    {
+        return RpcResponse::error(req.id, INVALID_PARAMS, e);
     }
     // Queue the save_snapshot command so the engine main loop can populate
     // DevSnapshot with actual game state (camera, scene, etc.)

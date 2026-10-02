@@ -2,6 +2,7 @@
 name = "amigo_tidal_parser"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "TidalCycles mini-notation parser for Amigo Engine"

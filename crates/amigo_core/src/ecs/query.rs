@@ -314,10 +314,10 @@ where
         .filter(|id| b.contains(*id))
         .collect();
     for id in ids {
-        if let Some(a_val) = a.get(id) {
-            if let Some(b_val) = b.get_mut(id) {
-                f(id, a_val, b_val);
-            }
+        if let Some(a_val) = a.get(id)
+            && let Some(b_val) = b.get_mut(id)
+        {
+            f(id, a_val, b_val);
         }
     }
 }

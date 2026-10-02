@@ -244,28 +244,28 @@ pub fn tally(ballots: &[Ballot], skip_choice: Option<u32>, plurality_wins: bool)
     }
 
     // Check if skip won.
-    if let Some(skip) = skip_choice {
-        if let Some(&skip_votes) = counts.get(&skip) {
-            if plurality_wins {
-                let max_non_skip = counts
-                    .iter()
-                    .filter(|(&k, _)| k != skip)
-                    .map(|(_, &v)| v)
-                    .max()
-                    .unwrap_or(0);
-                if skip_votes > max_non_skip {
-                    return VoteOutcome::Skipped;
-                }
-            } else if skip_votes > ballots.len() as u32 / 2 {
+    if let Some(skip) = skip_choice
+        && let Some(&skip_votes) = counts.get(&skip)
+    {
+        if plurality_wins {
+            let max_non_skip = counts
+                .iter()
+                .filter(|&(&k, _)| k != skip)
+                .map(|(_, &v)| v)
+                .max()
+                .unwrap_or(0);
+            if skip_votes > max_non_skip {
                 return VoteOutcome::Skipped;
             }
+        } else if skip_votes > ballots.len() as u32 / 2 {
+            return VoteOutcome::Skipped;
         }
     }
 
     // Find the maximum vote count (excluding skip).
     let non_skip: Vec<(u32, u32)> = counts
         .iter()
-        .filter(|(&k, _)| skip_choice != Some(k))
+        .filter(|&(&k, _)| skip_choice != Some(k))
         .map(|(&k, &v)| (k, v))
         .collect();
 

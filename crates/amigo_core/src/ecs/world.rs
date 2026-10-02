@@ -556,15 +556,15 @@ impl World {
         }
 
         // Check dynamic components via stored accessor functions
-        if let Some(storage) = self.dynamic.get(&type_id) {
-            if let Some(accessor) = self.reflect_accessors.get(&type_id) {
-                // SAFETY: The accessor returns a pointer that borrows from storage,
-                // which itself borrows from self. We return a reference with
-                // the lifetime of self.
-                unsafe {
-                    let ptr = (accessor.get_fn)(storage.as_ref(), entity)?;
-                    return Some(&*ptr);
-                }
+        if let Some(storage) = self.dynamic.get(&type_id)
+            && let Some(accessor) = self.reflect_accessors.get(&type_id)
+        {
+            // SAFETY: The accessor returns a pointer that borrows from storage,
+            // which itself borrows from self. We return a reference with
+            // the lifetime of self.
+            unsafe {
+                let ptr = (accessor.get_fn)(storage.as_ref(), entity)?;
+                return Some(&*ptr);
             }
         }
 
@@ -589,14 +589,14 @@ impl World {
 
         // For dynamic components, use stored accessor
         let accessor = self.reflect_accessors.get(&type_id).cloned();
-        if let Some(accessor) = accessor {
-            if let Some(storage) = self.dynamic.get_mut(&type_id) {
-                // SAFETY: The accessor returns a pointer that borrows from storage,
-                // which borrows from self. We return a &mut with the lifetime of self.
-                unsafe {
-                    let ptr = (accessor.get_mut_fn)(storage.as_mut(), entity)?;
-                    return Some(&mut *ptr);
-                }
+        if let Some(accessor) = accessor
+            && let Some(storage) = self.dynamic.get_mut(&type_id)
+        {
+            // SAFETY: The accessor returns a pointer that borrows from storage,
+            // which borrows from self. We return a &mut with the lifetime of self.
+            unsafe {
+                let ptr = (accessor.get_mut_fn)(storage.as_mut(), entity)?;
+                return Some(&mut *ptr);
             }
         }
 
@@ -625,10 +625,10 @@ impl World {
         }
 
         for (type_id, storage) in &self.dynamic {
-            if let Some(accessor) = self.reflect_accessors.get(type_id) {
-                if (accessor.contains_fn)(storage.as_ref(), entity) {
-                    types.push(*type_id);
-                }
+            if let Some(accessor) = self.reflect_accessors.get(type_id)
+                && (accessor.contains_fn)(storage.as_ref(), entity)
+            {
+                types.push(*type_id);
             }
         }
 

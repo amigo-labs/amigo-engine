@@ -96,10 +96,10 @@ impl Room {
         if self.players.len() >= self.config.max_players as usize {
             return false;
         }
-        if let Some(ref pw) = self.config.password {
-            if password != Some(pw.as_str()) {
-                return false;
-            }
+        if let Some(ref pw) = self.config.password
+            && password != Some(pw.as_str())
+        {
+            return false;
         }
         if self.players.iter().any(|p| p.id == id) {
             return false; // already in room
@@ -260,11 +260,11 @@ impl LobbyManager {
         // Leave current room first
         self.leave_current_room(player);
 
-        if let Some(room) = self.rooms.get_mut(&room_id) {
-            if room.join(player, name, password) {
-                self.player_rooms.insert(player, room_id);
-                return true;
-            }
+        if let Some(room) = self.rooms.get_mut(&room_id)
+            && room.join(player, name, password)
+        {
+            self.player_rooms.insert(player, room_id);
+            return true;
         }
         false
     }

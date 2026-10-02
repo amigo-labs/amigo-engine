@@ -1073,13 +1073,13 @@ pub fn dispatch_tool_with_defaults(
                 }
             }
 
-            if output_paths.is_empty() {
-                if let Some(e) = gen_error {
-                    return Ok(serde_json::json!({
-                        "error": e,
-                        "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                    }));
-                }
+            if output_paths.is_empty()
+                && let Some(e) = gen_error
+            {
+                return Ok(serde_json::json!({
+                    "error": e,
+                    "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                }));
             }
 
             let generation_time_ms = start.elapsed().as_millis() as u64;
@@ -1569,12 +1569,12 @@ pub fn dispatch_tool_with_defaults(
             let mut registry = VoiceRegistry::load(&voices_dir);
             let removed = registry.remove(&p.name);
 
-            if removed.is_some() {
-                if let Err(e) = registry.save(&voices_dir) {
-                    return Ok(serde_json::json!({
-                        "error": format!("Failed to save voice registry: {}", e)
-                    }));
-                }
+            if removed.is_some()
+                && let Err(e) = registry.save(&voices_dir)
+            {
+                return Ok(serde_json::json!({
+                    "error": format!("Failed to save voice registry: {}", e)
+                }));
             }
 
             Ok(serde_json::json!({
@@ -1719,12 +1719,12 @@ pub fn dispatch_tool_with_defaults(
             }
 
             let removed = registry.remove(&p.name);
-            if removed.is_some() {
-                if let Err(e) = registry.save(&styles_dir) {
-                    return Ok(serde_json::json!({
-                        "error": format!("Failed to save style registry: {}", e)
-                    }));
-                }
+            if removed.is_some()
+                && let Err(e) = registry.save(&styles_dir)
+            {
+                return Ok(serde_json::json!({
+                    "error": format!("Failed to save style registry: {}", e)
+                }));
             }
 
             Ok(serde_json::json!({

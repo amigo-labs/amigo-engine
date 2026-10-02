@@ -350,10 +350,10 @@ impl LiquidMap {
 
     fn wake_neighbors(&mut self, x: i32, y: i32) {
         for (dx, dy) in &[(0i32, -1i32), (0, 1), (-1, 0), (1, 0)] {
-            if let Some(i) = self.index(x + dx, y + dy) {
-                if !self.cells[i].is_empty() {
-                    self.cells[i].settled = false;
-                }
+            if let Some(i) = self.index(x + dx, y + dy)
+                && !self.cells[i].is_empty()
+            {
+                self.cells[i].settled = false;
             }
         }
     }

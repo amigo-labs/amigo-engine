@@ -250,10 +250,10 @@ fn save_dev_snapshot(
 
     let serialized = ron::ser::to_string_pretty(&snapshot, ron::ser::PrettyConfig::default())
         .map_err(|e| format!("serialize failed: {e}"))?;
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("mkdir failed: {e}"))?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir failed: {e}"))?;
     }
     std::fs::write(path, serialized).map_err(|e| format!("write failed: {e}"))
 }

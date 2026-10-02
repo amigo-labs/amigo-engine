@@ -23,7 +23,8 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Rust **stable** (latest) is the minimum supported toolchain.
+Rust **stable** is the supported toolchain; the minimum is `rust-version` in
+the root `Cargo.toml`.
 
 ## Project layout
 
@@ -108,7 +109,9 @@ cargo run -p amigo_basic_game --features "amigo_engine/editor,amigo_engine/api,a
 
 ### General
 
-- **Edition 2021**, stable Rust.
+- **Edition 2024**, stable Rust. The minimum toolchain is `rust-version` in
+  the root `Cargo.toml` (CI checks it); day-to-day development uses latest
+  stable via `rust-toolchain.toml`.
 - Prefer simple, direct code. Avoid premature abstraction.
 - Use `tracing` for logging (`info!`, `warn!`, `error!`), not `println!`.
 - Public items should have doc comments. Internal helpers don't need them.

@@ -231,11 +231,11 @@ impl TimelinePlayer {
         // If seeking backward, remove fired events after the new time
         if time < old_time {
             self.fired_events.retain(|&(track_idx, event_idx)| {
-                if let Some(tl) = &self.timeline {
-                    if let Some(track) = tl.tracks.get(track_idx) {
-                        let event_time = get_event_time(track, event_idx);
-                        return event_time.is_none_or(|t| t <= time);
-                    }
+                if let Some(tl) = &self.timeline
+                    && let Some(track) = tl.tracks.get(track_idx)
+                {
+                    let event_time = get_event_time(track, event_idx);
+                    return event_time.is_none_or(|t| t <= time);
                 }
                 true
             });
