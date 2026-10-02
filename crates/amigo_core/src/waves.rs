@@ -103,6 +103,8 @@ struct GroupState {
 /// Phase of the wave spawner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WavePhase {
+    /// No wave started yet; [`WaveSpawner::start_next_wave`] starts the first.
+    Idle,
     /// Waiting for the pre-wave delay.
     Waiting,
     /// Actively spawning enemies.
@@ -137,7 +139,7 @@ impl WaveSpawner {
             waves,
             spawn_points,
             current_wave: 0,
-            phase: WavePhase::Waiting,
+            phase: WavePhase::Idle,
             enemies_alive: 0,
             total_kills: 0,
             delay_timer: 0.0,
@@ -151,11 +153,31 @@ impl WaveSpawner {
         self.auto_advance = auto;
     }
 
-    /// Manually start the next wave.
+    /// Manually start the next wave: the first one while [`Idle`], the one
+    /// after the current wave once it is [`Complete`], or [`Victory`] when
+    /// there is none. Does nothing while a wave is still running.
+    ///
+    /// [`Idle`]: WavePhase::Idle
+    /// [`Complete`]: WavePhase::Complete
+    /// [`Victory`]: WavePhase::Victory
     pub fn start_next_wave(&mut self) {
-        if self.current_wave < self.waves.len() {
-            self.start_wave(self.current_wave);
+        let next = match self.phase {
+            WavePhase::Idle => 0,
+            WavePhase::Complete => self.current_wave + 1,
+            WavePhase::Waiting | WavePhase::Spawning | WavePhase::Active | WavePhase::Victory => {
+                return
+            }
+        };
+        if next < self.waves.len() {
+            self.start_wave(next);
+        } else {
+            self.phase = WavePhase::Victory;
         }
+    }
+
+    /// Whether the current wave is the last one.
+    pub fn is_last_wave(&self) -> bool {
+        self.current_wave + 1 >= self.waves.len()
     }
 
     fn start_wave(&mut self, index: usize) {
@@ -178,6 +200,8 @@ impl WaveSpawner {
         let mut events = Vec::new();
 
         match self.phase {
+            WavePhase::Idle => return events,
+
             WavePhase::Victory | WavePhase::Complete => {
                 if self.auto_advance && self.phase == WavePhase::Complete {
                     let next = self.current_wave + 1;
@@ -275,11 +299,8 @@ impl WaveSpawner {
         self.current_wave = 0;
         self.enemies_alive = 0;
         self.total_kills = 0;
-        self.phase = WavePhase::Waiting;
+        self.phase = WavePhase::Idle;
         self.group_states.clear();
-        if !self.waves.is_empty() {
-            self.start_wave(0);
-        }
     }
 }
 
@@ -351,6 +372,44 @@ mod tests {
         for _ in 0..10 {
             spawner.update(0.1);
         }
+        assert_eq!(spawner.phase, WavePhase::Victory);
+    }
+
+    #[test]
+    fn an_unstarted_spawner_idles_instead_of_panicking() {
+        let waves = vec![WaveDef::new().with_group(1, 5, 1.0, 0)];
+        let mut spawner = WaveSpawner::new(waves, vec![RenderVec2::ZERO]);
+        // Used to move Waiting -> Spawning on the first tick, then index the
+        // empty group_states on the second.
+        for _ in 0..10 {
+            assert!(spawner.update(0.016).is_empty());
+        }
+        assert_eq!(spawner.phase, WavePhase::Idle);
+    }
+
+    #[test]
+    fn manual_advance_moves_to_the_next_wave_and_ends_in_victory() {
+        let waves = vec![
+            WaveDef::new().with_delay(0.0).with_group(1, 1, 0.0, 0),
+            WaveDef::new().with_delay(0.0).with_group(2, 1, 0.0, 0),
+        ];
+        let mut spawner = WaveSpawner::new(waves, vec![RenderVec2::ZERO]);
+        spawner.set_auto_advance(false);
+
+        let mut spawned = Vec::new();
+        for _ in 0..2 {
+            spawner.start_next_wave();
+            for _ in 0..5 {
+                spawned.extend(spawner.update(0.1).into_iter().map(|e| e.enemy_type));
+            }
+            spawner.on_enemy_killed();
+            spawner.update(0.1);
+            assert_eq!(spawner.phase, WavePhase::Complete);
+        }
+        // With auto_advance off, wave 1 used to repeat forever.
+        assert_eq!(spawned, vec![1, 2]);
+        assert!(spawner.is_last_wave());
+        spawner.start_next_wave();
         assert_eq!(spawner.phase, WavePhase::Victory);
     }
 }

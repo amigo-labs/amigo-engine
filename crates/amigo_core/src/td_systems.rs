@@ -1,7 +1,7 @@
 use crate::combat::DamageType;
 use crate::ecs::EntityId;
 use crate::enemy::{DeadEnemy, EnemyDef, EnemyInstance, EnemyManager};
-use crate::game_state::TdGameState;
+use crate::game_state::{GamePhase, TdGameState};
 use crate::pathfinding::WaypointPath;
 use crate::projectile::{ProjectileHit, ProjectileManager, ProjectileTarget, SpawnProjectile};
 use crate::tower::{select_target, TargetCandidate, TowerAttackType, TowerDef, TowerInstance};
@@ -244,11 +244,12 @@ pub fn td_tick(
     let scaled_dt = dt * game_state.speed_multiplier;
 
     // 2. Spawn enemies from wave system (only during combat with waves)
-    let spawn_events = if game_state.spawner.total_waves() > 0 {
-        game_state.spawner.update(scaled_dt)
-    } else {
-        Vec::new()
-    };
+    let spawn_events =
+        if game_state.phase == GamePhase::Combat && game_state.spawner.total_waves() > 0 {
+            game_state.spawner.update(scaled_dt)
+        } else {
+            Vec::new()
+        };
     spawn_enemies_system(&spawn_events, enemy_defs, enemies);
 
     // 3. Update enemies (movement, status effects, DoT)

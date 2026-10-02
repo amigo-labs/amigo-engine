@@ -124,7 +124,13 @@ impl TdGameState {
         Self {
             tick: 0,
             economy: Economy::new(starting_gold, starting_lives),
-            spawner: WaveSpawner::new(waves, spawn_points),
+            // TdGameState owns the phase: waves start on StartWave, never on
+            // their own during Build.
+            spawner: {
+                let mut spawner = WaveSpawner::new(waves, spawn_points);
+                spawner.set_auto_advance(false);
+                spawner
+            },
             phase: GamePhase::Build,
             speed_multiplier: 1.0,
             game_time: 0.0,
@@ -289,12 +295,17 @@ impl TdGameState {
 
         // Update wave spawner during combat
         if self.phase == GamePhase::Combat {
-            if self.spawner.phase == WavePhase::Complete {
-                // Wave done — apply interest and go back to build
-                self.economy.apply_interest();
-                self.phase = GamePhase::Build;
-            } else if self.spawner.phase == WavePhase::Victory {
-                self.phase = GamePhase::Victory;
+            match self.spawner.phase {
+                WavePhase::Complete if self.spawner.is_last_wave() => {
+                    self.phase = GamePhase::Victory;
+                }
+                WavePhase::Complete => {
+                    // Wave done — apply interest and go back to build
+                    self.economy.apply_interest();
+                    self.phase = GamePhase::Build;
+                }
+                WavePhase::Victory => self.phase = GamePhase::Victory,
+                _ => {}
             }
         }
     }
@@ -498,6 +509,40 @@ mod tests {
 
         state.execute_command(&GameCommand::Unpause, &defs, &mut towers);
         assert_eq!(state.phase, GamePhase::Build);
+    }
+
+    #[test]
+    fn playing_every_wave_reaches_victory() {
+        let waves = (1..=3)
+            .map(|t| WaveDef::new().with_delay(0.0).with_group(t, 1, 0.0, 0))
+            .collect();
+        let mut state = TdGameState::new(100, 20, waves, vec![RenderVec2::ZERO]);
+        let defs = test_defs();
+        let mut towers = Vec::new();
+
+        let mut spawned = Vec::new();
+        for wave in 1..=3 {
+            // Nothing spawns while building, however long the player takes.
+            for _ in 0..30 {
+                state.update(0.1);
+            }
+            assert_eq!(state.phase, GamePhase::Build, "wave {wave}");
+            assert!(matches!(
+                state.execute_command(&GameCommand::StartWave, &defs, &mut towers),
+                CommandResult::WaveStarted { .. }
+            ));
+            for _ in 0..5 {
+                spawned.extend(state.spawner.update(0.1).into_iter().map(|e| e.enemy_type));
+            }
+            state.spawner.on_enemy_killed();
+            state.spawner.update(0.1);
+            state.update(0.1);
+            if wave < 3 {
+                assert_eq!(state.phase, GamePhase::Build, "after wave {wave}");
+            }
+        }
+        assert_eq!(spawned, vec![1, 2, 3]);
+        assert_eq!(state.phase, GamePhase::Victory);
     }
 
     #[test]
