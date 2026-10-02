@@ -281,12 +281,34 @@ mod tests {
         assert_eq!(fields[2].info.name, "active");
     }
 
-    /// `fields_mut` is the derive's one `unsafe` block: it builds a `FieldMut`
-    /// per field from `offset_of!` pointers, and hands them all out at once.
-    /// Soundness rests on those offsets being distinct and correct, so this
-    /// writes through every handle while they are all alive and checks each
-    /// value landed in its own field — an offset mix-up in the macro would show
-    /// up as a value in the wrong place or a clobbered neighbour.
+    /// `fields_mut` hands out one `FieldMut` per field, all alive at once.
+    /// The derive builds them by destructuring `self`, so this writes through
+    /// every handle together and checks each value landed in its own field —
+    /// a mix-up in the generated bindings would show up as a value in the
+    /// wrong place or a clobbered neighbour.
+    /// The derive binds fields under generated names, so a field named like
+    /// the generated code's own locals (`info`) still works.
+    #[test]
+    fn fields_named_like_generated_locals_are_reflected() {
+        #[derive(Clone, Debug, Default, Reflect)]
+        struct Tricky {
+            info: i32,
+            base_ptr: u8,
+        }
+        let mut t = Tricky {
+            info: 1,
+            base_ptr: 2,
+        };
+        for field in t.fields_mut() {
+            match field.info.name {
+                "info" => *field.value.downcast_mut::<i32>().unwrap() = 10,
+                "base_ptr" => *field.value.downcast_mut::<u8>().unwrap() = 20,
+                other => panic!("unexpected field {other}"),
+            }
+        }
+        assert_eq!((t.info, t.base_ptr), (10, 20));
+    }
+
     #[test]
     fn fields_mut_write_through_targets_the_right_field() {
         let mut s = Stats {
