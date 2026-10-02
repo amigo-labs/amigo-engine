@@ -609,12 +609,11 @@ impl MovingPlatform {
             } else {
                 match self.mode {
                     PathMode::Loop => self.current_index = 0,
-                    PathMode::PingPong => {
-                        self.forward = false;
-                        if self.current_index > 0 {
-                            self.current_index -= 1;
-                        }
-                    }
+                    // Turn around in place: the return leg starts at this
+                    // end. Also stepping the index made the next segment
+                    // zero-length, which flipped back, so the platform
+                    // teleported between its ends every tick.
+                    PathMode::PingPong => self.forward = false,
                     PathMode::Once => {} // stay
                 }
             }
@@ -623,13 +622,8 @@ impl MovingPlatform {
         } else {
             match self.mode {
                 PathMode::Loop => self.current_index = self.waypoints.len() - 1,
-                PathMode::PingPong => {
-                    self.forward = true;
-                    if self.current_index + 1 < self.waypoints.len() {
-                        self.current_index += 1;
-                    }
-                }
-                PathMode::Once => {} // stay
+                PathMode::PingPong => self.forward = true, // turn around in place
+                PathMode::Once => {}                       // stay
             }
         }
     }
@@ -1023,6 +1017,27 @@ mod tests {
         }
         assert!(reached_end, "Should reach end");
         assert!(came_back, "Should come back in PingPong mode");
+    }
+
+    #[test]
+    fn pingpong_platform_never_jumps_and_reports_its_motion() {
+        for points in [
+            vec![(0.0, 0.0), (100.0, 0.0)],
+            vec![(0.0, 0.0), (50.0, 0.0), (100.0, 0.0)],
+        ] {
+            let mut plat = MovingPlatform::new(points, 10.0, PathMode::PingPong);
+            let (mut last_x, _) = plat.current_position();
+            for tick in 0..100 {
+                let (x, _, dx, _) = plat.tick();
+                // The old turn-around teleported 100 px per tick, with dx = 0.
+                assert!(
+                    (x - last_x).abs() <= 10.0 + 1e-3,
+                    "tick {tick}: {last_x} -> {x}"
+                );
+                assert!((dx - (x - last_x)).abs() < 1e-3, "tick {tick}: delta {dx}");
+                last_x = x;
+            }
+        }
     }
 
     #[test]
