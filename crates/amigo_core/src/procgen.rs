@@ -938,19 +938,26 @@ pub fn generate_dungeon(config: &DungeonConfig) -> DungeonResult {
     let h = config.height;
     let mut tiles = vec![0u32; (w * h) as usize]; // 0 = wall
 
+    // Config comes from data files, so tolerate inverted or oversized room
+    // bounds: an inverted range is read as min..=min, and a room that cannot
+    // fit with its one-tile border is skipped (both used to divide by zero).
+    let min_room = config.min_room_size.max(1);
+    let room_span = config.max_room_size.saturating_sub(min_room) + 1;
+
     // 1. Place rooms via rejection sampling
     let mut rooms: Vec<DungeonRoom> = Vec::new();
-    for _ in 0..config.max_rooms * 3 {
+    for _ in 0..config.max_rooms.saturating_mul(3) {
         // Try 3x attempts
         if rooms.len() >= config.max_rooms as usize {
             break;
         }
-        let rw = config.min_room_size
-            + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
-        let rh = config.min_room_size
-            + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
-        let rx = 1 + (xorshift() as u32 % (w.saturating_sub(rw + 2)));
-        let ry = 1 + (xorshift() as u32 % (h.saturating_sub(rh + 2)));
+        let rw = min_room + (xorshift() as u32 % room_span);
+        let rh = min_room + (xorshift() as u32 % room_span);
+        if rw.saturating_add(2) >= w || rh.saturating_add(2) >= h {
+            continue;
+        }
+        let rx = 1 + (xorshift() as u32 % (w - (rw + 2)));
+        let ry = 1 + (xorshift() as u32 % (h - (rh + 2)));
 
         // Check overlap with padding
         let overlaps = rooms.iter().any(|r| {
@@ -1320,6 +1327,24 @@ mod tests {
     }
 
     // ── Dungeon Generator ──────────────────────────────────
+
+    #[test]
+    fn dungeon_config_from_data_cannot_divide_by_zero() {
+        // A room as wide as the map leaves no room for the border, and an
+        // inverted min/max range; both used to reach `% 0`.
+        for (width, min_room_size, max_room_size) in [(16, 5, 15), (40, 9, 4), (40, 5, 4)] {
+            let config = DungeonConfig {
+                width,
+                height: width,
+                seed: 7,
+                min_room_size,
+                max_room_size,
+                ..Default::default()
+            };
+            let result = generate_dungeon(&config);
+            assert_eq!(result.tiles.len(), (width * width) as usize);
+        }
+    }
 
     #[test]
     fn dungeon_generates_rooms() {
