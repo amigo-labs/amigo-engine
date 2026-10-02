@@ -241,19 +241,39 @@ fn handle_client(stream: TcpStream, state: SharedState, running: Arc<AtomicBool>
             continue;
         }
 
-        let response = match serde_json::from_str::<RpcRequest>(&request) {
+        // A line that is not JSON at all ends the connection. Real clients
+        // only ever send JSON; a line like `POST / HTTP/1.1` means a browser
+        // or other foreign protocol reached the port, and keeping the
+        // connection open would let a JSON-RPC line smuggled into an HTTP
+        // body (a cross-origin `fetch` from any web page) be executed.
+        let value = match serde_json::from_str::<serde_json::Value>(&request) {
+            Ok(value) => value,
+            Err(e) => {
+                warn!("API client {peer:?} sent a non-JSON line; closing the connection");
+                let response = RpcResponse::error(None, PARSE_ERROR, format!("Parse error: {}", e));
+                write_response(&mut writer, &response);
+                break;
+            }
+        };
+        let response = match serde_json::from_value::<RpcRequest>(value) {
             Ok(req) => handle_request(&req, &state),
-            Err(e) => RpcResponse::error(None, PARSE_ERROR, format!("Parse error: {}", e)),
+            Err(e) => RpcResponse::error(None, INVALID_REQUEST, format!("Invalid request: {}", e)),
         };
 
-        let mut resp_json = serde_json::to_string(&response).unwrap_or_default();
-        resp_json.push('\n');
-        if writer.write_all(resp_json.as_bytes()).is_err() {
+        if !write_response(&mut writer, &response) {
             break;
         }
     }
 
     debug!("API client disconnected: {:?}", peer);
+}
+
+/// Write one newline-terminated response. Returns `false` once the client is
+/// gone.
+fn write_response(writer: &mut impl Write, response: &RpcResponse) -> bool {
+    let mut resp_json = serde_json::to_string(response).unwrap_or_default();
+    resp_json.push('\n');
+    writer.write_all(resp_json.as_bytes()).is_ok()
 }
 
 #[cfg(test)]
@@ -331,16 +351,42 @@ mod tests {
         assert!(!server.is_running());
     }
 
-    /// Garbage and unknown methods must produce error responses, and the
-    /// connection must stay usable afterwards.
+    /// A non-JSON line gets a parse error and closes the connection, so an
+    /// HTTP request (a browser's cross-origin POST) cannot follow its
+    /// preamble with a smuggled JSON-RPC line.
     #[test]
-    fn malformed_requests_do_not_kill_the_connection() {
+    fn a_non_json_line_closes_the_connection() {
         let state = new_shared_state();
         let mut server = ApiServer::start(0, state).unwrap();
         let mut stream = connect(server.port);
 
-        let resp = round_trip(&mut stream, "this is not json");
+        let resp = round_trip(&mut stream, "POST / HTTP/1.1");
         assert_eq!(resp.error.expect("parse error").code, PARSE_ERROR);
+
+        let _ = stream.write_all(
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"engine.status\",\"params\":null}\n",
+        );
+        let mut rest = String::new();
+        let mut reader = BufReader::new(&stream);
+        let read = reader.read_line(&mut rest).unwrap_or(0);
+        assert_eq!(
+            read, 0,
+            "server must not answer after a non-JSON line: {rest:?}"
+        );
+
+        server.stop();
+    }
+
+    /// JSON that is not a valid request, and unknown methods, produce error
+    /// responses, and the connection stays usable afterwards.
+    #[test]
+    fn invalid_requests_do_not_kill_the_connection() {
+        let state = new_shared_state();
+        let mut server = ApiServer::start(0, state).unwrap();
+        let mut stream = connect(server.port);
+
+        let resp = round_trip(&mut stream, r#"{"not":"a request"}"#);
+        assert_eq!(resp.error.expect("invalid request").code, INVALID_REQUEST);
 
         let resp = round_trip(
             &mut stream,

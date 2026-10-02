@@ -168,6 +168,38 @@ fn queue_cmd(req: &RpcRequest, state: &SharedState, action: &str, params: Value)
     RpcResponse::success(req.id, json!({"ok": true}))
 }
 
+/// Check a filesystem path named by a request before the engine writes to
+/// (or reads from) it.
+///
+/// Allowed are relative paths that stay inside the working directory (no
+/// `..`) and absolute paths under the system temp directory, where the
+/// screenshot default lives. Anything else is refused: any local process can
+/// reach the API port, so a request must not be able to overwrite files like
+/// `~/.bashrc` that the user never pointed the engine at.
+pub fn check_request_path(raw: &str) -> Result<(), String> {
+    use std::path::{Component, Path};
+
+    let path = Path::new(raw);
+    if path.components().any(|c| c == Component::ParentDir) {
+        return Err(format!("path '{raw}' must not contain '..'"));
+    }
+    let rooted = path.has_root() || matches!(path.components().next(), Some(Component::Prefix(_)));
+    if rooted && !path.starts_with(std::env::temp_dir()) {
+        return Err(format!(
+            "path '{raw}' must be relative to the project directory or inside {}",
+            std::env::temp_dir().display()
+        ));
+    }
+    Ok(())
+}
+
+/// [`require_str`] for a filesystem path, validated by [`check_request_path`].
+fn require_path<'a>(params: &'a Value, key: &str) -> Result<&'a str, String> {
+    let path = require_str(params, key)?;
+    check_request_path(path)?;
+    Ok(path)
+}
+
 fn require_str<'a>(params: &'a Value, key: &str) -> Result<&'a str, String> {
     params
         .get(key)
@@ -356,11 +388,14 @@ fn handle_perf(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 }
 
 fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    let path = req
-        .params
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or("/tmp/screenshot.png");
+    let default_path = std::env::temp_dir().join("screenshot.png");
+    let path = match req.params.get("path").and_then(|v| v.as_str()) {
+        Some(path) => path.to_string(),
+        None => default_path.to_string_lossy().into_owned(),
+    };
+    if let Err(e) = check_request_path(&path) {
+        return RpcResponse::error(req.id, INVALID_PARAMS, e);
+    }
     let overlays: Vec<String> = req
         .params
         .get("overlays")
@@ -384,7 +419,7 @@ fn handle_screenshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 
     let mut s = crate::lock_or_recover(state);
     s.screenshot_queue.push(ScreenshotRequest {
-        path: path.to_string(),
+        path: path.clone(),
         overlays,
         area,
         mode,
@@ -667,14 +702,14 @@ fn handle_editor_auto_decorate(req: &RpcRequest, state: &SharedState) -> RpcResp
 }
 
 fn handle_editor_save(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    match require_str(&req.params, "path") {
+    match require_path(&req.params, "path") {
         Ok(path) => queue_cmd(req, state, "editor.save", json!({"path": path})),
         Err(e) => RpcResponse::error(req.id, INVALID_PARAMS, e),
     }
 }
 
 fn handle_editor_load(req: &RpcRequest, state: &SharedState) -> RpcResponse {
-    match require_str(&req.params, "path") {
+    match require_path(&req.params, "path") {
         Ok(path) => queue_cmd(req, state, "editor.load", json!({"path": path})),
         Err(e) => RpcResponse::error(req.id, INVALID_PARAMS, e),
     }
@@ -868,6 +903,11 @@ fn handle_get_property(req: &RpcRequest, state: &SharedState) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 fn handle_dev_save_snapshot(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    if let Some(path) = req.params.get("path").and_then(|v| v.as_str()) {
+        if let Err(e) = check_request_path(path) {
+            return RpcResponse::error(req.id, INVALID_PARAMS, e);
+        }
+    }
     // Queue the save_snapshot command so the engine main loop can populate
     // DevSnapshot with actual game state (camera, scene, etc.)
     queue_cmd(req, state, "dev.save_snapshot", req.params.clone())
@@ -1489,6 +1529,42 @@ mod tests {
         assert!(resp.error.is_none());
         let r = resp.result.unwrap();
         assert_eq!(r["has_snapshot"], false);
+    }
+
+    #[test]
+    fn requests_cannot_write_outside_the_project_or_temp_dir() {
+        let state = new_shared_state();
+        let home = if cfg!(windows) {
+            r"C:\Users\me\x.ron"
+        } else {
+            "/home/me/.bashrc"
+        };
+        for (method, params) in [
+            ("dev.save_snapshot", json!({"path": home})),
+            (
+                "dev.save_snapshot",
+                json!({"path": "saves/../../escape.ron"}),
+            ),
+            ("screenshot", json!({"path": home})),
+            ("editor.save", json!({"path": "../level.ron"})),
+        ] {
+            let resp = handle_request(&make_request(method, params.clone()), &state);
+            let err = resp
+                .error
+                .unwrap_or_else(|| panic!("{method} {params} was accepted"));
+            assert_eq!(err.code, INVALID_PARAMS, "{method} {params}");
+        }
+        assert!(crate::lock_or_recover(&state).pending_commands.is_empty());
+
+        let tmp = std::env::temp_dir().join("shot.png");
+        for (method, params) in [
+            ("dev.save_snapshot", json!({"path": "snapshots/dev.ron"})),
+            ("screenshot", json!({"path": tmp.to_string_lossy()})),
+            ("screenshot", json!({})),
+        ] {
+            let resp = handle_request(&make_request(method, params.clone()), &state);
+            assert!(resp.error.is_none(), "{method} {params}: {:?}", resp.error);
+        }
     }
 
     #[test]
