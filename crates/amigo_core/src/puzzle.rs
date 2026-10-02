@@ -511,7 +511,10 @@ impl BlockBag {
     }
 
     /// Draw the next shape from the bag.
-    #[allow(clippy::should_implement_trait)]
+    #[expect(
+        clippy::should_implement_trait,
+        reason = "`next` never ends, so this is not an Iterator"
+    )]
     pub fn next(&mut self) -> BlockShape {
         if self.remaining.is_empty() {
             self.refill();

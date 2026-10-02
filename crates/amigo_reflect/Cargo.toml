@@ -9,3 +9,6 @@ repository.workspace = true
 [dependencies]
 amigo_reflect_derive = { workspace = true }
 rustc-hash = { workspace = true }
+
+[lints]
+workspace = true

@@ -45,16 +45,6 @@ impl GenerationalArena {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            generations: Vec::with_capacity(capacity),
-            alive: Vec::with_capacity(capacity),
-            free_list: Vec::new(),
-            count: 0,
-        }
-    }
-
     pub fn spawn(&mut self) -> EntityId {
         self.count += 1;
         if let Some(index) = self.free_list.pop() {

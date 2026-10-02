@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 pub mod accessibility;
 pub mod achievements;
 pub mod agents;

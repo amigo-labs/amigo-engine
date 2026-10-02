@@ -224,7 +224,10 @@ pub fn process_dead_enemies(dead: &[DeadEnemy], game_state: &mut TdGameState) {
 // ---------------------------------------------------------------------------
 
 /// Run one complete tower defense game tick. This is the main game loop body.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+)]
 pub fn td_tick(
     game_state: &mut TdGameState,
     towers: &mut [(EntityId, TowerInstance)],

@@ -16,3 +16,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-tracy = { workspace = true, optional = true, features = ["enable"] }
 tracy-client = { workspace = true, optional = true, features = ["enable"] }
+
+[lints]
+workspace = true

@@ -11,3 +11,6 @@ hierarchical_scenes = []
 
 [dependencies]
 amigo_core = { workspace = true }
+
+[lints]
+workspace = true

@@ -14,3 +14,6 @@ path = "src/main.rs"
 amigo_engine = { workspace = true }
 amigo_core = { workspace = true }
 serde = { workspace = true }
+
+[lints]
+workspace = true

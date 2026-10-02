@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 pub mod atlas;
 pub mod atmosphere;
 pub mod camera;

@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 #[cfg(feature = "audio_graph")]
 pub mod graph;
 pub mod spatial;
@@ -884,7 +882,10 @@ struct PendingStinger {
 // Transition state machine
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "only a few transitions exist at once; boxing would add an allocation per transition"
+)]
 enum TransitionState {
     None,
     /// Cross-fading: old section fading out, new section fading in.

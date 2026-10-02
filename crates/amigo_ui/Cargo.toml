@@ -13,3 +13,6 @@ winit = { workspace = true }
 
 [features]
 retained_layout = []
+
+[lints]
+workspace = true

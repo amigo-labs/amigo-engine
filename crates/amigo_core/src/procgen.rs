@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Generate a permutation table from a seed for Perlin noise.
-#[allow(clippy::needless_range_loop)]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "the index addresses more than one slice"
+)]
 pub fn permutation_table(seed: u64) -> [u8; 512] {
     let mut perm = [0u8; 512];
     // Initialize with identity

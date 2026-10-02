@@ -42,6 +42,8 @@ impl<T> SendPtr<T> {
 // the aliasing discipline is enforced by the schedule, not by these impls.
 #[cfg(feature = "system_graph")]
 unsafe impl<T: Send> Send for SendPtr<T> {}
+// SAFETY: as for Send: sharing the pointer is sound whenever sharing the
+// pointee would be.
 #[cfg(feature = "system_graph")]
 unsafe impl<T: Sync> Sync for SendPtr<T> {}
 

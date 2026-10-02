@@ -15,3 +15,6 @@ rustc-hash = { workspace = true }
 
 [features]
 rollback_net = []
+
+[lints]
+workspace = true

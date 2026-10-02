@@ -10,3 +10,6 @@ repository.workspace = true
 amigo_core = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
+
+[lints]
+workspace = true

@@ -76,7 +76,10 @@ impl BulletPool {
     }
 
     /// Spawn a bullet. Returns the index, or None if pool is full.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+    )]
     pub fn spawn(
         &mut self,
         x: f32,

@@ -1303,7 +1303,10 @@ pub struct StatisticsOverlay {
     pub gradient: ColorGradient,
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl StatisticsOverlay {
     /// Create with no active overlay and the default heatmap gradient.
     pub fn new() -> Self {

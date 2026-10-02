@@ -114,7 +114,10 @@ pub struct SkillUnlockSystem {
     prerequisites: FxHashMap<Ability, Vec<Ability>>,
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl SkillUnlockSystem {
     /// Create a new skill unlock system with no abilities unlocked.
     pub fn new() -> Self {
@@ -310,7 +313,10 @@ pub struct CheckpointSystem {
     last_checkpoint: Option<RoomId>,
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl CheckpointSystem {
     /// Create a new checkpoint system with no active checkpoint.
     pub fn new() -> Self {
@@ -735,7 +741,10 @@ pub enum TransitionResult {
     Completed(RoomId),
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl RoomTransitionSystem {
     /// Create a new room transition system.
     pub fn new() -> Self {

@@ -24,15 +24,6 @@ impl EventChannel {
             write: Box::new(Vec::<T>::new()),
         }
     }
-
-    #[allow(dead_code)]
-    fn swap<T: 'static>(&mut self) {
-        // Move write → read, clear write
-        let write = self.write.downcast_mut::<Vec<T>>().unwrap();
-        let read = self.read.downcast_mut::<Vec<T>>().unwrap();
-        std::mem::swap(read, write);
-        write.clear();
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +52,10 @@ pub struct Events {
     registered: Vec<TypeId>,
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl Events {
     pub fn new() -> Self {
         Self {

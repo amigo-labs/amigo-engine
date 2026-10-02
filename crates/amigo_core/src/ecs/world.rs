@@ -90,8 +90,6 @@ trait AnyStorage: Any + Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn remove_entity(&mut self, id: EntityId);
     fn flush(&mut self);
-    #[allow(dead_code)]
-    fn len(&self) -> usize;
 }
 
 impl<T: 'static + Send + Sync> AnyStorage for SparseSet<T> {
@@ -108,10 +106,6 @@ impl<T: 'static + Send + Sync> AnyStorage for SparseSet<T> {
 
     fn flush(&mut self) {
         self.flush();
-    }
-
-    fn len(&self) -> usize {
-        self.len()
     }
 }
 
@@ -468,19 +462,19 @@ impl amigo_reflect::Reflect for Health {
 
     fn fields_mut(&mut self) -> Vec<amigo_reflect::FieldMut<'_>> {
         let info = <Self as amigo_reflect::Reflect>::type_info();
-        let base_ptr = self as *mut Self as *mut u8;
-        unsafe {
-            vec![
-                amigo_reflect::FieldMut {
-                    info: &info.fields[0],
-                    value: &mut *(base_ptr.add(info.fields[0].offset) as *mut i32),
-                },
-                amigo_reflect::FieldMut {
-                    info: &info.fields[1],
-                    value: &mut *(base_ptr.add(info.fields[1].offset) as *mut i32),
-                },
-            ]
-        }
+        // Destructuring yields disjoint `&mut` borrows of each field, which
+        // the previous pointer-offset arithmetic produced with `unsafe`.
+        let Self { current, max } = self;
+        vec![
+            amigo_reflect::FieldMut {
+                info: &info.fields[0],
+                value: current,
+            },
+            amigo_reflect::FieldMut {
+                info: &info.fields[1],
+                value: max,
+            },
+        ]
     }
 
     fn apply_patch(&mut self, patch: &amigo_reflect::ReflectPatch) -> usize {

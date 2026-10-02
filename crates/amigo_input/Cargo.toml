@@ -13,3 +13,6 @@ serde = { workspace = true }
 ron = { workspace = true }
 rustc-hash = { workspace = true }
 gilrs = { workspace = true }
+
+[lints]
+workspace = true

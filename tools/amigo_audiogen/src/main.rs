@@ -8,7 +8,10 @@ use std::io::{self, BufRead, Write};
 
 #[derive(Deserialize)]
 struct JsonRpcRequest {
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "JSON-RPC envelope field; deserialized for validation, not read"
+    )]
     jsonrpc: String,
     id: Option<serde_json::Value>,
     method: String,

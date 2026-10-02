@@ -11,3 +11,6 @@ description = "Audio-to-TidalCycles pipeline for Amigo Engine"
 serde = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
+
+[lints]
+workspace = true

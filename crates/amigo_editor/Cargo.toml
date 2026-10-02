@@ -24,3 +24,6 @@ serde_json = { workspace = true }
 winit = { workspace = true }
 egui = { workspace = true, optional = true }
 amigo_reflect = { workspace = true, optional = true }
+
+[lints]
+workspace = true

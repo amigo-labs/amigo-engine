@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 pub mod action_map;
 pub mod gamepad;
 

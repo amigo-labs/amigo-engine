@@ -219,7 +219,10 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
     let mut corridors = Vec::new();
     connected.insert(0);
 
-    #[allow(clippy::needless_range_loop)]
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "the index addresses more than one slice"
+    )]
     while connected.len() < rooms.len() {
         let mut best_from = 0;
         let mut best_to = 0;
@@ -288,7 +291,10 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
         rooms[boss_idx].room_type = RoomType::Boss;
 
         // Random treasure rooms
-        #[allow(clippy::needless_range_loop)]
+        #[expect(
+            clippy::needless_range_loop,
+            reason = "the index addresses more than one slice"
+        )]
         for i in 1..rooms.len() {
             if i == boss_idx {
                 continue;

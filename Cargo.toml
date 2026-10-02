@@ -110,6 +110,18 @@ proc-macro2 = "1"
 # Test-only.
 tempfile = "3"
 
+[workspace.lints.rust]
+# Already a warning in edition 2024; unsafe calls inside an unsafe fn must
+# still sit in their own unsafe block with a SAFETY comment.
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+# Lint suppressions must say why (#[expect(lint, reason = "...")]).
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
 [profile.dev]
 opt-level = 1
 

@@ -10,3 +10,6 @@ description = "TidalCycles mini-notation parser for Amigo Engine"
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

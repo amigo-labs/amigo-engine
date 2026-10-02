@@ -18,3 +18,6 @@ ron = { workspace = true }
 tracing = { workspace = true }
 rustc-hash = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

@@ -265,7 +265,10 @@ fn ray_vs_entity(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+)]
 fn ray_vs_circle(
     origin: RenderVec2,
     dx: f32,

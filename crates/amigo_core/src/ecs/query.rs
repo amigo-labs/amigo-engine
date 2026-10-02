@@ -25,21 +25,8 @@ use super::entity::EntityId;
 use super::sparse_set::SparseSet;
 
 // ---------------------------------------------------------------------------
-// Join2: iterate entities present in two SparseSets
+// join: iterate entities present in two SparseSets
 // ---------------------------------------------------------------------------
-
-/// Iterator over entities that exist in both `A` and `B` SparseSets.
-#[allow(dead_code)]
-pub struct Join2<'a, A, B> {
-    /// We iterate the smaller set and look up in the larger one.
-    small_ids: &'a [EntityId],
-    small_data: &'a [A],
-    other: &'a SparseSet<B>,
-    cursor: usize,
-    swapped: bool,
-    // If swapped, we need to look up A from B's perspective
-    other_a: Option<&'a SparseSet<A>>,
-}
 
 /// Create a join iterator over two SparseSets.
 /// Returns `(EntityId, &A, &B)` for each entity present in both.
@@ -51,7 +38,6 @@ pub fn join<'a, A, B>(a: &'a SparseSet<A>, b: &'a SparseSet<B>) -> JoinIter2<'a,
             drive_idx: 0,
             a,
             b,
-            swapped: false,
         }
     } else {
         JoinIter2 {
@@ -59,7 +45,6 @@ pub fn join<'a, A, B>(a: &'a SparseSet<A>, b: &'a SparseSet<B>) -> JoinIter2<'a,
             drive_idx: 0,
             a,
             b,
-            swapped: true,
         }
     }
 }
@@ -69,8 +54,6 @@ pub struct JoinIter2<'a, A, B> {
     drive_idx: usize,
     a: &'a SparseSet<A>,
     b: &'a SparseSet<B>,
-    #[allow(dead_code)]
-    swapped: bool,
 }
 
 impl<'a, A, B> Iterator for JoinIter2<'a, A, B> {

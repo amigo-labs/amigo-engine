@@ -111,7 +111,10 @@ impl From<std::io::Error> for AchievementError {
 // ---------------------------------------------------------------------------
 
 /// Central achievement tracking system.
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "boxed callback maps; an alias would only move the noise"
+)]
 pub struct AchievementTracker {
     definitions: FxHashMap<String, AchievementDef>,
     progress: FxHashMap<String, AchievementProgress>,

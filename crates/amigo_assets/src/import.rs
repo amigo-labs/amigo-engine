@@ -52,10 +52,16 @@ struct TiledLayer {
     #[serde(default)]
     objects: Vec<TiledObject>,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "part of the Tiled JSON schema; deserialized, not read yet"
+    )]
     width: u32,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "part of the Tiled JSON schema; deserialized, not read yet"
+    )]
     height: u32,
 }
 
@@ -79,7 +85,10 @@ struct TiledObject {
 struct TiledProperty {
     name: String,
     #[serde(rename = "type", default)]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "part of the Tiled JSON schema; deserialized, not read yet"
+    )]
     prop_type: String,
     value: serde_json::Value,
 }

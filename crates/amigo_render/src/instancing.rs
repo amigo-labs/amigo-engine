@@ -31,7 +31,10 @@ pub struct InstanceData {
 
 impl InstanceData {
     /// Create instance data for a sprite.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+    )]
     pub fn new(
         x: f32,
         y: f32,

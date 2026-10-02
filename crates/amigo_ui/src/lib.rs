@@ -246,7 +246,10 @@ impl UiContext {
     }
 
     /// A dropdown / select widget. Returns the new selected index.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+    )]
     pub fn dropdown(
         &mut self,
         x: f32,
@@ -362,7 +365,10 @@ impl UiContext {
     ///
     /// `buffer` is the current text. The method mutates it based on key input
     /// and returns whether the field is currently focused.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+    )]
     pub fn text_input(
         &mut self,
         x: f32,
@@ -490,7 +496,10 @@ impl UiContext {
     /// - `scroll_offset`: current scroll position (in items)
     /// - `visible_count`: how many items are visible at once
     /// - `selected`: currently selected index (or `None`)
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+    )]
     pub fn scrollable_list(
         &mut self,
         x: f32,

@@ -548,7 +548,10 @@ impl<T: Tweenable> TweenSequence<T> {
 pub struct TweenHandle(u32);
 
 /// Type-erased tween interface for the manager.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "pause/resume complete the erased interface; TweenManager only drives update and is_complete so far"
+)]
 trait ErasedTween: Send {
     fn update(&mut self, dt: f32);
     fn is_complete(&self) -> bool;
