@@ -83,8 +83,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ron = "0.8"
-toml = "0.8"
+ron = "0.12"
+toml = "1"
 notify = "8"
 bumpalo = { version = "3", features = ["collections"] }
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
