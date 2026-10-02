@@ -13,12 +13,7 @@ yanked = "deny"
 # Transitive ones (paste and instant via kira/notify, ttf-parser via fontdue
 # and egui) have no maintained replacement we can switch to from here.
 unmaintained = "workspace"
-ignore = [
-    # ringbuf 0.3: double free when an element's Drop panics. kira 0.9 pins
-    # it; kira's ring buffers hold plain audio frames, whose Drop cannot panic.
-    # Remove once kira is upgraded.
-    { id = "RUSTSEC-2026-0293", reason = "pinned by kira 0.9; fixed by the kira upgrade" },
-]
+ignore = []
 
 [licenses]
 version = 2

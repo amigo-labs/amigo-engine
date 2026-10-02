@@ -1,14 +1,12 @@
 //! Spatial audio: distance attenuation, stereo panning, and a kira-integrated
 //! system for managing positional sound instances.
 
+use crate::amplitude_to_decibels;
 use amigo_core::ecs::{EntityId, SparseSet};
 use amigo_core::math::{Fix, SimVec2};
-use kira::Volume;
-use kira::manager::AudioManager as KiraManager;
-use kira::manager::backend::DefaultBackend;
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::StaticSoundHandle;
-use kira::tween::Tween;
+use kira::{AudioManager as KiraManager, DefaultBackend, Panning, Tween};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -323,11 +321,13 @@ impl SpatialAudioSystem {
             // Apply volume via kira (amplitude).
             instance
                 .handle
-                .set_volume(Volume::Amplitude(volume as f64), Tween::default());
+                .set_volume(amplitude_to_decibels(volume), Tween::default());
 
-            // kira panning: 0.0 = left, 0.5 = center, 1.0 = right.
-            let kira_pan = ((pan + 1.0) * 0.5) as f64;
-            instance.handle.set_panning(kira_pan, Tween::default());
+            // kira 0.12 panning: -1 = left, 0 = centre, 1 = right, the same
+            // range compute_pan returns.
+            instance
+                .handle
+                .set_panning(Panning(pan.clamp(-1.0, 1.0)), Tween::default());
         }
     }
 

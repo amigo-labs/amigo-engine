@@ -73,7 +73,10 @@ amigo_mcp = { path = "tools/amigo_mcp", version = "0.1.0" }
 wgpu = "24"
 winit = "0.30"
 gilrs = "0.11"
-kira = "0.9"
+# kira's default features minus cpal-realtime-dbus, which would link libdbus
+# (a system library nothing else needs) only to raise the audio thread's
+# priority over D-Bus.
+kira = { version = "0.12", default-features = false, features = ["cpal", "cpal-realtime", "mp3", "ogg", "vorbis", "flac", "wav", "pcm"] }
 fixed = { version = "1.28", features = ["serde"] }
 thiserror = "2"
 tracing = "0.1"

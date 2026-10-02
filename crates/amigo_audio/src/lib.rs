@@ -2,12 +2,23 @@
 pub mod graph;
 pub mod spatial;
 
-use kira::Volume;
-use kira::manager::backend::DefaultBackend;
-use kira::manager::{AudioManager as KiraManager, AudioManagerSettings};
-use kira::sound::PlaybackRate;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
-use kira::tween::Tween;
+use kira::{
+    AudioManager as KiraManager, AudioManagerSettings, Decibels, DefaultBackend, Panning,
+    PlaybackRate, Tween,
+};
+
+/// Convert a linear amplitude (0 = silent, 1 = unchanged) to kira's decibels.
+///
+/// kira 0.10+ takes volumes in decibels and treats -60 dB as silence, so
+/// amplitudes at or below 0.001 (and NaN) map to [`Decibels::SILENCE`].
+pub(crate) fn amplitude_to_decibels(amplitude: f32) -> Decibels {
+    if amplitude.is_nan() || amplitude <= 0.001 {
+        Decibels::SILENCE
+    } else {
+        Decibels(20.0 * amplitude.log10())
+    }
+}
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -190,9 +201,7 @@ impl SfxManager {
                 .wrapping_add(now.elapsed().subsec_nanos() as usize);
             let t = ((seed & 0xFFFF) as f32 / 0xFFFF as f32) * 2.0 - 1.0; // -1..1
             let rate = (1.0 + t * pitch_variance).max(0.1); // clamp to positive
-            data.with_settings(
-                StaticSoundSettings::new().playback_rate(PlaybackRate::Factor(rate as f64)),
-            )
+            data.with_settings(StaticSoundSettings::new().playback_rate(PlaybackRate(rate as f64)))
         } else {
             data
         };
@@ -417,8 +426,8 @@ impl AudioManager {
 
             let data = variants[idx].clone().with_settings(
                 StaticSoundSettings::new()
-                    .volume(Volume::Amplitude(volume as f64))
-                    .panning(((panning + 1.0) / 2.0) as f64), // kira panning: 0=left, 0.5=center, 1=right
+                    .volume(amplitude_to_decibels(volume))
+                    .panning(Panning(panning)), // kira 0.12 panning: -1 = left, 0 = centre, 1 = right
             );
             let _ = manager.play(data);
         }
@@ -472,14 +481,14 @@ impl AudioManager {
                 // here as well or the slider has no audible effect.
                 let effective = (vol * self.volumes.music) as f64;
                 for handle in self.music_handles.values_mut() {
-                    handle.set_volume(Volume::Amplitude(effective), Tween::default());
+                    handle.set_volume(amplitude_to_decibels(effective as f32), Tween::default());
                 }
             }
             "music" => {
                 self.volumes.music = vol;
                 let effective = (self.volumes.master * vol) as f64;
                 for handle in self.music_handles.values_mut() {
-                    handle.set_volume(Volume::Amplitude(effective), Tween::default());
+                    handle.set_volume(amplitude_to_decibels(effective as f32), Tween::default());
                 }
             }
             "sfx" => self.volumes.sfx = vol,
@@ -825,7 +834,7 @@ impl MusicSection {
             layer.update_volume(dt);
             let vol = layer.effective_volume();
             if let Some(handle) = &mut layer.handle {
-                handle.set_volume(Volume::Amplitude(vol as f64), Tween::default());
+                handle.set_volume(amplitude_to_decibels(vol), Tween::default());
             }
         }
     }
@@ -1536,4 +1545,19 @@ pub struct SequenceStep {
     pub bars: u32,
     /// Transition to use when moving to the next step.
     pub transition: MusicTransition,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn amplitude_maps_to_kira_decibels() {
+        assert_eq!(amplitude_to_decibels(1.0), Decibels::IDENTITY);
+        assert!((amplitude_to_decibels(0.5).0 + 6.0206).abs() < 1e-3);
+        assert!((amplitude_to_decibels(2.0).0 - 6.0206).abs() < 1e-3);
+        for silent in [0.0, -1.0, 0.0005, f32::NAN] {
+            assert_eq!(amplitude_to_decibels(silent), Decibels::SILENCE, "{silent}");
+        }
+    }
 }
