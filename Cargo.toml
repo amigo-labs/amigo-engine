@@ -98,14 +98,13 @@ egui = "0.31"
 egui-wgpu = "0.31"
 egui-winit = "0.31"
 ctrlc = "3"
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "3", features = ["json"] }
 tracing-tracy = { version = "0.12", default-features = false }
 tracy-client = { version = "0.19", default-features = false }
 rayon = "1"
 crossbeam-channel = "0.5"
 # wgpu 24's shader front-end. Used in tests to validate WGSL without a GPU.
 naga = { version = "24", features = ["wgsl-in"] }
-percent-encoding = "2"
 # Proc-macro toolchain for amigo_reflect_derive.
 syn = { version = "2", features = ["full"] }
 quote = "1"

@@ -8,12 +8,14 @@ repository.workspace = true
 description = "Shared ComfyUI client for AI generation pipelines (artgen, audiogen)"
 
 [dependencies]
-percent-encoding = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 ureq = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

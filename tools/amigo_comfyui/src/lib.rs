@@ -6,11 +6,10 @@
 //! Communicates with a local ComfyUI instance to queue generation prompts,
 //! poll for completion, and retrieve output images or audio.
 
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Read as _;
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -107,18 +106,61 @@ pub enum ComfyOutput {
 /// to be used from the `amigo_mcp` server or CLI tools.
 pub struct ComfyUiClient {
     pub config: ComfyUiConfig,
+    /// Shared connection pool; every request reuses its keep-alive sockets.
+    agent: ureq::Agent,
 }
 
 impl ComfyUiClient {
     /// Timeout for control-plane calls (queue, status, listings). Without
     /// one, a hung ComfyUI socket blocks forever — and `wait_for_completion`'s
     /// own timeout can never fire while a single request is stalled.
-    const API_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+    const API_TIMEOUT: Duration = Duration::from_secs(15);
     /// Timeout for bulk downloads (generated images/audio can be large).
-    const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+    const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+    /// Upper bound for one downloaded output. ureq's default body limit is
+    /// 10 MB, which a few minutes of generated WAV audio already exceeds.
+    const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
 
     pub fn new(config: ComfyUiConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            agent: agent(Self::API_TIMEOUT),
+        }
+    }
+
+    /// `GET` a JSON document from an API endpoint.
+    fn get_json(&self, path: &str) -> Result<Value, ComfyError> {
+        self.agent
+            .get(&self.url(path))
+            .call()
+            .map_err(ComfyError::from_ureq)?
+            .body_mut()
+            .read_json()
+            .map_err(ComfyError::from_ureq)
+    }
+
+    /// Download a file from `GET /view` and write it to `output_path`.
+    fn download(&self, query: &[(&str, &str)], output_path: &str) -> Result<(), ComfyError> {
+        let mut request = self
+            .agent
+            .get(&self.url("/view"))
+            .config()
+            .timeout_global(Some(Self::DOWNLOAD_TIMEOUT))
+            .build();
+        for &(key, value) in query {
+            request = request.query(key, value);
+        }
+        let bytes = request
+            .call()
+            .map_err(ComfyError::from_ureq)?
+            .into_body()
+            .into_with_config()
+            .limit(Self::MAX_DOWNLOAD_BYTES)
+            .read_to_vec()
+            .map_err(ComfyError::from_ureq)?;
+
+        std::fs::write(output_path, &bytes)?;
+        Ok(())
     }
 
     /// Build the URL for an API endpoint.
@@ -135,12 +177,14 @@ impl ComfyUiClient {
         }
 
         let body = serde_json::to_value(prompt).map_err(ComfyError::Json)?;
-        let resp: Value = ureq::post(&self.url("/prompt"))
-            .timeout(Self::API_TIMEOUT)
+        let resp: Value = self
+            .agent
+            .post(&self.url("/prompt"))
             .send_json(body)
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_json()
-            .map_err(ComfyError::Io)?;
+            .map_err(ComfyError::from_ureq)?
+            .body_mut()
+            .read_json()
+            .map_err(ComfyError::from_ureq)?;
 
         let prompt_id = resp["prompt_id"]
             .as_str()
@@ -157,12 +201,7 @@ impl ComfyUiClient {
             return Err(ComfyError::InvalidPromptId);
         }
 
-        let resp: Value = ureq::get(&self.url(&format!("/history/{}", prompt_id)))
-            .timeout(Self::API_TIMEOUT)
-            .call()
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_json()
-            .map_err(ComfyError::Io)?;
+        let resp = self.get_json(&format!("/history/{prompt_id}"))?;
 
         let entry = &resp[prompt_id];
         if entry.is_null() {
@@ -214,12 +253,7 @@ impl ComfyUiClient {
             return Err(ComfyError::InvalidPromptId);
         }
 
-        let resp: Value = ureq::get(&self.url(&format!("/history/{}", prompt_id)))
-            .timeout(Self::API_TIMEOUT)
-            .call()
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_json()
-            .map_err(ComfyError::Io)?;
+        let resp = self.get_json(&format!("/history/{prompt_id}"))?;
 
         let mut images = Vec::new();
         if let Some(outputs) = resp[prompt_id]["outputs"].as_object() {
@@ -245,12 +279,7 @@ impl ComfyUiClient {
             return Err(ComfyError::InvalidPromptId);
         }
 
-        let resp: Value = ureq::get(&self.url(&format!("/history/{}", prompt_id)))
-            .timeout(Self::API_TIMEOUT)
-            .call()
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_json()
-            .map_err(ComfyError::Io)?;
+        let resp = self.get_json(&format!("/history/{prompt_id}"))?;
 
         let mut audio_files = Vec::new();
         if let Some(outputs) = resp[prompt_id]["outputs"].as_object() {
@@ -294,57 +323,31 @@ impl ComfyUiClient {
 
     /// Download an output image to a local path via `GET /view`.
     pub fn download_image(&self, image: &OutputImage, output_path: &str) -> Result<(), ComfyError> {
-        let url = format!(
-            "{}/view?filename={}&subfolder={}&type={}",
-            self.config.base_url(),
-            utf8_percent_encode(&image.filename, NON_ALPHANUMERIC),
-            utf8_percent_encode(&image.subfolder, NON_ALPHANUMERIC),
-            utf8_percent_encode(&image.image_type, NON_ALPHANUMERIC),
-        );
-
-        let mut bytes = Vec::new();
-        ureq::get(&url)
-            .timeout(Self::DOWNLOAD_TIMEOUT)
-            .call()
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_reader()
-            .read_to_end(&mut bytes)
-            .map_err(ComfyError::Io)?;
-
-        std::fs::write(output_path, &bytes)?;
-        Ok(())
+        self.download(
+            &[
+                ("filename", &image.filename),
+                ("subfolder", &image.subfolder),
+                ("type", &image.image_type),
+            ],
+            output_path,
+        )
     }
 
     /// Download an output audio file to a local path via `GET /view`.
     pub fn download_audio(&self, audio: &OutputAudio, output_path: &str) -> Result<(), ComfyError> {
-        let url = format!(
-            "{}/view?filename={}&subfolder={}&type=output",
-            self.config.base_url(),
-            utf8_percent_encode(&audio.filename, NON_ALPHANUMERIC),
-            utf8_percent_encode(&audio.subfolder, NON_ALPHANUMERIC),
-        );
-
-        let mut bytes = Vec::new();
-        ureq::get(&url)
-            .timeout(Self::DOWNLOAD_TIMEOUT)
-            .call()
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_reader()
-            .read_to_end(&mut bytes)
-            .map_err(ComfyError::Io)?;
-
-        std::fs::write(output_path, &bytes)?;
-        Ok(())
+        self.download(
+            &[
+                ("filename", &audio.filename),
+                ("subfolder", &audio.subfolder),
+                ("type", "output"),
+            ],
+            output_path,
+        )
     }
 
     /// Get the list of available models/checkpoints via `GET /object_info`.
     pub fn list_models(&self) -> Result<Vec<String>, ComfyError> {
-        let resp: Value = ureq::get(&self.url("/object_info/CheckpointLoaderSimple"))
-            .timeout(Self::API_TIMEOUT)
-            .call()
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_json()
-            .map_err(ComfyError::Io)?;
+        let resp = self.get_json("/object_info/CheckpointLoaderSimple")?;
 
         let mut models = Vec::new();
         if let Some(names) =
@@ -364,12 +367,7 @@ impl ComfyUiClient {
 
     /// Get the system status (queue length, GPU info) via `GET /system_stats`.
     pub fn system_stats(&self) -> Result<Value, ComfyError> {
-        let resp: Value = ureq::get(&self.url("/system_stats"))
-            .timeout(Self::API_TIMEOUT)
-            .call()
-            .map_err(|e| ComfyError::Http(e.to_string()))?
-            .into_json()
-            .map_err(ComfyError::Io)?;
+        let resp = self.get_json("/system_stats")?;
         Ok(resp)
     }
 
@@ -423,6 +421,31 @@ pub enum ComfyError {
     StartFailed(String),
 }
 
+impl ComfyError {
+    /// Keep I/O and JSON failures in their own variants, as ureq 2's
+    /// `into_json` did; everything else is a transport or status error.
+    fn from_ureq(err: ureq::Error) -> Self {
+        match err {
+            ureq::Error::Io(e) => Self::Io(e),
+            ureq::Error::Json(e) => Self::Json(e),
+            other => Self::Http(other.to_string()),
+        }
+    }
+}
+
+/// An agent for talking to a local ComfyUI instance.
+///
+/// ureq 3 picks up `HTTP(S)_PROXY` from the environment by default; ComfyUI
+/// runs on localhost, so routing it through a corporate proxy would only
+/// break it. This keeps ureq 2's behavior of connecting directly.
+fn agent(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .proxy(None)
+        .build()
+        .into()
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle management
 // ---------------------------------------------------------------------------
@@ -447,10 +470,7 @@ impl ComfyUiLifecycle {
     /// Check if ComfyUI is reachable at the configured host:port.
     pub fn is_running(&self) -> bool {
         let url = format!("{}/system_stats", self.config.base_url());
-        ureq::get(&url)
-            .timeout(std::time::Duration::from_secs(2))
-            .call()
-            .is_ok()
+        agent(Duration::from_secs(2)).get(&url).call().is_ok()
     }
 
     /// Ensure ComfyUI is running. If the port is already reachable
@@ -596,6 +616,96 @@ mod tests {
     fn check_status_empty_id() {
         let client = ComfyUiClient::new(ComfyUiConfig::default());
         assert!(client.check_status("").is_err());
+    }
+
+    // -- HTTP round trips against a one-shot local server --
+
+    /// Serve exactly one HTTP response on a random local port. The join
+    /// handle yields the request line the client sent.
+    fn serve_once(
+        status: &'static str,
+        body: &'static [u8],
+    ) -> (ComfyUiConfig, std::thread::JoinHandle<String>) {
+        use std::io::{BufRead as _, BufReader, Write as _};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            loop {
+                let mut header = String::new();
+                if reader.read_line(&mut header).unwrap() == 0 || header == "\r\n" {
+                    break;
+                }
+            }
+            let mut stream = reader.into_inner();
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(body).unwrap();
+            request_line
+        });
+        let config = ComfyUiConfig {
+            host: "127.0.0.1".into(),
+            port,
+        };
+        (config, server)
+    }
+
+    #[test]
+    fn check_status_reads_history() {
+        let (config, server) = serve_once("200 OK", br#"{"abc":{"outputs":{"9":{"images":[]}}}}"#);
+        let client = ComfyUiClient::new(config);
+        assert_eq!(client.check_status("abc").unwrap(), PromptStatus::Completed);
+        assert!(server.join().unwrap().starts_with("GET /history/abc "));
+    }
+
+    #[test]
+    fn error_status_is_an_http_error() {
+        let (config, server) = serve_once("500 Internal Server Error", b"boom");
+        let client = ComfyUiClient::new(config);
+        let err = client.check_status("abc").unwrap_err();
+        assert!(matches!(err, ComfyError::Http(_)), "{err:?}");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn malformed_json_is_a_json_error() {
+        let (config, server) = serve_once("200 OK", b"not json");
+        let client = ComfyUiClient::new(config);
+        let err = client.system_stats().unwrap_err();
+        assert!(matches!(err, ComfyError::Json(_)), "{err:?}");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn download_image_encodes_query_and_writes_file() {
+        let (config, server) = serve_once("200 OK", b"PNGDATA");
+        let client = ComfyUiClient::new(config);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.png");
+        let image = OutputImage {
+            filename: "a b&c.png".into(),
+            subfolder: "x/y".into(),
+            image_type: "output".into(),
+        };
+        client
+            .download_image(&image, out.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(std::fs::read(&out).unwrap(), b"PNGDATA");
+        let request_line = server.join().unwrap();
+        assert!(
+            request_line
+                .starts_with("GET /view?filename=a%20b%26c.png&subfolder=x%2Fy&type=output "),
+            "{request_line}"
+        );
     }
 
     // -- Lifecycle --
