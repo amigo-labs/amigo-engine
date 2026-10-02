@@ -103,31 +103,50 @@ impl<T: Clone + Serialize + DeserializeOwned + PartialEq> RewindBuffer<T> {
         }
 
         let start = std::time::Instant::now();
+
+        // Recording after a rewind forks the timeline: the frames after the
+        // current tick belong to the discarded future, and a delta against
+        // them would reconstruct the wrong state.
+        if self
+            .newest_tick()
+            .is_some_and(|newest| newest > self.current_tick)
+        {
+            self.truncate_after_current();
+        }
+
         self.current_tick += 1;
         let tick = self.current_tick;
 
+        // Deltas chain frame to frame, so one is only valid when
+        // `last_full_bytes` holds exactly the previous frame's bytes.
+        let serialized = serde_json::to_vec(state).ok();
         let is_keyframe = match self.compression {
             CompressionMode::None => true,
             CompressionMode::Delta { keyframe_interval } => {
-                tick.is_multiple_of(keyframe_interval as u64) || self.len == 0
+                tick.is_multiple_of(u64::from(keyframe_interval.max(1)))
+                    || self.len == 0
+                    || self.last_full_bytes.is_none()
+                    // A state that cannot be serialized cannot be diffed;
+                    // store it whole instead of an empty delta.
+                    || serialized.is_none()
             }
         };
 
-        let frame_data = if is_keyframe {
-            let bytes = serde_json::to_vec(state).unwrap_or_default();
-            self.last_full_bytes = Some(bytes);
-            FrameData::Full(state.clone())
-        } else {
-            // Delta: serialize current, diff against last
-            let current_bytes = serde_json::to_vec(state).unwrap_or_default();
-            let delta = if let Some(ref prev_bytes) = self.last_full_bytes {
-                compute_delta(prev_bytes, &current_bytes)
-            } else {
-                current_bytes.clone()
-            };
-            self.last_full_bytes = Some(current_bytes);
-            FrameData::Delta(delta)
+        let frame_data = match (is_keyframe, serialized, self.last_full_bytes.as_deref()) {
+            (false, Some(current), Some(previous)) => {
+                let delta = compute_delta(previous, &current);
+                self.last_full_bytes = Some(current);
+                FrameData::Delta(delta)
+            }
+            (_, serialized, _) => {
+                self.last_full_bytes = serialized;
+                FrameData::Full(state.clone())
+            }
         };
+
+        if self.len == self.capacity {
+            self.promote_successor_of_oldest();
+        }
 
         let write_idx = (self.head + self.len) % self.capacity;
         self.frames[write_idx] = Some(RewindFrame {
@@ -327,6 +346,29 @@ impl<T: Clone + Serialize + DeserializeOwned + PartialEq> RewindBuffer<T> {
         self.last_stats.memory_bytes = total_memory;
     }
 
+    /// Before the oldest frame is overwritten, turn the frame after it into a
+    /// keyframe if it is a delta. Otherwise evicting the keyframe at the head
+    /// leaves every following delta without a base, and those ticks — which
+    /// [`oldest_tick`](Self::oldest_tick) still reports — can't be rebuilt.
+    fn promote_successor_of_oldest(&mut self) {
+        if self.len < 2 {
+            return;
+        }
+        let next_idx = (self.head + 1) % self.capacity;
+        let Some(next) = &self.frames[next_idx] else {
+            return;
+        };
+        if matches!(next.data, FrameData::Full(_)) {
+            return;
+        }
+        let tick = next.tick;
+        if let Some(state) = self.reconstruct(tick) {
+            if let Some(frame) = &mut self.frames[next_idx] {
+                frame.data = FrameData::Full(state);
+            }
+        }
+    }
+
     /// Discard all frames after the current tick (timeline fork).
     pub fn truncate_after_current(&mut self) {
         let current = self.current_tick;
@@ -342,6 +384,9 @@ impl<T: Clone + Serialize + DeserializeOwned + PartialEq> RewindBuffer<T> {
             }
         }
         self.len = new_len;
+        // The cached bytes belong to the newest frame, which may just have
+        // been discarded; the next recorded frame starts a fresh keyframe.
+        self.last_full_bytes = None;
     }
 }
 
@@ -652,6 +697,62 @@ mod tests {
         buf.truncate_after_current();
         assert_eq!(buf.newest_tick(), Some(5));
         assert!(buf.len() <= 5);
+    }
+
+    fn state(score: u32) -> GameState {
+        GameState {
+            x: score as f32,
+            y: 0.0,
+            score,
+        }
+    }
+
+    fn delta_buffer(capacity: usize, keyframe_interval: u32) -> RewindBuffer<GameState> {
+        RewindBuffer::with_compression(capacity, CompressionMode::Delta { keyframe_interval })
+    }
+
+    #[test]
+    fn recording_after_a_rewind_diffs_against_the_kept_timeline() {
+        let mut buf = delta_buffer(100, 30);
+        for i in 1..=20 {
+            buf.record(&state(i * 10));
+        }
+        // Rewind to tick 10 and play on with a different future.
+        while buf.current_tick() > 10 {
+            buf.step_back();
+        }
+        let forked = buf.record(&state(155));
+        assert_eq!(forked, 11);
+        assert_eq!(buf.newest_tick(), Some(11));
+        assert_eq!(buf.rewind_to(10), Some(state(100)));
+        assert_eq!(buf.rewind_to(11), Some(state(155)));
+
+        // Later deltas chain off the forked frame, not the discarded one.
+        buf.record(&state(160));
+        assert_eq!(buf.rewind_to(12), Some(state(160)));
+    }
+
+    #[test]
+    fn deltas_stay_reconstructible_after_their_keyframe_is_evicted() {
+        let mut buf = delta_buffer(10, 30);
+        for i in 1..=25 {
+            buf.record(&state(i));
+        }
+        let oldest = buf.oldest_tick().unwrap();
+        assert_eq!(oldest, 16);
+        for tick in oldest..=25 {
+            assert_eq!(buf.rewind_to(tick), Some(state(tick as u32)), "tick {tick}");
+        }
+    }
+
+    #[test]
+    fn zero_keyframe_interval_still_writes_keyframes() {
+        let mut buf = delta_buffer(100, 0);
+        for i in 1..=5 {
+            buf.record(&state(i));
+        }
+        assert_eq!(buf.last_stats().delta_count, 0);
+        assert_eq!(buf.rewind_to(3), Some(state(3)));
     }
 
     #[test]
