@@ -361,6 +361,33 @@ fn manifest_from_project(project: &GameProject) -> ProjectManifest {
 // `amigo new`
 // ---------------------------------------------------------------------------
 
+/// The project name becomes the directory, the Cargo package name, and a
+/// string literal in the generated TOML and Rust, so it has to be a valid
+/// package name: an ASCII letter followed by letters, digits, `-` or `_`.
+/// That also rules out `amigo new --help` creating a directory named
+/// `--help`, `amigo new .` writing into the current directory, and quotes
+/// breaking out of the generated strings.
+fn validate_project_name(name: &str) -> Result<(), String> {
+    if name.starts_with('-') {
+        return Err(format!(
+            "expected a project name, got the flag '{name}'.\n\
+             Usage: amigo new <name> [--template <TEMPLATE>]"
+        ));
+    }
+    let mut chars = name.chars();
+    let valid = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && name.len() <= 64;
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "'{name}' is not a valid project name: use an ASCII letter followed by \
+             letters, digits, '-' or '_' (e.g. my_game)"
+        ))
+    }
+}
+
 fn cmd_new(args: &[String]) {
     if args.is_empty() {
         eprintln!(
@@ -370,6 +397,18 @@ fn cmd_new(args: &[String]) {
     }
 
     let name = &args[0];
+    if let Err(e) = validate_project_name(name) {
+        eprintln!("amigo new: {e}");
+        process::exit(1);
+    }
+    let base = Path::new(name);
+    if base.exists() {
+        eprintln!(
+            "amigo new: '{name}' already exists. Pick a new name; amigo new never \
+             overwrites an existing directory."
+        );
+        process::exit(1);
+    }
     let template_name = find_flag(args, "--template").unwrap_or("platformer".to_string());
     let engine_dep = engine_dependency(args);
 
@@ -396,7 +435,6 @@ fn cmd_new(args: &[String]) {
     let project = template.create_project(name);
 
     // Create project directory structure
-    let base = Path::new(name);
     create_dirs(base);
 
     // Write manifest
@@ -1889,3 +1927,29 @@ const PRESET_NAMES: &[&str] = &[
     "idle",
     "custom",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::validate_project_name;
+
+    #[test]
+    fn project_names_must_be_cargo_package_names() {
+        for good in ["my_game", "Pirates", "td-2", "a"] {
+            assert!(validate_project_name(good).is_ok(), "{good}");
+        }
+        for bad in [
+            "--help",
+            "--template",
+            ".",
+            "..",
+            "",
+            "My Game",
+            "2048",
+            "a\"b",
+            "a\\b",
+            "../escape",
+        ] {
+            assert!(validate_project_name(bad).is_err(), "{bad:?}");
+        }
+    }
+}
