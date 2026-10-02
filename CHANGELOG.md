@@ -6,6 +6,94 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Security
+
+- **Any web page could drive the JSON-RPC API.** The server binds 127.0.0.1,
+  but a cross-origin `fetch` could smuggle a request line into an HTTP body,
+  and `dev.save_snapshot` / `screenshot` wrote to any path (e.g. `~/.bashrc`).
+  A non-JSON line now closes the connection, and request paths must stay in
+  the project directory or the system temp dir.
+- **Code injection in the audio pipeline.** The MIDI path was spliced into
+  `python -c` source; a stem file named `x'); __import__('os').system(...)`
+  ran arbitrary Python. Paths now travel through `sys.argv`, stem names must
+  be plain file names, and `amigo setup` passes its install dir through the
+  environment rather than a shell string.
+- **Path traversal in `amigo-audiogen`.** `generate_music` built output paths
+  from unsanitized tool arguments, so a model's tool call could write outside
+  the project.
+- `cargo update` closes nine RustSec advisories in the lockfile (rustls,
+  rustls-webpki, crossbeam-epoch, quick-xml, webbrowser). CI now runs
+  `cargo deny check`.
+
+### Breaking
+
+- `SystemGraph::run` (feature `system_graph`) executes batches sequentially;
+  parallel dispatch is the new `unsafe fn run_parallel`, whose safety
+  contract states what the safe API could not enforce (see ADR-0002).
+- `WavePhase` gains an `Idle` variant, the spawner's initial state.
+  `WaveSpawner::reset` returns to `Idle`.
+- `social_deduction::cast_vote` takes `target: Option<EntityId>` (`None` =
+  skip) instead of a raw `u32` choice.
+
+### Fixed — soundness and determinism
+
+- `SystemGraph::run` let safe code race: inserting the first component of a
+  new dynamic type rehashed the storage map under a sibling system.
+- A component written through a stale `EntityId` blocked the reused slot for
+  good; `World::add`/`insert_dynamic` now ignore dead ids, and despawn
+  removals are visible through `removed()` until the next flush.
+- `SimVec2::length` overflowed above ~32767 (a negative length in release)
+  and returned 0 for tiny vectors; it is now exact on the raw bits.
+- Rewind: recording after a rewind diffed against the discarded future, and
+  deltas after an evicted keyframe could not be rebuilt.
+- `TickScheduler` is `Clone` and serializable, so rollback and rewind
+  snapshots can restore it.
+
+### Fixed — gameplay
+
+- Tower defense: the spawner panicked on the second tick when no wave had
+  been started, waves auto-started during Build, and Victory was never
+  reached.
+- Localized strings mangled every non-ASCII character in interpolated text.
+- `Inventory::add` stored stacks above `max_stack` and then underflowed.
+- Dialog nodes skipped in a cycle overflowed the stack (an abort).
+- Level files with short tile layers panicked in `tile_at`; dungeon configs
+  with oversized or inverted room bounds divided by zero.
+- The deckbuilder lost the cards left in hand when a combat was won.
+- The player at entity index 0 could never be voted out.
+- Damage over time below 60 dps did nothing at 60 Hz; a player with a bomb
+  never died from a missed deathbomb; ping-pong platforms teleported between
+  their ends; turn combat ticked statuses for the wrong combatant.
+- Circle-circle contact normals pointed the wrong way, so physics pushed
+  overlapping circles and capsules into each other.
+
+### Fixed — engine, rendering, audio
+
+- A key press was seen by every tick of a multi-tick frame (Esc opened a menu
+  that then closed itself).
+- Pixel UI hit-tested clicks in window pixels while drawing in virtual
+  pixels; widgets now use `InputState::mouse_ui_pos()`.
+- Sprites on the same z drew in texture-load order instead of submission
+  order (a fade overlay ended up under everything).
+- The sprite and UI batchers were never cleared on a surface error or in the
+  editor path, growing until the first visible frame panicked.
+- The camera panicked when the level was smaller than the view; huge particle
+  emission rates hung the game.
+- Stopped or replaced music kept playing (kira handles were dropped, not
+  stopped). The tile-light flood fill grew exponentially near the map edge.
+- `TaskPool` workers died with a panicking task; `autosave_slots = 0`
+  panicked instead of disabling autosave.
+
+### Changed — tooling
+
+- CI runs the `justfile` recipes, lints all targets, checks every feature via
+  cargo-hack (the 67 `amigo_engine --features api` tests had never run in
+  CI), builds docs and doc tests for every library crate, and tests on
+  Windows and macOS. Dependabot, a PR template and issue forms were added.
+- Every workspace member inherits version, edition, license and dependencies
+  from the workspace; 33 unused dependency edges (including `glam`) were
+  removed.
+
 ### Fixed — distribution
 
 - **Release binaries are produced at all.** `release.yml`'s publish job had
