@@ -432,8 +432,12 @@ impl AudioManager {
             return;
         };
 
-        // Stop current music with same name
-        self.music_handles.remove(name);
+        // Stop current music with same name. Dropping a kira handle does not
+        // stop its sound, so without the explicit stop a second play_music
+        // layered both tracks.
+        if let Some(mut old) = self.music_handles.remove(name) {
+            old.stop(Tween::default());
+        }
 
         match StaticSoundData::from_file(path) {
             Ok(data) => match manager.play(data) {
@@ -449,7 +453,11 @@ impl AudioManager {
 
     /// Stop all music.
     pub fn stop_music(&mut self) {
-        self.music_handles.clear();
+        // Stop before dropping: a dropped kira handle keeps playing to the
+        // end, with nothing left to control it.
+        for (_, mut handle) in self.music_handles.drain() {
+            handle.stop(Tween::default());
+        }
     }
 
     /// Set volume for a channel and push to active Kira music handles.
@@ -1384,12 +1392,15 @@ impl AdaptiveMusicEngine {
         }
     }
 
-    /// Stop all layers in a section (set volumes to zero, drop handles).
+    /// Stop all layers in a section (set volumes to zero, stop and drop handles).
     fn stop_section_layers(&mut self, idx: usize) {
         for layer in &mut self.sections[idx].layers {
             layer.current_volume = 0.0;
             layer.target_volume = 0.0;
-            layer.handle = None;
+            // Dropping the handle alone left the old section audible.
+            if let Some(mut handle) = layer.handle.take() {
+                handle.stop(Tween::default());
+            }
         }
     }
 
