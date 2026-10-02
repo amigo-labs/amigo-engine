@@ -195,7 +195,11 @@ impl Engine {
 
         #[cfg(not(feature = "api"))]
         if self.config.dev.headless {
-            error!("Headless mode requires the 'api' feature. Enable it with: cargo run --features api");
+            error!(
+                "Headless mode requires amigo_engine's 'api' feature: add \
+                 `features = [\"api\"]` to the amigo_engine dependency, or run \
+                 with `--features amigo_engine/api`"
+            );
             return;
         }
 
