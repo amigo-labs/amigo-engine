@@ -330,6 +330,12 @@ where
 ///
 /// Implemented for the 5 built-in component types. Game-specific types should
 /// use `world.dynamic::<T>()` / `world.insert_dynamic()` instead.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not one of the engine-core components stored on `World`",
+    label = "game components are not `Component`",
+    note = "store game-specific components with `world.insert_dynamic(id, value)` and read them with `world.get_dynamic::<{Self}>(id)`",
+    note = "`Component` covers only Position, Velocity, Health, SpriteComp and StateScoped"
+)]
 pub trait Component: Sized + 'static {
     /// Get the SparseSet for this component from the World.
     fn storage(world: &super::world::World) -> &SparseSet<Self>;

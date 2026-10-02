@@ -58,7 +58,8 @@ impl GenerationalArena {
     pub fn spawn(&mut self) -> EntityId {
         self.count += 1;
         if let Some(index) = self.free_list.pop() {
-            self.generations[index as usize] += 1;
+            // Wrapping: generation comparisons are wrap-aware (see SparseSet).
+            self.generations[index as usize] = self.generations[index as usize].wrapping_add(1);
             self.alive[index as usize] = true;
             EntityId {
                 index,

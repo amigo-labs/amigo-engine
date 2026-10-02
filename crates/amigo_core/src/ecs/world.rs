@@ -225,7 +225,13 @@ impl World {
     }
 
     /// Insert a dynamic component. Registers the type if not already registered.
+    ///
+    /// Ignored when `id` is not alive: a component stored for a dead entity
+    /// would be iterated by every query until the slot is reused.
     pub fn insert_dynamic<T: 'static + Send + Sync>(&mut self, id: EntityId, data: T) {
+        if !self.entities.is_alive(id) {
+            return;
+        }
         let type_id = TypeId::of::<T>();
         let storage = self
             .dynamic
@@ -266,8 +272,23 @@ impl World {
 
     // ── End of Tick ──
 
-    /// Process pending despawns and clear change tracking.
+    /// Clear the previous tick's change tracking, then process pending despawns.
+    ///
+    /// Tracking is cleared *first* so that the removals a despawn causes stay
+    /// visible through [`SparseSet::removed`] until the next flush, the same
+    /// one-tick window [`EventHub`](crate::events::EventHub) gives events.
     pub fn flush(&mut self) {
+        // Clear change tracking
+        self.positions.flush();
+        self.velocities.flush();
+        self.healths.flush();
+        self.sprites.flush();
+        self.state_scoped.flush();
+
+        for storage in self.dynamic.values_mut() {
+            storage.flush();
+        }
+
         // Process despawns
         let despawns = std::mem::take(&mut self.pending_despawn);
         for id in &despawns {
@@ -282,17 +303,6 @@ impl World {
             }
 
             self.entities.despawn(*id);
-        }
-
-        // Clear change tracking
-        self.positions.flush();
-        self.velocities.flush();
-        self.healths.flush();
-        self.sprites.flush();
-        self.state_scoped.flush();
-
-        for storage in self.dynamic.values_mut() {
-            storage.flush();
         }
     }
 
@@ -315,7 +325,12 @@ impl World {
     // ── Generic Component Access ──
 
     /// Add a component to an entity using the `Component` trait for static routing.
+    ///
+    /// Ignored when `id` is not alive (see [`insert_dynamic`](Self::insert_dynamic)).
     pub fn add<T: super::query::Component>(&mut self, id: EntityId, data: T) {
+        if !self.entities.is_alive(id) {
+            return;
+        }
         T::storage_mut(self).insert(id, data);
     }
 
@@ -716,6 +731,62 @@ mod tests {
         world.positions.insert(stale, Position(SimVec2::ZERO));
         let pos = world.positions.get(fresh).unwrap();
         assert_eq!(pos.0.x, Fix::from_num(7));
+    }
+
+    #[test]
+    fn component_left_by_dead_generation_does_not_block_reused_slot() {
+        let mut world = World::new();
+        let dead = world.spawn();
+        world.despawn(dead);
+        world.flush();
+
+        // A stale id writes straight into the storage after the despawn was
+        // flushed, leaving a component nothing will ever remove.
+        world.positions.insert(dead, Position(SimVec2::ZERO));
+
+        let fresh = world.spawn();
+        assert_eq!(fresh.index(), dead.index());
+        world
+            .positions
+            .insert(fresh, Position(SimVec2::new(Fix::from_num(3), Fix::ZERO)));
+
+        assert_eq!(world.positions.get(fresh).unwrap().0.x, Fix::from_num(3));
+        assert!(world.positions.get(dead).is_none());
+        let ids: Vec<EntityId> = world.positions.iter().map(|(id, _)| id).collect();
+        assert_eq!(ids, vec![fresh]);
+    }
+
+    #[test]
+    fn add_and_insert_dynamic_ignore_dead_entities() {
+        struct Tag;
+        let mut world = World::new();
+        let e = world.spawn();
+        world.despawn(e);
+        world.flush();
+
+        world.add(e, Position(SimVec2::ZERO));
+        world.insert_dynamic(e, Tag);
+        assert_eq!(world.positions.iter().count(), 0);
+        assert!(world.dynamic::<Tag>().is_none_or(|s| s.iter().count() == 0));
+
+        // An id that was never spawned must not grow the sparse index either.
+        world.add(EntityId::from_raw(u32::MAX - 1, 0), Position(SimVec2::ZERO));
+        assert_eq!(world.positions.iter().count(), 0);
+    }
+
+    #[test]
+    fn despawn_removals_are_visible_until_the_next_flush() {
+        let mut world = World::new();
+        let e = world.spawn();
+        world.healths.insert(e, Health::new(5));
+        world.flush();
+
+        world.despawn(e);
+        world.flush();
+        assert_eq!(world.healths.removed(), &[e]);
+
+        world.flush();
+        assert!(world.healths.removed().is_empty());
     }
 
     #[test]
