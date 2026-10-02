@@ -376,8 +376,22 @@ impl Renderer {
 
     /// Begin a frame: render sprites and return the in-progress frame so
     /// additional render passes (e.g. egui) can be appended before submit.
+    ///
+    /// The queued sprites are consumed either way: on success they are
+    /// uploaded and recorded into the returned frame, and on a surface error
+    /// (a minimized window reports Outdated, a hidden Wayland window
+    /// Timeout) they are dropped. Keeping them let every failed frame pile
+    /// the next frame's draw list on top, until the vertex buffer outgrew
+    /// wgpu's limit and the first visible frame panicked.
     pub fn begin_frame(&mut self) -> Result<FrameInProgress, wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = match self.surface.get_current_texture() {
+            Ok(output) => output,
+            Err(e) => {
+                self.batcher.clear();
+                self.ui_batcher.clear();
+                return Err(e);
+            }
+        };
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -506,6 +520,13 @@ impl Renderer {
         // UI pass: after post-processing, in screen space, loading rather than
         // clearing so it composites over the scene.
         self.draw_ui_pass(&mut encoder, &view);
+
+        // Everything queued is now in GPU buffers recorded into `encoder`.
+        // Clearing here rather than in end_frame also covers callers that
+        // finish the frame themselves (the editor submits egui's encoder and
+        // never cleared ui_batcher, so UI sprites accumulated every frame).
+        self.batcher.clear();
+        self.ui_batcher.clear();
 
         Ok(FrameInProgress {
             encoder,
