@@ -356,14 +356,10 @@ pub fn sd_tick(state: &mut SdState, dt: f32) -> Vec<SdEvent> {
 
                     // Process ejection.
                     if let VoteOutcome::Decided { winner, .. } = outcome {
-                        // winner is the entity index of the player to eject (choice ID).
-                        // Choice 0 = skip.
-                        if winner != 0 {
-                            if let Some(player) = state
-                                .players
-                                .iter_mut()
-                                .find(|p| p.entity.index() == winner)
-                            {
+                        // Choices are `player slot + 1`; 0 is skip (see
+                        // `cast_vote`).
+                        if let Some(slot) = (winner as usize).checked_sub(1) {
+                            if let Some(player) = state.players.get_mut(slot) {
                                 player.alive = false;
                                 player.ejected = true;
                                 let was_impostor = player.role == Role::Impostor;
@@ -547,11 +543,23 @@ pub fn trigger_sabotage(
     events
 }
 
-/// Cast a vote during the Voting phase.
-pub fn cast_vote(state: &mut SdState, voter: EntityId, choice: u32) -> Vec<SdEvent> {
+/// Cast a vote during the Voting phase: `Some(player)` to vote them out,
+/// `None` to skip.
+///
+/// Votes used to be the target's raw entity index with 0 meaning skip, so
+/// the player at entity index 0 — usually the first one spawned — could never
+/// be voted out. Votes for entities that are not players are ignored.
+pub fn cast_vote(state: &mut SdState, voter: EntityId, target: Option<EntityId>) -> Vec<SdEvent> {
     if state.phase != Phase::Voting {
         return Vec::new();
     }
+    let choice = match target {
+        None => 0,
+        Some(target) => match state.players.iter().position(|p| p.entity == target) {
+            Some(slot) => slot as u32 + 1,
+            None => return Vec::new(),
+        },
+    };
     state.vote_session.cast(voter, choice);
     Vec::new()
 }
@@ -723,6 +731,44 @@ mod tests {
             check_win_conditions(&state),
             Some((Role::Impostor, WinCondition::ImpostorParity))
         );
+    }
+
+    #[test]
+    fn the_player_at_entity_index_zero_can_be_voted_out() {
+        let entities = vec![eid(0), eid(1), eid(2), eid(3)];
+        let mut state = SdState::new(SdConfig {
+            impostor_count: 1,
+            voting_duration: 1.0,
+            seed: 42,
+            ..Default::default()
+        });
+        assign_roles(&mut state, &entities);
+        call_emergency_meeting(&mut state, eid(1));
+        // Run out the discussion so voting opens.
+        for _ in 0..100 {
+            sd_tick(&mut state, 1.0);
+            if state.phase == Phase::Voting {
+                break;
+            }
+        }
+        assert_eq!(state.phase, Phase::Voting);
+
+        for voter in [eid(1), eid(2), eid(3)] {
+            cast_vote(&mut state, voter, Some(eid(0)));
+        }
+        let mut ejected = None;
+        for _ in 0..10 {
+            for event in sd_tick(&mut state, 1.0) {
+                if let SdEvent::PlayerEjected { entity, .. } = event {
+                    ejected = Some(entity);
+                }
+            }
+        }
+        assert_eq!(ejected, Some(eid(0)));
+        assert!(state
+            .players
+            .iter()
+            .any(|p| p.entity == eid(0) && p.ejected));
     }
 
     #[test]
