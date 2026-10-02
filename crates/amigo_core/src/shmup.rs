@@ -377,6 +377,9 @@ pub struct BombState {
     pub clear_timer: u8,
     /// Deathbomb window timer. Set when hit, counts down.
     pub deathbomb_timer: u8,
+    /// Set when a deathbomb window ran out without a bomb; read and cleared
+    /// by [`take_death`](Self::take_death).
+    died: bool,
 }
 
 impl BombState {
@@ -388,6 +391,7 @@ impl BombState {
             clearing: false,
             clear_timer: 0,
             deathbomb_timer: 0,
+            died: false,
         }
     }
 
@@ -407,10 +411,13 @@ impl BombState {
 
     /// Called when the player is hit. Starts the deathbomb window.
     /// Returns `true` if the player actually dies (no bombs available for
-    /// deathbombing).
+    /// deathbombing). If the window then runs out without a bomb,
+    /// [`take_death`](Self::take_death) reports the death.
     pub fn on_hit(&mut self, config: &BombConfig) -> bool {
-        // If already invincible, ignore the hit.
-        if self.is_invincible() {
+        // If already invincible, ignore the hit. A hit during an open
+        // deathbomb window does not restart it: restarting let a player who
+        // never bombed survive forever by being hit again.
+        if self.is_invincible() || self.deathbomb_timer > 0 {
             return false;
         }
         if self.bombs > 0 && config.deathbomb_frames > 0 {
@@ -436,8 +443,19 @@ impl BombState {
         }
         if self.deathbomb_timer > 0 {
             self.deathbomb_timer -= 1;
+            if self.deathbomb_timer == 0 {
+                // The window closed without a bomb.
+                self.died = true;
+            }
         }
         self.clearing
+    }
+
+    /// Returns `true` once after a deathbomb window ran out without a bomb:
+    /// the hit that opened it now kills the player. Check it after each
+    /// [`tick`](Self::tick).
+    pub fn take_death(&mut self) -> bool {
+        std::mem::take(&mut self.died)
     }
 
     /// Whether the player is currently invincible.
@@ -705,6 +723,32 @@ mod tests {
         assert!(state.try_bomb(&config));
         assert_eq!(state.deathbomb_timer, 0);
         assert!(state.is_invincible());
+    }
+
+    #[test]
+    fn an_unused_deathbomb_window_kills_and_cannot_be_reopened() {
+        let config = BombConfig::default();
+        let mut state = BombState::new(3);
+        assert!(!state.on_hit(&config));
+        for frame in 0..config.deathbomb_frames {
+            assert!(!state.take_death(), "frame {frame}");
+            // A second hit inside the window must not restart it.
+            assert!(!state.on_hit(&config));
+            state.tick();
+        }
+        assert!(state.take_death());
+        assert!(!state.take_death(), "reported once");
+        assert_eq!(state.bombs, 3);
+
+        // Bombing inside the window still saves the player.
+        let mut state = BombState::new(1);
+        state.on_hit(&config);
+        state.tick();
+        assert!(state.try_bomb(&config));
+        for _ in 0..10 {
+            state.tick();
+        }
+        assert!(!state.take_death());
     }
 
     #[test]
