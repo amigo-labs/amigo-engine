@@ -34,7 +34,7 @@ pub use minimap::{
 };
 pub use particles::{BlendMode, EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
 pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
-pub use renderer::Renderer;
+pub use renderer::{Renderer, SurfaceError};
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance, SpriteShader};
 pub use texture::{Texture, TextureId};
 pub use vertex::Vertex;
@@ -99,6 +99,14 @@ impl SamplerMode {
         match self {
             SamplerMode::Nearest => wgpu::FilterMode::Nearest,
             SamplerMode::Linear => wgpu::FilterMode::Linear,
+        }
+    }
+
+    /// Convert to the corresponding wgpu mipmap filter mode.
+    pub fn to_wgpu_mipmap(self) -> wgpu::MipmapFilterMode {
+        match self {
+            SamplerMode::Nearest => wgpu::MipmapFilterMode::Nearest,
+            SamplerMode::Linear => wgpu::MipmapFilterMode::Linear,
         }
     }
 }

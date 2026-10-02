@@ -36,6 +36,17 @@ Notable changes per release. Format loosely follows
   `WaveSpawner::reset` returns to `Idle`.
 - `social_deduction::cast_vote` takes `target: Option<EntityId>` (`None` =
   skip) instead of a raw `u32` choice.
+- wgpu 24 → 30 and egui 0.31 → 0.36; `amigo_render` exposes their types,
+  including `PostProcessPipeline` from the prelude (its methods take
+  `wgpu::Device`/`TextureView`). Games that pass it objects from their own
+  wgpu dependency must move that dependency to wgpu 30.
+  `Renderer::render`/`begin_frame` return `amigo_render::SurfaceError`
+  (wgpu dropped its own), and a `FrameInProgress` is presented with
+  `renderer.queue.present(frame.output)`.
+- `EguiRenderer::render`, `draw_editor_panels` and `draw_editor_v2_panels`
+  take the root `&mut egui::Ui` instead of `&egui::Context`; egui 0.36
+  lays panels out inside a `Ui`.
+- The minimum supported Rust version is 1.95 (egui 0.36).
 
 ### Fixed — soundness and determinism
 
@@ -81,6 +92,10 @@ Notable changes per release. Format loosely follows
   editor path, growing until the first visible frame panicked.
 - The camera panicked when the level was smaller than the view; huge particle
   emission rates hung the game.
+- A surface reporting Outdated waited for the next resize event to be
+  reconfigured, and a minimized or occluded window logged a render error
+  every frame. Outdated now reconfigures like Lost; skipped frames log at
+  trace level.
 - Stopped or replaced music kept playing (kira handles were dropped, not
   stopped). The tile-light flood fill grew exponentially near the map edge.
 - `TaskPool` workers died with a panicking task; `autosave_slots = 0`
@@ -93,6 +108,9 @@ Notable changes per release. Format loosely follows
 
 ### Changed — dependencies
 
+- wgpu 30 and egui 0.36 (see Breaking). The renderer passes the window's
+  display handle to the wgpu instance, which GLES needs to present on
+  Wayland.
 - kira 0.12 (audio; decibel volumes and sub-tracks behind the unchanged
   `amigo_audio` API, without kira's new libdbus default), ureq 3 (ComfyUI client:
   one pooled agent, downloads above 10 MB, no environment proxies for the

@@ -6,11 +6,11 @@ use crate::stack::GameStack;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
-use amigo_render::renderer::Renderer;
+use amigo_render::renderer::{Renderer, SurfaceError};
 use amigo_render::sprite_batcher::SpriteInstance;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info, info_span, warn};
+use tracing::{error, info, info_span, trace, warn};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -484,6 +484,21 @@ fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
     }
 }
 
+/// React to a frame the surface could not provide. The frame is skipped
+/// either way; the sprites queued for it were already dropped.
+fn recover_from_surface_error(renderer: &mut Renderer, err: SurfaceError) {
+    match err {
+        // A minimized or hidden window reports these every frame; logging
+        // them as errors would flood the log until it is shown again.
+        SurfaceError::Timeout | SurfaceError::Occluded => trace!("skipped frame: {err}"),
+        SurfaceError::Outdated | SurfaceError::Lost => {
+            let (w, h) = renderer.window_size();
+            renderer.resize(w, h);
+        }
+        SurfaceError::Validation => error!("render error: {err}"),
+    }
+}
+
 struct EngineState {
     window: Arc<Window>,
     renderer: Renderer,
@@ -830,15 +845,8 @@ impl ApplicationHandler for EngineApp {
                         state.renderer.batcher.push(sprite.clone());
                     }
 
-                    match state.renderer.render() {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost) => {
-                            let (w, h) = state.renderer.window_size();
-                            state.renderer.resize(w, h);
-                        }
-                        Err(e) => {
-                            error!("Render error during splash: {:?}", e);
-                        }
+                    if let Err(e) = state.renderer.render() {
+                        recover_from_surface_error(&mut state.renderer, e);
                     }
 
                     if finished {
@@ -1144,46 +1152,25 @@ impl ApplicationHandler for EngineApp {
                                 &state.window,
                                 &frame.view,
                                 screen_desc,
-                                |ctx| {
+                                |ui| {
                                     amigo_editor::egui_ui::draw_editor_panels(
-                                        ctx,
+                                        ui,
                                         editor_state,
                                         editor_level,
                                     );
                                 },
                             );
 
-                            frame.output.present();
+                            state.renderer.queue.present(frame.output);
                             state.renderer.batcher.clear();
                         }
-                        Err(wgpu::SurfaceError::Lost) => {
-                            let (w, h) = state.renderer.window_size();
-                            state.renderer.resize(w, h);
-                        }
-                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                            error!("GPU out of memory");
-                            event_loop.exit();
-                        }
-                        Err(e) => {
-                            error!("Render error: {:?}", e);
-                        }
+                        Err(e) => recover_from_surface_error(&mut state.renderer, e),
                     }
                 }
 
                 #[cfg(not(feature = "editor"))]
-                match state.renderer.render() {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => {
-                        let (w, h) = state.renderer.window_size();
-                        state.renderer.resize(w, h);
-                    }
-                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                        error!("GPU out of memory");
-                        event_loop.exit();
-                    }
-                    Err(e) => {
-                        error!("Render error: {:?}", e);
-                    }
+                if let Err(e) = state.renderer.render() {
+                    recover_from_surface_error(&mut state.renderer, e);
                 }
 
                 // Update API snapshot after frame

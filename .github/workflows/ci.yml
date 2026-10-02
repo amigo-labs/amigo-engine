@@ -118,12 +118,12 @@ jobs:
     env:
       # Overrides rust-toolchain.toml (stable); keep in sync with
       # rust-version in the root Cargo.toml.
-      RUSTUP_TOOLCHAIN: "1.93"
+      RUSTUP_TOOLCHAIN: "1.95"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93"
+          toolchain: "1.95"
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/install-system-deps
       - run: cargo check --workspace --all-targets --locked

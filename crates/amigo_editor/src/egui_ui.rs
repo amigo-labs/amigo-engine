@@ -2,27 +2,27 @@ use crate::{AmigoLevel, EditorState, EditorTool};
 
 /// Draw the complete editor UI using egui.
 ///
-/// Call this from within the engine's egui render closure.
-/// Returns any tool change or command triggered by the user.
-pub fn draw_editor_panels(ctx: &egui::Context, state: &mut EditorState, level: &AmigoLevel) {
-    draw_menu_bar(ctx, state);
-    draw_tools_panel(ctx, state);
-    draw_properties_panel(ctx, state, level);
-    draw_status_bar(ctx, state, level);
+/// Call this from within the engine's egui render closure with the root
+/// [`egui::Ui`] (egui 0.36 lays panels out inside a `Ui`, not a `Context`).
+pub fn draw_editor_panels(ui: &mut egui::Ui, state: &mut EditorState, level: &AmigoLevel) {
+    draw_menu_bar(ui, state);
+    draw_tools_panel(ui, state);
+    draw_properties_panel(ui, state, level);
+    draw_status_bar(ui, state, level);
 }
 
-fn draw_menu_bar(ctx: &egui::Context, state: &mut EditorState) {
-    egui::TopBottomPanel::top("editor_menu").show(ctx, |ui| {
-        egui::menu::bar(ui, |ui| {
+fn draw_menu_bar(ui: &mut egui::Ui, state: &mut EditorState) {
+    egui::Panel::top("editor_menu").show(ui, |ui| {
+        egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("New Level").clicked() {
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Save").clicked() {
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Load").clicked() {
-                    ui.close_menu();
+                    ui.close();
                 }
             });
 
@@ -33,7 +33,7 @@ fn draw_menu_bar(ctx: &egui::Context, state: &mut EditorState) {
                     .clicked()
                 {
                     state.undo();
-                    ui.close_menu();
+                    ui.close();
                 }
                 let redo_label = format!("Redo ({})", state.redo_stack.len());
                 if ui
@@ -41,7 +41,7 @@ fn draw_menu_bar(ctx: &egui::Context, state: &mut EditorState) {
                     .clicked()
                 {
                     state.redo();
-                    ui.close_menu();
+                    ui.close();
                 }
             });
 
@@ -54,11 +54,11 @@ fn draw_menu_bar(ctx: &egui::Context, state: &mut EditorState) {
     });
 }
 
-fn draw_tools_panel(ctx: &egui::Context, state: &mut EditorState) {
-    egui::SidePanel::left("editor_tools")
-        .default_width(100.0)
+fn draw_tools_panel(ui: &mut egui::Ui, state: &mut EditorState) {
+    egui::Panel::left("editor_tools")
+        .default_size(100.0)
         .resizable(false)
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             ui.heading("Tools");
             ui.separator();
 
@@ -86,11 +86,11 @@ fn draw_tools_panel(ctx: &egui::Context, state: &mut EditorState) {
         });
 }
 
-fn draw_properties_panel(ctx: &egui::Context, state: &mut EditorState, level: &AmigoLevel) {
-    egui::SidePanel::right("editor_properties")
-        .default_width(160.0)
+fn draw_properties_panel(ui: &mut egui::Ui, state: &mut EditorState, level: &AmigoLevel) {
+    egui::Panel::right("editor_properties")
+        .default_size(160.0)
         .resizable(true)
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             ui.heading("Properties");
             ui.separator();
 
@@ -167,8 +167,8 @@ fn draw_properties_panel(ctx: &egui::Context, state: &mut EditorState, level: &A
         });
 }
 
-fn draw_status_bar(ctx: &egui::Context, state: &EditorState, _level: &AmigoLevel) {
-    egui::TopBottomPanel::bottom("editor_status").show(ctx, |ui| {
+fn draw_status_bar(ui: &mut egui::Ui, state: &EditorState, _level: &AmigoLevel) {
+    egui::Panel::bottom("editor_status").show(ui, |ui| {
         ui.horizontal(|ui| {
             let tool_name = match state.tool {
                 EditorTool::Select => "Select",

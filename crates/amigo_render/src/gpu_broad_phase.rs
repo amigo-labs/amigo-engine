@@ -117,8 +117,8 @@ impl GpuBroadPhase {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("gpu_broad_phase_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -297,14 +297,18 @@ impl GpuBroadPhase {
         slice.map_async(wgpu::MapMode::Read, move |result| {
             tx.send(result).ok();
         });
-        self.device.poll(wgpu::Maintain::Wait);
+        let polled = self.device.poll(wgpu::PollType::wait_indefinitely());
 
-        if rx.recv().map(|r| r.is_err()).unwrap_or(true) {
+        if polled.is_err() || rx.recv().map(|r| r.is_err()).unwrap_or(true) {
             // GPU readback failed — fall back to CPU.
             return self.fallback.find_candidates(bodies);
         }
 
-        let data = slice.get_mapped_range();
+        let Ok(data) = slice.get_mapped_range() else {
+            // Leave the staging buffer unmapped for the next frame's map_async.
+            self.staging_buffer.unmap();
+            return self.fallback.find_candidates(bodies);
+        };
         let u32_data: &[u32] = bytemuck::cast_slice(&data);
 
         let pair_count = u32_data[0] as usize;
@@ -344,24 +348,20 @@ mod tests {
     // GPU tests require a real wgpu adapter. If unavailable, tests are skipped.
 
     fn try_create_gpu() -> Option<(Arc<wgpu::Device>, Arc<wgpu::Queue>)> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::LowPower,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        }))?;
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("test"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
-                memory_hints: Default::default(),
-            },
-            None,
-        ))
+            ..Default::default()
+        }))
+        .ok()?;
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("test"),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            ..Default::default()
+        }))
         .ok()?;
         Some((Arc::new(device), Arc::new(queue)))
     }
