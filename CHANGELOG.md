@@ -85,6 +85,11 @@ Notable changes per release. Format loosely follows
   stopped). The tile-light flood fill grew exponentially near the map edge.
 - `TaskPool` workers died with a panicking task; `autosave_slots = 0`
   panicked instead of disabling autosave.
+- `GameContext::new` no longer opens the audio device: the engine opens it at
+  startup (`AudioManager::open_device`), anything else on the first sound.
+  Test binaries that built several contexts crashed on Windows with
+  `STATUS_ACCESS_VIOLATION`, because cpal keeps its device enumerator in a
+  static that lives in the COM apartment of the first test's thread.
 
 ### Changed — dependencies
 

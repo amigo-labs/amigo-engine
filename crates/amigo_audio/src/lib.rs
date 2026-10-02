@@ -310,8 +310,16 @@ impl SfxManager {
 // ---------------------------------------------------------------------------
 
 /// Audio manager wrapping kira.
+///
+/// The output device is not opened by [`Self::new`] but by
+/// [`Self::open_device`], which the engine calls at startup, or else by the
+/// first call that needs it. Code that only builds a [`AudioManager`], such as
+/// a test constructing a game context, never touches the audio backend.
 pub struct AudioManager {
     manager: Option<KiraManager>,
+    /// Whether [`Self::open_device`] has run. A missing device is not retried
+    /// on every sound, which would put a failing device probe in the frame.
+    device_probed: bool,
     sfx_data: FxHashMap<String, Vec<StaticSoundData>>,
     music_handles: FxHashMap<String, StaticSoundHandle>,
     pub volumes: VolumeChannels,
@@ -320,21 +328,34 @@ pub struct AudioManager {
 
 impl AudioManager {
     pub fn new(base_path: impl Into<PathBuf>) -> Self {
-        let manager = KiraManager::<DefaultBackend>::new(AudioManagerSettings::default())
-            .map_err(|e| warn!("Audio init failed: {}", e))
-            .ok();
-
-        if manager.is_some() {
-            info!("Audio system initialized");
-        }
-
         Self {
-            manager,
+            manager: None,
+            device_probed: false,
             sfx_data: FxHashMap::default(),
             music_handles: FxHashMap::default(),
             volumes: VolumeChannels::default(),
             base_path: base_path.into(),
         }
+    }
+
+    /// Open the audio output device, if that has not been tried yet, and
+    /// report whether one is open.
+    ///
+    /// Only the first call probes the backend; when it fails, sounds are
+    /// silently skipped from then on, as they were when the device was opened
+    /// eagerly. Call this at startup so the first sound does not pay for
+    /// opening the device mid-frame.
+    pub fn open_device(&mut self) -> bool {
+        if !self.device_probed {
+            self.device_probed = true;
+            self.manager = KiraManager::<DefaultBackend>::new(AudioManagerSettings::default())
+                .map_err(|e| warn!("Audio init failed: {e}"))
+                .ok();
+            if self.manager.is_some() {
+                info!("Audio system initialized");
+            }
+        }
+        self.manager.is_some()
     }
 
     /// Load a sound effect from file.
@@ -355,6 +376,7 @@ impl AudioManager {
 
     /// Play a sound effect by name.
     pub fn play_sfx(&mut self, name: &str) {
+        self.open_device();
         let Some(manager) = &mut self.manager else {
             return;
         };
@@ -399,6 +421,7 @@ impl AudioManager {
             return; // Too far away, don't play
         }
 
+        self.open_device();
         let Some(manager) = &mut self.manager else {
             return;
         };
@@ -435,6 +458,7 @@ impl AudioManager {
 
     /// Play music from file.
     pub fn play_music(&mut self, name: &str, path: &Path) {
+        self.open_device();
         let Some(manager) = &mut self.manager else {
             return;
         };
@@ -499,6 +523,7 @@ impl AudioManager {
 
     /// Borrow the inner kira manager (for use with SfxManager / AdaptiveMusicEngine).
     pub fn kira_manager_mut(&mut self) -> Option<&mut KiraManager<DefaultBackend>> {
+        self.open_device();
         self.manager.as_mut()
     }
 
@@ -1559,5 +1584,33 @@ mod tests {
         for silent in [0.0, -1.0, 0.0005, f32::NAN] {
             assert_eq!(amplitude_to_decibels(silent), Decibels::SILENCE, "{silent}");
         }
+    }
+
+    // Opening a device in a test is what crashed Windows test binaries: cpal
+    // keeps its device enumerator in a static created in the first caller's
+    // COM apartment, and libtest ends that thread after its test. So these
+    // check that the backend is left alone, without ever probing it.
+
+    #[test]
+    fn building_and_configuring_leaves_the_device_closed() {
+        let mut audio = AudioManager::new("assets");
+        audio.load_sfx("missing", Path::new("does/not/exist.ogg"));
+        audio.set_volume("music", 0.5);
+        audio.stop_music();
+
+        assert!(!audio.device_probed, "only playback may open the device");
+        assert!(audio.manager.is_none());
+    }
+
+    #[test]
+    fn a_failed_probe_is_not_retried_on_every_sound() {
+        let mut audio = AudioManager::new("assets");
+        audio.device_probed = true; // as after a probe that found no device
+
+        audio.play_sfx("hit");
+        audio.play_music("theme", Path::new("does/not/exist.ogg"));
+
+        assert!(!audio.open_device());
+        assert!(audio.kira_manager_mut().is_none());
     }
 }

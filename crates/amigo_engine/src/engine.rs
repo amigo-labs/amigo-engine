@@ -242,6 +242,8 @@ impl Engine {
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        #[cfg(feature = "audio")]
+        game_ctx.audio.open_device();
 
         // Apply plugin registrations
         let plugin_ctx = self.plugin_ctx;
@@ -552,6 +554,8 @@ impl ApplicationHandler for EngineApp {
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        #[cfg(feature = "audio")]
+        game_ctx.audio.open_device();
         let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
 
         // Hot reload only makes sense against loose files: a pak is a build
