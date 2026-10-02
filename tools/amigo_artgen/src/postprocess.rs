@@ -607,9 +607,7 @@ mod tests {
     fn tile_edge_check_uniform() {
         // All same color → 0 mismatches
         let mut buf = PixelBuffer::new(4, 4);
-        for pixel in &mut buf.data {
-            *pixel = [128, 128, 128, 255];
-        }
+        buf.data.fill([128, 128, 128, 255]);
 
         let (h, v) = tile_edge_check(&buf);
         assert_eq!(h, 0);

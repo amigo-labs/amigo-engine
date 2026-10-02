@@ -130,9 +130,7 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
 
     /// Clear all cells.
     pub fn clear(&mut self) {
-        for c in &mut self.cells {
-            *c = None;
-        }
+        self.cells.fill(None);
     }
 }
 

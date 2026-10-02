@@ -33,9 +33,7 @@ impl BitSet {
     }
 
     pub fn clear(&mut self) {
-        for word in &mut self.bits {
-            *word = 0;
-        }
+        self.bits.fill(0);
     }
 
     pub fn iter_set(&self) -> BitSetIter<'_> {

@@ -135,7 +135,7 @@ impl EventStreamState {
     /// `MAX_CLIENT_BACKLOG` (1 MiB) behind is dropped.
     pub fn flush(&mut self) {
         if !self.pending_events.is_empty() {
-            let events: Vec<EngineEvent> = self.pending_events.drain(..).collect();
+            let events: Vec<EngineEvent> = std::mem::take(&mut self.pending_events);
 
             // Encode once per event rather than once per (event, client).
             let encoded: Vec<(String, String)> = events

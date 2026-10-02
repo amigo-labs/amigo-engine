@@ -214,7 +214,7 @@ impl FrameProfiler {
             );
 
             // Drain open spans (take them all at once to avoid borrow issues).
-            let remaining: Vec<OpenSpan> = self.open_spans.drain(..).collect();
+            let remaining: Vec<OpenSpan> = std::mem::take(&mut self.open_spans);
             for open in remaining {
                 let start_us = open.start.duration_since(frame_start).as_micros() as u64;
                 let duration_us = now.duration_since(open.start).as_micros() as u64;
