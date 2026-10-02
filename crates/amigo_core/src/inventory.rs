@@ -81,40 +81,48 @@ impl Inventory {
     }
 
     /// Try to add an item, stacking if possible. Returns leftover if inventory full.
-    pub fn add(&mut self, item: ItemInstance, registry: &ItemRegistry) -> Option<ItemInstance> {
-        let def = registry.get(item.def_id);
-        let max_stack = def.map(|d| d.max_stack).unwrap_or(1);
+    ///
+    /// Existing stacks of the same item are topped up first; the rest goes
+    /// into empty slots, at most `max_stack` per slot, so an incoming stack
+    /// larger than `max_stack` (a 150-gold drop with `max_stack = 99`) is
+    /// split rather than stored over the limit.
+    pub fn add(&mut self, mut item: ItemInstance, registry: &ItemRegistry) -> Option<ItemInstance> {
+        let max_stack = registry
+            .get(item.def_id)
+            .map(|d| d.max_stack)
+            .unwrap_or(1)
+            .max(1);
 
-        // Try stacking first
         if max_stack > 1 {
-            for slot in &mut self.slots {
-                if let Some(existing) = &mut slot.item {
-                    if existing.def_id == item.def_id {
-                        let space = max_stack - existing.stack_count;
-                        if space >= item.stack_count {
-                            existing.stack_count += item.stack_count;
-                            return None; // fully stacked
-                        } else if space > 0 {
-                            existing.stack_count = max_stack;
-                            let mut leftover = item.clone();
-                            leftover.stack_count -= space;
-                            return self.add(leftover, registry); // recurse with remainder
-                        }
-                    }
+            for existing in self.slots.iter_mut().filter_map(|s| s.item.as_mut()) {
+                if item.stack_count == 0 {
+                    return None;
+                }
+                if existing.def_id == item.def_id {
+                    // Saturating: a stack already over the limit (e.g. from
+                    // a save made under a larger max_stack) has no room.
+                    let moved = max_stack
+                        .saturating_sub(existing.stack_count)
+                        .min(item.stack_count);
+                    existing.stack_count += moved;
+                    item.stack_count -= moved;
                 }
             }
         }
 
-        // Find empty slot
         for slot in &mut self.slots {
-            if slot.is_empty() {
-                slot.item = Some(item);
+            if item.stack_count == 0 {
                 return None;
+            }
+            if slot.is_empty() {
+                let mut part = item.clone();
+                part.stack_count = item.stack_count.min(max_stack);
+                item.stack_count -= part.stack_count;
+                slot.item = Some(part);
             }
         }
 
-        // No space
-        Some(item)
+        (item.stack_count > 0).then_some(item)
     }
 
     /// Remove an item at a specific slot index. Returns the removed item.
@@ -327,6 +335,36 @@ mod tests {
     }
 
     // ── Inventory tests ─────────────────────────────────────────
+
+    #[test]
+    fn oversized_stacks_are_split_at_max_stack() {
+        let reg = test_registry(); // potions stack to 20
+        let mut inv = Inventory::new(3);
+
+        // 45 potions in one instance: two full slots, one with 5.
+        assert!(inv.add(ItemInstance::with_stack(1, 45), &reg).is_none());
+        let counts: Vec<u32> = inv
+            .slots
+            .iter()
+            .map(|s| s.item.as_ref().map_or(0, |i| i.stack_count))
+            .collect();
+        assert_eq!(counts, vec![20, 20, 5]);
+
+        // Adding to a full-ish inventory tops up, then returns what is left.
+        let leftover = inv.add(ItemInstance::with_stack(1, 30), &reg).unwrap();
+        assert_eq!(leftover.stack_count, 15);
+    }
+
+    #[test]
+    fn a_stack_already_over_the_limit_does_not_underflow() {
+        let reg = test_registry();
+        let mut inv = Inventory::new(2);
+        inv.slots[0].item = Some(ItemInstance::with_stack(1, 25)); // over max 20
+                                                                   // Used to compute 20 - 25 in u32: a debug panic, unbounded in release.
+        assert!(inv.add(ItemInstance::with_stack(1, 1), &reg).is_none());
+        assert_eq!(inv.slots[0].item.as_ref().unwrap().stack_count, 25);
+        assert_eq!(inv.slots[1].item.as_ref().unwrap().stack_count, 1);
+    }
 
     #[test]
     fn inventory_add_and_stack() {
