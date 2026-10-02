@@ -12,4 +12,3 @@ path = "src/main.rs"
 
 [dependencies]
 amigo_engine = { workspace = true }
-amigo_core = { workspace = true }

@@ -35,7 +35,6 @@ serde_json = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 pollster = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }

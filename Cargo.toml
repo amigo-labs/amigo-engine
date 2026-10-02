@@ -85,7 +85,6 @@ image = { version = "0.25", default-features = false, features = ["png", "webp"]
 rustc-hash = "2"
 bytemuck = { version = "1", features = ["derive"] }
 bitflags = "2"
-glam = "0.29"
 pollster = "0.4"
 fontdue = "0.9"
 asefile = "0.3"

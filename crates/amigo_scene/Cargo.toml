@@ -10,4 +10,3 @@ hierarchical_scenes = []
 
 [dependencies]
 amigo_core = { workspace = true }
-tracing = { workspace = true }

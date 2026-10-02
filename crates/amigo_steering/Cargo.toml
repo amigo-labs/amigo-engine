@@ -7,6 +7,5 @@ repository.workspace = true
 
 [dependencies]
 amigo_core = { workspace = true }
-fixed = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }

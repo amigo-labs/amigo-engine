@@ -88,7 +88,6 @@ dependencies = [
 name = "amigo_animation_demo"
 version = "0.1.0"
 dependencies = [
- "amigo_animation",
  "amigo_engine",
 ]
 
@@ -99,7 +98,6 @@ dependencies = [
  "amigo_core",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -115,7 +113,6 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "tracing",
- "ureq",
 ]
 
 [[package]]
@@ -160,11 +157,9 @@ dependencies = [
 name = "amigo_audio_pipeline"
 version = "0.1.0"
 dependencies = [
- "amigo_tidal_parser",
  "serde",
  "thiserror 2.0.18",
  "toml",
- "tracing",
 ]
 
 [[package]]
@@ -179,14 +174,12 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "tracing",
- "ureq",
 ]
 
 [[package]]
 name = "amigo_basic_game"
 version = "0.1.0"
 dependencies = [
- "amigo_core",
  "amigo_engine",
 ]
 
@@ -230,7 +223,6 @@ dependencies = [
  "bytemuck",
  "crossbeam-channel",
  "fixed",
- "glam",
  "rayon",
  "ron",
  "rustc-hash 2.1.1",
@@ -244,8 +236,6 @@ name = "amigo_debug"
 version = "0.1.0"
 dependencies = [
  "amigo_core",
- "amigo_render",
- "amigo_ui",
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
@@ -256,7 +246,6 @@ dependencies = [
 name = "amigo_ecs_demo"
 version = "0.1.0"
 dependencies = [
- "amigo_core",
  "amigo_engine",
 ]
 
@@ -267,7 +256,6 @@ dependencies = [
  "amigo_core",
  "amigo_input",
  "amigo_reflect",
- "amigo_render",
  "amigo_tidal_parser",
  "amigo_tilemap",
  "amigo_ui",
@@ -275,7 +263,6 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
- "tracing",
  "winit",
 ]
 
@@ -304,7 +291,6 @@ dependencies = [
  "serde_json",
  "toml",
  "tracing",
- "tracing-subscriber",
  "wgpu",
  "winit",
 ]
@@ -334,8 +320,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]
@@ -360,7 +344,6 @@ dependencies = [
 name = "amigo_pathfinding_demo"
 version = "0.1.0"
 dependencies = [
- "amigo_core",
  "amigo_engine",
 ]
 
@@ -391,7 +374,6 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "fontdue",
- "glam",
  "image 0.25.9",
  "naga",
  "pollster",
@@ -407,7 +389,6 @@ name = "amigo_scene"
 version = "0.1.0"
 dependencies = [
  "amigo_core",
- "tracing",
 ]
 
 [[package]]
@@ -415,14 +396,7 @@ name = "amigo_starter"
 version = "0.1.0"
 dependencies = [
  "amigo_core",
- "amigo_debug",
  "amigo_engine",
- "amigo_input",
- "amigo_render",
- "amigo_scene",
- "amigo_tilemap",
- "amigo_ui",
- "ron",
  "serde",
 ]
 
@@ -431,7 +405,6 @@ name = "amigo_steering"
 version = "0.1.0"
 dependencies = [
  "amigo_core",
- "fixed",
  "ron",
  "serde",
 ]
@@ -449,11 +422,9 @@ name = "amigo_tilemap"
 version = "0.1.0"
 dependencies = [
  "amigo_core",
- "ron",
  "rustc-hash 2.1.1",
  "serde",
  "serde_json",
- "tracing",
 ]
 
 [[package]]
@@ -461,7 +432,6 @@ name = "amigo_tilemap_demo"
 version = "0.1.0"
 dependencies = [
  "amigo_engine",
- "amigo_tilemap",
 ]
 
 [[package]]
@@ -470,8 +440,6 @@ version = "0.1.0"
 dependencies = [
  "amigo_core",
  "amigo_input",
- "amigo_render",
- "tracing",
  "winit",
 ]
 
