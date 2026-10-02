@@ -369,34 +369,31 @@ impl LocaleManager {
     /// Unresolved placeholders are left as-is.
     fn interpolate(template: &str, vars: &[(&str, &str)]) -> String {
         let mut result = String::with_capacity(template.len());
-        let bytes = template.as_bytes();
-        let len = bytes.len();
-        let mut i = 0;
+        let mut rest = template;
 
-        while i < len {
-            if bytes[i] == b'{' {
-                // Find closing brace.
-                if let Some(end) = template[i + 1..].find('}') {
-                    let name = &template[i + 1..i + 1 + end];
-                    if let Some((_k, v)) = vars.iter().find(|(k, _)| *k == name) {
-                        result.push_str(v);
-                    } else {
-                        // Leave unresolved placeholder as-is.
-                        result.push('{');
-                        result.push_str(name);
-                        result.push('}');
-                    }
-                    i = i + 1 + end + 1; // skip past '}'
-                } else {
+        // Copy text between placeholders as string slices: everything up to a
+        // '{' is pushed unchanged, so multi-byte UTF-8 survives intact.
+        while let Some(open) = rest.find('{') {
+            result.push_str(&rest[..open]);
+            let after_open = &rest[open + 1..];
+            let Some(close) = after_open.find('}') else {
+                // No closing brace: keep the rest verbatim.
+                result.push_str(&rest[open..]);
+                return result;
+            };
+            let name = &after_open[..close];
+            match vars.iter().find(|(k, _)| *k == name) {
+                Some((_, value)) => result.push_str(value),
+                // Leave unresolved placeholder as-is.
+                None => {
                     result.push('{');
-                    i += 1;
+                    result.push_str(name);
+                    result.push('}');
                 }
-            } else {
-                result.push(bytes[i] as char);
-                i += 1;
             }
+            rest = &after_open[close + 1..];
         }
-
+        result.push_str(rest);
         result
     }
 }
@@ -538,6 +535,21 @@ mod tests {
         mgr.set_locale(LocaleId::new("de")).unwrap();
         let result = mgr.t_fmt("greeting", &[("name", "Spieler")]);
         assert_eq!(result, "Hallo, Spieler!");
+    }
+
+    #[test]
+    fn interpolation_keeps_non_ascii_template_text() {
+        // Each UTF-8 byte used to be pushed as its own Latin-1 char, turning
+        // "Größe" into "GrÃ¶ÃŸe" while the substituted value stayed intact.
+        let vars = [("name", "Jörg"), ("n", "3")];
+        assert_eq!(
+            LocaleManager::interpolate("Größe: {name} — {n} 敵", &vars),
+            "Größe: Jörg — 3 敵"
+        );
+        assert_eq!(
+            LocaleManager::interpolate("{missing} ü {unclosed", &vars),
+            "{missing} ü {unclosed"
+        );
     }
 
     #[test]
