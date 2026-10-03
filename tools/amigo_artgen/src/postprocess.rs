@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(buf.get(0, 1)[3], 255); // left
         assert_eq!(buf.get(2, 1)[3], 255); // right
         assert_eq!(buf.get(1, 2)[3], 255); // bottom
-                                           // Diagonal should still be transparent
+        // Diagonal should still be transparent
         assert_eq!(buf.get(0, 0)[3], 0);
     }
 
@@ -607,9 +607,7 @@ mod tests {
     fn tile_edge_check_uniform() {
         // All same color → 0 mismatches
         let mut buf = PixelBuffer::new(4, 4);
-        for pixel in &mut buf.data {
-            *pixel = [128, 128, 128, 255];
-        }
+        buf.data.fill([128, 128, 128, 255]);
 
         let (h, v) = tile_edge_check(&buf);
         assert_eq!(h, 0);

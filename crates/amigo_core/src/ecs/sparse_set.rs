@@ -3,6 +3,16 @@ use super::entity::EntityId;
 
 const EMPTY: u32 = u32::MAX;
 
+/// Whether generation `a` was issued after generation `b` for the same index.
+///
+/// Generations count up by one per reuse and wrap at `u32::MAX`, so the
+/// comparison is done on the wrapping difference: anything up to half the
+/// range ahead counts as newer.
+fn generation_is_newer(a: u32, b: u32) -> bool {
+    let ahead = a.wrapping_sub(b);
+    ahead != 0 && ahead < (1 << 31)
+}
+
 /// SparseSet storage for a single component type.
 /// Dense array for cache-friendly iteration, sparse lookup for O(1) access by EntityId.
 pub struct SparseSet<T> {
@@ -46,21 +56,31 @@ impl<T> SparseSet<T> {
 
     /// Insert a component for the given entity.
     ///
-    /// If the slot is occupied by an entity with a different generation
-    /// (a stale `EntityId` writing onto a reused index), the insert is
-    /// ignored rather than clobbering the live entity's component.
+    /// If the slot holds a component of an *older* generation of the same
+    /// index, that component belongs to an entity that no longer exists (a
+    /// stale `EntityId` wrote it after the despawn was flushed), so it is
+    /// replaced and reported as removed. If the slot holds a *newer*
+    /// generation, the incoming id is the stale one and the insert is ignored
+    /// rather than clobbering the live entity's component.
     pub fn insert(&mut self, id: EntityId, data: T) {
         let idx = id.index;
         self.ensure_sparse(idx);
 
         if self.sparse[idx as usize] != EMPTY {
-            // Entity already has this component - update it
             let dense_idx = self.sparse[idx as usize] as usize;
-            if self.dense_ids[dense_idx].generation != id.generation {
-                return;
+            let stored = self.dense_ids[dense_idx];
+            if stored.generation == id.generation {
+                // Entity already has this component - update it
+                self.dense_data[dense_idx] = data;
+                self.changed.set(idx);
+            } else if generation_is_newer(id.generation, stored.generation) {
+                // A component left behind by a dead generation: the slot
+                // now belongs to `id`.
+                self.dense_ids[dense_idx] = id;
+                self.dense_data[dense_idx] = data;
+                self.removed_ids.push(stored);
+                self.added.set(idx);
             }
-            self.dense_data[dense_idx] = data;
-            self.changed.set(idx);
         } else {
             // New component
             let dense_idx = self.dense_data.len() as u32;

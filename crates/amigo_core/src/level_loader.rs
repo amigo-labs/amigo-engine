@@ -15,6 +15,20 @@ pub struct TileLayerData {
     pub visible: bool,
 }
 
+impl TileLayerData {
+    /// Tile at in-bounds coordinates, or 0 (empty) when `tiles` is shorter
+    /// than `width * height` — only possible for a layer built by hand, since
+    /// [`load_level_from_str`] rejects such files.
+    fn tile(&self, x: u32, y: u32) -> u16 {
+        let idx = u64::from(y) * u64::from(self.width) + u64::from(x);
+        usize::try_from(idx)
+            .ok()
+            .and_then(|i| self.tiles.get(i))
+            .copied()
+            .unwrap_or(0)
+    }
+}
+
 /// An entity placed in a level.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EntityDef {
@@ -107,6 +121,24 @@ impl LoadedLevel {
         self.zones.iter().find(|z| z.name == name)
     }
 
+    /// Check the level's dimensions and that every layer holds exactly
+    /// `width * height` tiles.
+    pub fn validate(&self) -> Result<(), String> {
+        for layer in &self.layers {
+            let expected = u64::from(layer.width) * u64::from(layer.height);
+            if layer.tiles.len() as u64 != expected {
+                return Err(format!(
+                    "layer '{}' is {}x{} but has {} tiles (expected {expected})",
+                    layer.name,
+                    layer.width,
+                    layer.height,
+                    layer.tiles.len(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Get a layer by name.
     pub fn find_layer(&self, name: &str) -> Option<&TileLayerData> {
         self.layers.iter().find(|l| l.name == name)
@@ -119,8 +151,7 @@ impl LoadedLevel {
                 continue;
             }
             if x < layer.width && y < layer.height {
-                let idx = (y * layer.width + x) as usize;
-                let tile = layer.tiles[idx];
+                let tile = layer.tile(x, y);
                 if tile != 0 {
                     return tile;
                 }
@@ -131,11 +162,11 @@ impl LoadedLevel {
 
     /// Get tile at (x, y) from a specific layer.
     pub fn tile_at_layer(&self, layer_name: &str, x: u32, y: u32) -> u16 {
-        if let Some(layer) = self.find_layer(layer_name) {
-            if x < layer.width && y < layer.height {
-                let idx = (y * layer.width + x) as usize;
-                return layer.tiles[idx];
-            }
+        if let Some(layer) = self.find_layer(layer_name)
+            && x < layer.width
+            && y < layer.height
+        {
+            return layer.tile(x, y);
         }
         0
     }
@@ -186,8 +217,14 @@ impl LoadedLevel {
 }
 
 /// Load a level from a RON string (for embedding or testing).
+///
+/// Besides parsing, checks that every layer's `tiles` holds exactly
+/// `width * height` entries, so a malformed level file is reported here
+/// instead of producing out-of-range lookups later.
 pub fn load_level_from_str(ron_str: &str) -> Result<LoadedLevel, String> {
-    ron::from_str(ron_str).map_err(|e| e.to_string())
+    let level: LoadedLevel = ron::from_str(ron_str).map_err(|e| e.to_string())?;
+    level.validate()?;
+    Ok(level)
 }
 
 /// Load a level from a file path.
@@ -388,5 +425,19 @@ mod tests {
         assert_eq!(loaded.name, "Test Level");
         assert_eq!(loaded.entities.len(), 3);
         assert_eq!(loaded.layers.len(), 2);
+    }
+
+    #[test]
+    fn short_layer_data_is_rejected_on_load_and_never_panics() {
+        let mut level = sample_level();
+        level.layers[0].tiles.truncate(10); // 4x4 layer with 10 tiles
+        let ron = ron::ser::to_string(&level).unwrap();
+        let err = load_level_from_str(&ron).unwrap_err();
+        assert!(err.contains("ground"), "{err}");
+
+        // A layer built by hand bypasses the loader; lookups past the data
+        // read as empty instead of indexing out of bounds.
+        assert_eq!(level.tile_at_layer("ground", 3, 3), 0);
+        assert_eq!(level.tile_at(3, 3), 0);
     }
 }

@@ -1,8 +1,8 @@
-use crate::protocol::{Packet, PacketKind, SeqNum, MAX_PACKET_SIZE};
+use crate::protocol::{MAX_PACKET_SIZE, Packet, PacketKind, SeqNum};
 use crate::{PlayerId, Transport};
 use rustc_hash::FxHashMap;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Instant;
 use tracing::{debug, warn};

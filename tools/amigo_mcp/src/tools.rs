@@ -3,7 +3,7 @@
 //! Each tool maps 1:1 to a JSON-RPC method in amigo_api.
 //! Tool definitions follow the MCP tool schema.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// All tool definitions exposed to Claude Code.
 pub fn tool_definitions() -> Vec<Value> {

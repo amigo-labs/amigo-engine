@@ -23,7 +23,8 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Rust **stable** (latest) is the minimum supported toolchain.
+Rust **stable** is the supported toolchain; the minimum is `rust-version` in
+the root `Cargo.toml`.
 
 ## Project layout
 
@@ -77,7 +78,8 @@ Default features: `audio`, `input`.
 1. **Fork & branch** — create a feature branch from `main`.
 2. **Make changes** — keep commits focused; one logical change per commit.
 3. **Check** — run `cargo check --workspace` and `cargo test --workspace`.
-4. **Clippy** — run `cargo clippy --workspace` and fix any warnings.
+4. **Clippy** — run `cargo clippy --workspace --all-targets -- -D warnings`
+   and fix any warnings (`just clippy-features` covers every feature).
 5. **Format** — run `cargo fmt --all` before committing.
 6. **PR** — open a pull request against `main` with a clear description.
 
@@ -86,25 +88,30 @@ format, clippy, and test checks as CI in one command (see the `justfile`).
 
 ### Running with feature flags
 
+The root is a virtual workspace, so pick a package and name the feature on
+the crate that defines it (`amigo_engine/<feature>`):
+
 ```sh
 # Editor mode
-cargo run --features editor
+cargo run -p amigo_basic_game --features amigo_engine/editor
 
 # With API server
-cargo run --features api
+cargo run -p amigo_basic_game --features amigo_engine/api
 
 # Tracy profiling
-cargo run --features tracy
+cargo run -p amigo_basic_game --features amigo_engine/tracy
 
 # All features
-cargo run --features "editor,api,tracy"
+cargo run -p amigo_basic_game --features "amigo_engine/editor,amigo_engine/api,amigo_engine/tracy"
 ```
 
 ## Code conventions
 
 ### General
 
-- **Edition 2021**, stable Rust.
+- **Edition 2024**, stable Rust. The minimum toolchain is `rust-version` in
+  the root `Cargo.toml` (CI checks it); day-to-day development uses latest
+  stable via `rust-toolchain.toml`.
 - Prefer simple, direct code. Avoid premature abstraction.
 - Use `tracing` for logging (`info!`, `warn!`, `error!`), not `println!`.
 - Public items should have doc comments. Internal helpers don't need them.

@@ -70,7 +70,10 @@ impl Packet {
 pub struct SeqNum(pub u16);
 
 impl SeqNum {
-    #[allow(clippy::should_implement_trait)]
+    #[expect(
+        clippy::should_implement_trait,
+        reason = "`next` never ends, so this is not an Iterator"
+    )]
     pub fn next(&mut self) -> u16 {
         let val = self.0;
         self.0 = self.0.wrapping_add(1);

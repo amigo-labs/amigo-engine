@@ -1052,16 +1052,15 @@ impl AnimStateMachine {
             self.current_time += dt * speed;
 
             // Check if animation finished
-            if let Some(ref name) = clip_name {
-                if let Some(anim) = library.get(name) {
-                    if self.current_time >= anim.duration {
-                        if looping {
-                            self.current_time %= anim.duration;
-                        } else {
-                            self.current_time = anim.duration;
-                            self.current_finished = true;
-                        }
-                    }
+            if let Some(ref name) = clip_name
+                && let Some(anim) = library.get(name)
+                && self.current_time >= anim.duration
+            {
+                if looping {
+                    self.current_time %= anim.duration;
+                } else {
+                    self.current_time = anim.duration;
+                    self.current_finished = true;
                 }
             }
         }
@@ -1079,12 +1078,12 @@ impl AnimStateMachine {
                 };
                 let looping = to_state.looping;
 
-                if let Some(ref name) = clip_name {
-                    if let Some(anim) = library.get(name) {
-                        if trans.to_time >= anim.duration && looping {
-                            trans.to_time %= anim.duration;
-                        }
-                    }
+                if let Some(ref name) = clip_name
+                    && let Some(anim) = library.get(name)
+                    && trans.to_time >= anim.duration
+                    && looping
+                {
+                    trans.to_time %= anim.duration;
                 }
             }
 
@@ -1110,10 +1109,10 @@ impl AnimStateMachine {
 
         for (i, rule) in self.rules.iter().enumerate() {
             // Check if rule applies to current state
-            if let Some(from) = rule.from {
-                if from != self.current_state {
-                    continue;
-                }
+            if let Some(from) = rule.from
+                && from != self.current_state
+            {
+                continue;
             }
             // Don't transition to self unless it's meaningful
             if rule.to == self.current_state {

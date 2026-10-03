@@ -108,26 +108,18 @@ impl std::ops::Div<Fix> for SimVec2 {
 }
 
 impl SimVec2 {
-    /// Deterministic fixed-point length. Safe for any I16F16 value.
-    /// Pre-scales large vectors to avoid x*x overflow (I16F16 max ~32767; sqrt(32767) ≈ 181).
+    /// Deterministic fixed-point length, exact to the last Q16.16 bit.
+    ///
+    /// Works on the raw bits in 64-bit integers, so it neither overflows for
+    /// large components nor loses tiny ones: `x_raw² + y_raw² ≤ 2⁶³` always
+    /// fits in a `u64`, and its integer square root *is* the raw length.
+    /// Saturates at [`Fix::MAX`] for vectors longer than Q16.16 can represent
+    /// (beyond ~32767, e.g. `(25000, 25000)`).
     pub fn length(self) -> Fix {
-        let ax = if self.x >= Fix::ZERO { self.x } else { -self.x };
-        let ay = if self.y >= Fix::ZERO { self.y } else { -self.y };
-        let max_abs = if ax > ay { ax } else { ay };
-        if max_abs == Fix::ZERO {
-            return Fix::ZERO;
-        }
-        // Scale down when max component > 100 to keep x*x within I16F16 range.
-        let threshold = Fix::from_num(100_i32);
-        if max_abs > threshold {
-            // length(v) = max_abs * length(v / max_abs)
-            // v/max_abs has components in [-1, 1], so (v/max_abs)^2 ≤ 2
-            let sx = self.x / max_abs;
-            let sy = self.y / max_abs;
-            max_abs * sqrt_fix(sx * sx + sy * sy)
-        } else {
-            sqrt_fix(self.x * self.x + self.y * self.y)
-        }
+        let x = i64::from(self.x.to_bits());
+        let y = i64::from(self.y.to_bits());
+        let squared = (x * x) as u64 + (y * y) as u64;
+        Fix::from_bits(i32::try_from(squared.isqrt()).unwrap_or(i32::MAX))
     }
 
     /// Unit vector. Returns ZERO if length is zero (no panic).
@@ -386,14 +378,32 @@ mod tests {
 
     #[test]
     fn simvec2_length_large() {
-        // Test the pre-scaling path (components > 100).
         let v = SimVec2::from_f32(200.0, 150.0);
-        let len = v.length();
-        let expected = Fix::from_num(250); // 200^2+150^2=62500, sqrt=250
-        let diff = (len - expected).abs();
-        assert!(
-            diff <= Fix::from_bits(4),
-            "length(200,150) should be 250, got {len}"
-        );
+        // 200^2 + 150^2 = 62500, sqrt = 250, exactly.
+        assert_eq!(v.length(), Fix::from_num(250));
+    }
+
+    #[test]
+    fn simvec2_length_beyond_q16_range_saturates() {
+        // 25000·√2 ≈ 35355 does not fit in Q16.16. It used to overflow (a
+        // debug panic, a wrapped negative length in release).
+        let v = SimVec2::new(Fix::from_num(25_000), Fix::from_num(25_000));
+        assert_eq!(v.length(), Fix::MAX);
+        let corner = SimVec2::new(Fix::MIN, Fix::MIN);
+        assert_eq!(corner.length(), Fix::MAX);
+        // The largest length that does fit is still exact.
+        let edge = SimVec2::new(Fix::from_num(30_000), Fix::ZERO);
+        assert_eq!(edge.length(), Fix::from_num(30_000));
+    }
+
+    #[test]
+    fn simvec2_length_keeps_tiny_vectors() {
+        // x² of 0.0038 underflows to 0 in Q16.16, which used to make the
+        // length 0 and normalize() return ZERO.
+        let tiny = SimVec2::new(Fix::from_bits(250), Fix::ZERO);
+        assert_eq!(tiny.length(), Fix::from_bits(250));
+        assert_eq!(tiny.normalize(), SimVec2::new(Fix::ONE, Fix::ZERO));
+        let one_bit = SimVec2::new(Fix::ZERO, Fix::from_bits(-1));
+        assert_eq!(one_bit.length(), Fix::from_bits(1));
     }
 }

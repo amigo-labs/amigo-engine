@@ -54,8 +54,12 @@ pub fn circle_vs_circle(
     by: f32,
     br: f32,
 ) -> Option<ContactInfo> {
-    let dx = bx - ax;
-    let dy = by - ay;
+    // The normal points from B to A, like every other shape pair here and as
+    // `PhysicsWorld::resolve_collision` expects: pushing A along it separates
+    // the two. It used to point A to B, so resolution drove overlapping
+    // circles (and capsules, which reuse this) further into each other.
+    let dx = ax - bx;
+    let dy = ay - by;
     let dist_sq = dx * dx + dy * dy;
     let sum_r = ar + br;
     if dist_sq >= sum_r * sum_r {
@@ -101,8 +105,6 @@ struct CellKey(i32, i32);
 
 /// Spatial hash grid for broad-phase collision detection.
 pub struct SpatialHash {
-    #[allow(dead_code)]
-    cell_size: f32,
     inv_cell_size: f32,
     cells: FxHashMap<CellKey, Vec<EntityId>>,
     entity_cells: FxHashMap<EntityId, Vec<CellKey>>,
@@ -112,7 +114,6 @@ impl SpatialHash {
     pub fn new(cell_size: f32) -> Self {
         assert!(cell_size > 0.0);
         Self {
-            cell_size,
             inv_cell_size: 1.0 / cell_size,
             cells: FxHashMap::default(),
             entity_cells: FxHashMap::default(),
@@ -626,6 +627,24 @@ mod tests {
     #[test]
     fn circle_no_overlap() {
         assert!(circle_vs_circle(0.0, 0.0, 5.0, 20.0, 0.0, 5.0).is_none());
+    }
+
+    #[test]
+    fn every_shape_pair_reports_the_normal_from_b_to_a() {
+        // A sits left of B in each case, so the normal points left.
+        let c = circle_vs_circle(0.0, 0.0, 5.0, 8.0, 0.0, 5.0).unwrap();
+        assert_eq!(c.normal, RenderVec2::new(-1.0, 0.0));
+        assert!((c.penetration - 2.0).abs() < 1e-6);
+
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(8.0, 0.0, 10.0, 10.0);
+        assert_eq!(
+            aabb_vs_aabb(&a, &b).unwrap().normal,
+            RenderVec2::new(-1.0, 0.0)
+        );
+
+        let c = circle_vs_aabb(5.0, 5.0, 5.0, &b).unwrap();
+        assert_eq!(c.normal, RenderVec2::new(-1.0, 0.0));
     }
 
     // ── SpatialHash tests ───────────────────────────────────────

@@ -45,20 +45,11 @@ impl GenerationalArena {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            generations: Vec::with_capacity(capacity),
-            alive: Vec::with_capacity(capacity),
-            free_list: Vec::new(),
-            count: 0,
-        }
-    }
-
     pub fn spawn(&mut self) -> EntityId {
         self.count += 1;
         if let Some(index) = self.free_list.pop() {
-            self.generations[index as usize] += 1;
+            // Wrapping: generation comparisons are wrap-aware (see SparseSet).
+            self.generations[index as usize] = self.generations[index as usize].wrapping_add(1);
             self.alive[index as usize] = true;
             EntityId {
                 index,
@@ -100,7 +91,7 @@ impl GenerationalArena {
         self.alive
             .iter()
             .enumerate()
-            .filter(|(_, &alive)| alive)
+            .filter(|&(_, &alive)| alive)
             .map(|(i, _)| EntityId {
                 index: i as u32,
                 generation: self.generations[i],

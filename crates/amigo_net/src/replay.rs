@@ -8,7 +8,7 @@ use std::time::Instant;
 pub struct ReplayFrame {
     /// The simulation tick this frame represents.
     pub tick: u64,
-    /// Serialized commands for this tick (each inner Vec<u8> is one command batch).
+    /// Serialized commands for this tick (each inner `Vec<u8>` is one command batch).
     pub commands: Vec<Vec<u8>>,
 }
 
@@ -198,13 +198,13 @@ impl DesyncDetector {
     pub fn compare(&self, other: &DesyncDetector) -> Option<u64> {
         let mut first_mismatch: Option<u64> = None;
         for (&tick, &checksum) in &self.checksums {
-            if let Some(&other_checksum) = other.checksums.get(&tick) {
-                if checksum != other_checksum {
-                    first_mismatch = Some(match first_mismatch {
-                        Some(prev) => prev.min(tick),
-                        None => tick,
-                    });
-                }
+            if let Some(&other_checksum) = other.checksums.get(&tick)
+                && checksum != other_checksum
+            {
+                first_mismatch = Some(match first_mismatch {
+                    Some(prev) => prev.min(tick),
+                    None => tick,
+                });
             }
         }
         first_mismatch

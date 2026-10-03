@@ -4,7 +4,7 @@
 /// oscillators, with per-stem mute/solo/instrument/volume controls, BPM
 /// adjustment, and pattern transformations.
 use amigo_tidal_parser::{
-    apply_transform, evaluate_pattern, Composition, Instrument, NoteEvent, Transform,
+    Composition, Instrument, NoteEvent, Transform, apply_transform, evaluate_pattern,
 };
 
 // ---------------------------------------------------------------------------
@@ -456,8 +456,8 @@ fn write_wav(path: &str, samples: &[f32], sample_rate: u32) -> Result<(), std::i
 mod tests {
     use super::*;
     use amigo_tidal_parser::{
-        ast::{CompositionMeta, Pattern, PatternAtom, Stem, Voice},
         NoteValue, PitchClass,
+        ast::{CompositionMeta, Pattern, PatternAtom, Stem, Voice},
     };
 
     fn test_composition() -> Composition {

@@ -4,8 +4,8 @@
 //! (drums, bass, melody, vocals, etc.) using source separation models.
 //! The stems are then used by the adaptive music engine for vertical layering.
 
-use crate::processing::{AdaptiveMusicConfig, LayerConfig, LayerRule};
 use crate::MusicSection;
+use crate::processing::{AdaptiveMusicConfig, LayerConfig, LayerRule};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

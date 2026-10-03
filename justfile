@@ -1,4 +1,8 @@
 # Common development tasks. Install just: https://github.com/casey/just
+#
+# CI (.github/workflows/ci.yml) runs these recipes, not its own copies of the
+# commands, so `just ci` reproduces CI exactly. The feature-matrix recipes need
+# cargo-hack (`cargo install --locked cargo-hack`).
 
 # List available recipes
 default:
@@ -16,42 +20,36 @@ fmt-check:
 fmt:
     cargo fmt --all
 
-# Lint with warnings as errors (same as CI)
+# Lint every target (lib, bins, tests, examples) with warnings as errors
 clippy:
-    cargo clippy --workspace -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
 
 # Run all tests
 test:
     cargo test --workspace
 
-# Per-crate feature-flag lints/tests, mirroring CI's matrix
+# Lint every crate once per feature, alone, and once with all features. Found
+# by cargo-hack from the manifests, so a new feature is covered without editing
+# this file. Features a dependent enables are otherwise never checked alone.
 clippy-features:
-    cargo clippy -p amigo_core --features async_tasks -- -D warnings
-    cargo clippy -p amigo_core --features system_graph -- -D warnings
-    cargo clippy -p amigo_core --all-features -- -D warnings
-    cargo clippy -p amigo_assets --features asset_streaming -- -D warnings
-    cargo clippy -p amigo_render --features asset_streaming -- -D warnings
-    cargo clippy -p amigo_net --features rollback_net -- -D warnings
-    cargo clippy -p amigo_audio --features audio_graph -- -D warnings
-    cargo clippy -p amigo_editor --all-features -- -D warnings
+    cargo hack clippy --workspace --each-feature --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+# Tests behind feature flags. `--all-features` covers every gated test; the
+# single-feature runs guard features whose tests change behaviour on their own.
 test-features:
+    cargo test --workspace --all-features
     cargo test -p amigo_core --features async_tasks
     cargo test -p amigo_core --features system_graph
-    cargo test -p amigo_core --all-features
-    cargo test -p amigo_assets --features asset_streaming
-    cargo test -p amigo_render --features asset_streaming
-    cargo test -p amigo_net --features rollback_net
-    cargo test -p amigo_audio --features audio_graph
-    cargo test -p amigo_editor --all-features
+    cargo test -p amigo_engine --features api
 
-# Doc tests for the crates CI covers
+# Doc tests for every library crate
 test-doc:
-    cargo test --doc -p amigo_tidal_parser -p amigo_audio_pipeline
+    cargo test --workspace --doc
 
 # Run everything CI runs (catch failures before pushing)
 ci: fmt-check check clippy clippy-features test test-features test-doc doc
 
-# Build API docs for the same crates as CI, failing on doc warnings
+# Build API docs for every library crate, failing on doc warnings
 doc:
-    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p amigo_core -p amigo_render -p amigo_audio -p amigo_input -p amigo_tidal_parser -p amigo_audio_pipeline -p amigo_engine
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --lib

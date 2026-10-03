@@ -31,8 +31,6 @@ pub trait Walkable {
 #[derive(Clone, Copy)]
 struct AStarNode {
     pos: IVec2,
-    #[allow(dead_code)]
-    g_cost: u32,
     f_cost: u32,
 }
 
@@ -97,7 +95,6 @@ pub fn find_path(request: &PathRequest, map: &dyn Walkable) -> Option<Vec<IVec2>
 
     open.push(AStarNode {
         pos: request.start,
-        g_cost: 0,
         f_cost: heuristic(request.start, request.goal),
     });
     g_scores.insert(request.start, 0u32);
@@ -144,7 +141,6 @@ pub fn find_path(request: &PathRequest, map: &dyn Walkable) -> Option<Vec<IVec2>
                 came_from.insert(neighbor, current.pos);
                 open.push(AStarNode {
                     pos: neighbor,
-                    g_cost: new_g,
                     f_cost: new_g + heuristic(neighbor, request.goal),
                 });
             }

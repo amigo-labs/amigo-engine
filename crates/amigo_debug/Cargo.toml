@@ -2,6 +2,9 @@
 name = "amigo_debug"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 tracy = ["dep:tracing-tracy", "dep:tracy-client"]
@@ -9,9 +12,10 @@ builtin_profiler = []
 
 [dependencies]
 amigo_core = { workspace = true }
-amigo_render = { workspace = true }
-amigo_ui = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-tracy = { workspace = true, optional = true, features = ["enable"] }
 tracy-client = { workspace = true, optional = true, features = ["enable"] }
+
+[lints]
+workspace = true

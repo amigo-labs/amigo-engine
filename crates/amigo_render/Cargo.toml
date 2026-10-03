@@ -2,6 +2,9 @@
 name = "amigo_render"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = []
@@ -14,7 +17,6 @@ amigo_core = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }
 bytemuck = { workspace = true }
-glam = { workspace = true }
 tracing = { workspace = true }
 image = { workspace = true }
 rustc-hash = { workspace = true }
@@ -27,3 +29,6 @@ egui-winit = { workspace = true, optional = true }
 [dev-dependencies]
 pollster = { workspace = true }
 naga = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,4 +1,4 @@
-use gilrs::{ff, Axis, Button, EventType, GamepadId, Gilrs};
+use gilrs::{Axis, Button, EventType, GamepadId, Gilrs, ff};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Per-gamepad state tracking buttons and axes.
@@ -47,7 +47,9 @@ impl GamepadState {
         let gilrs = match Gilrs::new() {
             Ok(g) => Some(g),
             Err(e) => {
-                eprintln!("amigo_input: gamepad backend unavailable ({e}); continuing without gamepad support");
+                eprintln!(
+                    "amigo_input: gamepad backend unavailable ({e}); continuing without gamepad support"
+                );
                 None
             }
         };

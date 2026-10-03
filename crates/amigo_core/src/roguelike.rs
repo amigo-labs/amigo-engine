@@ -219,7 +219,10 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
     let mut corridors = Vec::new();
     connected.insert(0);
 
-    #[allow(clippy::needless_range_loop)]
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "the index addresses more than one slice"
+    )]
     while connected.len() < rooms.len() {
         let mut best_from = 0;
         let mut best_to = 0;
@@ -288,7 +291,10 @@ pub fn generate_dungeon(config: &DungeonConfig, seed: u64) -> Dungeon {
         rooms[boss_idx].room_type = RoomType::Boss;
 
         // Random treasure rooms
-        #[allow(clippy::needless_range_loop)]
+        #[expect(
+            clippy::needless_range_loop,
+            reason = "the index addresses more than one slice"
+        )]
         for i in 1..rooms.len() {
             if i == boss_idx {
                 continue;
@@ -1244,11 +1250,7 @@ impl RunManager {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos() as u64;
-            if t == 0 {
-                0xCAFE_BABE
-            } else {
-                t
-            }
+            if t == 0 { 0xCAFE_BABE } else { t }
         });
 
         let stats = config.base_stats.clone();
@@ -1613,13 +1615,15 @@ mod tests {
         assert!(
             common_count > rare_count,
             "Common (id=1, weight=10) should appear more often than Rare (id=2, weight=5): got {} vs {}",
-            common_count, rare_count
+            common_count,
+            rare_count
         );
         // Item 2 (weight 5) should appear more than item 3 (weight 1)
         assert!(
             rare_count > epic_count,
             "Rare (id=2, weight=5) should appear more often than Epic (id=3, weight=1): got {} vs {}",
-            rare_count, epic_count
+            rare_count,
+            epic_count
         );
     }
 

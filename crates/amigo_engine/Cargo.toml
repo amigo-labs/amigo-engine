@@ -2,6 +2,9 @@
 name = "amigo_engine"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = ["audio", "input"]
@@ -33,7 +36,6 @@ serde_json = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 pollster = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
@@ -41,3 +43,6 @@ serde = { workspace = true }
 [dev-dependencies]
 # Asset-loading tests build real PNGs and pak archives on disk.
 image = { workspace = true }
+
+[lints]
+workspace = true

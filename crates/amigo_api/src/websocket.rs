@@ -132,10 +132,10 @@ impl EventStreamState {
     /// `write_all` here would stall the game for as long as one subscriber's
     /// socket buffer stays full. Events are encoded into per-client outboxes
     /// and pushed through non-blocking sockets; a client that falls more than
-    /// [`MAX_CLIENT_BACKLOG`] behind is dropped.
+    /// `MAX_CLIENT_BACKLOG` (1 MiB) behind is dropped.
     pub fn flush(&mut self) {
         if !self.pending_events.is_empty() {
-            let events: Vec<EngineEvent> = self.pending_events.drain(..).collect();
+            let events: Vec<EngineEvent> = std::mem::take(&mut self.pending_events);
 
             // Encode once per event rather than once per (event, client).
             let encoded: Vec<(String, String)> = events

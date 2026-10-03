@@ -416,26 +416,27 @@ impl Camera {
             }
         }
 
-        // Smooth zoom
+        // Smooth zoom. The step is capped at the remaining distance so a long
+        // frame (a hitch, a debugger pause) cannot overshoot past the target
+        // or through zero, which made the projection NaN.
         if (self.zoom - self.target_zoom).abs() > 0.001 {
-            self.zoom += (self.target_zoom - self.zoom) * self.zoom_speed * dt;
+            let t = (self.zoom_speed * dt).clamp(0.0, 1.0);
+            self.zoom += (self.target_zoom - self.zoom) * t;
         } else {
             self.zoom = self.target_zoom;
         }
 
         // Clamp to bounds
         if let Some(bounds) = &self.bounds {
-            let half_w = (self.virtual_width / self.zoom) * 0.5;
-            let half_h = (self.virtual_height / self.zoom) * 0.5;
-
-            self.position.x = self
-                .position
-                .x
-                .clamp(bounds.x + half_w, bounds.x + bounds.w - half_w);
-            self.position.y = self
-                .position
-                .y
-                .clamp(bounds.y + half_h, bounds.y + bounds.h - half_h);
+            let zoom = if self.zoom.is_finite() && self.zoom > 0.0 {
+                self.zoom
+            } else {
+                1.0
+            };
+            let half_w = (self.virtual_width / zoom) * 0.5;
+            let half_h = (self.virtual_height / zoom) * 0.5;
+            self.position.x = clamp_axis(self.position.x, bounds.x, bounds.w, half_w);
+            self.position.y = clamp_axis(self.position.y, bounds.y, bounds.h, half_h);
         }
 
         // Update shake
@@ -530,4 +531,41 @@ fn ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> [
 fn pseudo_random_f32(seed: f32) -> f32 {
     let s = (seed * 12.9898).sin() * 43758.546;
     (s - s.floor()) * 2.0 - 1.0
+}
+
+/// Keep a camera centre inside `[start, start + len]` with `half` of the view
+/// on each side. When the level is narrower than the view the range is empty
+/// (`f32::clamp` panics on min > max, in every build), so the view is centred
+/// on the level instead.
+fn clamp_axis(pos: f32, start: f32, len: f32, half: f32) -> f32 {
+    let (lo, hi) = (start + half, start + len - half);
+    if lo > hi || lo.is_nan() || hi.is_nan() {
+        // Also covers NaN bounds or extents.
+        let centre = start + len * 0.5;
+        return if centre.is_finite() { centre } else { pos };
+    }
+    pos.clamp(lo, hi)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bounds_smaller_than_the_view_centre_instead_of_panicking() {
+        // 320x180 view over a 200x150 level: clamp(160, 40) used to panic
+        // on the first update.
+        let mut camera = Camera::new(320.0, 180.0);
+        camera.set_bounds(Rect::new(0.0, 0.0, 200.0, 150.0));
+        camera.update(1.0 / 60.0);
+        assert_eq!(camera.position, RenderVec2::new(100.0, 75.0));
+    }
+
+    #[test]
+    fn a_long_frame_does_not_overshoot_the_zoom_target() {
+        let mut camera = Camera::new(320.0, 180.0);
+        camera.target_zoom = 2.0;
+        camera.update(5.0); // a 5 s hitch
+        assert!((camera.zoom - 2.0).abs() < 1e-6, "zoom = {}", camera.zoom);
+    }
 }

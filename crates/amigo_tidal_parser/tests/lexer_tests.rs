@@ -1,4 +1,4 @@
-use amigo_tidal_parser::lexer::{tokenize, Keyword, Token};
+use amigo_tidal_parser::lexer::{Keyword, Token, tokenize};
 use amigo_tidal_parser::{NoteValue, PitchClass};
 
 #[test]

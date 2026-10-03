@@ -4,8 +4,8 @@
 //! pipeline. The backend (Qwen-Image, FLUX.2 Klein, Custom) is resolved
 //! from project config or passed explicitly.
 
-use crate::config::{load_art_defaults, save_art_defaults};
 use crate::ImageBackend;
+use crate::config::{load_art_defaults, save_art_defaults};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -294,7 +294,7 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_artgen_set_defaults".into(),
-            description: "Save art generation defaults to amigo.toml [art] section. \
+            description: "Save art generation defaults to `amigo.toml` `[art]` section. \
                 Merges with existing values. Supports backend, art_mode, and all style defaults."
                 .into(),
             input_schema: serde_json::json!({
@@ -338,7 +338,7 @@ pub fn dispatch_tool(
 }
 
 /// Like `dispatch_tool`, but accepts an explicit project directory for
-/// resolving [art] defaults from amigo.toml.
+/// resolving `[art]` defaults from `amigo.toml`.
 pub fn dispatch_tool_with_defaults(
     name: &str,
     params: serde_json::Value,
@@ -718,10 +718,12 @@ mod tests {
         let v = result.unwrap();
         let hints = &v["hints"];
         assert!(hints["defaults_missing"].is_array());
-        assert!(hints["suggestion"]
-            .as_str()
-            .unwrap()
-            .contains("amigo_artgen_set_defaults"));
+        assert!(
+            hints["suggestion"]
+                .as_str()
+                .unwrap()
+                .contains("amigo_artgen_set_defaults")
+        );
     }
 
     #[test]

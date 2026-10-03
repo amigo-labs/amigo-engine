@@ -125,10 +125,12 @@ mod tests {
         let wf = build_music_workflow(&req);
         let gen_node = &wf.prompt["2"];
         // Caribbean world style has "pirate shanty" genre
-        assert!(gen_node["inputs"]["genre"]
-            .as_str()
-            .unwrap()
-            .contains("shanty"));
+        assert!(
+            gen_node["inputs"]["genre"]
+                .as_str()
+                .unwrap()
+                .contains("shanty")
+        );
     }
 
     #[test]

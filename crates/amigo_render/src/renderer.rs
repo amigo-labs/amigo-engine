@@ -88,6 +88,56 @@ pub struct Renderer {
     draw_call_count: u32,
 }
 
+/// Why [`Renderer::begin_frame`] produced no frame: the failure cases of
+/// [`wgpu::CurrentSurfaceTexture`]. The frame's queued sprites are dropped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SurfaceError {
+    /// Acquiring the next frame timed out. Skip it and try again.
+    Timeout,
+    /// The window is occluded (e.g. minimized). Skip frames until it is shown.
+    Occluded,
+    /// The surface changed underneath its configuration; call
+    /// [`Renderer::resize`] before the next frame.
+    Outdated,
+    /// The surface was lost. Reconfiguring with [`Renderer::resize`] is the
+    /// recovery this renderer offers; recreating it needs a new window surface.
+    Lost,
+    /// wgpu raised a validation error while acquiring the frame.
+    Validation,
+}
+
+impl std::fmt::Display for SurfaceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Timeout => "timed out acquiring the next surface texture",
+            Self::Occluded => "the window is occluded",
+            Self::Outdated => "the surface configuration is outdated",
+            Self::Lost => "the surface was lost",
+            Self::Validation => "validation error while acquiring the surface texture",
+        })
+    }
+}
+
+impl std::error::Error for SurfaceError {}
+
+impl SurfaceError {
+    /// Split wgpu's acquire result into a texture or the reason there is none.
+    ///
+    /// A suboptimal texture is still used, as wgpu 24 did: the window's next
+    /// resize event reconfigures the surface anyway.
+    fn acquire(current: wgpu::CurrentSurfaceTexture) -> Result<wgpu::SurfaceTexture, Self> {
+        use wgpu::CurrentSurfaceTexture as Current;
+        match current {
+            Current::Success(texture) | Current::Suboptimal(texture) => Ok(texture),
+            Current::Timeout => Err(Self::Timeout),
+            Current::Occluded => Err(Self::Occluded),
+            Current::Outdated => Err(Self::Outdated),
+            Current::Lost => Err(Self::Lost),
+            Current::Validation => Err(Self::Validation),
+        }
+    }
+}
+
 /// A frame in progress. Holds the command encoder and surface output so
 /// additional render passes (e.g. egui overlay) can be appended before submit.
 pub struct FrameInProgress {
@@ -104,9 +154,10 @@ impl Renderer {
     ) -> Self {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        // GLES needs the display connection up front to present on Wayland.
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(window.clone()))
         });
 
         let surface = instance.create_surface(window).unwrap();
@@ -115,7 +166,7 @@ impl Renderer {
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
+                ..Default::default()
             })
             .await
             .expect("Failed to find a suitable GPU adapter");
@@ -123,15 +174,12 @@ impl Renderer {
         info!("GPU adapter: {:?}", adapter.get_info().name);
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("amigo_device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: Default::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("amigo_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                ..Default::default()
+            })
             .await
             .expect("Failed to create GPU device");
 
@@ -146,6 +194,7 @@ impl Renderer {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::AutoVsync,
@@ -236,8 +285,11 @@ impl Renderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sprite_pipeline_layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[
+                Some(&uniform_bind_group_layout),
+                Some(&texture_bind_group_layout),
+            ],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -246,7 +298,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc()],
+                buffers: &[Some(Vertex::desc())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -270,7 +322,7 @@ impl Renderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -365,10 +417,10 @@ impl Renderer {
         self.camera.pixel_snap = style.pixel_snap();
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> Result<(), SurfaceError> {
         let frame = self.begin_frame()?;
         self.queue.submit(std::iter::once(frame.encoder.finish()));
-        frame.output.present();
+        self.queue.present(frame.output);
         self.batcher.clear();
         self.ui_batcher.clear();
         Ok(())
@@ -376,8 +428,22 @@ impl Renderer {
 
     /// Begin a frame: render sprites and return the in-progress frame so
     /// additional render passes (e.g. egui) can be appended before submit.
-    pub fn begin_frame(&mut self) -> Result<FrameInProgress, wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+    ///
+    /// The queued sprites are consumed either way: on success they are
+    /// uploaded and recorded into the returned frame, and on a surface error
+    /// (a minimized window reports Outdated, a hidden Wayland window
+    /// Timeout) they are dropped. Keeping them let every failed frame pile
+    /// the next frame's draw list on top, until the vertex buffer outgrew
+    /// wgpu's limit and the first visible frame panicked.
+    pub fn begin_frame(&mut self) -> Result<FrameInProgress, SurfaceError> {
+        let output = match SurfaceError::acquire(self.surface.get_current_texture()) {
+            Ok(output) => output,
+            Err(e) => {
+                self.batcher.clear();
+                self.ui_batcher.clear();
+                return Err(e);
+            }
+        };
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -443,6 +509,7 @@ impl Renderer {
                 label: Some("sprite_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: scene_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -457,6 +524,7 @@ impl Renderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             if let (Some(vb), Some(ib)) = (&vertex_buffer, &index_buffer) {
@@ -506,6 +574,13 @@ impl Renderer {
         // UI pass: after post-processing, in screen space, loading rather than
         // clearing so it composites over the scene.
         self.draw_ui_pass(&mut encoder, &view);
+
+        // Everything queued is now in GPU buffers recorded into `encoder`.
+        // Clearing here rather than in end_frame also covers callers that
+        // finish the frame themselves (the editor submits egui's encoder and
+        // never cleared ui_batcher, so UI sprites accumulated every frame).
+        self.batcher.clear();
+        self.ui_batcher.clear();
 
         Ok(FrameInProgress {
             encoder,
@@ -571,6 +646,7 @@ impl Renderer {
             label: Some("ui_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     // Load, not Clear: the scene is already there.
@@ -581,6 +657,7 @@ impl Renderer {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         pass.set_pipeline(&self.pipeline);
@@ -604,7 +681,7 @@ impl Renderer {
     /// Finish a frame that was started with `begin_frame()`.
     pub fn end_frame(&mut self, frame: FrameInProgress) {
         self.queue.submit(std::iter::once(frame.encoder.finish()));
-        frame.output.present();
+        self.queue.present(frame.output);
         self.batcher.clear();
         self.ui_batcher.clear();
     }
@@ -687,6 +764,7 @@ impl Renderer {
                 label: Some("screenshot_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &offscreen_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -701,6 +779,7 @@ impl Renderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             if let (Some(vb), Some(ib)) = (&vertex_buffer, &index_buffer) {
@@ -762,13 +841,17 @@ impl Renderer {
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| format!("Screenshot readback poll failed: {e}"))?;
 
         rx.recv()
             .map_err(|e| format!("Screenshot readback channel error: {e}"))?
             .map_err(|e| format!("Screenshot buffer map failed: {e:?}"))?;
 
-        let data = buffer_slice.get_mapped_range();
+        let data = buffer_slice
+            .get_mapped_range()
+            .map_err(|e| format!("Screenshot buffer range failed: {e:?}"))?;
 
         // Copy to image (removing row padding)
         let mut img = image::RgbaImage::new(width, height);
@@ -789,10 +872,10 @@ impl Renderer {
         readback_buffer.unmap();
 
         // Ensure parent directory exists
-        if let Some(parent) = std::path::Path::new(path).parent() {
-            if !parent.as_os_str().is_empty() {
-                let _ = std::fs::create_dir_all(parent);
-            }
+        if let Some(parent) = std::path::Path::new(path).parent()
+            && !parent.as_os_str().is_empty()
+        {
+            let _ = std::fs::create_dir_all(parent);
         }
 
         img.save(path)
@@ -808,5 +891,25 @@ impl Renderer {
 
     pub fn window_size(&self) -> (u32, u32) {
         (self.surface_config.width, self.surface_config.height)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SurfaceError;
+    use wgpu::CurrentSurfaceTexture as Current;
+
+    #[test]
+    fn acquire_maps_every_failure_to_its_surface_error() {
+        let cases = [
+            (Current::Timeout, SurfaceError::Timeout),
+            (Current::Occluded, SurfaceError::Occluded),
+            (Current::Outdated, SurfaceError::Outdated),
+            (Current::Lost, SurfaceError::Lost),
+            (Current::Validation, SurfaceError::Validation),
+        ];
+        for (current, expected) in cases {
+            assert_eq!(SurfaceError::acquire(current).err(), Some(expected));
+        }
     }
 }

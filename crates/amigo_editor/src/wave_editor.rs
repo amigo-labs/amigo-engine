@@ -178,10 +178,10 @@ impl WaveEditorState {
                 if *index < self.waves.len() {
                     self.waves.remove(*index);
                     // Fix selection
-                    if let Some(sel) = self.selected_wave {
-                        if sel >= self.waves.len() {
-                            self.selected_wave = self.waves.len().checked_sub(1);
-                        }
+                    if let Some(sel) = self.selected_wave
+                        && sel >= self.waves.len()
+                    {
+                        self.selected_wave = self.waves.len().checked_sub(1);
                     }
                 }
             }
@@ -195,10 +195,10 @@ impl WaveEditorState {
                 group_index,
                 ..
             } => {
-                if let Some(wave) = self.waves.get_mut(*wave_index) {
-                    if *group_index < wave.groups.len() {
-                        wave.groups.remove(*group_index);
-                    }
+                if let Some(wave) = self.waves.get_mut(*wave_index)
+                    && *group_index < wave.groups.len()
+                {
+                    wave.groups.remove(*group_index);
                 }
             }
             WaveCommand::EditGroup {
@@ -207,10 +207,10 @@ impl WaveEditorState {
                 new,
                 ..
             } => {
-                if let Some(wave) = self.waves.get_mut(*wave_index) {
-                    if let Some(group) = wave.groups.get_mut(*group_index) {
-                        *group = new.clone();
-                    }
+                if let Some(wave) = self.waves.get_mut(*wave_index)
+                    && let Some(group) = wave.groups.get_mut(*group_index)
+                {
+                    *group = new.clone();
                 }
             }
             WaveCommand::EditDelay {
@@ -241,11 +241,11 @@ impl WaveEditorState {
 
     /// Remove the selected wave.
     pub fn remove_selected_wave(&mut self) {
-        if let Some(idx) = self.selected_wave {
-            if idx < self.waves.len() {
-                let wave = self.waves[idx].clone();
-                self.execute(WaveCommand::RemoveWave { index: idx, wave });
-            }
+        if let Some(idx) = self.selected_wave
+            && idx < self.waves.len()
+        {
+            let wave = self.waves[idx].clone();
+            self.execute(WaveCommand::RemoveWave { index: idx, wave });
         }
     }
 

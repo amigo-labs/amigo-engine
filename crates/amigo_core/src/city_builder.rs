@@ -839,11 +839,7 @@ impl HappinessModel {
                 count += 1;
             }
         }
-        if count > 0 {
-            total / count as f32
-        } else {
-            0.0
-        }
+        if count > 0 { total / count as f32 } else { 0.0 }
     }
 
     /// Global average happiness across all tiles.
@@ -1307,7 +1303,10 @@ pub struct StatisticsOverlay {
     pub gradient: ColorGradient,
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl StatisticsOverlay {
     /// Create with no active overlay and the default heatmap gradient.
     pub fn new() -> Self {
@@ -1907,9 +1906,11 @@ mod tests {
         let mut roads = RoadNetwork::new(10, 10);
         roads.place_road(GridPos::new(0, 0));
         roads.place_road(GridPos::new(5, 5));
-        assert!(roads
-            .shortest_path(GridPos::new(0, 0), GridPos::new(5, 5))
-            .is_none());
+        assert!(
+            roads
+                .shortest_path(GridPos::new(0, 0), GridPos::new(5, 5))
+                .is_none()
+        );
     }
 
     #[test]
@@ -2002,9 +2003,11 @@ mod tests {
         let mut zones = ZoneSystem::new(10, 10);
         let roads = RoadNetwork::new(10, 10);
         let registry = BuildingRegistry::new();
-        assert!(zones
-            .try_grow(ZoneType::Residential, 0.0, &roads, &registry)
-            .is_none());
+        assert!(
+            zones
+                .try_grow(ZoneType::Residential, 0.0, &roads, &registry)
+                .is_none()
+        );
     }
 
     // ── BuildingRegistry can_place ──────────────────────────
@@ -2147,7 +2150,7 @@ mod tests {
         let mut pop = PopulationSim::new();
         pop.spawn_citizens(100);
         pop.death_rate = 0.5; // Very high death rate for testing.
-                              // Age them.
+        // Age them.
         for c in &mut pop.agents {
             c.age = 1000;
         }

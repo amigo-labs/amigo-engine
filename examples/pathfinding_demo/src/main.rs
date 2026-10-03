@@ -140,21 +140,21 @@ impl Game for PathfindingDemo {
         }
 
         // Draw flow field arrows
-        if self.show_flow {
-            if let Some(ref flow) = self.flow {
-                for y in 0..ROWS as i32 {
-                    for x in 0..COLS as i32 {
-                        let (dx, dy) = flow.direction_at(x, y);
-                        if dx == 0 && dy == 0 {
-                            continue;
-                        }
-                        let cx = x as f32 * TILE + TILE * 0.5;
-                        let cy = y as f32 * TILE + TILE * 0.5;
-                        let ax = cx + dx as f32 * 4.0;
-                        let ay = cy + dy as f32 * 4.0;
-                        let r = Rect::new(ax - 1.0, ay - 1.0, 2.0, 2.0);
-                        ctx.draw_rect(r, Color::new(0.4, 0.7, 1.0, 0.6));
+        if self.show_flow
+            && let Some(ref flow) = self.flow
+        {
+            for y in 0..ROWS as i32 {
+                for x in 0..COLS as i32 {
+                    let (dx, dy) = flow.direction_at(x, y);
+                    if dx == 0 && dy == 0 {
+                        continue;
                     }
+                    let cx = x as f32 * TILE + TILE * 0.5;
+                    let cy = y as f32 * TILE + TILE * 0.5;
+                    let ax = cx + dx as f32 * 4.0;
+                    let ay = cy + dy as f32 * 4.0;
+                    let r = Rect::new(ax - 1.0, ay - 1.0, 2.0, 2.0);
+                    ctx.draw_rect(r, Color::new(0.4, 0.7, 1.0, 0.6));
                 }
             }
         }

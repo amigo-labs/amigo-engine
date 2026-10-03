@@ -1,10 +1,10 @@
-//! Read/write audio generation defaults from amigo.toml [audio] section.
+//! Read/write audio generation defaults from `amigo.toml` `[audio]` section.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Project-level audio generation defaults stored in amigo.toml [audio].
+/// Project-level audio generation defaults stored in `amigo.toml` `[audio]`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AudioGenDefaults {
@@ -17,7 +17,7 @@ pub struct AudioGenDefaults {
     pub output_format: Option<String>,
 }
 
-/// Load [audio] defaults from amigo.toml in the given project directory.
+/// Load `[audio]` defaults from `amigo.toml` in the given project directory.
 pub fn load_audio_defaults(project_dir: &Path) -> AudioGenDefaults {
     let path = project_dir.join("amigo.toml");
     let content = match std::fs::read_to_string(&path) {
@@ -40,7 +40,7 @@ pub fn load_audio_defaults(project_dir: &Path) -> AudioGenDefaults {
     }
 }
 
-/// Merge updates into the [audio] section of amigo.toml.
+/// Merge updates into the `[audio]` section of `amigo.toml`.
 ///
 /// Returns `Ok(())` on success, or an error message if the file could not be written.
 pub fn save_audio_defaults(

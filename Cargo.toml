@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/amigo_core",
     "crates/amigo_steering",
@@ -38,68 +38,91 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+# The oldest toolchain the locked dependencies build with (egui 0.36 needs
+# 1.95). CI checks it; raise it when an upgrade needs a newer compiler.
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/amigo-labs/amigo-engine"
 
 [workspace.dependencies]
-# Internal crates
-amigo_core = { path = "crates/amigo_core" }
-amigo_steering = { path = "crates/amigo_steering" }
-amigo_render = { path = "crates/amigo_render" }
-amigo_ui = { path = "crates/amigo_ui" }
-amigo_audio = { path = "crates/amigo_audio" }
-amigo_input = { path = "crates/amigo_input" }
-amigo_tilemap = { path = "crates/amigo_tilemap" }
-amigo_animation = { path = "crates/amigo_animation" }
-amigo_assets = { path = "crates/amigo_assets" }
-amigo_net = { path = "crates/amigo_net" }
-amigo_scene = { path = "crates/amigo_scene" }
-amigo_editor = { path = "crates/amigo_editor" }
-amigo_api = { path = "crates/amigo_api" }
-amigo_debug = { path = "crates/amigo_debug" }
-amigo_engine = { path = "crates/amigo_engine" }
-amigo_tidal_parser = { path = "crates/amigo_tidal_parser" }
-amigo_audio_pipeline = { path = "crates/amigo_audio_pipeline" }
-amigo_reflect = { path = "crates/amigo_reflect" }
-amigo_reflect_derive = { path = "crates/amigo_reflect_derive" }
-amigo_comfyui = { path = "tools/amigo_comfyui" }
-amigo_mcp = { path = "tools/amigo_mcp" }
+# Internal crates. The version must match [workspace.package] version.
+amigo_core = { path = "crates/amigo_core", version = "0.1.0" }
+amigo_steering = { path = "crates/amigo_steering", version = "0.1.0" }
+amigo_render = { path = "crates/amigo_render", version = "0.1.0" }
+amigo_ui = { path = "crates/amigo_ui", version = "0.1.0" }
+amigo_audio = { path = "crates/amigo_audio", version = "0.1.0" }
+amigo_input = { path = "crates/amigo_input", version = "0.1.0" }
+amigo_tilemap = { path = "crates/amigo_tilemap", version = "0.1.0" }
+amigo_animation = { path = "crates/amigo_animation", version = "0.1.0" }
+amigo_assets = { path = "crates/amigo_assets", version = "0.1.0" }
+amigo_net = { path = "crates/amigo_net", version = "0.1.0" }
+amigo_scene = { path = "crates/amigo_scene", version = "0.1.0" }
+amigo_editor = { path = "crates/amigo_editor", version = "0.1.0" }
+amigo_api = { path = "crates/amigo_api", version = "0.1.0" }
+amigo_debug = { path = "crates/amigo_debug", version = "0.1.0" }
+amigo_engine = { path = "crates/amigo_engine", version = "0.1.0" }
+amigo_tidal_parser = { path = "crates/amigo_tidal_parser", version = "0.1.0" }
+amigo_audio_pipeline = { path = "crates/amigo_audio_pipeline", version = "0.1.0" }
+amigo_reflect = { path = "crates/amigo_reflect", version = "0.1.0" }
+amigo_reflect_derive = { path = "crates/amigo_reflect_derive", version = "0.1.0" }
+amigo_comfyui = { path = "tools/amigo_comfyui", version = "0.1.0" }
+amigo_mcp = { path = "tools/amigo_mcp", version = "0.1.0" }
 
 # External dependencies
-wgpu = "24"
+wgpu = "30"
 winit = "0.30"
 gilrs = "0.11"
-kira = "0.9"
+# kira's default features minus cpal-realtime-dbus, which would link libdbus
+# (a system library nothing else needs) only to raise the audio thread's
+# priority over D-Bus.
+kira = { version = "0.12", default-features = false, features = ["cpal", "cpal-realtime", "mp3", "ogg", "vorbis", "flac", "wav", "pcm"] }
 fixed = { version = "1.28", features = ["serde"] }
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ron = "0.8"
-toml = "0.8"
-notify = "7"
+ron = "0.12"
+toml = "1"
+notify = "8"
 bumpalo = { version = "3", features = ["collections"] }
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
 rustc-hash = "2"
 bytemuck = { version = "1", features = ["derive"] }
 bitflags = "2"
-glam = "0.29"
-pollster = "0.4"
+pollster = "1"
 fontdue = "0.9"
 asefile = "0.3"
-egui = "0.31"
-egui-wgpu = "0.31"
-egui-winit = "0.31"
+egui = "0.36"
+egui-wgpu = "0.36"
+egui-winit = "0.36"
 ctrlc = "3"
-ureq = { version = "2", features = ["json"] }
-tracing-tracy = { version = "0.11", default-features = false }
-tracy-client = { version = "0.18", default-features = false }
+ureq = { version = "3", features = ["json"] }
+tracing-tracy = { version = "0.12", default-features = false }
+tracy-client = { version = "0.19", default-features = false }
 rayon = "1"
 crossbeam-channel = "0.5"
-# wgpu 24's shader front-end. Used in tests to validate WGSL without a GPU.
-naga = { version = "24", features = ["wgsl-in"] }
+# wgpu 30's shader front-end. Used in tests to validate WGSL without a GPU.
+naga = { version = "30", features = ["wgsl-in"] }
+# Proc-macro toolchain for amigo_reflect_derive.
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+# Test-only.
+tempfile = "3"
+
+[workspace.lints.rust]
+# Already a warning in edition 2024; unsafe calls inside an unsafe fn must
+# still sit in their own unsafe block with a SAFETY comment.
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+# Lint suppressions must say why (#[expect(lint, reason = "...")]).
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+todo = "warn"
 
 [profile.dev]
 opt-level = 1

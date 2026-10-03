@@ -114,7 +114,10 @@ pub struct SkillUnlockSystem {
     prerequisites: FxHashMap<Ability, Vec<Ability>>,
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl SkillUnlockSystem {
     /// Create a new skill unlock system with no abilities unlocked.
     pub fn new() -> Self {
@@ -131,10 +134,10 @@ impl SkillUnlockSystem {
 
     /// Attempt to unlock an ability. Returns `false` if prerequisites are not met.
     pub fn try_unlock(&mut self, ability: Ability) -> bool {
-        if let Some(reqs) = self.prerequisites.get(&ability) {
-            if !reqs.iter().all(|r| self.abilities.has(*r)) {
-                return false;
-            }
+        if let Some(reqs) = self.prerequisites.get(&ability)
+            && !reqs.iter().all(|r| self.abilities.has(*r))
+        {
+            return false;
         }
         self.abilities.unlock(ability);
         true
@@ -270,14 +273,14 @@ impl ExplorationGraph {
     pub fn backtrack_candidates(&self, abilities: &AbilitySet) -> Vec<(RoomId, AbilityGate)> {
         let mut results = Vec::new();
         for conn in &self.connections {
-            if let Some(gate) = &conn.gate {
-                if !abilities.satisfies(gate) {
-                    // Check if the source room is discovered.
-                    if let Some(room) = self.rooms.get(&conn.from) {
-                        if room.discovered {
-                            results.push((conn.from, gate.clone()));
-                        }
-                    }
+            if let Some(gate) = &conn.gate
+                && !abilities.satisfies(gate)
+            {
+                // Check if the source room is discovered.
+                if let Some(room) = self.rooms.get(&conn.from)
+                    && room.discovered
+                {
+                    results.push((conn.from, gate.clone()));
                 }
             }
         }
@@ -310,7 +313,10 @@ pub struct CheckpointSystem {
     last_checkpoint: Option<RoomId>,
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl CheckpointSystem {
     /// Create a new checkpoint system with no active checkpoint.
     pub fn new() -> Self {
@@ -452,19 +458,19 @@ impl MapRevealer {
 
         // Adjacent rooms appear as silhouettes (Explored) to hint at existence.
         for (neighbor_id, _conn) in graph.neighbors(room.id) {
-            if let Some(neighbor) = graph.room(neighbor_id) {
-                if !neighbor.discovered {
-                    let nx0 = neighbor.bounds.x.floor() as i32;
-                    let ny0 = neighbor.bounds.y.floor() as i32;
-                    let nx1 = (neighbor.bounds.x + neighbor.bounds.w).ceil() as i32;
-                    let ny1 = (neighbor.bounds.y + neighbor.bounds.h).ceil() as i32;
+            if let Some(neighbor) = graph.room(neighbor_id)
+                && !neighbor.discovered
+            {
+                let nx0 = neighbor.bounds.x.floor() as i32;
+                let ny0 = neighbor.bounds.y.floor() as i32;
+                let nx1 = (neighbor.bounds.x + neighbor.bounds.w).ceil() as i32;
+                let ny1 = (neighbor.bounds.y + neighbor.bounds.h).ceil() as i32;
 
-                    for ty in ny0..ny1 {
-                        for tx in nx0..nx1 {
-                            // Only upgrade Hidden -> Explored; don't downgrade Visible.
-                            if self.fog.visibility_at(tx, ty) == TileVisibility::Hidden {
-                                self.fog.set_visibility(tx, ty, TileVisibility::Explored);
-                            }
+                for ty in ny0..ny1 {
+                    for tx in nx0..nx1 {
+                        // Only upgrade Hidden -> Explored; don't downgrade Visible.
+                        if self.fog.visibility_at(tx, ty) == TileVisibility::Hidden {
+                            self.fog.set_visibility(tx, ty, TileVisibility::Explored);
                         }
                     }
                 }
@@ -491,19 +497,17 @@ impl MapRevealer {
     ) -> &[BacktrackMarker] {
         self.backtrack_markers.clear();
         for (idx, conn) in graph.connections().iter().enumerate() {
-            if let Some(gate) = &conn.gate {
-                if !abilities.satisfies(gate) {
-                    if let Some(room) = graph.room(conn.from) {
-                        if room.discovered {
-                            self.backtrack_markers.push(BacktrackMarker {
-                                room: conn.from,
-                                connection: idx,
-                                required: gate.clone(),
-                                custom_pin: None,
-                            });
-                        }
-                    }
-                }
+            if let Some(gate) = &conn.gate
+                && !abilities.satisfies(gate)
+                && let Some(room) = graph.room(conn.from)
+                && room.discovered
+            {
+                self.backtrack_markers.push(BacktrackMarker {
+                    room: conn.from,
+                    connection: idx,
+                    required: gate.clone(),
+                    custom_pin: None,
+                });
             }
         }
         &self.backtrack_markers
@@ -737,7 +741,10 @@ pub enum TransitionResult {
     Completed(RoomId),
 }
 
-#[allow(clippy::new_without_default)]
+#[expect(
+    clippy::new_without_default,
+    reason = "construction is explicit; a Default impl would add a second, unnamed way to build it"
+)]
 impl RoomTransitionSystem {
     /// Create a new room transition system.
     pub fn new() -> Self {

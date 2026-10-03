@@ -809,7 +809,7 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_audiogen_set_defaults".into(),
-            description: "Save audio generation defaults to amigo.toml [audio] section. \
+            description: "Save audio generation defaults to `amigo.toml` `[audio]` section. \
                 Merges with existing values. Use after asking the user for preferences.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -926,7 +926,7 @@ pub fn dispatch_tool(
 }
 
 /// Like `dispatch_tool`, but accepts an explicit project directory for
-/// resolving [audio] defaults from amigo.toml.
+/// resolving `[audio]` defaults from `amigo.toml`.
 pub fn dispatch_tool_with_defaults(
     name: &str,
     params: serde_json::Value,
@@ -958,7 +958,11 @@ pub fn dispatch_tool_with_defaults(
             };
 
             let section = parse_section(&p.section);
-            let base_name = format!("{}_{}_{}bpm", p.world, p.section, bpm);
+            // `world` and `section` come from the MCP client (i.e. from a
+            // model's tool call), so they are sanitized like every other
+            // generator's names: `world: "../../../../tmp/x"` used to write
+            // outside the project.
+            let base_name = format!("{}_{}_{}bpm", sanitize(&p.world), sanitize(&p.section), bpm);
             let output_path = format!("assets/generated/audio/{}.wav", base_name);
 
             // Build ComfyUI workflow and generate
@@ -1069,13 +1073,13 @@ pub fn dispatch_tool_with_defaults(
                 }
             }
 
-            if output_paths.is_empty() {
-                if let Some(e) = gen_error {
-                    return Ok(serde_json::json!({
-                        "error": e,
-                        "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                    }));
-                }
+            if output_paths.is_empty()
+                && let Some(e) = gen_error
+            {
+                return Ok(serde_json::json!({
+                    "error": e,
+                    "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                }));
             }
 
             let generation_time_ms = start.elapsed().as_millis() as u64;
@@ -1565,12 +1569,12 @@ pub fn dispatch_tool_with_defaults(
             let mut registry = VoiceRegistry::load(&voices_dir);
             let removed = registry.remove(&p.name);
 
-            if removed.is_some() {
-                if let Err(e) = registry.save(&voices_dir) {
-                    return Ok(serde_json::json!({
-                        "error": format!("Failed to save voice registry: {}", e)
-                    }));
-                }
+            if removed.is_some()
+                && let Err(e) = registry.save(&voices_dir)
+            {
+                return Ok(serde_json::json!({
+                    "error": format!("Failed to save voice registry: {}", e)
+                }));
             }
 
             Ok(serde_json::json!({
@@ -1715,12 +1719,12 @@ pub fn dispatch_tool_with_defaults(
             }
 
             let removed = registry.remove(&p.name);
-            if removed.is_some() {
-                if let Err(e) = registry.save(&styles_dir) {
-                    return Ok(serde_json::json!({
-                        "error": format!("Failed to save style registry: {}", e)
-                    }));
-                }
+            if removed.is_some()
+                && let Err(e) = registry.save(&styles_dir)
+            {
+                return Ok(serde_json::json!({
+                    "error": format!("Failed to save style registry: {}", e)
+                }));
             }
 
             Ok(serde_json::json!({
@@ -2111,10 +2115,12 @@ mod tests {
         if v.get("error").is_none() {
             let hints = &v["hints"];
             assert!(hints["defaults_missing"].is_array());
-            assert!(hints["suggestion"]
-                .as_str()
-                .unwrap()
-                .contains("amigo_audiogen_set_defaults"));
+            assert!(
+                hints["suggestion"]
+                    .as_str()
+                    .unwrap()
+                    .contains("amigo_audiogen_set_defaults")
+            );
         }
     }
 

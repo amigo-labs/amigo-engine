@@ -437,10 +437,11 @@ impl InputAssistSettings {
     /// Returns `true` if the action should be considered active this frame.
     pub fn filter(&self, action: &str, raw_pressed: bool, held_duration: f32, dt: f32) -> bool {
         // Hold-to-activate: require held for `duration` before activating.
-        if let Some(&required) = self.hold_to_activate.get(action) {
-            if raw_pressed && held_duration < required {
-                return false;
-            }
+        if let Some(&required) = self.hold_to_activate.get(action)
+            && raw_pressed
+            && held_duration < required
+        {
+            return false;
         }
 
         // Key repeat logic: after repeat_delay, fire at repeat_rate Hz.

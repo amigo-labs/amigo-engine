@@ -10,13 +10,9 @@
 //! [stinger_bus] ──────────────────┘
 //! ```
 
-use kira::manager::backend::DefaultBackend;
-use kira::manager::AudioManager as KiraManager;
-use kira::track::TrackBuilder;
-use kira::track::TrackHandle;
-use kira::track::TrackRoutes;
-use kira::tween::Tween;
-use kira::Volume;
+use crate::amplitude_to_decibels;
+use kira::track::{TrackBuilder, TrackHandle};
+use kira::{AudioManager as KiraManager, DefaultBackend, Tween};
 use rustc_hash::FxHashMap;
 use tracing::warn;
 
@@ -126,15 +122,16 @@ impl AudioGraph {
         name: &str,
         parent: Option<BusId>,
     ) -> Result<BusId, String> {
-        let routes = if let Some(pid) = parent {
-            let parent_track = &self.nodes[pid.0].bus().handle;
-            TrackRoutes::parent(parent_track)
-        } else {
-            TrackRoutes::new()
-        };
-
-        let builder = TrackBuilder::new().routes(routes);
-        let handle = kira.add_sub_track(builder).map_err(|e| e.to_string())?;
+        // kira 0.10+ nests sub-tracks instead of routing them: a child bus
+        // is created on its parent's track handle.
+        let handle = match parent {
+            Some(pid) => self.nodes[pid.0]
+                .bus_mut()
+                .handle
+                .add_sub_track(TrackBuilder::new()),
+            None => kira.add_sub_track(TrackBuilder::new()),
+        }
+        .map_err(|e| e.to_string())?;
 
         let id = BusId(self.nodes.len());
         let bus = AudioBus {
@@ -158,7 +155,7 @@ impl AudioGraph {
         self.bus_names.get(name).copied()
     }
 
-    /// Get the Kira `TrackHandle` for a bus (for `output_destination`).
+    /// Get the Kira `TrackHandle` for a bus (play sounds through it with `TrackHandle::play`).
     pub fn track_handle(&self, bus: BusId) -> Option<&TrackHandle> {
         self.nodes.get(bus.0).map(|n| &n.bus().handle)
     }
@@ -173,7 +170,7 @@ impl AudioGraph {
         node.bus_mut().volume = volume;
         node.bus_mut()
             .handle
-            .set_volume(Volume::Amplitude(volume as f64), Tween::default());
+            .set_volume(amplitude_to_decibels(volume), Tween::default());
     }
 
     /// Get the current volume of a named channel.

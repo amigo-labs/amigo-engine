@@ -7,7 +7,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 /// Derive macro that implements `Reflect` for a named-field struct.
 ///
@@ -251,18 +251,21 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
         })
         .collect();
 
-    // Generate fields_mut() entries using unsafe pointer math for multiple &mut
-    let fields_mut_entries: Vec<TokenStream2> = field_infos
+    // Generate fields_mut() entries. Destructuring `self` hands out one
+    // disjoint `&mut` per field, safely; the bindings get generated names so a
+    // field called e.g. `info` cannot shadow the local of the same name.
+    let field_bindings: Vec<syn::Ident> = (0..field_infos.len())
+        .map(|i| quote::format_ident!("__amigo_reflect_field_{}", i))
+        .collect();
+    let field_idents: Vec<&syn::Ident> = field_infos.iter().map(|(ident, _, _)| ident).collect();
+    let fields_mut_entries: Vec<TokenStream2> = field_bindings
         .iter()
         .enumerate()
-        .map(|(i, (_ident, ty, _attrs))| {
+        .map(|(i, binding)| {
             quote! {
-                {
-                    let ptr = base_ptr.add(info.fields[#i].offset) as *mut #ty;
-                    amigo_reflect::FieldMut {
-                        info: &info.fields[#i],
-                        value: &mut *ptr,
-                    }
+                amigo_reflect::FieldMut {
+                    info: &info.fields[#i],
+                    value: #binding,
                 }
             }
         })
@@ -350,15 +353,10 @@ fn impl_reflect(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
             fn fields_mut(&mut self) -> ::std::vec::Vec<amigo_reflect::FieldMut<'_>> {
                 let info = <Self as amigo_reflect::Reflect>::type_info();
-                let base_ptr = self as *mut Self as *mut u8;
-                // SAFETY: Each field offset is computed by offset_of! and each pointer
-                // is to a distinct field within the same struct. The struct is behind
-                // a &mut reference, so we have exclusive access.
-                unsafe {
-                    ::std::vec![
-                        #(#fields_mut_entries),*
-                    ]
-                }
+                let Self { #(#field_idents: #field_bindings,)* .. } = self;
+                ::std::vec![
+                    #(#fields_mut_entries),*
+                ]
             }
 
             fn apply_patch(&mut self, patch: &amigo_reflect::ReflectPatch) -> usize {

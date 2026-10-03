@@ -102,10 +102,10 @@ impl StyleDef {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e == "ron").unwrap_or(false) {
-                    if let Ok(style) = Self::load_from_file(&path) {
-                        styles.push(style);
-                    }
+                if path.extension().map(|e| e == "ron").unwrap_or(false)
+                    && let Ok(style) = Self::load_from_file(&path)
+                {
+                    styles.push(style);
                 }
             }
         }

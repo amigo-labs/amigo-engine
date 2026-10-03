@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 #[cfg(feature = "hierarchical_scenes")]
 pub mod hierarchical;
 

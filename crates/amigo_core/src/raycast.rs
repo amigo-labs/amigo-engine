@@ -223,10 +223,10 @@ pub fn raycast_bodies(
             continue;
         }
         // Test ray against each candidate's shape
-        if let Some(hit) = ray_vs_entity(origin, dx, dy, max_distance, entity, world) {
-            if closest.as_ref().is_none_or(|c| hit.distance < c.distance) {
-                closest = Some(hit);
-            }
+        if let Some(hit) = ray_vs_entity(origin, dx, dy, max_distance, entity, world)
+            && closest.as_ref().is_none_or(|c| hit.distance < c.distance)
+        {
+            closest = Some(hit);
         }
     }
 
@@ -265,7 +265,10 @@ fn ray_vs_entity(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+)]
 fn ray_vs_circle(
     origin: RenderVec2,
     dx: f32,

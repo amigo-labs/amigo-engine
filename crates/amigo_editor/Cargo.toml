@@ -2,6 +2,9 @@
 name = "amigo_editor"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = []
@@ -11,15 +14,16 @@ editor_v2 = ["egui", "amigo_reflect", "amigo_core/reflect"]
 
 [dependencies]
 amigo_core = { workspace = true }
-amigo_render = { workspace = true }
 amigo_ui = { workspace = true }
 amigo_input = { workspace = true }
 amigo_tilemap = { workspace = true }
 amigo_tidal_parser = { workspace = true }
-tracing = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
 serde_json = { workspace = true }
 winit = { workspace = true }
 egui = { workspace = true, optional = true }
 amigo_reflect = { workspace = true, optional = true }
+
+[lints]
+workspace = true

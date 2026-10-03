@@ -2,6 +2,9 @@
 name = "amigo_core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = []
@@ -19,8 +22,10 @@ fixed = { workspace = true }
 serde = { workspace = true }
 rustc-hash = { workspace = true }
 bytemuck = { workspace = true }
-glam = { workspace = true }
 thiserror = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }
 bumpalo = { workspace = true }
+
+[lints]
+workspace = true

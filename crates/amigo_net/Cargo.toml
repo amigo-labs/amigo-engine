@@ -2,6 +2,9 @@
 name = "amigo_net"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 amigo_core = { workspace = true }
@@ -12,3 +15,6 @@ rustc-hash = { workspace = true }
 
 [features]
 rollback_net = []
+
+[lints]
+workspace = true

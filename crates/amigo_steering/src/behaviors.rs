@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn alignment_matches_neighbor_velocity() {
         let vel = SimVec2::ZERO; // agent is stationary
-                                 // Neighbors moving in +x
+        // Neighbors moving in +x
         let neighbors = vec![
             (SimVec2::from_f32(5.0, 0.0), SimVec2::from_f32(2.0, 0.0)),
             (SimVec2::from_f32(10.0, 0.0), SimVec2::from_f32(2.0, 0.0)),

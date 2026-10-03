@@ -1,16 +1,16 @@
+use crate::Game;
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
 use crate::splash::{self, SplashState};
 use crate::stack::GameStack;
-use crate::Game;
 use amigo_assets::{AssetManager, HotReloader};
-use amigo_core::Color;
+use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
-use amigo_render::renderer::Renderer;
+use amigo_render::renderer::{Renderer, SurfaceError};
 use amigo_render::sprite_batcher::SpriteInstance;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info, info_span, warn};
+use tracing::{error, info, info_span, trace, warn};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -195,7 +195,11 @@ impl Engine {
 
         #[cfg(not(feature = "api"))]
         if self.config.dev.headless {
-            error!("Headless mode requires the 'api' feature. Enable it with: cargo run --features api");
+            error!(
+                "Headless mode requires amigo_engine's 'api' feature: add \
+                 `features = [\"api\"]` to the amigo_engine dependency, or run \
+                 with `--features amigo_engine/api`"
+            );
             return;
         }
 
@@ -203,7 +207,9 @@ impl Engine {
             Ok(el) => el,
             Err(e) => {
                 error!("Failed to create a window event loop: {e}");
-                error!("No display seems to be available. On a headless machine, run with `amigo run --headless` (requires the 'api' feature).");
+                error!(
+                    "No display seems to be available. On a headless machine, run with `amigo run --headless` (requires the 'api' feature)."
+                );
                 return;
             }
         };
@@ -236,6 +242,8 @@ impl Engine {
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        #[cfg(feature = "audio")]
+        game_ctx.audio.open_device();
 
         // Apply plugin registrations
         let plugin_ctx = self.plugin_ctx;
@@ -476,6 +484,21 @@ fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
     }
 }
 
+/// React to a frame the surface could not provide. The frame is skipped
+/// either way; the sprites queued for it were already dropped.
+fn recover_from_surface_error(renderer: &mut Renderer, err: SurfaceError) {
+    match err {
+        // A minimized or hidden window reports these every frame; logging
+        // them as errors would flood the log until it is shown again.
+        SurfaceError::Timeout | SurfaceError::Occluded => trace!("skipped frame: {err}"),
+        SurfaceError::Outdated | SurfaceError::Lost => {
+            let (w, h) = renderer.window_size();
+            renderer.resize(w, h);
+        }
+        SurfaceError::Validation => error!("render error: {err}"),
+    }
+}
+
 struct EngineState {
     window: Arc<Window>,
     renderer: Renderer,
@@ -546,6 +569,8 @@ impl ApplicationHandler for EngineApp {
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        #[cfg(feature = "audio")]
+        game_ctx.audio.open_device();
         let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
 
         // Hot reload only makes sense against loose files: a pak is a build
@@ -723,25 +748,21 @@ impl ApplicationHandler for EngineApp {
                 }
 
                 // Debug overlay toggle (always active, even when egui has focus)
-                if event.state == ElementState::Pressed {
-                    if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
-                        match code {
-                            KeyCode::F1 => state.debug.toggle(),
-                            KeyCode::F2 => state.debug.show_grid = !state.debug.show_grid,
-                            KeyCode::F3 => state.debug.show_collision = !state.debug.show_collision,
-                            KeyCode::F4 => state.debug.show_paths = !state.debug.show_paths,
-                            KeyCode::F5 => {
-                                state.debug.show_entity_ids = !state.debug.show_entity_ids
-                            }
-                            KeyCode::F6 => state.debug.show_tile_ids = !state.debug.show_tile_ids,
-                            KeyCode::F7 => {
-                                state.debug.show_audio_debug = !state.debug.show_audio_debug
-                            }
-                            KeyCode::F8 => {
-                                state.debug.show_network_debug = !state.debug.show_network_debug
-                            }
-                            _ => {}
+                if event.state == ElementState::Pressed
+                    && let winit::keyboard::PhysicalKey::Code(code) = event.physical_key
+                {
+                    match code {
+                        KeyCode::F1 => state.debug.toggle(),
+                        KeyCode::F2 => state.debug.show_grid = !state.debug.show_grid,
+                        KeyCode::F3 => state.debug.show_collision = !state.debug.show_collision,
+                        KeyCode::F4 => state.debug.show_paths = !state.debug.show_paths,
+                        KeyCode::F5 => state.debug.show_entity_ids = !state.debug.show_entity_ids,
+                        KeyCode::F6 => state.debug.show_tile_ids = !state.debug.show_tile_ids,
+                        KeyCode::F7 => state.debug.show_audio_debug = !state.debug.show_audio_debug,
+                        KeyCode::F8 => {
+                            state.debug.show_network_debug = !state.debug.show_network_debug
                         }
+                        _ => {}
                     }
                 }
             }
@@ -753,8 +774,18 @@ impl ApplicationHandler for EngineApp {
                         .input
                         .handle_mouse_move(position.x as f32, position.y as f32);
 
-                    // Update world-space mouse position
+                    // Pixel UI draws over the virtual resolution stretched to
+                    // the window, so its cursor is the window position scaled
+                    // by virtual / window size.
                     let (ww, wh) = state.renderer.window_size();
+                    let camera = &state.game_ctx.camera;
+                    let ui_pos = RenderVec2::new(
+                        position.x as f32 * camera.virtual_width / (ww.max(1) as f32),
+                        position.y as f32 * camera.virtual_height / (wh.max(1) as f32),
+                    );
+                    state.game_ctx.input.set_mouse_ui_pos(ui_pos);
+
+                    // Update world-space mouse position
                     let world_pos = state.game_ctx.camera.screen_to_world(
                         position.x as f32,
                         position.y as f32,
@@ -814,15 +845,8 @@ impl ApplicationHandler for EngineApp {
                         state.renderer.batcher.push(sprite.clone());
                     }
 
-                    match state.renderer.render() {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost) => {
-                            let (w, h) = state.renderer.window_size();
-                            state.renderer.resize(w, h);
-                        }
-                        Err(e) => {
-                            error!("Render error during splash: {:?}", e);
-                        }
+                    if let Err(e) = state.renderer.render() {
+                        recover_from_surface_error(&mut state.renderer, e);
                     }
 
                     if finished {
@@ -889,7 +913,6 @@ impl ApplicationHandler for EngineApp {
                 // Fixed timestep simulation. `tick_budget` above already decided
                 // how many ticks this frame gets, from elapsed time plus any API
                 // step request.
-                let ticks_ran = budget.total() > 0;
                 for _ in 0..budget.total() {
                     let _tick_span = info_span!("tick").entered();
 
@@ -929,16 +952,16 @@ impl ApplicationHandler for EngineApp {
                         state.game_ctx.events.flush();
                     }
                     state.game_ctx.particles.update(tick_duration as f32);
-                }
 
-                // Clear edge-detected input (just pressed/released) only
-                // after the simulation consumed it, and only if a tick
-                // actually ran this frame. Clearing at tick START would wipe
-                // the events winit delivered before this redraw, so
-                // `just_pressed` would never be observable; clearing on
-                // zero-tick frames would drop presses that arrive between
-                // ticks.
-                if ticks_ran {
+                    // Clear edge-detected input (just pressed/released) at
+                    // the END of every tick, so each press is seen by exactly
+                    // one tick. Clearing once after the loop let every tick
+                    // of a 2+-tick frame (30/50 Hz displays, a hitch, an API
+                    // `tick N`) see the same press: Esc opened a pause menu
+                    // and the menu saw it again and closed itself. Clearing at
+                    // tick START would instead wipe the events winit delivered
+                    // before this redraw, and zero-tick frames keep their
+                    // presses for the next tick. Headless does the same.
                     state.game_ctx.input.begin_frame();
                 }
 
@@ -1129,46 +1152,25 @@ impl ApplicationHandler for EngineApp {
                                 &state.window,
                                 &frame.view,
                                 screen_desc,
-                                |ctx| {
+                                |ui| {
                                     amigo_editor::egui_ui::draw_editor_panels(
-                                        ctx,
+                                        ui,
                                         editor_state,
                                         editor_level,
                                     );
                                 },
                             );
 
-                            frame.output.present();
+                            state.renderer.queue.present(frame.output);
                             state.renderer.batcher.clear();
                         }
-                        Err(wgpu::SurfaceError::Lost) => {
-                            let (w, h) = state.renderer.window_size();
-                            state.renderer.resize(w, h);
-                        }
-                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                            error!("GPU out of memory");
-                            event_loop.exit();
-                        }
-                        Err(e) => {
-                            error!("Render error: {:?}", e);
-                        }
+                        Err(e) => recover_from_surface_error(&mut state.renderer, e),
                     }
                 }
 
                 #[cfg(not(feature = "editor"))]
-                match state.renderer.render() {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => {
-                        let (w, h) = state.renderer.window_size();
-                        state.renderer.resize(w, h);
-                    }
-                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                        error!("GPU out of memory");
-                        event_loop.exit();
-                    }
-                    Err(e) => {
-                        error!("Render error: {:?}", e);
-                    }
+                if let Err(e) = state.renderer.render() {
+                    recover_from_surface_error(&mut state.renderer, e);
                 }
 
                 // Update API snapshot after frame

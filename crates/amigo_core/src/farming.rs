@@ -446,9 +446,11 @@ mod tests {
         }
 
         assert_eq!(cal.day, 2);
-        assert!(day_events
-            .iter()
-            .any(|e| matches!(e, CalendarEvent::DayChanged { day: 2, .. })));
+        assert!(
+            day_events
+                .iter()
+                .any(|e| matches!(e, CalendarEvent::DayChanged { day: 2, .. }))
+        );
     }
 
     #[test]

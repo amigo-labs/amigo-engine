@@ -83,6 +83,8 @@ pub struct EnemyInstance {
     pub status_effects: StatusEffects,
     /// Whether this enemy is alive.
     pub alive: bool,
+    /// Fractional damage-over-time not yet applied as whole HP.
+    dot_carry: f32,
 }
 
 impl EnemyInstance {
@@ -103,6 +105,7 @@ impl EnemyInstance {
             position: RenderVec2::ZERO,
             status_effects: StatusEffects::new(),
             alive: true,
+            dot_carry: 0.0,
         }
     }
 
@@ -152,10 +155,15 @@ impl EnemyInstance {
         // Update status effects
         self.status_effects.update(dt);
 
-        // Apply damage-over-time from status effects
+        // Apply damage-over-time from status effects. The fractional part
+        // carries over between ticks: truncating every tick on its own made
+        // any DoT below 60 dps at 60 Hz deal nothing (30 dps poison = 0.5/tick
+        // -> 0), while doubling the game speed suddenly made it work.
         let dot = self.status_effects.damage_per_second();
         if dot > 0.0 {
-            let tick_damage = (dot * dt) as i32;
+            self.dot_carry += dot * dt;
+            let tick_damage = self.dot_carry as i32;
+            self.dot_carry -= tick_damage as f32;
             if tick_damage > 0 {
                 self.take_raw_damage(tick_damage);
                 if !self.alive {
@@ -323,6 +331,27 @@ mod tests {
         assert_eq!(enemy.max_health, 100);
         assert_eq!(enemy.bounty, 10);
         assert!(enemy.alive);
+    }
+
+    #[test]
+    fn slow_damage_over_time_adds_up_across_ticks() {
+        use crate::status_effect::{EffectType, StatusEffect};
+        let def = test_def();
+        let mut enemy = EnemyInstance::from_def(&def);
+        enemy.path_follower = PathFollower::new(0.0); // stand still, don't leak
+        // 30 dps for 2 s: 0.5 HP per 60 Hz tick used to truncate to 0.
+        enemy
+            .status_effects
+            .apply(StatusEffect::new(EffectType::Poison, 30.0, 2.0));
+        let path = test_path();
+        for _ in 0..60 {
+            enemy.update(1.0 / 60.0, &path);
+        }
+        assert!(
+            (69..=71).contains(&enemy.health),
+            "health = {}",
+            enemy.health
+        );
     }
 
     #[test]

@@ -52,24 +52,39 @@ smallest set and probing the others. Change tracking is bitset-based
 
 Optional, behind the `system_graph` feature. `SystemGraph` groups systems into
 batches whose declared component access (`.reads::<T>()` / `.writes::<T>()`) is
-pairwise disjoint, and runs each batch through `rayon::scope`. A system that
-declares nothing gets a full `&mut World` and therefore always runs alone.
+pairwise disjoint. A system that declares nothing gets a full `&mut World` and
+therefore always runs alone.
 
-What guards correctness today:
+There are two ways to execute the graph:
 
-- Every batch member has declared disjoint access; undeclared systems are
-  treated as conflicting with everything (`has_conflict`).
+- `SystemGraph::run` (safe) executes every batch one system at a time, in batch
+  order. It is sound whatever the systems do.
+- `SystemGraph::run_parallel` (`unsafe fn`) runs each batch through
+  `rayon::scope`. Every batch member still receives a reconstructed
+  `&mut World`, so the compiler cannot check what it touches. The caller
+  guarantees that each declaring system touches only its declared storages and
+  makes no structural change (spawn, despawn, flush, or `insert_dynamic` of a
+  type not registered yet — registration can rehash the dynamic-storage map
+  under a sibling). Breaking that is a data race, which is why the function is
+  `unsafe` rather than safe-by-convention.
+
+`run_parallel` used to be the behaviour of the safe `run`. That let entirely
+safe code race — two systems with correct declarations, one of them inserting
+the first component of a new dynamic type — so the threading moved behind
+`unsafe` (2026-10 audit).
+
+What else guards `run_parallel`:
+
+- Undeclared systems are treated as conflicting with everything
+  (`has_conflict`).
 - `World` and all component storage are `Send + Sync`, so nothing thread-affine
   can be reached from a worker thread. `SendPtr<T>` carries `T: Send` / `T: Sync`
   bounds rather than a blanket impl, so this is checked by the compiler.
-- A structural change (spawn, despawn, dynamic type registration) inside a
-  parallel batch is not expressible as a read/write declaration, so the
-  scheduler compares a structural fingerprint before and after each batch and
-  trips a `debug_assert` if one happened.
+- Debug builds compare a structural fingerprint before and after each batch and
+  panic if one changed — after the fact, so it reports a violation but cannot
+  prevent it.
 
-What remains a convention rather than a guarantee: the declarations themselves.
-Each batch member still receives a reconstructed `&mut World`, so a system that
-touches a component it did not declare races, and no assertion can detect it.
-Closing this requires `SystemContext` to hand out an access token that only
-yields the declared component slices, which changes every system signature —
-tracked as follow-up work, not done here.
+Making the parallel path safe requires `SystemContext` to hand out only the
+declared storages (split `World`'s typed fields by destructuring, the dynamic
+ones with `HashMap::get_disjoint_mut`) plus a command buffer for structural
+changes. That changes every system signature and is tracked as follow-up work.

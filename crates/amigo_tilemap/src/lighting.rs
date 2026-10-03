@@ -161,16 +161,33 @@ impl TileLightMap {
 
     /// Flood-fill a single light source.
     fn propagate_light(&mut self, light: &TileLight, is_opaque: &dyn Fn(i32, i32) -> bool) {
+        // Attenuate per step. `radius` is a u8, so the step is at least 1.
+        let step = (255 / light.radius.max(1) as u16) as u8;
+
+        // The brightest value already queued for each cell this light can
+        // reach. The light map alone cannot serve as the visited set: cells
+        // outside it always read as dark, so they were re-queued on every
+        // visit and the queue grew exponentially for an emitter near or past
+        // the edge of the map (tens of millions of entries for radius 16).
+        let reach = i32::from(255 / step) + 1;
+        let side = 2 * reach + 1;
+        let mut queued = vec![LightColor::ZERO; (side * side) as usize];
+        let slot = |x: i32, y: i32| -> Option<usize> {
+            let (lx, ly) = (x - light.x + reach, y - light.y + reach);
+            ((0..side).contains(&lx) && (0..side).contains(&ly)).then(|| (ly * side + lx) as usize)
+        };
+
         let mut queue = VecDeque::new();
         queue.push_back((light.x, light.y, light.color));
+        if let Some(i) = slot(light.x, light.y) {
+            queued[i] = light.color;
+        }
 
         // Set the source tile.
         let current = self.get(light.x, light.y);
         self.set(light.x, light.y, current.max(light.color));
 
         while let Some((x, y, color)) = queue.pop_front() {
-            // Attenuate per step.
-            let step = (255 / light.radius.max(1) as u16) as u8;
             let next = LightColor {
                 r: color.r.saturating_sub(step),
                 g: color.g.saturating_sub(step),
@@ -188,10 +205,21 @@ impl TileLightMap {
                 if is_opaque(nx, ny) {
                     continue;
                 }
+                let Some(i) = slot(nx, ny) else {
+                    continue;
+                };
+                let brighter =
+                    |than: LightColor| next.r > than.r || next.g > than.g || next.b > than.b;
+                if !brighter(queued[i]) {
+                    continue;
+                }
+                queued[i] = queued[i].max(next);
 
+                // Inside the map, only propagate if we'd make it brighter.
+                // Outside it there is nothing to compare against, but light
+                // may still pass through and come back in.
                 let current = self.get(nx, ny);
-                // Only propagate if we'd make it brighter.
-                if next.r > current.r || next.g > current.g || next.b > current.b {
+                if self.index(nx, ny).is_none() || brighter(current) {
                     self.set(nx, ny, current.max(next));
                     queue.push_back((nx, ny, next));
                 }
@@ -246,6 +274,31 @@ mod tests {
         let map = TileLightMap::new(0, 0, 32, 32);
         assert_eq!(map.get(0, 0), LightColor::ZERO);
         assert_eq!(map.get(15, 15), LightColor::ZERO);
+    }
+
+    #[test]
+    fn an_emitter_at_or_past_the_map_edge_finishes_quickly() {
+        // Cells outside the map read as dark, so the old flood fill re-queued
+        // them on every visit: radius 16 at the edge queued tens of millions
+        // of entries. With a bounded visited set this takes microseconds.
+        let mut map = TileLightMap::new(0, 0, 64, 36);
+        for x in [0, -3] {
+            let light = TileLight {
+                x,
+                y: 18,
+                color: LightColor::WHITE,
+                radius: 16,
+            };
+            let start = std::time::Instant::now();
+            map.recalculate(&[light], &|_, _| false, None);
+            assert!(
+                start.elapsed().as_secs() < 2,
+                "x = {x} took {:?}",
+                start.elapsed()
+            );
+            // Light from just off the map still reaches into it.
+            assert!(map.get(1, 18).brightness() > 0, "x = {x}");
+        }
     }
 
     #[test]

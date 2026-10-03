@@ -54,9 +54,9 @@ pub struct GeneratorDef {
 /// Effect of an upgrade.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum UpgradeEffect {
-    MultiplyGenerator { gen: GeneratorId, multiplier: f64 },
+    MultiplyGenerator { r#gen: GeneratorId, multiplier: f64 },
     MultiplyResource { res: ResourceId, multiplier: f64 },
-    AddGeneratorFlat { gen: GeneratorId, amount: f64 },
+    AddGeneratorFlat { r#gen: GeneratorId, amount: f64 },
     UnlockGenerator(GeneratorId),
     Custom(String),
 }
@@ -216,10 +216,10 @@ pub fn production_rate(state: &IdleState, resource: ResourceId, registry: &IdleR
                 continue;
             }
             match &upgrade_def.effect {
-                UpgradeEffect::MultiplyGenerator { gen, multiplier } if gen == gen_id => {
+                UpgradeEffect::MultiplyGenerator { r#gen, multiplier } if r#gen == gen_id => {
                     gen_rate *= multiplier.powf(level);
                 }
-                UpgradeEffect::AddGeneratorFlat { gen, amount } if gen == gen_id => {
+                UpgradeEffect::AddGeneratorFlat { r#gen, amount } if r#gen == gen_id => {
                     gen_rate += amount * level;
                 }
                 _ => {}
@@ -235,10 +235,10 @@ pub fn production_rate(state: &IdleState, resource: ResourceId, registry: &IdleR
         if level == 0.0 {
             continue;
         }
-        if let UpgradeEffect::MultiplyResource { res, multiplier } = &upgrade_def.effect {
-            if *res == resource {
-                rate *= multiplier.powf(level);
-            }
+        if let UpgradeEffect::MultiplyResource { res, multiplier } = &upgrade_def.effect
+            && *res == resource
+        {
+            rate *= multiplier.powf(level);
         }
     }
 
@@ -260,12 +260,11 @@ pub fn idle_tick(state: &mut IdleState, dt: f64, registry: &IdleRegistry) -> Vec
             *current += gained;
 
             // Apply cap.
-            if let Some(def) = registry.resources.get(&res_id) {
-                if let Some(cap) = def.cap {
-                    if *current > cap {
-                        *current = cap;
-                    }
-                }
+            if let Some(def) = registry.resources.get(&res_id)
+                && let Some(cap) = def.cap
+                && *current > cap
+            {
+                *current = cap;
             }
         }
     }
@@ -425,7 +424,7 @@ mod tests {
                 name: "Double Cursors".into(),
                 cost: vec![(ResourceId(0), 100.0)],
                 effect: UpgradeEffect::MultiplyGenerator {
-                    gen: GeneratorId(0),
+                    r#gen: GeneratorId(0),
                     multiplier: 2.0,
                 },
                 max_level: 3,

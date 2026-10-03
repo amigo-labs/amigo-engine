@@ -82,7 +82,7 @@ pub enum EmitterShape {
 pub struct EmitterConfig {
     /// Maximum number of live particles this emitter can have.
     pub max_particles: usize,
-    /// Particles emitted per second. Use a very large value for one-shot bursts.
+    /// Particles emitted per second. For a one-shot burst set `burst` instead.
     pub emission_rate: f32,
     /// Lifetime range in seconds.
     pub lifetime_min: f32,
@@ -370,8 +370,16 @@ impl ParticleEmitter {
             }
             self.burst_done = true;
         } else if !self.config.burst {
-            self.emit_accumulator += self.config.emission_rate * dt;
-            let to_emit = self.emit_accumulator as usize;
+            // At most the free slots can be filled this tick, and the
+            // backlog never grows past that: an `emission_rate` of f32::MAX
+            // (the old doc suggested "a very large value" for bursts) made
+            // the accumulator infinite and this loop run ~1.8e19 times.
+            let free = self.config.max_particles.saturating_sub(self.alive_count);
+            let rate = self.config.emission_rate * dt;
+            if rate > 0.0 {
+                self.emit_accumulator = (self.emit_accumulator + rate).min(free as f32 + 1.0);
+            }
+            let to_emit = (self.emit_accumulator as usize).min(free);
             self.emit_accumulator -= to_emit as f32;
             for _ in 0..to_emit {
                 self.emit_particle();
@@ -691,5 +699,27 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
         g: lerp(a.g, b.g, t),
         b: lerp(a.b, b.b, t),
         a: lerp(a.a, b.a, t),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_huge_emission_rate_fills_the_pool_without_hanging() {
+        for rate in [f32::MAX, f32::INFINITY] {
+            let config = EmitterConfig {
+                max_particles: 100,
+                emission_rate: rate,
+                burst: false,
+                ..Default::default()
+            };
+            let mut emitter = ParticleEmitter::new(config, EmitterShape::Point, 0.0, 0.0);
+            // Used to compute `inf as usize` emissions and loop ~1.8e19 times.
+            emitter.update(1.0 / 60.0);
+            emitter.update(1.0 / 60.0);
+            assert_eq!(emitter.alive_count, 100, "rate {rate}");
+        }
     }
 }

@@ -2,13 +2,17 @@
 name = "amigo_ui"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 amigo_core = { workspace = true }
-amigo_render = { workspace = true }
 amigo_input = { workspace = true }
-tracing = { workspace = true }
 winit = { workspace = true }
 
 [features]
 retained_layout = []
+
+[lints]
+workspace = true

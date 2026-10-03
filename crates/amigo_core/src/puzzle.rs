@@ -113,10 +113,10 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
         for y in 0..self.height {
             for x in 0..self.width {
                 let i = (y * self.width + x) as usize;
-                if let Some(val) = self.cells[i] {
-                    if predicate(val) {
-                        result.push((x, y));
-                    }
+                if let Some(val) = self.cells[i]
+                    && predicate(val)
+                {
+                    result.push((x, y));
                 }
             }
         }
@@ -130,9 +130,7 @@ impl<T: Copy + Eq> PuzzleGrid<T> {
 
     /// Clear all cells.
     pub fn clear(&mut self) {
-        for c in &mut self.cells {
-            *c = None;
-        }
+        self.cells.fill(None);
     }
 }
 
@@ -511,7 +509,10 @@ impl BlockBag {
     }
 
     /// Draw the next shape from the bag.
-    #[allow(clippy::should_implement_trait)]
+    #[expect(
+        clippy::should_implement_trait,
+        reason = "`next` never ends, so this is not an Iterator"
+    )]
     pub fn next(&mut self) -> BlockShape {
         if self.remaining.is_empty() {
             self.refill();

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation (wiki)
+    url: https://github.com/amigo-labs/amigo-engine/wiki
+    about: Installation, CLI reference, AI setup, and architecture guides.

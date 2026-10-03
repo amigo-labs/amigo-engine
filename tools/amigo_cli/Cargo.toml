@@ -2,6 +2,9 @@
 name = "amigo_cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "amigo"
@@ -21,3 +24,6 @@ serde_json = { workspace = true }
 ron = { workspace = true }
 toml = { workspace = true }
 image = { workspace = true }
+
+[lints]
+workspace = true

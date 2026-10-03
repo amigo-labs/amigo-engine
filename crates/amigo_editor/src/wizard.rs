@@ -1,6 +1,6 @@
 use amigo_core::game_preset::{
-    project_templates, GameProject, ProjectTemplate, SceneDef, ScenePreset, SceneTransition,
-    TransitionTrigger,
+    GameProject, ProjectTemplate, SceneDef, ScenePreset, SceneTransition, TransitionTrigger,
+    project_templates,
 };
 
 // ---------------------------------------------------------------------------
@@ -203,9 +203,9 @@ impl NewProjectWizard {
             format!("Primary: {}", template.primary_preset.display_name()),
             String::new(),
             "Scenes:".to_string(),
-            format!("  - Title Menu (Menu)"),
+            "  - Title Menu (Menu)".to_string(),
             format!("  - Gameplay ({})", template.primary_preset.display_name()),
-            format!("  - Pause Menu (Menu)"),
+            "  - Pause Menu (Menu)".to_string(),
         ];
 
         for extra in &self.extra_scenes {

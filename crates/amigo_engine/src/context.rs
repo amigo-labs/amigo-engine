@@ -69,6 +69,8 @@ pub struct GameContext {
     /// reach `load_ron` at all and had to fall back to `std::fs` with hand-built
     /// paths.
     pub assets: AssetManager,
+    /// The engine opens the output device at startup; a context built
+    /// directly (in a test, say) opens it on its first sound.
     #[cfg(feature = "audio")]
     pub audio: AudioManager,
     #[cfg(feature = "async_tasks")]

@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Generate a permutation table from a seed for Perlin noise.
-#[allow(clippy::needless_range_loop)]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "the index addresses more than one slice"
+)]
 pub fn permutation_table(seed: u64) -> [u8; 512] {
     let mut perm = [0u8; 512];
     // Initialize with identity
@@ -748,7 +751,7 @@ impl WfcSolver {
         let possible: Vec<u32> = cell
             .iter()
             .enumerate()
-            .filter(|(_, &b)| b)
+            .filter(|&(_, &b)| b)
             .map(|(i, _)| i as u32)
             .collect();
         if possible.is_empty() {
@@ -938,19 +941,28 @@ pub fn generate_dungeon(config: &DungeonConfig) -> DungeonResult {
     let h = config.height;
     let mut tiles = vec![0u32; (w * h) as usize]; // 0 = wall
 
+    // Config comes from data files, so tolerate inverted or oversized room
+    // bounds: an inverted range is read as min..=min, and a room that cannot
+    // fit with its one-tile border is skipped (both used to divide by zero).
+    let min_room = config.min_room_size.max(1);
+    let room_span = config.max_room_size.saturating_sub(min_room) + 1;
+
     // 1. Place rooms via rejection sampling
     let mut rooms: Vec<DungeonRoom> = Vec::new();
-    for _ in 0..config.max_rooms * 3 {
+    for _ in 0..config.max_rooms.saturating_mul(3) {
         // Try 3x attempts
         if rooms.len() >= config.max_rooms as usize {
             break;
         }
-        let rw = config.min_room_size
-            + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
-        let rh = config.min_room_size
-            + (xorshift() as u32 % (config.max_room_size - config.min_room_size + 1));
-        let rx = 1 + (xorshift() as u32 % (w.saturating_sub(rw + 2)));
-        let ry = 1 + (xorshift() as u32 % (h.saturating_sub(rh + 2)));
+        let rw = min_room + (xorshift() as u32 % room_span);
+        let rh = min_room + (xorshift() as u32 % room_span);
+        // With a one-tile border on each side the origin ranges over
+        // 1..=w - rw - 1: w - rw - 1 choices, and none once rw + 2 > w.
+        if rw.saturating_add(2) > w || rh.saturating_add(2) > h {
+            continue;
+        }
+        let rx = 1 + (xorshift() as u32 % (w - rw - 1));
+        let ry = 1 + (xorshift() as u32 % (h - rh - 1));
 
         // Check overlap with padding
         let overlaps = rooms.iter().any(|r| {
@@ -1208,24 +1220,24 @@ mod tests {
 
     #[test]
     fn world_generator_correct_size() {
-        let gen = WorldGenerator::new(42, 64, 64)
+        let world_gen = WorldGenerator::new(42, 64, 64)
             .with_biome(BiomeDef::new(1, "Plains").with_ground(1))
             .with_sea_level(0.3);
 
-        let tiles = gen.generate_tiles();
+        let tiles = world_gen.generate_tiles();
         assert_eq!(tiles.len(), 64 * 64);
 
-        let collision = gen.generate_collision();
+        let collision = world_gen.generate_collision();
         assert_eq!(collision.len(), 64 * 64);
     }
 
     #[test]
     fn world_has_water_and_land() {
-        let gen = WorldGenerator::new(42, 64, 64)
+        let world_gen = WorldGenerator::new(42, 64, 64)
             .with_biome(BiomeDef::new(1, "Plains").with_ground(1))
             .with_sea_level(0.4);
 
-        let tiles = gen.generate_tiles();
+        let tiles = world_gen.generate_tiles();
         let water_count = tiles.iter().filter(|&&t| t == 0).count();
         let land_count = tiles.iter().filter(|&&t| t != 0).count();
 
@@ -1320,6 +1332,56 @@ mod tests {
     }
 
     // ── Dungeon Generator ──────────────────────────────────
+
+    #[test]
+    fn dungeon_config_from_data_cannot_divide_by_zero() {
+        // A room as wide as the map leaves no room for the border, and an
+        // inverted min/max range; both used to reach `% 0`.
+        for (width, min_room_size, max_room_size) in [(16, 5, 15), (40, 9, 4), (40, 5, 4)] {
+            let config = DungeonConfig {
+                width,
+                height: width,
+                seed: 7,
+                min_room_size,
+                max_room_size,
+                ..Default::default()
+            };
+            let result = generate_dungeon(&config);
+            assert_eq!(result.tiles.len(), (width * width) as usize);
+        }
+    }
+
+    fn single_room(size: u32, room: u32, seed: u64) -> DungeonResult {
+        generate_dungeon(&DungeonConfig {
+            width: size,
+            height: size,
+            seed,
+            min_room_size: room,
+            max_room_size: room,
+            max_rooms: 1,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn a_room_that_fits_with_exactly_its_border_is_placed() {
+        let result = single_room(16, 14, 7);
+
+        assert_eq!(result.rooms.len(), 1, "14 + 2 border tiles fit in 16");
+        let room = &result.rooms[0];
+        assert_eq!((room.x, room.y, room.width, room.height), (1, 1, 14, 14));
+    }
+
+    #[test]
+    fn every_valid_room_origin_can_be_chosen() {
+        // 17 - 14 - 1 = 2 origins per axis; the last one used to be excluded.
+        let mut xs: Vec<u32> = (1..=32)
+            .map(|seed| single_room(17, 14, seed).rooms[0].x)
+            .collect();
+        xs.sort_unstable();
+        xs.dedup();
+        assert_eq!(xs, [1, 2]);
+    }
 
     #[test]
     fn dungeon_generates_rooms() {

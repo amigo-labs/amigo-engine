@@ -1,6 +1,6 @@
 use amigo_tidal_parser::{
-    evaluate_pattern, load, parse_amigo_tidal, save, Composition, CompositionMeta, NoteValue,
-    Pattern, PatternAtom, PitchClass, Stem, Voice,
+    Composition, CompositionMeta, NoteValue, Pattern, PatternAtom, PitchClass, Stem, Voice,
+    evaluate_pattern, load, parse_amigo_tidal, save,
 };
 use std::path::Path;
 

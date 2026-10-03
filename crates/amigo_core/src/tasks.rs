@@ -31,7 +31,11 @@ impl TaskPool {
             let rx = receiver.clone();
             workers.push(thread::spawn(move || {
                 while let Ok(task) = rx.recv() {
-                    task();
+                    // A panicking task must not take its worker down with it:
+                    // with the worker gone, every later `spawn` would panic on
+                    // the caller's thread. The task's result channel is
+                    // dropped unsent, which its `Task` handle reports.
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task));
                 }
             }));
         }
@@ -117,19 +121,37 @@ impl<T> Task<T> {
     }
 
     /// Block until the task completes and return the result.
+    ///
+    /// # Panics
+    /// Panics if the task itself panicked, re-raising the failure on the
+    /// waiting thread. Use [`try_recv`](Self::try_recv) /
+    /// [`is_done`](Self::is_done) to poll without that risk.
     pub fn block(mut self) -> T {
         if let Some(val) = self.cached.take() {
             return val;
         }
         self.rx
             .recv()
-            .expect("Task sender dropped without sending a result")
+            .expect("the task panicked before producing a result")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panicking_task_does_not_kill_its_worker() {
+        let pool = TaskPool::with_threads(1);
+        let mut failed = pool.spawn(|| -> u32 { panic!("corrupt asset") });
+        while !failed.is_done() {
+            std::thread::yield_now();
+        }
+        assert_eq!(failed.try_recv(), None);
+
+        // The single worker survived and keeps serving tasks.
+        assert_eq!(pool.spawn(|| 7).block(), 7);
+    }
 
     #[test]
     fn test_spawn_single() {

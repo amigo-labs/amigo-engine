@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in the engine, CLI, or tools does not work as documented.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal game, example, or `amigo` command that shows the problem.
+      placeholder: |
+        1. amigo new my_game --template platformer
+        2. cargo run
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Run with `AMIGO_LOG=debug` (or e.g. `AMIGO_LOG=amigo_render=trace`) and paste the relevant output.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Engine version or commit
+      placeholder: "v0.1.0 or a commit hash"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS, GPU, and `rustc --version`
+      placeholder: "Ubuntu 24.04, AMD RX 6600 (Vulkan), rustc 1.97.0"
+    validations:
+      required: true

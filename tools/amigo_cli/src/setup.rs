@@ -191,15 +191,15 @@ impl SetupManager {
                 ));
             }
         } else {
+            // The install dir goes through the environment rather than being
+            // spliced into the shell command, where a quote in the home
+            // directory path would have broken out of the string.
+            // UV_NO_MODIFY_PATH keeps the installer out of the user's shell
+            // rc files: amigo calls uv by its full path under ~/.amigo.
             let status = Command::new("sh")
-                .args([
-                    "-c",
-                    &format!(
-                        "curl -fsSL https://astral.sh/uv/install.sh | \
-                         UV_INSTALL_DIR='{}' sh",
-                        bin_dir.display()
-                    ),
-                ])
+                .args(["-c", "curl -fsSL https://astral.sh/uv/install.sh | sh"])
+                .env("UV_INSTALL_DIR", &bin_dir)
+                .env("UV_NO_MODIFY_PATH", "1")
                 .status()
                 .map_err(|e| format!("curl failed: {e}"))?;
 

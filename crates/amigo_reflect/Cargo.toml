@@ -2,7 +2,13 @@
 name = "amigo_reflect"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-amigo_reflect_derive = { path = "../amigo_reflect_derive" }
+amigo_reflect_derive = { workspace = true }
 rustc-hash = { workspace = true }
+
+[lints]
+workspace = true

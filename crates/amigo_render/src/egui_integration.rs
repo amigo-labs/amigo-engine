@@ -37,7 +37,16 @@ impl EguiRenderer {
             None,
         );
 
-        let wgpu_renderer = egui_wgpu::Renderer::new(device, surface_format, None, 1, false);
+        let wgpu_renderer = egui_wgpu::Renderer::new(
+            device,
+            surface_format,
+            egui_wgpu::RendererOptions {
+                msaa_samples: 1,
+                depth_stencil_format: None,
+                dithering: false,
+                ..Default::default()
+            },
+        );
 
         info!("egui editor overlay initialized");
 
@@ -66,19 +75,19 @@ impl EguiRenderer {
 
     /// Returns `true` if the mouse pointer is over any egui area.
     pub fn wants_pointer_input(&self) -> bool {
-        self.ctx.wants_pointer_input()
+        self.ctx.egui_wants_pointer_input()
     }
 
     /// Returns `true` if egui wants keyboard input (e.g. a text field is focused).
     pub fn wants_keyboard_input(&self) -> bool {
-        self.ctx.wants_keyboard_input()
+        self.ctx.egui_wants_keyboard_input()
     }
 
     /// Run an egui frame and render it on top of the given surface view.
     ///
-    /// `run_ui` receives the `egui::Context` and should draw all egui
-    /// windows/panels. A separate command encoder is created and submitted
-    /// for the egui overlay pass.
+    /// `run_ui` receives the root `egui::Ui`, covering the whole window, and
+    /// should draw all egui windows/panels into it. A separate command
+    /// encoder is created and submitted for the egui overlay pass.
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -86,10 +95,10 @@ impl EguiRenderer {
         window: &winit::window::Window,
         surface_view: &wgpu::TextureView,
         screen_descriptor: ScreenDescriptor,
-        mut run_ui: impl FnMut(&egui::Context),
+        mut run_ui: impl FnMut(&mut egui::Ui),
     ) {
         let raw_input = self.winit_state.take_egui_input(window);
-        let full_output = self.ctx.run(raw_input, &mut run_ui);
+        let full_output = self.ctx.run_ui(raw_input, &mut run_ui);
 
         self.winit_state
             .handle_platform_output(window, full_output.platform_output);
@@ -98,9 +107,11 @@ impl EguiRenderer {
             .ctx
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
-        for (id, image_delta) in &full_output.textures_delta.set {
-            self.wgpu_renderer
-                .update_texture(device, queue, *id, image_delta);
+        for (id, image_deltas) in &full_output.textures_delta.set {
+            for image_delta in image_deltas {
+                self.wgpu_renderer
+                    .update_texture(device, queue, *id, image_delta);
+            }
         }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -115,6 +126,7 @@ impl EguiRenderer {
                 label: Some("egui_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: surface_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load, // preserve sprite output underneath
@@ -124,10 +136,11 @@ impl EguiRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
-            // egui-wgpu requires RenderPass<'static>; wgpu 24 provides
-            // forget_lifetime() to convert from the encoder-borrowing lifetime.
+            // egui-wgpu requires RenderPass<'static>; forget_lifetime()
+            // converts from the encoder-borrowing lifetime.
             let mut render_pass = render_pass.forget_lifetime();
 
             self.wgpu_renderer

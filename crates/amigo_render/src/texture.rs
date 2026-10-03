@@ -88,7 +88,7 @@ impl Texture {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             mag_filter: filter,
             min_filter: filter,
-            mipmap_filter: filter,
+            mipmap_filter: mode.to_wgpu_mipmap(),
             ..Default::default()
         });
 

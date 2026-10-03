@@ -2,6 +2,9 @@
 name = "amigo_assets"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = []
@@ -20,3 +23,6 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 asefile = { workspace = true }
 amigo_animation = { workspace = true }
+
+[lints]
+workspace = true

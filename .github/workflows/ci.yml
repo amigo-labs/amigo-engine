@@ -6,9 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+# A new push to a PR supersedes the run for the previous push. Runs on main are
+# never cancelled, so every merge commit gets a complete result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
 
+# Every cargo invocation lives in the justfile, so `just ci` locally and this
+# workflow cannot drift apart. Jobs only differ in which recipes they run.
 jobs:
   fmt:
     name: Format
@@ -18,7 +29,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just fmt-check
 
   check:
     name: Check
@@ -28,8 +42,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/install-system-deps
-      - name: Check workspace (crates, tools, examples)
-        run: cargo check --workspace
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # Fails when Cargo.lock is out of date with the manifests, so every later
+      # step builds exactly the committed dependency versions.
+      - name: Lockfile is up to date
+        run: cargo fetch --locked
+      - run: just check
 
   clippy:
     name: Clippy
@@ -41,44 +61,36 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/install-system-deps
-      - name: Clippy workspace
-        run: cargo clippy --workspace -- -D warnings
-      - name: Clippy feature flags
-        run: |
-          cargo clippy -p amigo_core --features async_tasks -- -D warnings
-          cargo clippy -p amigo_core --features system_graph -- -D warnings
-          cargo clippy -p amigo_core --all-features -- -D warnings
-          cargo clippy -p amigo_assets --features asset_streaming -- -D warnings
-          cargo clippy -p amigo_render --features asset_streaming -- -D warnings
-          cargo clippy -p amigo_net --features rollback_net -- -D warnings
-          cargo clippy -p amigo_audio --features audio_graph -- -D warnings
-          cargo clippy -p amigo_editor --all-features -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-hack
+      - run: just clippy
+      - run: just clippy-features
 
   test:
-    name: Test
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: ./.github/actions/install-system-deps
-      - name: Run tests
-        run: cargo test --workspace
-      - name: Test feature flags
-        run: |
-          cargo test -p amigo_core --features async_tasks
-          cargo test -p amigo_core --features system_graph
-          cargo test -p amigo_core --all-features
-          cargo test -p amigo_assets --features asset_streaming
-          cargo test -p amigo_render --features asset_streaming
-          cargo test -p amigo_net --features rollback_net
-          cargo test -p amigo_audio --features audio_graph
-          cargo test -p amigo_editor --all-features
-      - name: Doc tests
-        run: |
-          cargo test --doc \
-            -p amigo_tidal_parser \
-            -p amigo_audio_pipeline
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/install-system-deps
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just test
+      # The feature matrix and doc tests are platform-independent; running
+      # them once is enough.
+      - if: runner.os == 'Linux'
+        run: just test-features
+      - if: runner.os == 'Linux'
+        run: just test-doc
 
   docs:
     name: Documentation
@@ -88,24 +100,41 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/install-system-deps
-      - name: Build docs
-        run: |
-          cargo doc --no-deps \
-            -p amigo_core \
-            -p amigo_render \
-            -p amigo_audio \
-            -p amigo_input \
-            -p amigo_tidal_parser \
-            -p amigo_audio_pipeline \
-            -p amigo_engine
-        env:
-          # CONTRIBUTING.md promises that CI fails on doc warnings.
-          RUSTDOCFLAGS: "-D warnings"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # The recipe sets RUSTDOCFLAGS="-D warnings"; CONTRIBUTING.md promises
+      # that CI fails on doc warnings.
+      - run: just doc
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:
           name: api-docs
           path: target/doc/
+
+  msrv:
+    name: MSRV (rust-version)
+    runs-on: ubuntu-latest
+    env:
+      # Overrides rust-toolchain.toml (stable); keep in sync with
+      # rust-version in the root Cargo.toml.
+      RUSTUP_TOOLCHAIN: "1.95"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/install-system-deps
+      - run: cargo check --workspace --all-targets --locked
+
+  deny:
+    name: Dependencies (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Advisories, licenses, banned/duplicate crates and sources, per deny.toml.
+      - uses: EmbarkStudios/cargo-deny-action@v2
 
   release-build:
     name: Release Build
@@ -126,4 +155,4 @@ jobs:
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         uses: ./.github/actions/install-system-deps
-      - run: cargo build --release --target ${{ matrix.target }} -p amigo_engine -p amigo_cli
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p amigo_engine -p amigo_cli

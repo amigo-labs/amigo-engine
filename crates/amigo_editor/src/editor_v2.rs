@@ -139,18 +139,18 @@ impl<'a> EditorContext<'a> {
 
 /// Draw the complete editor V2 UI. Drop-in replacement for `draw_editor_panels`
 /// when the `editor_v2` feature is active.
-pub fn draw_editor_v2_panels(egui_ctx: &egui::Context, ctx: &mut EditorContext) {
-    draw_entity_list_panel(egui_ctx, ctx);
-    draw_inspector_panel(egui_ctx, ctx);
-    draw_v2_status_bar(egui_ctx, ctx);
+pub fn draw_editor_v2_panels(ui: &mut egui::Ui, ctx: &mut EditorContext) {
+    draw_entity_list_panel(ui, ctx);
+    draw_inspector_panel(ui, ctx);
+    draw_v2_status_bar(ui, ctx);
 }
 
 /// Left panel: entity list for selection.
-fn draw_entity_list_panel(egui_ctx: &egui::Context, ctx: &mut EditorContext) {
-    egui::SidePanel::left("editor_v2_entity_list")
-        .default_width(160.0)
+fn draw_entity_list_panel(ui: &mut egui::Ui, ctx: &mut EditorContext) {
+    egui::Panel::left("editor_v2_entity_list")
+        .default_size(160.0)
         .resizable(true)
-        .show(egui_ctx, |ui| {
+        .show(ui, |ui| {
             ui.heading("Entities");
             ui.separator();
 
@@ -173,11 +173,11 @@ fn draw_entity_list_panel(egui_ctx: &egui::Context, ctx: &mut EditorContext) {
 }
 
 /// Right panel: reflection-based inspector for the selected entity.
-fn draw_inspector_panel(egui_ctx: &egui::Context, ctx: &mut EditorContext) {
-    egui::SidePanel::right("editor_v2_inspector")
-        .default_width(220.0)
+fn draw_inspector_panel(ui: &mut egui::Ui, ctx: &mut EditorContext) {
+    egui::Panel::right("editor_v2_inspector")
+        .default_size(220.0)
         .resizable(true)
-        .show(egui_ctx, |ui| {
+        .show(ui, |ui| {
             ui.heading("Inspector");
             ui.separator();
 
@@ -203,8 +203,8 @@ fn draw_inspector_panel(egui_ctx: &egui::Context, ctx: &mut EditorContext) {
 }
 
 /// Bottom status bar for editor V2.
-fn draw_v2_status_bar(egui_ctx: &egui::Context, ctx: &EditorContext) {
-    egui::TopBottomPanel::bottom("editor_v2_status").show(egui_ctx, |ui| {
+fn draw_v2_status_bar(ui: &mut egui::Ui, ctx: &EditorContext) {
+    egui::Panel::bottom("editor_v2_status").show(ui, |ui| {
         ui.horizontal(|ui| {
             if let Some(entity) = ctx.selected_entity {
                 ui.label(format!("Selected: {}", entity));

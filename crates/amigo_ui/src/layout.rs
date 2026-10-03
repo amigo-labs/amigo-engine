@@ -674,11 +674,7 @@ fn clamp_size(value: f32, min: Option<f32>, max: Option<f32>) -> f32 {
     } else {
         value
     };
-    if let Some(mx) = max {
-        v.min(mx)
-    } else {
-        v
-    }
+    if let Some(mx) = max { v.min(mx) } else { v }
 }
 
 // ---------------------------------------------------------------------------

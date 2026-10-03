@@ -2,6 +2,9 @@
 name = "amigo_audio"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = []
@@ -15,3 +18,6 @@ ron = { workspace = true }
 tracing = { workspace = true }
 rustc-hash = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

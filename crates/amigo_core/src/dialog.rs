@@ -283,22 +283,32 @@ impl DialogRunner {
         self.enter_node(tree.entry_point, tree, state);
     }
 
-    fn enter_node(&mut self, id: DialogId, tree: &DialogTree, state: &mut DialogState) {
-        let Some(node) = tree.get_node(id) else {
-            self.active = false;
-            return;
-        };
-
-        // Check conditions
-        if !node.conditions.iter().all(|c| state.check_condition(c)) {
-            // Skip this node — go to next if available
-            if let Some(next) = node.next {
-                self.enter_node(next, tree, state);
-            } else {
+    fn enter_node(&mut self, mut id: DialogId, tree: &DialogTree, state: &mut DialogState) {
+        // Nodes whose conditions fail are skipped along `next`. Skipping
+        // applies no effects, so the conditions cannot change mid-chain: a
+        // chain longer than the node count has revisited a node and would
+        // loop forever (it used to recurse until the stack overflowed, an
+        // abort reachable from content data alone). End the dialog instead.
+        let mut skips_left = tree.nodes.len();
+        let node = loop {
+            let Some(node) = tree.get_node(id) else {
                 self.active = false;
+                return;
+            };
+            if node.conditions.iter().all(|c| state.check_condition(c)) {
+                break node;
             }
-            return;
-        }
+            match node.next {
+                Some(next) if skips_left > 0 => {
+                    skips_left -= 1;
+                    id = next;
+                }
+                _ => {
+                    self.active = false;
+                    return;
+                }
+            }
+        };
 
         self.current_node = Some(id);
 
@@ -311,10 +321,10 @@ impl DialogRunner {
         // Calculate available choices
         self.available_choices.clear();
         for (i, choice) in node.choices.iter().enumerate() {
-            if let Some(cond) = &choice.condition {
-                if !state.check_condition(cond) {
-                    continue;
-                }
+            if let Some(cond) = &choice.condition
+                && !state.check_condition(cond)
+            {
+                continue;
             }
             self.available_choices.push(i);
         }
@@ -501,6 +511,43 @@ mod tests {
     }
 
     // ── Linear dialog flow ──────────────────────────────────
+
+    #[test]
+    fn a_cycle_of_skipped_nodes_ends_the_dialog() {
+        // A "thanks again" loop whose nodes both require an unset flag.
+        let tree = DialogTree::new(1, "Loop", 1)
+            .with_node(
+                DialogNode::new(1, "NPC", "Thanks!")
+                    .with_condition(DialogCondition::FlagSet("quest_done".into()))
+                    .with_next(2),
+            )
+            .with_node(
+                DialogNode::new(2, "NPC", "Thanks again!")
+                    .with_condition(DialogCondition::FlagSet("quest_done".into()))
+                    .with_next(1),
+            );
+
+        let mut state = DialogState::new();
+        let mut runner = DialogRunner::new();
+        runner.start(&tree, &mut state);
+        assert!(!runner.is_active());
+    }
+
+    #[test]
+    fn skipped_nodes_still_lead_to_the_next_shown_node() {
+        let tree = DialogTree::new(1, "Skip", 0)
+            .with_node(
+                DialogNode::new(0, "NPC", "VIP only")
+                    .with_condition(DialogCondition::FlagSet("vip".into()))
+                    .with_next(1),
+            )
+            .with_node(DialogNode::new(1, "NPC", "Welcome"));
+
+        let mut state = DialogState::new();
+        let mut runner = DialogRunner::new();
+        runner.start(&tree, &mut state);
+        assert_eq!(runner.current_node(&tree).unwrap().text, "Welcome");
+    }
 
     #[test]
     fn linear_dialog_flow() {

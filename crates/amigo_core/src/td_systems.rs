@@ -1,10 +1,10 @@
 use crate::combat::DamageType;
 use crate::ecs::EntityId;
 use crate::enemy::{DeadEnemy, EnemyDef, EnemyInstance, EnemyManager};
-use crate::game_state::TdGameState;
+use crate::game_state::{GamePhase, TdGameState};
 use crate::pathfinding::WaypointPath;
 use crate::projectile::{ProjectileHit, ProjectileManager, ProjectileTarget, SpawnProjectile};
-use crate::tower::{select_target, TargetCandidate, TowerAttackType, TowerDef, TowerInstance};
+use crate::tower::{TargetCandidate, TowerAttackType, TowerDef, TowerInstance, select_target};
 use crate::waves::SpawnEvent;
 
 // ---------------------------------------------------------------------------
@@ -143,12 +143,12 @@ pub fn apply_hits_system(
             let dealt = enemy.take_damage(hit.damage, hit.damage_type);
 
             // Track damage on the tower that owns this projectile
-            if let Some(owner_id) = hit.owner {
-                if let Some((_, tower)) = towers.iter_mut().find(|(eid, _)| *eid == owner_id) {
-                    tower.total_damage_dealt += dealt as u64;
-                    if !enemy.alive {
-                        tower.total_kills += 1;
-                    }
+            if let Some(owner_id) = hit.owner
+                && let Some((_, tower)) = towers.iter_mut().find(|(eid, _)| *eid == owner_id)
+            {
+                tower.total_damage_dealt += dealt as u64;
+                if !enemy.alive {
+                    tower.total_kills += 1;
                 }
             }
         }
@@ -224,7 +224,10 @@ pub fn process_dead_enemies(dead: &[DeadEnemy], game_state: &mut TdGameState) {
 // ---------------------------------------------------------------------------
 
 /// Run one complete tower defense game tick. This is the main game loop body.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
+)]
 pub fn td_tick(
     game_state: &mut TdGameState,
     towers: &mut [(EntityId, TowerInstance)],
@@ -244,11 +247,12 @@ pub fn td_tick(
     let scaled_dt = dt * game_state.speed_multiplier;
 
     // 2. Spawn enemies from wave system (only during combat with waves)
-    let spawn_events = if game_state.spawner.total_waves() > 0 {
-        game_state.spawner.update(scaled_dt)
-    } else {
-        Vec::new()
-    };
+    let spawn_events =
+        if game_state.phase == GamePhase::Combat && game_state.spawner.total_waves() > 0 {
+            game_state.spawner.update(scaled_dt)
+        } else {
+            Vec::new()
+        };
     spawn_enemies_system(&spawn_events, enemy_defs, enemies);
 
     // 3. Update enemies (movement, status effects, DoT)

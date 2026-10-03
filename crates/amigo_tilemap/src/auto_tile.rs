@@ -97,37 +97,34 @@ impl AutoTileResolver {
         let mut mask: u8 = 0;
 
         // North (y - 1)
-        if y > 0 {
-            if let Some(&val) = terrain_map[y - 1].get(x) {
-                if val == terrain_type {
-                    mask |= NEIGHBOR_N;
-                }
-            }
+        if y > 0
+            && let Some(&val) = terrain_map[y - 1].get(x)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_N;
         }
 
         // East (x + 1)
-        if let Some(&val) = terrain_map[y].get(x + 1) {
-            if val == terrain_type {
-                mask |= NEIGHBOR_E;
-            }
+        if let Some(&val) = terrain_map[y].get(x + 1)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_E;
         }
 
         // South (y + 1)
-        if y + 1 < height {
-            if let Some(&val) = terrain_map[y + 1].get(x) {
-                if val == terrain_type {
-                    mask |= NEIGHBOR_S;
-                }
-            }
+        if y + 1 < height
+            && let Some(&val) = terrain_map[y + 1].get(x)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_S;
         }
 
         // West (x - 1)
-        if x > 0 {
-            if let Some(&val) = terrain_map[y].get(x - 1) {
-                if val == terrain_type {
-                    mask |= NEIGHBOR_W;
-                }
-            }
+        if x > 0
+            && let Some(&val) = terrain_map[y].get(x - 1)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_W;
         }
 
         mask
@@ -153,39 +150,37 @@ impl AutoTileResolver {
         }
 
         // NE (x + 1, y - 1)
-        if y > 0 {
-            if let Some(&val) = terrain_map[y - 1].get(x + 1) {
-                if val == terrain_type {
-                    mask |= NEIGHBOR_NE;
-                }
-            }
+        if y > 0
+            && let Some(&val) = terrain_map[y - 1].get(x + 1)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_NE;
         }
 
         // SE (x + 1, y + 1)
-        if y + 1 < height {
-            if let Some(&val) = terrain_map[y + 1].get(x + 1) {
-                if val == terrain_type {
-                    mask |= NEIGHBOR_SE;
-                }
-            }
+        if y + 1 < height
+            && let Some(&val) = terrain_map[y + 1].get(x + 1)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_SE;
         }
 
         // SW (x - 1, y + 1)
-        if y + 1 < height && x > 0 {
-            if let Some(&val) = terrain_map[y + 1].get(x - 1) {
-                if val == terrain_type {
-                    mask |= NEIGHBOR_SW;
-                }
-            }
+        if y + 1 < height
+            && x > 0
+            && let Some(&val) = terrain_map[y + 1].get(x - 1)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_SW;
         }
 
         // NW (x - 1, y - 1)
-        if y > 0 && x > 0 {
-            if let Some(&val) = terrain_map[y - 1].get(x - 1) {
-                if val == terrain_type {
-                    mask |= NEIGHBOR_NW;
-                }
-            }
+        if y > 0
+            && x > 0
+            && let Some(&val) = terrain_map[y - 1].get(x - 1)
+            && val == terrain_type
+        {
+            mask |= NEIGHBOR_NW;
         }
 
         mask

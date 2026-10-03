@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 pub mod action_map;
 pub mod gamepad;
 
@@ -36,6 +34,7 @@ pub struct InputState {
     mouse_buttons_pressed: FxHashSet<MouseButton>,
     mouse_buttons_released: FxHashSet<MouseButton>,
     mouse_position: RenderVec2,
+    mouse_ui_position: RenderVec2,
     mouse_world_position: RenderVec2,
     mouse_scroll_delta: f32,
     typed_chars: Vec<char>,
@@ -51,6 +50,7 @@ impl InputState {
             mouse_buttons_pressed: FxHashSet::default(),
             mouse_buttons_released: FxHashSet::default(),
             mouse_position: RenderVec2::ZERO,
+            mouse_ui_position: RenderVec2::ZERO,
             mouse_world_position: RenderVec2::ZERO,
             mouse_scroll_delta: 0.0,
             typed_chars: Vec::new(),
@@ -100,8 +100,19 @@ impl InputState {
     }
 
     /// Update mouse screen position.
+    ///
+    /// Also sets the UI-space position to the same point; the engine then
+    /// overrides it with [`set_mouse_ui_pos`](Self::set_mouse_ui_pos) once it
+    /// knows the window-to-virtual scale. Code that injects input without a
+    /// window (tests, headless agents) therefore gets identical coordinates.
     pub fn handle_mouse_move(&mut self, x: f32, y: f32) {
         self.mouse_position = RenderVec2::new(x, y);
+        self.mouse_ui_position = self.mouse_position;
+    }
+
+    /// Set the mouse position in UI (virtual-resolution) coordinates.
+    pub fn set_mouse_ui_pos(&mut self, pos: RenderVec2) {
+        self.mouse_ui_position = pos;
     }
 
     /// Update mouse scroll.
@@ -146,9 +157,17 @@ impl InputState {
         self.mouse_buttons_released.contains(&button)
     }
 
-    /// Mouse position in screen coordinates.
+    /// Mouse position in screen coordinates (physical window pixels).
     pub fn mouse_pos(&self) -> RenderVec2 {
         self.mouse_position
+    }
+
+    /// Mouse position in UI coordinates: the virtual-resolution pixels Pixel
+    /// UI is laid out and drawn in. Hit-test widgets against this, not
+    /// [`mouse_pos`](Self::mouse_pos) — with a 1280x720 window over a 480x270
+    /// virtual resolution the two differ by a factor of 2.67.
+    pub fn mouse_ui_pos(&self) -> RenderVec2 {
+        self.mouse_ui_position
     }
 
     /// Mouse position in world coordinates.

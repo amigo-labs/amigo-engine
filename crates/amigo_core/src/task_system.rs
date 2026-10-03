@@ -212,10 +212,9 @@ impl TaskState {
                 worker: w,
                 progress: _,
             } = &task.status
+                && *w == worker
             {
-                if *w == worker {
-                    task.status = TaskStatus::Available;
-                }
+                task.status = TaskStatus::Available;
             }
         }
     }
