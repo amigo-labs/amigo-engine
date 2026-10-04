@@ -3,6 +3,7 @@
 //! Speaks MCP protocol on stdio, dispatching tool calls to the audio pipeline.
 
 use amigo_audiogen::tools;
+use amigo_comfyui::ComfyUiLifecycle;
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
 
@@ -59,6 +60,13 @@ fn main() {
         server_url
     );
 
+    // Started on the first tool that needs ComfyUI if nothing answers at
+    // the address; stopped when the server exits.
+    let mut comfyui = ComfyUiLifecycle::new(tools::comfyui_config());
+    // Project defaults (`[audio]` in amigo.toml) come from the directory
+    // the server runs in; they were never passed to the tools before.
+    let project_dir = std::env::current_dir().unwrap_or_default();
+
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
@@ -91,13 +99,17 @@ fn main() {
             }
         };
 
-        let response = handle_request(&request);
+        let response = handle_request(&request, &mut comfyui, &project_dir);
         let _ = writeln!(stdout, "{}", serde_json::to_string(&response).unwrap());
         let _ = stdout.flush();
     }
 }
 
-fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
+fn handle_request(
+    req: &JsonRpcRequest,
+    comfyui: &mut ComfyUiLifecycle,
+    project_dir: &std::path::Path,
+) -> JsonRpcResponse {
     match req.method.as_str() {
         "initialize" => JsonRpcResponse {
             jsonrpc: "2.0".into(),
@@ -138,7 +150,18 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
 
-            match tools::dispatch_tool(tool_name, tool_args) {
+            let outcome = if tools::needs_comfyui(tool_name) {
+                comfyui.ensure_running().map_err(|e| {
+                    tools::ToolError::Backend(format!("ComfyUI is not available: {e}"))
+                })
+            } else {
+                Ok(())
+            }
+            .and_then(|()| {
+                tools::dispatch_tool_with_defaults(tool_name, tool_args, Some(project_dir))
+            });
+
+            match outcome {
                 Ok(result) => JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: req.id.clone(),
@@ -147,6 +170,18 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
                             "type": "text",
                             "text": serde_json::to_string_pretty(&result).unwrap_or_default()
                         }]
+                    })),
+                    error: None,
+                },
+                // A tool that ran and failed is reported to the model as an
+                // `isError` result, per MCP; failures used to come back as
+                // successful results with an "error" field.
+                Err(e) if !e.is_protocol_error() => JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id.clone(),
+                    result: Some(serde_json::json!({
+                        "content": [{ "type": "text", "text": e.to_string() }],
+                        "isError": true
                     })),
                     error: None,
                 },

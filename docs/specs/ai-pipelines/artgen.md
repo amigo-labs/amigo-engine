@@ -1,5 +1,5 @@
 ---
-status: done
+status: partial
 crate: amigo_artgen
 depends_on: ["assets/format"]
 last_updated: 2026-03-18
@@ -225,22 +225,24 @@ pub fn build_upscale_workflow(input_path: &str, factor: u32) -> ComfyPrompt;
 
 ### MCP Tools (`tools.rs`)
 
-12 MCP tools exposed via `list_tools()` and dispatched via `dispatch_tool()`:
+MCP tools exposed via `list_tools()` and run by `ArtgenServer::call` (`dispatch_tool` is a shortcut with default settings). Generation tools queue a ComfyUI workflow, wait for it and write the images to `assets/generated/<kind>/` in the project; input images are uploaded to ComfyUI first (`ComfyUiClient::upload_image`), since `LoadImage` only reads ComfyUI's input folder. A tool that cannot do its work returns an error (an MCP `isError` result), never a made-up path. The MCP server starts ComfyUI on the first generation if nothing answers (`ComfyUiLifecycle`, looking for the `comfyui` launcher in `~/.amigo/venv` and on `PATH`, logging to `amigo-comfyui.log` in the temp dir).
+
+Generated images are the raw model output; the pixel-art post-processing below is not applied to them yet.
 
 | Tool | Description |
 |------|-------------|
 | `amigo_artgen_generate_sprite` | Generate a pixel art sprite from text prompt |
 | `amigo_artgen_generate_tileset` | Generate a tileset with named tiles |
-| `amigo_artgen_generate_spritesheet` | Generate animation frames from a base sprite |
+| `amigo_artgen_generate_spritesheet` | Generate animation frames from a base sprite. **Not implemented:** returns an error. |
 | `amigo_artgen_variation` | Create an img2img variation of an existing sprite |
 | `amigo_artgen_inpaint` | Inpaint a masked region of a sprite |
-| `amigo_artgen_palette_swap` | Swap palette (pure image processing, no AI) |
-| `amigo_artgen_upscale` | Upscale by integer factor (nearest-neighbor) |
-| `amigo_artgen_post_process` | Apply a style's post-processing pipeline |
+| `amigo_artgen_palette_swap` | Swap palette (pure image processing, no AI). **Not implemented:** returns an error. |
+| `amigo_artgen_upscale` | Upscale by integer factor 2-8 (ComfyUI workflow) |
+| `amigo_artgen_post_process` | Apply a style's post-processing pipeline. **Not implemented:** returns an error. |
 | `amigo_artgen_list_styles` | List available art styles |
 | `amigo_artgen_list_checkpoints` | List available ComfyUI checkpoints |
 | `amigo_artgen_list_loras` | List available LoRA models |
-| `amigo_artgen_server_status` | Check ComfyUI server connection status |
+| `amigo_artgen_server_status` | Check ComfyUI connection, GPU and VRAM (`/system_stats`); never starts ComfyUI |
 
 ## Behavior
 

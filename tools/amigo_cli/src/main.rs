@@ -32,8 +32,10 @@ COMMANDS:
                                          changes, live-reload on asset changes
     pack                                 Pack assets into atlas (release build)
     release [--target <TARGET>]          Build optimized release binary
-    publish steam                        Prepare and upload to Steam (via steamcmd)
+    publish steam [--target <TARGET>]    Prepare and upload to Steam (via steamcmd)
     publish itch [--channel CHANNEL]     Upload to itch.io (via butler)
+        [--target <TARGET>]              ... both ship target/dist/<channel>:
+                                         binary, assets, amigo.toml
     editor                               Run the game with the editor overlay
     connect [--global] [--port PORT]    Write MCP config for Claude Code
     mcp-server [--host H] [--port P]     Run the MCP stdio bridge to the
@@ -1698,6 +1700,114 @@ fn cmd_editor(_args: &[String]) {
 // `amigo publish`
 // ---------------------------------------------------------------------------
 
+/// Assemble what a player needs into `out`: the release binary for `target`
+/// (or the host), `assets/`, and the config files the engine reads from its
+/// working directory (`amigo.toml`, `input.ron`).
+///
+/// `amigo publish` used to upload `target/release/` itself: the cargo build
+/// directory (deps, incremental state, `.d` files) and no assets, so the
+/// published game could not find a single sprite. Loose sprites are left out
+/// when `assets/packed/game.pak` holds them; audio, levels, data and fonts are
+/// still read from loose files at runtime, so they are always copied.
+fn stage_release(
+    project: &Path,
+    binary_name: &str,
+    target: Option<&str>,
+    out: &Path,
+) -> Result<(), String> {
+    let windows = target.map_or(cfg!(windows), |t| t.contains("windows"));
+    let exe = if windows {
+        format!("{binary_name}.exe")
+    } else {
+        binary_name.to_string()
+    };
+    let release_dir = match target {
+        Some(t) => project.join("target").join(t).join("release"),
+        None => project.join("target").join("release"),
+    };
+    let binary = release_dir.join(&exe);
+    if !binary.is_file() {
+        return Err(format!(
+            "release binary {} not found; did `cargo build --release` succeed?",
+            binary.display()
+        ));
+    }
+
+    if out.exists() {
+        std::fs::remove_dir_all(out)
+            .map_err(|e| format!("failed to clear {}: {e}", out.display()))?;
+    }
+    std::fs::create_dir_all(out).map_err(|e| format!("failed to create {}: {e}", out.display()))?;
+    std::fs::copy(&binary, out.join(&exe))
+        .map_err(|e| format!("failed to copy {}: {e}", binary.display()))?;
+
+    let assets = project.join("assets");
+    let packed = assets.join("packed").join("game.pak").is_file();
+    if assets.is_dir() {
+        copy_dir(&assets, &out.join("assets"), &|rel: &Path| {
+            packed && rel.starts_with("sprites")
+        })?;
+    }
+    for file in ["amigo.toml", "input.ron"] {
+        let from = project.join(file);
+        if from.is_file() {
+            std::fs::copy(&from, out.join(file))
+                .map_err(|e| format!("failed to copy {file}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy `from` into `to` recursively, skipping paths (relative to `from`)
+/// that `skip` accepts.
+fn copy_dir(from: &Path, to: &Path, skip: &dyn Fn(&Path) -> bool) -> Result<(), String> {
+    fn walk(
+        root: &Path,
+        dir: &Path,
+        to: &Path,
+        skip: &dyn Fn(&Path) -> bool,
+    ) -> Result<(), String> {
+        let entries =
+            std::fs::read_dir(dir).map_err(|e| format!("failed to read {}: {e}", dir.display()))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let rel = path.strip_prefix(root).unwrap_or(&path);
+            if skip(rel) {
+                continue;
+            }
+            let dest = to.join(rel);
+            if path.is_dir() {
+                std::fs::create_dir_all(&dest)
+                    .map_err(|e| format!("failed to create {}: {e}", dest.display()))?;
+                walk(root, &path, to, skip)?;
+            } else {
+                std::fs::copy(&path, &dest)
+                    .map_err(|e| format!("failed to copy {}: {e}", path.display()))?;
+            }
+        }
+        Ok(())
+    }
+    std::fs::create_dir_all(to).map_err(|e| format!("failed to create {}: {e}", to.display()))?;
+    walk(from, from, to, skip)
+}
+
+/// `cmd_release` with the publish command's `--target`, then
+/// [`stage_release`] into `target/dist/<channel>`. Exits on failure.
+fn release_and_stage(binary_name: &str, target: Option<&str>, channel: &str) -> PathBuf {
+    let release_args: Vec<String> = target
+        .map(|t| vec!["--target".to_string(), t.to_string()])
+        .unwrap_or_default();
+    cmd_release(&release_args);
+
+    let out = Path::new("target").join("dist").join(channel);
+    if let Err(e) = stage_release(Path::new("."), binary_name, target, &out) {
+        eprintln!("  ERROR: {e}");
+        process::exit(1);
+    }
+    println!("  Staged: {}", out.display());
+    out
+}
+
 fn cmd_publish(args: &[String]) {
     if args.is_empty() {
         eprintln!("Usage: amigo publish <steam|itch> [OPTIONS]");
@@ -1714,7 +1824,7 @@ fn cmd_publish(args: &[String]) {
     }
 }
 
-fn cmd_publish_steam(_args: &[String]) {
+fn cmd_publish_steam(args: &[String]) {
     let manifest = load_manifest().unwrap_or_else(|| {
         eprintln!("No amigo.toml found. Run `amigo new <name>` first.");
         process::exit(1);
@@ -1751,9 +1861,17 @@ fn cmd_publish_steam(_args: &[String]) {
         process::exit(1);
     }
 
-    // Step 1: Build release
+    // Step 1: Build release and stage the files to ship
     println!("[1/3] Building release...");
-    cmd_release(&[]);
+    let target = find_flag(args, "--target");
+    let staged = release_and_stage(&manifest.name, target.as_deref(), "steam");
+    // Absolute, so the VDF works wherever steamcmd runs it from. It used to
+    // point at `../release/`, the cargo build directory, without assets.
+    let content_root = staged
+        .canonicalize()
+        .unwrap_or(staged)
+        .to_string_lossy()
+        .replace('\\', "/");
 
     // Step 2: Generate VDF build script
     println!("\n[2/3] Generating Steam build script...");
@@ -1771,7 +1889,7 @@ fn cmd_publish_steam(_args: &[String]) {
 {{
     "AppID" "{app_id}"
     "Desc" "{desc}"
-    "ContentRoot" "../release/"
+    "ContentRoot" "{content_root}/"
     "BuildOutput" "./output/"
     "Depots"
     {{
@@ -1789,6 +1907,7 @@ fn cmd_publish_steam(_args: &[String]) {
         app_id = dist.app_id,
         depot_id = dist.depot_id,
         desc = description,
+        content_root = content_root,
     );
 
     let vdf_path = build_dir.join("app_build.vdf");
@@ -1850,13 +1969,14 @@ fn cmd_publish_itch(args: &[String]) {
         process::exit(1);
     }
 
-    // Step 1: Build release
+    // Step 1: Build release and stage the files to ship
     println!("[1/2] Building release...");
-    cmd_release(&[]);
+    let target = find_flag(args, "--target");
+    let staged = release_and_stage(&manifest.name, target.as_deref(), &channel);
 
     // Step 2: Push via butler
     println!("\n[2/2] Uploading to itch.io...");
-    let target_dir = "target/release/".to_string();
+    let target_dir = staged.to_string_lossy().into_owned();
     let push_target = format!("{}:{}", dist.project, channel);
 
     println!("  {} push {} {}", butler, target_dir, push_target);
@@ -1965,7 +2085,64 @@ const PRESET_NAMES: &[&str] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::validate_project_name;
+    use super::{stage_release, validate_project_name};
+
+    #[test]
+    fn a_staged_release_holds_the_binary_assets_and_config() {
+        let project = tempfile::tempdir().unwrap();
+        let p = project.path();
+        let exe = if cfg!(windows) { "game.exe" } else { "game" };
+        for (path, contents) in [
+            (format!("target/release/{exe}"), "binary"),
+            ("target/release/deps/libjunk.rlib".to_string(), "build junk"),
+            ("assets/audio/theme.ogg".to_string(), "music"),
+            ("assets/levels/level_01.amigo".to_string(), "level"),
+            ("assets/sprites/hero.png".to_string(), "loose sprite"),
+            ("amigo.toml".to_string(), "name = \"game\""),
+            ("input.ron".to_string(), "(bindings: {})"),
+        ] {
+            let path = p.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+
+        let out = p.join("target/dist/linux");
+        stage_release(p, "game", None, &out).unwrap();
+        for shipped in [
+            exe,
+            "assets/audio/theme.ogg",
+            "assets/levels/level_01.amigo",
+            "assets/sprites/hero.png",
+            "amigo.toml",
+            "input.ron",
+        ] {
+            assert!(out.join(shipped).is_file(), "{shipped} missing");
+        }
+        // The cargo build directory is not what players get.
+        assert!(!out.join("deps").exists());
+
+        // With a pak, the sprites ship inside it, not loose.
+        std::fs::create_dir_all(p.join("assets/packed")).unwrap();
+        std::fs::write(p.join("assets/packed/game.pak"), "pak").unwrap();
+        stage_release(p, "game", None, &out).unwrap();
+        assert!(out.join("assets/packed/game.pak").is_file());
+        assert!(!out.join("assets/sprites").exists());
+        assert!(out.join("assets/audio/theme.ogg").is_file());
+    }
+
+    #[test]
+    fn staging_needs_the_binary_for_the_requested_target() {
+        let project = tempfile::tempdir().unwrap();
+        let err = stage_release(
+            project.path(),
+            "game",
+            Some("x86_64-pc-windows-msvc"),
+            &project.path().join("out"),
+        )
+        .unwrap_err();
+        assert!(err.contains("x86_64-pc-windows-msvc"), "{err}");
+        assert!(err.contains("game.exe"), "{err}");
+    }
 
     #[test]
     fn project_names_must_be_cargo_package_names() {

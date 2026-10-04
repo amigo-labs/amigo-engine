@@ -29,8 +29,10 @@
 
 | Command | Description |
 |---------|-------------|
-| `amigo publish steam` | Upload to Steam (via steamcmd) |
-| `amigo publish itch [--channel C]` | Upload to itch.io (via butler) |
+| `amigo publish steam [--target T]` | Prepare a Steam upload (via steamcmd) of `target/dist/steam` |
+| `amigo publish itch [--channel C] [--target T]` | Upload `target/dist/<channel>` to itch.io (via butler) |
+
+Both publish commands build the release, then stage what players need in `target/dist/<channel>/`: the binary, `assets/` (without loose sprites when `game.pak` holds them) and `amigo.toml`/`input.ron`.
 
 ## Setup (Python Toolchain)
 

@@ -1,5 +1,5 @@
 ---
-status: done
+status: partial
 crate: amigo_audiogen
 depends_on: ["engine/audio"]
 last_updated: 2026-03-18
@@ -267,7 +267,7 @@ pub struct StemSplitResult {
 pub const DEMUCS_STEMS: &[&str] = &["drums", "bass", "vocals", "other"];
 pub const DEMUCS6_STEMS: &[&str] = &["drums", "bass", "vocals", "guitar", "piano", "other"];
 
-pub fn split_stems(
+pub fn expected_stem_paths(
     input_path: &str, config: &StemSplitConfig,
 ) -> Result<StemSplitResult, StemError>;
 
@@ -327,26 +327,26 @@ impl CleanModePipeline {
 
 ### MCP Tools (`tools.rs`)
 
-18 MCP tools exposed via `list_tools()` and dispatched via `dispatch_tool()`:
+MCP tools exposed via `list_tools()` and dispatched via `dispatch_tool()`. A tool that fails or is not implemented returns an error (an MCP `isError` result); failures used to come back as successful results with an `"error"` field, and the unimplemented tools returned plausible paths to files that were never written. The MCP server starts ComfyUI before the tools that need it if nothing answers.
 
 | Tool | Description |
 |------|-------------|
 | `amigo_audiogen_generate_music` | Generate a music track using ACE-Step |
 | `amigo_audiogen_generate_sfx` | Generate sound effects using AudioGen |
-| `amigo_audiogen_split_stems` | Split audio into stems via Demucs |
-| `amigo_audiogen_process` | Post-process audio (trim, normalize, BPM, loop) |
+| `amigo_audiogen_split_stems` | Split audio into drums/bass/vocals/other via Demucs (`amigo setup --only audio`) |
+| `amigo_audiogen_process` | Post-process audio (trim, normalize, BPM, loop). **Not implemented:** returns an error. |
 | `amigo_audiogen_list_styles` | List available world audio styles |
 | `amigo_audiogen_server_status` | Check ACE-Step and AudioGen server status |
-| `amigo_audiogen_generate_core_melody` | Generate core melody for clean-mode workflow |
-| `amigo_audiogen_generate_stem` | Generate individual stem conditioned on melody |
-| `amigo_audiogen_generate_variation` | Generate a variation of an existing track |
-| `amigo_audiogen_extend_track` | Extend a track by generating a continuation |
-| `amigo_audiogen_remix` | Remix a track with different genre/BPM |
-| `amigo_audiogen_generate_ambient` | Generate ambient/atmosphere loop |
-| `amigo_audiogen_loop_trim` | Trim audio to optimal loop point |
-| `amigo_audiogen_normalize` | Normalize audio to target dB level |
-| `amigo_audiogen_convert` | Convert audio format (WAV, OGG, FLAC) |
-| `amigo_audiogen_preview` | Generate short preview clip |
+| `amigo_audiogen_generate_core_melody` | Generate core melody for clean-mode workflow. **Not implemented:** returns an error. |
+| `amigo_audiogen_generate_stem` | Generate individual stem conditioned on melody. **Not implemented:** returns an error. |
+| `amigo_audiogen_generate_variation` | Generate a variation of an existing track. **Not implemented:** returns an error. |
+| `amigo_audiogen_extend_track` | Extend a track by generating a continuation. **Not implemented:** returns an error. |
+| `amigo_audiogen_remix` | Remix a track with different genre/BPM. **Not implemented:** returns an error. |
+| `amigo_audiogen_generate_ambient` | Generate ambient/atmosphere loop. **Not implemented:** returns an error. |
+| `amigo_audiogen_loop_trim` | Trim audio to optimal loop point. **Not implemented:** returns an error. |
+| `amigo_audiogen_normalize` | Normalize audio to target dB level. **Not implemented:** returns an error. |
+| `amigo_audiogen_convert` | Convert audio format (WAV, OGG, FLAC). **Not implemented:** returns an error. |
+| `amigo_audiogen_preview` | Generate short preview clip. **Not implemented:** returns an error. |
 | `amigo_audiogen_list_models` | List available AI models |
 | `amigo_audiogen_queue_status` | Check generation queue status |
 
@@ -409,7 +409,7 @@ The clean-mode pipeline generates each stem individually for zero bleed:
 
 ### Stem Separation
 
-`split_stems()` produces output paths for each stem based on the model:
+`expected_stem_paths()` computes the file names Demucs writes for each stem (it does not run Demucs; the `split_stems` tool does):
 - **Demucs (4-stem)**: drums, bass, vocals, other
 - **Demucs6 (6-stem)**: drums, bass, vocals, guitar, piano, other
 

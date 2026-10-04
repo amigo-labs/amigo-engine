@@ -27,11 +27,29 @@ const GENERATION_TIMEOUT_MS: u64 = 300_000;
 /// Poll interval for checking generation status.
 const POLL_INTERVAL_MS: u64 = 1_000;
 
+/// The ComfyUI address: `AMIGO_COMFYUI_URL`, or the default.
+pub fn comfyui_config() -> ComfyUiConfig {
+    let url = std::env::var("AMIGO_COMFYUI_URL").unwrap_or_else(|_| DEFAULT_COMFYUI_URL.into());
+    parse_comfy_url(&url)
+}
+
 /// Create a ComfyUI client from the environment or default URL.
 fn create_comfyui_client() -> ComfyUiClient {
-    let url = std::env::var("AMIGO_COMFYUI_URL").unwrap_or_else(|_| DEFAULT_COMFYUI_URL.into());
-    let config = parse_comfy_url(&url);
-    ComfyUiClient::new(config)
+    ComfyUiClient::new(comfyui_config())
+}
+
+/// Whether `tool` runs a ComfyUI workflow, so the MCP server should make
+/// sure ComfyUI is up (starting it if needed) before dispatching it.
+pub fn needs_comfyui(tool: &str) -> bool {
+    matches!(
+        tool,
+        "amigo_audiogen_generate_music"
+            | "amigo_audiogen_generate_sfx"
+            | "amigo_audiogen_generate_tts"
+            | "amigo_audiogen_create_voice"
+            | "amigo_audiogen_preview_voice"
+            | "amigo_audiogen_from_reference"
+    )
 }
 
 /// Parse a URL like "http://localhost:8188" into a ComfyUiConfig.
@@ -916,6 +934,66 @@ pub enum ToolError {
     UnknownTool(String),
     #[error("Invalid parameters: {0}")]
     InvalidParams(#[from] serde_json::Error),
+    /// An argument is well-formed but unusable (an unknown voice or style,
+    /// a missing input file).
+    #[error("Invalid input: {0}")]
+    BadInput(String),
+    /// The tool exists but has no implementation behind it yet. Returned
+    /// instead of a made-up output path.
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
+    /// ComfyUI, Demucs or the file system failed.
+    #[error("{0}")]
+    Backend(String),
+}
+
+impl ToolError {
+    /// Whether this is a protocol error (unknown tool, malformed arguments,
+    /// a JSON-RPC error in MCP) rather than a tool that ran and failed (an
+    /// `isError` result the model can read and react to).
+    pub fn is_protocol_error(&self) -> bool {
+        matches!(self, Self::UnknownTool(_) | Self::InvalidParams(_))
+    }
+}
+
+/// Error for the processing and generation tools that only ever returned a
+/// plausible output path without touching any file.
+fn not_implemented(tool: &str, what: &str) -> ToolError {
+    ToolError::NotImplemented(format!(
+        "{tool}: {what} is not implemented yet; no file was written"
+    ))
+}
+
+/// Split `input` into stems with Demucs (installed by `amigo setup --only
+/// audio`) into `output_dir`. Returns `(stem name, path)` pairs.
+fn separate_stems(
+    input: &std::path::Path,
+    output_dir: &std::path::Path,
+) -> Result<Vec<(String, String)>, ToolError> {
+    use amigo_audio_pipeline::config::SeparationConfig;
+    use amigo_audio_pipeline::pipeline::ToolchainPaths;
+    use amigo_audio_pipeline::separation::SeparationStage;
+
+    let toolchain = ToolchainPaths::detect().map_err(|e| ToolError::Backend(e.to_string()))?;
+    let config = SeparationConfig {
+        // A game wants the instrument stems, not just vocals/instrumental.
+        stem_count: 4,
+        skip_if_mono: false,
+        ..SeparationConfig::default()
+    };
+    let result = SeparationStage::new(config, toolchain.uv_path, toolchain.venv_python)
+        .run(input, output_dir)
+        .map_err(|e| ToolError::Backend(format!("Demucs failed: {e}")))?;
+    if result.stems.is_empty() {
+        return Err(ToolError::Backend(
+            "Demucs finished but wrote no stems".into(),
+        ));
+    }
+    Ok(result
+        .stems
+        .into_iter()
+        .map(|(name, path)| (name, path.to_string_lossy().into_owned()))
+        .collect())
 }
 
 pub fn dispatch_tool(
@@ -985,21 +1063,28 @@ pub fn dispatch_tool_with_defaults(
                 match run_comfyui_audio_workflow(&client, &workflow, &output_path) {
                     Ok(_) => start.elapsed().as_millis() as u64,
                     Err(e) => {
-                        return Ok(serde_json::json!({
-                            "error": e,
-                            "output_path": output_path,
-                            "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                        }));
+                        return Err(ToolError::Backend(format!(
+                            "{}. {}",
+                            e, "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                        )));
                     }
                 };
 
+            // Stems come from running Demucs on the track; these paths used
+            // to be invented without any separation running.
             let mut stem_paths = HashMap::new();
+            let mut stem_warning = None;
             if p.split_stems {
-                for stem in &["drums", "bass", "vocals", "other"] {
-                    stem_paths.insert(
-                        stem.to_string(),
-                        format!("assets/generated/audio/stems/{}_{}.wav", base_name, stem),
-                    );
+                match separate_stems(
+                    std::path::Path::new(&output_path),
+                    std::path::Path::new("assets/generated/audio/stems"),
+                ) {
+                    Ok(stems) => stem_paths.extend(stems),
+                    Err(e) => {
+                        stem_warning = Some(format!(
+                            "The track was generated, but splitting it into stems failed: {e}"
+                        ))
+                    }
                 }
             }
 
@@ -1011,6 +1096,9 @@ pub fn dispatch_tool_with_defaults(
             };
 
             let mut response = serde_json::to_value(result)?;
+            if let Some(warning) = stem_warning {
+                response["warning"] = serde_json::json!(warning);
+            }
             if !missing.is_empty() {
                 response["hints"] = serde_json::json!({
                     "defaults_missing": missing,
@@ -1076,10 +1164,10 @@ pub fn dispatch_tool_with_defaults(
             if output_paths.is_empty()
                 && let Some(e) = gen_error
             {
-                return Ok(serde_json::json!({
-                    "error": e,
-                    "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                }));
+                return Err(ToolError::Backend(format!(
+                    "{}. {}",
+                    e, "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                )));
             }
 
             let generation_time_ms = start.elapsed().as_millis() as u64;
@@ -1108,46 +1196,30 @@ pub fn dispatch_tool_with_defaults(
         }
         "amigo_audiogen_split_stems" => {
             let p: SplitStemsParams = serde_json::from_value(params)?;
-            let dir = p
-                .output_dir
-                .unwrap_or_else(|| "assets/generated/audio/stems".into());
-            let stem_name = std::path::Path::new(&p.input)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "track".into());
-
-            let stems: Vec<String> = ["drums", "bass", "vocals", "other"]
-                .iter()
-                .map(|s| format!("{}/{}_{}.wav", dir, stem_name, s))
-                .collect();
-
+            let input = std::path::PathBuf::from(&p.input);
+            if !input.is_file() {
+                return Err(ToolError::BadInput(format!(
+                    "{} does not exist",
+                    input.display()
+                )));
+            }
+            let dir = std::path::PathBuf::from(
+                p.output_dir
+                    .unwrap_or_else(|| "assets/generated/audio/stems".into()),
+            );
+            // This used to return four made-up paths without running Demucs.
+            let stems = separate_stems(&input, &dir)?;
             Ok(serde_json::to_value(StemResult {
-                stems,
-                adaptive_config: Some(format!("{}/{}_adaptive.ron", dir, stem_name)),
+                stems: stems.into_iter().map(|(_, path)| path).collect(),
+                adaptive_config: None,
             })?)
         }
         "amigo_audiogen_process" => {
-            let p: ProcessAudioParams = serde_json::from_value(params)?;
-
-            // Demonstrate processing capabilities (no real file I/O)
-            let mut bpm = None;
-            let mut loop_point = None;
-
-            if p.detect_bpm {
-                // Would detect from actual audio
-                bpm = Some(120.0);
-            }
-            if p.find_loop {
-                // Would find from actual audio
-                loop_point = Some(0.0);
-            }
-
-            Ok(serde_json::to_value(ProcessResult {
-                output: p.input,
-                bpm,
-                loop_point,
-                duration_secs: 0.0,
-            })?)
+            let _: ProcessAudioParams = serde_json::from_value(params)?;
+            Err(not_implemented(
+                name,
+                "BPM detection, loop finding and normalisation of audio files",
+            ))
         }
         "amigo_audiogen_list_styles" => {
             let custom_registry = {
@@ -1200,133 +1272,44 @@ pub fn dispatch_tool_with_defaults(
             })?)
         }
         "amigo_audiogen_generate_core_melody" => {
-            let p: GenerateCoreMelodyParams = serde_json::from_value(params)?;
-            let style = WorldAudioStyle::find(&p.world, project_dir);
-            let bpm = if p.bpm == 0 {
-                style.as_ref().map(|s| s.default_bpm).unwrap_or(120)
-            } else {
-                p.bpm
-            };
-            let base_name = format!("{}_melody_{}bpm_{}", p.world, bpm, p.key.replace(' ', "_"));
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/stems/{}.wav", base_name),
-                "key": p.key,
-                "bpm": bpm,
-                "duration_secs": p.duration_secs,
-            }))
+            let _: GenerateCoreMelodyParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "melody generation"))
         }
         "amigo_audiogen_generate_stem" => {
-            let p: GenerateStemParams = serde_json::from_value(params)?;
-            let bpm = if p.bpm == 0 { 120 } else { p.bpm };
-            let stem_name = sanitize(&p.stem_type);
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/stems/{}_{}.wav",
-                    std::path::Path::new(&p.melody_ref)
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "melody".into()),
-                    stem_name
-                ),
-                "stem_type": p.stem_type,
-                "melody_ref": p.melody_ref,
-                "bpm": bpm,
-            }))
+            let _: GenerateStemParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "stem generation from a melody"))
         }
         "amigo_audiogen_generate_variation" => {
-            let p: GenerateVariationParams = serde_json::from_value(params)?;
-            let base = std::path::Path::new(&p.input)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "track".into());
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/{}_var.wav", base),
-                "source": p.input,
-                "strength": p.strength,
-            }))
+            let _: GenerateVariationParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "track variations"))
         }
         "amigo_audiogen_extend_track" => {
-            let p: ExtendTrackParams = serde_json::from_value(params)?;
-            let base = std::path::Path::new(&p.input)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "track".into());
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/{}_extended.wav", base),
-                "source": p.input,
-                "extend_secs": p.extend_secs,
-            }))
+            let _: ExtendTrackParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "track extension"))
         }
         "amigo_audiogen_remix" => {
-            let p: RemixParams = serde_json::from_value(params)?;
-            let base = std::path::Path::new(&p.input)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "track".into());
-            let bpm = if p.bpm == 0 { 120 } else { p.bpm };
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/{}_remix_{}bpm.wav", base, bpm),
-                "source": p.input,
-                "genre": p.genre,
-                "bpm": bpm,
-            }))
+            let _: RemixParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "remixing"))
         }
         "amigo_audiogen_generate_ambient" => {
-            let p: GenerateAmbientParams = serde_json::from_value(params)?;
-            let safe_name = sanitize(&p.prompt);
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/ambient/{}.wav", safe_name),
-                "duration_secs": p.duration_secs,
-                "looping": p.looping,
-            }))
+            let _: GenerateAmbientParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "ambient generation"))
         }
         "amigo_audiogen_loop_trim" => {
-            let p: LoopTrimParams = serde_json::from_value(params)?;
-            let base = std::path::Path::new(&p.input)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "track".into());
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/{}_looped.wav", base),
-                "source": p.input,
-                "target_duration_secs": p.target_duration_secs,
-            }))
+            let _: LoopTrimParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "loop trimming"))
         }
         "amigo_audiogen_normalize" => {
-            let p: NormalizeParams = serde_json::from_value(params)?;
-            Ok(serde_json::json!({
-                "output": p.input.clone(),
-                "target_db": p.target_db,
-            }))
+            let _: NormalizeParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "normalisation"))
         }
         "amigo_audiogen_convert" => {
-            let p: ConvertParams = serde_json::from_value(params)?;
-            let base = std::path::Path::new(&p.input)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "audio".into());
-            let ext = match p.format.as_str() {
-                "ogg" => "ogg",
-                "flac" => "flac",
-                "wav" => "wav",
-                _ => "wav",
-            };
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/{}.{}", base, ext),
-                "source": p.input,
-                "format": p.format,
-            }))
+            let _: ConvertParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "format conversion"))
         }
         "amigo_audiogen_preview" => {
-            let p: PreviewParams = serde_json::from_value(params)?;
-            let base = std::path::Path::new(&p.input)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "audio".into());
-            Ok(serde_json::json!({
-                "output": format!("assets/generated/audio/{}_preview.wav", base),
-                "source": p.input,
-                "preview_secs": p.preview_secs,
-            }))
+            let _: PreviewParams = serde_json::from_value(params)?;
+            Err(not_implemented(name, "preview rendering"))
         }
         "amigo_audiogen_list_models" => {
             // Try to get live model list from ComfyUI; fall back to known defaults
@@ -1361,7 +1344,7 @@ pub fn dispatch_tool_with_defaults(
             let p: SetDefaultsParams = serde_json::from_value(params)?;
             let project_path = std::path::Path::new(&p.project_dir);
             if let Err(e) = save_audio_defaults(project_path, &p.defaults) {
-                return Ok(serde_json::json!({ "saved": false, "error": e }));
+                return Err(ToolError::Backend(e.to_string()));
             }
             Ok(serde_json::json!({ "saved": true, "path": "amigo.toml" }))
         }
@@ -1425,11 +1408,10 @@ pub fn dispatch_tool_with_defaults(
                     };
                     Ok(serde_json::to_value(result)?)
                 }
-                Err(e) => Ok(serde_json::json!({
-                    "error": e,
-                    "output_path": output_path,
-                    "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                })),
+                Err(e) => Err(ToolError::Backend(format!(
+                    "{}. {}",
+                    e, "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                ))),
             }
         }
         "amigo_audiogen_create_voice" => {
@@ -1454,9 +1436,10 @@ pub fn dispatch_tool_with_defaults(
 
             registry.insert(profile.clone());
             if let Err(e) = registry.save(&voices_dir) {
-                return Ok(serde_json::json!({
-                    "error": format!("Failed to save voice registry: {}", e)
-                }));
+                return Err(ToolError::Backend(format!(
+                    "Failed to save voice registry: {}",
+                    e
+                )));
             }
 
             let test_audio = if let Some(ref test_text) = p.test_text {
@@ -1522,9 +1505,10 @@ pub fn dispatch_tool_with_defaults(
             let profile = match registry.get(&p.name) {
                 Some(v) => v.clone(),
                 None => {
-                    return Ok(serde_json::json!({
-                        "error": format!("Voice profile '{}' not found", p.name)
-                    }));
+                    return Err(ToolError::BadInput(format!(
+                        "Voice profile '{}' not found",
+                        p.name
+                    )));
                 }
             };
 
@@ -1549,11 +1533,10 @@ pub fn dispatch_tool_with_defaults(
                     "voice": serde_json::to_value(&profile)?,
                     "text": p.text,
                 })),
-                Err(e) => Ok(serde_json::json!({
-                    "error": e,
-                    "voice": serde_json::to_value(&profile)?,
-                    "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                })),
+                Err(e) => Err(ToolError::Backend(format!(
+                    "{}. {}",
+                    e, "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                ))),
             }
         }
         "amigo_audiogen_delete_voice" => {
@@ -1572,9 +1555,10 @@ pub fn dispatch_tool_with_defaults(
             if removed.is_some()
                 && let Err(e) = registry.save(&voices_dir)
             {
-                return Ok(serde_json::json!({
-                    "error": format!("Failed to save voice registry: {}", e)
-                }));
+                return Err(ToolError::Backend(format!(
+                    "Failed to save voice registry: {}",
+                    e
+                )));
             }
 
             Ok(serde_json::json!({
@@ -1588,10 +1572,14 @@ pub fn dispatch_tool_with_defaults(
             let p: CreateStyleParams = serde_json::from_value(params)?;
 
             if p.name.is_empty() {
-                return Ok(serde_json::json!({ "error": "Style name must not be empty" }));
+                return Err(ToolError::BadInput(
+                    "Style name must not be empty".to_string(),
+                ));
             }
             if p.genre.trim().is_empty() {
-                return Ok(serde_json::json!({ "error": "Style genre must not be empty" }));
+                return Err(ToolError::BadInput(
+                    "Style genre must not be empty".to_string(),
+                ));
             }
 
             let styles_dir = p
@@ -1621,9 +1609,10 @@ pub fn dispatch_tool_with_defaults(
 
             registry.insert(style.clone());
             if let Err(e) = registry.save(&styles_dir) {
-                return Ok(serde_json::json!({
-                    "error": format!("Failed to save style registry: {}", e)
-                }));
+                return Err(ToolError::Backend(format!(
+                    "Failed to save style registry: {}",
+                    e
+                )));
             }
 
             Ok(serde_json::json!({
@@ -1652,13 +1641,15 @@ pub fn dispatch_tool_with_defaults(
                         .iter()
                         .any(|s| s.name == p.name)
                     {
-                        return Ok(serde_json::json!({
-                            "error": format!("'{}' is a builtin style. To customize it, create a custom style with the same name using amigo_audiogen_create_style.", p.name)
-                        }));
+                        return Err(ToolError::BadInput(format!(
+                            "'{}' is a builtin style. To customize it, create a custom style with the same name using amigo_audiogen_create_style.",
+                            p.name
+                        )));
                     }
-                    return Ok(serde_json::json!({
-                        "error": format!("Custom style '{}' not found", p.name)
-                    }));
+                    return Err(ToolError::BadInput(format!(
+                        "Custom style '{}' not found",
+                        p.name
+                    )));
                 }
             };
 
@@ -1686,9 +1677,10 @@ pub fn dispatch_tool_with_defaults(
 
             registry.insert(updated.clone());
             if let Err(e) = registry.save(&styles_dir) {
-                return Ok(serde_json::json!({
-                    "error": format!("Failed to save style registry: {}", e)
-                }));
+                return Err(ToolError::Backend(format!(
+                    "Failed to save style registry: {}",
+                    e
+                )));
             }
 
             Ok(serde_json::json!({
@@ -1713,18 +1705,20 @@ pub fn dispatch_tool_with_defaults(
                 .any(|s| s.name == p.name)
                 && registry.get(&p.name).is_none()
             {
-                return Ok(serde_json::json!({
-                    "error": format!("'{}' is a builtin style and cannot be deleted", p.name)
-                }));
+                return Err(ToolError::BadInput(format!(
+                    "'{}' is a builtin style and cannot be deleted",
+                    p.name
+                )));
             }
 
             let removed = registry.remove(&p.name);
             if removed.is_some()
                 && let Err(e) = registry.save(&styles_dir)
             {
-                return Ok(serde_json::json!({
-                    "error": format!("Failed to save style registry: {}", e)
-                }));
+                return Err(ToolError::Backend(format!(
+                    "Failed to save style registry: {}",
+                    e
+                )));
             }
 
             Ok(serde_json::json!({
@@ -1773,11 +1767,10 @@ pub fn dispatch_tool_with_defaults(
                     key_instruments: vec![],
                 });
                 if let Err(e) = registry.save(&styles_dir) {
-                    return Ok(serde_json::json!({
-                        "error": format!("Failed to save style '{}': {}", style_name, e),
-                        "style_name": style_name,
-                        "styles_dir": styles_dir.display().to_string(),
-                    }));
+                    return Err(ToolError::Backend(format!(
+                        "Failed to save style '{}': {}",
+                        style_name, e
+                    )));
                 }
             }
 
@@ -1816,11 +1809,10 @@ pub fn dispatch_tool_with_defaults(
                 match run_comfyui_audio_workflow(&client, &workflow, &output_path) {
                     Ok(_) => outputs.push(output_path),
                     Err(e) => {
-                        return Ok(serde_json::json!({
-                            "error": e,
-                            "generated_so_far": outputs,
-                            "hint": "Is ComfyUI running? Check with amigo_audiogen_server_status"
-                        }));
+                        return Err(ToolError::Backend(format!(
+                            "{}. {}",
+                            e, "Is ComfyUI running? Check with amigo_audiogen_server_status"
+                        )));
                     }
                 }
             }
@@ -1863,6 +1855,31 @@ fn sanitize(s: &str) -> String {
 mod tests {
     use super::*;
 
+    /// A generation tool's result. With ComfyUI running it is a success;
+    /// without one it must be a `Backend` error, never the old success
+    /// carrying an `"error"` field and a path that was never written.
+    fn generated(result: Result<serde_json::Value, ToolError>) -> Option<serde_json::Value> {
+        match result {
+            Ok(v) => {
+                assert!(v.get("error").is_none(), "error reported as success: {v}");
+                Some(v)
+            }
+            Err(ToolError::Backend(msg)) => {
+                assert!(msg.contains("ComfyUI") || msg.contains("Failed"), "{msg}");
+                None
+            }
+            Err(other) => panic!("unexpected error: {other}"),
+        }
+    }
+
+    /// The tools that used to return a plausible path without writing
+    /// anything now say they are not implemented.
+    fn assert_not_implemented(tool: &str, args: serde_json::Value) {
+        let err = dispatch_tool(tool, args).unwrap_err();
+        assert!(matches!(err, ToolError::NotImplemented(_)), "{tool}: {err}");
+        assert!(!err.is_protocol_error());
+    }
+
     // ── Helper ──────────────────────────────────────────────────
 
     /// Whether ComfyUI is reachable in the test environment.
@@ -1888,12 +1905,7 @@ mod tests {
             "amigo_audiogen_generate_music",
             serde_json::json!({ "world": "caribbean" }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        // When ComfyUI is unavailable, returns an error object with output_path
-        if v.get("error").is_some() {
-            assert!(v["output_path"].as_str().unwrap().contains("caribbean"));
-        } else {
+        if let Some(v) = generated(result) {
             assert!(v["full_track_path"].as_str().unwrap().contains("caribbean"));
         }
     }
@@ -1908,13 +1920,8 @@ mod tests {
                 "bpm": 160
             }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        if v.get("error").is_some() {
-            assert!(v["output_path"].as_str().unwrap().contains("160bpm"));
-        } else {
+        if let Some(v) = generated(result) {
             assert!(v["full_track_path"].as_str().unwrap().contains("160bpm"));
-            assert!(v["stem_paths"].as_object().unwrap().len() == 4);
         }
     }
 
@@ -1929,25 +1936,21 @@ mod tests {
                 "variants": 2
             }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        // When ComfyUI is unavailable, returns an error object
-        if v.get("error").is_some() {
-            assert!(v["error"].as_str().unwrap().contains("Failed"));
-        } else {
+        if let Some(v) = generated(result) {
             assert_eq!(v["output_paths"].as_array().unwrap().len(), 2);
         }
     }
 
     #[test]
     fn dispatch_split_stems() {
-        let result = dispatch_tool(
+        // This returned four invented stem paths for a file that does not
+        // exist. Splitting needs a real input (and Demucs).
+        let err = dispatch_tool(
             "amigo_audiogen_split_stems",
-            serde_json::json!({ "input": "music/battle.wav" }),
-        );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert_eq!(v["stems"].as_array().unwrap().len(), 4);
+            serde_json::json!({ "input": "music/does_not_exist.wav" }),
+        )
+        .unwrap_err();
+        assert!(matches!(err, ToolError::BadInput(_)), "{err}");
     }
 
     // ── Query and status dispatch ──────────────────────────────
@@ -1983,19 +1986,15 @@ mod tests {
 
     #[test]
     fn dispatch_generate_core_melody() {
-        let result = dispatch_tool(
+        assert_not_implemented(
             "amigo_audiogen_generate_core_melody",
             serde_json::json!({ "world": "caribbean", "key": "A minor", "bpm": 130 }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["output"].as_str().unwrap().contains("caribbean"));
-        assert!(v["output"].as_str().unwrap().contains("130bpm"));
     }
 
     #[test]
     fn dispatch_generate_stem() {
-        let result = dispatch_tool(
+        assert_not_implemented(
             "amigo_audiogen_generate_stem",
             serde_json::json!({
                 "stem_type": "bass",
@@ -2003,44 +2002,64 @@ mod tests {
                 "bpm": 120
             }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["output"].as_str().unwrap().contains("bass"));
     }
 
     // ── Utility dispatch ────────────────────────────────────────
 
     #[test]
     fn dispatch_generate_variation() {
-        let result = dispatch_tool(
+        assert_not_implemented(
             "amigo_audiogen_generate_variation",
             serde_json::json!({ "input": "track.wav", "strength": 0.5 }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["output"].as_str().unwrap().contains("var"));
     }
 
     #[test]
     fn dispatch_generate_ambient() {
-        let result = dispatch_tool(
+        assert_not_implemented(
             "amigo_audiogen_generate_ambient",
             serde_json::json!({ "prompt": "ocean waves crashing" }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["output"].as_str().unwrap().contains("ambient"));
+    }
+
+    #[test]
+    fn every_stub_tool_reports_not_implemented() {
+        for (tool, args) in [
+            (
+                "amigo_audiogen_process",
+                serde_json::json!({ "input": "a.wav" }),
+            ),
+            (
+                "amigo_audiogen_extend_track",
+                serde_json::json!({ "input": "a.wav", "extend_secs": 10 }),
+            ),
+            (
+                "amigo_audiogen_remix",
+                serde_json::json!({ "input": "a.wav", "genre": "techno" }),
+            ),
+            (
+                "amigo_audiogen_loop_trim",
+                serde_json::json!({ "input": "a.wav", "target_duration_secs": 8 }),
+            ),
+            (
+                "amigo_audiogen_normalize",
+                serde_json::json!({ "input": "a.wav" }),
+            ),
+            (
+                "amigo_audiogen_preview",
+                serde_json::json!({ "input": "a.wav" }),
+            ),
+        ] {
+            assert_not_implemented(tool, args);
+        }
     }
 
     #[test]
     fn dispatch_convert() {
-        let result = dispatch_tool(
+        assert_not_implemented(
             "amigo_audiogen_convert",
             serde_json::json!({ "input": "track.wav", "format": "ogg" }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["output"].as_str().unwrap().ends_with(".ogg"));
     }
 
     #[test]
@@ -2109,10 +2128,7 @@ mod tests {
             "amigo_audiogen_generate_music",
             serde_json::json!({ "world": "caribbean" }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        // When ComfyUI is unavailable, returns error; otherwise check hints
-        if v.get("error").is_none() {
+        if let Some(v) = generated(result) {
             let hints = &v["hints"];
             assert!(hints["defaults_missing"].is_array());
             assert!(
@@ -2138,10 +2154,7 @@ mod tests {
             serde_json::json!({ "world": "caribbean" }),
             Some(dir.path()),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        // When ComfyUI is available: no hints. When unavailable: error object.
-        if v.get("error").is_none() {
+        if let Some(v) = generated(result) {
             assert!(v.get("hints").is_none());
         }
     }
@@ -2154,12 +2167,11 @@ mod tests {
             "amigo_audiogen_generate_tts",
             serde_json::json!({ "text": "Hallo Welt" }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        // Returns either TtsResult or an error object with output_path
-        let path = v["output_path"].as_str().unwrap();
-        assert!(path.contains("tts"));
-        assert!(path.ends_with(".wav"));
+        if let Some(v) = generated(result) {
+            let path = v["output_path"].as_str().unwrap();
+            assert!(path.contains("tts"));
+            assert!(path.ends_with(".wav"));
+        }
     }
 
     #[test]
@@ -2168,10 +2180,9 @@ mod tests {
             "amigo_audiogen_generate_tts",
             serde_json::json!({ "text": "Hello", "format": "ogg" }),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        let path = v["output_path"].as_str().unwrap();
-        assert!(path.ends_with(".ogg"));
+        if let Some(v) = generated(result) {
+            assert!(v["output_path"].as_str().unwrap().ends_with(".ogg"));
+        }
     }
 
     #[test]
@@ -2244,16 +2255,16 @@ mod tests {
     #[test]
     fn dispatch_preview_voice_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let result = dispatch_tool(
+        let err = dispatch_tool(
             "amigo_audiogen_preview_voice",
             serde_json::json!({
                 "name": "missing",
                 "project_dir": dir.path().to_str().unwrap()
             }),
-        );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["error"].as_str().unwrap().contains("not found"));
+        )
+        .unwrap_err();
+        assert!(matches!(err, ToolError::BadInput(_)), "{err}");
+        assert!(err.to_string().contains("not found"), "{err}");
     }
 
     // ── Helpers ────────────────────────────────────────────────
@@ -2338,16 +2349,16 @@ mod tests {
 
     #[test]
     fn dispatch_create_style_empty_genre_rejected() {
-        let result = dispatch_tool(
+        let err = dispatch_tool(
             "amigo_audiogen_create_style",
             serde_json::json!({
                 "name": "bad_style",
                 "genre": "  ",
             }),
-        );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["error"].as_str().unwrap().contains("genre"));
+        )
+        .unwrap_err();
+        assert!(matches!(err, ToolError::BadInput(_)), "{err}");
+        assert!(err.to_string().contains("genre"), "{err}");
     }
 
     #[test]
@@ -2386,13 +2397,13 @@ mod tests {
 
     #[test]
     fn dispatch_edit_builtin_rejected() {
-        let result = dispatch_tool(
+        let err = dispatch_tool(
             "amigo_audiogen_edit_style",
             serde_json::json!({ "name": "caribbean" }),
-        );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["error"].as_str().unwrap().contains("builtin"));
+        )
+        .unwrap_err();
+        assert!(matches!(err, ToolError::BadInput(_)), "{err}");
+        assert!(err.to_string().contains("builtin"), "{err}");
     }
 
     #[test]
@@ -2435,13 +2446,13 @@ mod tests {
 
     #[test]
     fn dispatch_delete_builtin_rejected() {
-        let result = dispatch_tool(
+        let err = dispatch_tool(
             "amigo_audiogen_delete_style",
             serde_json::json!({ "name": "matrix" }),
-        );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        assert!(v["error"].as_str().unwrap().contains("builtin"));
+        )
+        .unwrap_err();
+        assert!(matches!(err, ToolError::BadInput(_)), "{err}");
+        assert!(err.to_string().contains("builtin"), "{err}");
     }
 
     // ── From-reference dispatch ─────────────────────────────────
@@ -2460,11 +2471,8 @@ mod tests {
             }),
             Some(dir.path()),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        // Might fail at ComfyUI but style should still be checked
-        // If ComfyUI is not available, we get an error but the style was saved before generation
-        if v.get("error").is_none() {
+        // The style is saved before generation, so it exists either way.
+        if let Some(v) = generated(result) {
             assert_eq!(v["saved_style"], "my_epic");
         }
 
@@ -2489,16 +2497,8 @@ mod tests {
             }),
             Some(dir.path()),
         );
-        assert!(result.is_ok());
-        let v = result.unwrap();
-        // When ComfyUI is not running, we get an error response with generated_so_far.
-        // When it is running, we get the full response with variation_strength.
-        // Either way the tool should not crash.
-        if v.get("error").is_none() {
+        if let Some(v) = generated(result) {
             assert_eq!(v["variation_strength"], 0.7);
-        } else {
-            // Error path still succeeds as a tool result
-            assert!(v["generated_so_far"].is_array());
         }
     }
 }

@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 description = "Shared ComfyUI client for AI generation pipelines (artgen, audiogen)"
 
+[features]
+# A fake ComfyUI HTTP server for tests of crates that use this client.
+fake-server = []
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

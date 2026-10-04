@@ -273,8 +273,8 @@ engine ever called them.
 | [tooling/setup](tooling/setup.md)                         | done   | amigo_cli         | tooling/cli                   |
 | [tooling/editor](tooling/editor.md)                       | done   | amigo_editor      | engine/core, engine/ui        |
 | [tooling/debug](tooling/debug.md)                         | done   | amigo_debug       | engine/core                   |
-| [ai-pipelines/artgen](ai-pipelines/artgen.md)             | done   | amigo_artgen      | assets/format                 |
-| [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | done   | amigo_audiogen    | engine/audio                  |
+| [ai-pipelines/artgen](ai-pipelines/artgen.md)             | partial | amigo_artgen      | assets/format                 |
+| [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | partial | amigo_audiogen    | engine/audio                  |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
 | [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | done  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
