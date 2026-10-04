@@ -1,4 +1,5 @@
 use crate::AssetError;
+use amigo_animation::{Animation, AnimationLibrary};
 use amigo_core::Rect;
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
@@ -17,11 +18,57 @@ pub struct SpriteData {
     pub texture_index: u32,
 }
 
+/// Whether the sprite loader reads files like `path`: PNG, and Aseprite
+/// (`.aseprite`/`.ase`).
+pub fn is_sprite_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| matches!(ext, "png" | "aseprite" | "ase"))
+}
+
+/// Decode one sprite file into the image the engine uploads and the
+/// animations it defines.
+///
+/// A PNG has no animations. An Aseprite file becomes a horizontal strip of
+/// its frames ([`AsepriteData::strip`](crate::AsepriteData::strip)), and each
+/// tag an animation named `"{name}/{tag}"` whose frame UVs point into that
+/// strip. `name` is the sprite name, e.g. `"enemies/bat"` for
+/// `sprites/enemies/bat.aseprite`.
+pub fn load_sprite_file(
+    path: &Path,
+    name: &str,
+) -> Result<(image::RgbaImage, Vec<Animation>), AssetError> {
+    let is_aseprite = path
+        .extension()
+        .is_some_and(|ext| ext == "aseprite" || ext == "ase");
+    if !is_aseprite {
+        return Ok((image::open(path)?.to_rgba8(), Vec::new()));
+    }
+
+    let data = crate::aseprite::load_aseprite(path)?;
+    let stem_prefix = format!("{}/", data.name);
+    let animations = data
+        .animations
+        .iter()
+        .cloned()
+        .map(|mut animation| {
+            let tag = animation
+                .name
+                .strip_prefix(&stem_prefix)
+                .unwrap_or(&animation.name);
+            animation.name = format!("{name}/{tag}");
+            animation
+        })
+        .collect();
+    Ok((data.strip(), animations))
+}
+
 /// Manages all game assets: sprites, data files, etc.
 pub struct AssetManager {
     base_path: PathBuf,
     sprites: FxHashMap<String, SpriteData>,
     sprite_names: Vec<String>,
+    animations: AnimationLibrary,
 }
 
 impl AssetManager {
@@ -30,10 +77,11 @@ impl AssetManager {
             base_path: base_path.into(),
             sprites: FxHashMap::default(),
             sprite_names: Vec::new(),
+            animations: AnimationLibrary::new(),
         }
     }
 
-    /// Load all PNG files from the sprites directory.
+    /// Load every sprite file (PNG, Aseprite) from the sprites directory.
     pub fn load_sprites(&mut self) -> Result<(), AssetError> {
         let sprites_dir = self.base_path.join("sprites");
         if !sprites_dir.exists() {
@@ -56,31 +104,29 @@ impl AssetManager {
                     format!("{prefix}/{dir_name}")
                 };
                 self.load_sprites_recursive(&path, &new_prefix)?;
-            } else if path.extension().is_some_and(|ext| ext == "png") {
+            } else if is_sprite_file(&path) {
                 let stem = path.file_stem().unwrap().to_string_lossy();
                 let name = if prefix.is_empty() {
                     stem.to_string()
                 } else {
                     format!("{prefix}/{stem}")
                 };
-                match image::open(&path) {
-                    Ok(img) => {
-                        let rgba = img.to_rgba8();
-                        let width = rgba.width();
-                        let height = rgba.height();
-                        info!("Loaded sprite: {} ({}x{})", name, width, height);
-                        self.sprite_names.push(name.clone());
-                        self.sprites.insert(
-                            name.clone(),
-                            SpriteData {
-                                name,
-                                width,
-                                height,
-                                image: rgba,
-                                uv: Rect::new(0.0, 0.0, 1.0, 1.0),
-                                texture_index: 0,
-                            },
+                if self.sprites.contains_key(&name) {
+                    warn!(
+                        "Two sprite files are named '{name}'; {} replaces the one loaded before",
+                        path.display()
+                    );
+                }
+                match load_sprite_file(&path, &name) {
+                    Ok((image, animations)) => {
+                        info!(
+                            "Loaded sprite: {} ({}x{}, {} animations)",
+                            name,
+                            image.width(),
+                            image.height(),
+                            animations.len()
                         );
+                        self.insert_sprite(name, image, animations);
                     }
                     Err(e) => {
                         warn!("Failed to load sprite {:?}: {}", path, e);
@@ -91,11 +137,12 @@ impl AssetManager {
         Ok(())
     }
 
-    /// Re-read a single sprite PNG from disk (hot reload). Accepts an
+    /// Re-read a single sprite file from disk (hot reload). Accepts an
     /// absolute or relative path; it must point below `<base>/sprites/`.
-    /// Returns the refreshed sprite data on success.
+    /// Returns the refreshed sprite data on success; an Aseprite file's
+    /// animations are replaced too.
     pub fn reload_sprite(&mut self, path: &Path) -> Option<&SpriteData> {
-        if path.extension().is_none_or(|ext| ext != "png") {
+        if !is_sprite_file(path) {
             return None;
         }
         let sprites_root = self.base_path.join("sprites");
@@ -114,25 +161,13 @@ impl AssetManager {
         // become a `dir/name` prefix, extension dropped.
         let name = rel.with_extension("").to_string_lossy().replace('\\', "/");
 
-        match image::open(path) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                let width = rgba.width();
-                let height = rgba.height();
-                if !self.sprites.contains_key(&name) {
-                    self.sprite_names.push(name.clone());
-                }
-                self.sprites.insert(
-                    name.clone(),
-                    SpriteData {
-                        name: name.clone(),
-                        width,
-                        height,
-                        image: rgba,
-                        uv: Rect::new(0.0, 0.0, 1.0, 1.0),
-                        texture_index: 0,
-                    },
-                );
+        match load_sprite_file(path, &name) {
+            Ok((image, animations)) => {
+                // Tags removed in the editor must not linger.
+                let own_prefix = format!("{name}/");
+                self.animations
+                    .retain(|anim| !anim.starts_with(&own_prefix));
+                self.insert_sprite(name.clone(), image, animations);
                 self.sprites.get(&name)
             }
             Err(e) => {
@@ -140,6 +175,37 @@ impl AssetManager {
                 None
             }
         }
+    }
+
+    fn insert_sprite(&mut self, name: String, image: image::RgbaImage, animations: Vec<Animation>) {
+        if !self.sprites.contains_key(&name) {
+            self.sprite_names.push(name.clone());
+        }
+        for animation in animations {
+            self.animations.add(animation);
+        }
+        self.sprites.insert(
+            name.clone(),
+            SpriteData {
+                name,
+                width: image.width(),
+                height: image.height(),
+                image,
+                uv: Rect::new(0.0, 0.0, 1.0, 1.0),
+                texture_index: 0,
+            },
+        );
+    }
+
+    /// An animation by name: `"{sprite}/{tag}"` for an Aseprite file's tags,
+    /// e.g. `"hero/walk"` for the `walk` tag of `sprites/hero.aseprite`.
+    pub fn animation(&self, name: &str) -> Option<&Animation> {
+        self.animations.get(name)
+    }
+
+    /// Every loaded animation, for `AnimPlayer::advance`.
+    pub fn animations(&self) -> &AnimationLibrary {
+        &self.animations
     }
 
     /// Get a sprite by name. In dev mode, provides fuzzy match suggestions.
@@ -279,9 +345,30 @@ impl AssetManager {
             }
         }
 
+        // Animations `amigo pack` collected from Aseprite files. Their frame
+        // UVs are relative to each sprite, which is cropped back out of the
+        // atlas above, so they apply unchanged.
+        if let Some(anims_data) = reader.read_entry(PAK_ANIMATIONS) {
+            let animations: Vec<Animation> = std::str::from_utf8(anims_data)
+                .map_err(|e| e.to_string())
+                .and_then(|text| ron::from_str(text).map_err(|e| e.to_string()))
+                .map_err(|reason| AssetError::LoadFailed {
+                    path: PAK_ANIMATIONS.into(),
+                    reason,
+                })?;
+            info!("Loaded {} animations from pak", animations.len());
+            for animation in animations {
+                self.animations.add(animation);
+            }
+        }
+
         Ok(reader)
     }
 }
+
+/// Pak entry holding the animations of packed Aseprite sprites, as a RON
+/// `Vec<Animation>`.
+pub const PAK_ANIMATIONS: &str = "anims.ron";
 
 /// Simple Levenshtein distance for fuzzy matching.
 fn levenshtein(a: &str, b: &str) -> usize {

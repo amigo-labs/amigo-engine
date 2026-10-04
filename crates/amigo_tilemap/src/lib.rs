@@ -78,16 +78,27 @@ impl TileLayer {
         }
     }
 
+    /// The tile at (x, y); [`TileId::EMPTY`] outside the layer, or when
+    /// `tiles` is shorter than `width * height` (a hand-edited or truncated
+    /// level file), which used to panic the frame.
     pub fn get(&self, x: u32, y: u32) -> TileId {
         if x >= self.width || y >= self.height {
             return TileId::EMPTY;
         }
-        self.tiles[(y * self.width + x) as usize]
+        self.tiles
+            .get((y * self.width + x) as usize)
+            .copied()
+            .unwrap_or(TileId::EMPTY)
     }
 
+    /// Set the tile at (x, y). Ignored outside the layer or past the end of
+    /// a too-short `tiles`.
     pub fn set(&mut self, x: u32, y: u32, tile: TileId) {
-        if x < self.width && y < self.height {
-            self.tiles[(y * self.width + x) as usize] = tile;
+        if x < self.width
+            && y < self.height
+            && let Some(slot) = self.tiles.get_mut((y * self.width + x) as usize)
+        {
+            *slot = tile;
         }
     }
 
@@ -117,16 +128,24 @@ impl CollisionLayer {
         }
     }
 
+    /// The collision at (x, y). Outside the layer is solid, and so is a cell
+    /// past the end of a too-short `data` (which used to panic).
     pub fn get(&self, x: i32, y: i32) -> CollisionType {
         if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
             return CollisionType::Solid;
         }
-        self.data[(y as u32 * self.width + x as u32) as usize]
+        self.data
+            .get((y as u32 * self.width + x as u32) as usize)
+            .copied()
+            .unwrap_or(CollisionType::Solid)
     }
 
     pub fn set(&mut self, x: u32, y: u32, collision: CollisionType) {
-        if x < self.width && y < self.height {
-            self.data[(y * self.width + x) as usize] = collision;
+        if x < self.width
+            && y < self.height
+            && let Some(slot) = self.data.get_mut((y * self.width + x) as usize)
+        {
+            *slot = collision;
         }
     }
 
@@ -244,6 +263,20 @@ impl TileMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn truncated_layers_read_as_empty_instead_of_panicking() {
+        let mut layer = TileLayer::new("short", 4, 4);
+        layer.tiles.truncate(5); // a hand-edited level with too few tiles
+        assert_eq!(layer.get(3, 3), TileId::EMPTY);
+        layer.set(3, 3, TileId(2)); // ignored, no panic
+        assert_eq!(layer.get(0, 1), TileId::EMPTY);
+
+        let mut collision = CollisionLayer::new(4, 4);
+        collision.data.truncate(2);
+        assert!(collision.is_solid(3, 3));
+        collision.set(3, 3, CollisionType::Empty);
+    }
 
     // ── Orthogonal Tests ─────────────────────────────────────────
 

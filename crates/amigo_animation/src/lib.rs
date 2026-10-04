@@ -27,6 +27,17 @@ impl Animation {
     pub fn total_duration(&self) -> u32 {
         self.frames.iter().map(|f| f.duration).sum()
     }
+
+    /// How this animation plays unless told otherwise: [`PlayMode::Loop`] when
+    /// `looping`, else [`PlayMode::Once`]. [`AnimPlayer::play_animation`]
+    /// uses it; `AnimPlayer::play` takes the mode explicitly instead.
+    pub fn default_play_mode(&self) -> PlayMode {
+        if self.looping {
+            PlayMode::Loop
+        } else {
+            PlayMode::Once
+        }
+    }
 }
 
 /// Playback mode for an animation.
@@ -82,6 +93,32 @@ impl AnimPlayer {
         self.play_mode = mode;
     }
 
+    /// Start the current animation over from its first frame, e.g. to replay
+    /// a finished [`PlayMode::Once`] animation: `play` with the same name
+    /// keeps the position, so calling it every tick does not restart it.
+    pub fn restart(&mut self) {
+        self.frame_index = 0;
+        self.ticks_in_frame = 0;
+        self.finished = false;
+        self.reversed = false;
+        self.tick_accum = 0.0;
+    }
+
+    /// Play `animation` in its [default mode](Animation::default_play_mode),
+    /// resetting if it is not the current one. Before this, `Animation::looping`
+    /// was read by nothing: every caller had to pass the mode by hand.
+    pub fn play_animation(&mut self, animation: &Animation) {
+        self.play(&animation.name, animation.default_play_mode());
+    }
+
+    /// Advance the current animation by one tick, looking it up in `library`.
+    /// Does nothing when the library has no animation of that name.
+    pub fn advance(&mut self, library: &AnimationLibrary) {
+        if let Some(animation) = library.get(&self.current_animation) {
+            self.update(animation);
+        }
+    }
+
     /// Advance the animation by one tick.
     pub fn update(&mut self, animation: &Animation) {
         self.update_with_events(animation, None);
@@ -96,24 +133,43 @@ impl AnimPlayer {
             return;
         }
 
-        // Compute the *time* (in ticks) before and after advancing so we can
-        // query the event track for any events that fall within this window.
-        let time_before = self.current_time(animation);
-
         // `speed` scales playback via a fractional tick accumulator:
         // 0.5 advances every other update, 2.0 advances twice per update.
         self.tick_accum += self.speed.max(0.0);
+        let total = animation.total_duration() as f32;
         while self.tick_accum >= 1.0 && !self.finished {
             self.tick_accum -= 1.0;
+            let reversed_before = self.reversed;
+            let time_before = self.current_time(animation);
             self.step_one_tick(animation);
-        }
+            // A finished Once stays on its last frame, so its position reads
+            // as that frame's start; the tick it finished on still reached
+            // the end of the timeline.
+            let time_after = if self.finished {
+                total
+            } else {
+                self.current_time(animation)
+            };
 
-        let time_after = self.current_time(animation);
-
-        // Collect events that occurred in the [time_before, time_after) window.
-        if let Some(track) = event_track {
-            let collected = track.collect_events(time_before, time_after);
-            self.pending_events.extend(collected.into_iter().cloned());
+            let Some(track) = event_track else { continue };
+            if time_after >= time_before && !reversed_before {
+                self.pending_events.extend(
+                    track
+                        .collect_events(time_before, time_after)
+                        .into_iter()
+                        .cloned(),
+                );
+            } else if self.play_mode == PlayMode::Loop {
+                // Wrapped: the rest of this pass, then the start of the next.
+                // Taking only [before, after) here produced an empty window,
+                // so events near the end of a loop never fired.
+                for (from, to) in [(time_before, total), (0.0, time_after)] {
+                    self.pending_events
+                        .extend(track.collect_events(from, to).into_iter().cloned());
+                }
+            }
+            // PingPong's backward leg replays frames in reverse; events are
+            // defined on the forward timeline and fire on the forward leg only.
         }
     }
 
@@ -197,6 +253,24 @@ impl AnimationLibrary {
 
     pub fn get(&self, name: &str) -> Option<&Animation> {
         self.animations.get(name)
+    }
+
+    /// Keep only the animations whose name `keep` accepts.
+    pub fn retain(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.animations.retain(|name, _| keep(name));
+    }
+
+    /// All animations, in no particular order.
+    pub fn iter(&self) -> impl Iterator<Item = &Animation> {
+        self.animations.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.animations.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.animations.is_empty()
     }
 }
 
@@ -1697,6 +1771,64 @@ mod tests {
         player.update_with_events(&anim, Some(&track));
         assert_eq!(player.pending_events.len(), 1);
         assert_eq!(player.pending_events[0].name, "hit");
+    }
+
+    #[test]
+    fn events_at_the_end_of_a_once_animation_fire() {
+        // Two 2-tick frames; "done" sits in the last tick of the timeline.
+        let anim = make_sprite_animation(2, 2, false);
+        let mut track = EventTrack::new();
+        track.add(AnimEvent {
+            name: "done".into(),
+            time: 3.0,
+            data: AnimEventData::None,
+        });
+        let mut player = AnimPlayer::new("test");
+        player.play_animation(&anim);
+        assert_eq!(player.play_mode, PlayMode::Once);
+
+        let mut fired = 0;
+        for _ in 0..10 {
+            player.update_with_events(&anim, Some(&track));
+            fired += player.pending_events.len();
+        }
+        assert!(player.finished);
+        assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn events_at_the_end_of_a_loop_fire_every_pass() {
+        let anim = make_sprite_animation(2, 2, true);
+        let mut track = EventTrack::new();
+        track.add(AnimEvent {
+            name: "step".into(),
+            time: 3.0,
+            data: AnimEventData::None,
+        });
+        let mut player = AnimPlayer::new("test");
+        player.play_animation(&anim);
+        assert_eq!(player.play_mode, PlayMode::Loop);
+
+        let mut fired = 0;
+        for _ in 0..12 {
+            // 12 ticks = three passes of the 4-tick timeline.
+            player.update_with_events(&anim, Some(&track));
+            fired += player.pending_events.len();
+        }
+        assert_eq!(fired, 3);
+    }
+
+    #[test]
+    fn advance_looks_the_animation_up_by_name() {
+        let mut library = AnimationLibrary::new();
+        library.add(make_sprite_animation(3, 1, true));
+        let mut player = AnimPlayer::new("test");
+        player.advance(&library);
+        assert_eq!(player.frame_index, 1);
+
+        player.play("missing", PlayMode::Loop);
+        player.advance(&library);
+        assert_eq!(player.frame_index, 0, "an unknown animation does not move");
     }
 
     // -- BlendTree evaluation --

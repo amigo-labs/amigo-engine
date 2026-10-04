@@ -86,12 +86,16 @@ impl SaveManager {
 
 ## Behavior
 
-- **Save format:** Each slot is a directory (`slot_{id}/`) containing `meta.json` (SlotInfo) and `data.json` (game state). Data is written first, then metadata, so a crash mid-write results in a missing slot rather than a corrupted one.
+- **Save format:** Each slot is a directory (`slot_{id}/`) containing `meta.json` (SlotInfo) and `data.json` (game state).
+- **Atomic replace:** A save writes both files into `slot_{id}.tmp/` and flushes them, moves the current slot to `slot_{id}.old/`, moves the new one into place and deletes the old one. A crash at any point leaves a complete `slot_{id}` or a complete `slot_{id}.old`; `load()` falls back to the latter when the slot is missing or fails its checksum. `list_slots()` ignores the `.tmp`/`.old` directories, and `delete_slot()` removes the fallback too.
 - **CRC32 integrity:** A CRC32 checksum is computed over the serialized data bytes and stored in `SlotInfo.checksum`. On load, the checksum is re-computed and compared; mismatch returns `SaveError::CorruptedSave`.
 - **Platform directories:**
-  - Linux: `~/.local/share/{app_name}/saves`
-  - Windows: `%APPDATA%/{app_name}/saves`
-  - Fallback: `./saves`
+  - Linux: `$XDG_DATA_HOME/{app}/saves`, default `~/.local/share/{app}/saves`
+  - macOS: `~/Library/Application Support/{app}/saves`
+  - Windows: `%APPDATA%/{app}/saves`
+  - Fallback (variable unset or relative): `./{app}/saves`
+  - `{app}` is `app_name` reduced to a safe directory name. The engine sets `app_name` from `name` in `amigo.toml` (or `EngineBuilder::app_name`), else the window title.
+  - `SaveManager::with_base_dir` puts the slots in a given directory instead (tests, portable installs).
 - **Quicksave:** Always uses slot 0 with the label "Quicksave".
 - **Autosave:** Rotating slots starting at `max_slots + 1`. With `autosave_slots: 3` and `max_slots: 10`, autosaves use slots 11, 12, 13 in rotation. `should_autosave()` accumulates elapsed time and returns `true` when the interval is reached; the caller then calls `autosave()`.
 - **Slot listing:** `list_slots()` scans the save directory for valid slot directories with parseable `meta.json`, returning sorted metadata without loading game data.

@@ -793,25 +793,40 @@ fn cmd_pack(_args: &[String]) {
     let sprites_dir = Path::new("assets/sprites");
     if sprites_dir.exists() {
         let mut sprite_files: Vec<(String, PathBuf)> = Vec::new();
-        collect_pngs(sprites_dir, "", &mut sprite_files);
+        collect_sprite_files(sprites_dir, "", &mut sprite_files);
 
         if !sprite_files.is_empty() {
             println!("  Sprites: {} files", sprite_files.len());
 
             let mut atlas_builder = amigo_render::atlas::AtlasBuilder::new(4096, 2);
             let mut images: Vec<(String, image::RgbaImage)> = Vec::new();
+            let mut animations: Vec<amigo_animation::Animation> = Vec::new();
 
+            // Same loader the engine uses for loose files: an Aseprite file
+            // becomes one strip sprite plus its tags as animations.
             for (name, path) in &sprite_files {
-                match image::open(path) {
-                    Ok(img) => {
-                        let rgba = img.to_rgba8();
+                match amigo_assets::load_sprite_file(path, name) {
+                    Ok((rgba, anims)) => {
                         atlas_builder.add(name.clone(), rgba.width(), rgba.height());
                         images.push((name.clone(), rgba));
+                        animations.extend(anims);
                     }
                     Err(e) => {
                         eprintln!("  WARNING: Failed to load {}: {e}", path.display());
                     }
                 }
+            }
+
+            if !animations.is_empty() {
+                let anims_ron =
+                    ron::ser::to_string_pretty(&animations, ron::ser::PrettyConfig::default())
+                        .expect("Failed to serialize animations");
+                pak.add(
+                    amigo_assets::PAK_ANIMATIONS,
+                    AssetKind::AtlasManifest,
+                    anims_ron.into_bytes(),
+                );
+                println!("  Animations: {}", animations.len());
             }
 
             match atlas_builder.pack() {
@@ -977,7 +992,9 @@ fn cmd_pack(_args: &[String]) {
     }
 }
 
-fn collect_pngs(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
+/// Every file the sprite loader reads (PNG, Aseprite), named like the engine
+/// names them: the path below `sprites/` without its extension.
+fn collect_sprite_files(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -990,8 +1007,8 @@ fn collect_pngs(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
             } else {
                 format!("{prefix}/{dir_name}")
             };
-            collect_pngs(&path, &new_prefix, out);
-        } else if path.extension().is_some_and(|ext| ext == "png") {
+            collect_sprite_files(&path, &new_prefix, out);
+        } else if amigo_assets::is_sprite_file(&path) {
             let stem = path.file_stem().unwrap().to_string_lossy();
             let name = if prefix.is_empty() {
                 stem.to_string()

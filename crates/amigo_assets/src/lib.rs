@@ -13,7 +13,9 @@ pub mod registry;
 pub mod streaming;
 
 pub use aseprite::{AsepriteData, load_aseprite};
-pub use asset_manager::{AssetManager, SpriteData};
+pub use asset_manager::{
+    AssetManager, PAK_ANIMATIONS, SpriteData, is_sprite_file, load_sprite_file,
+};
 pub use descriptors::{EntityDescriptor, MapDescriptor, SpriteDescriptor, TilesetDescriptor};
 pub use handle::{AssetHandle, AssetState, HandleAllocator};
 pub use hot_reload::HotReloader;

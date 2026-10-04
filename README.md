@@ -29,18 +29,16 @@ A pixel-art game engine in Rust with AI asset generation and algorithmic chiptun
 
 ## Status
 
-Pre-1.0 and not production-ready. Small single-player games with keyboard and
-mouse work end to end. Several subsystems exist as library types that the engine
+Pre-1.0 and not production-ready. Small single-player games with keyboard, mouse
+or gamepad work end to end. Several subsystems exist as library types that the engine
 does not drive yet:
 
 | Area | State |
 |------|-------|
-| Game loop, scenes, sprites, particles, lighting, post-processing, UI | works |
-| Keyboard and mouse, SFX and music, sprite hot reload, headless API | works |
-| Pixel-perfect scaling | missing: the virtual resolution is stretched to the window |
-| Gamepad, rebindable action maps (`input.ron`) | types only, not wired |
+| Game loop, scenes, sprites, particles, lighting, post-processing, UI, pixel-perfect scaling | works |
+| Keyboard, mouse and gamepad with action maps, SFX and music, sprite hot reload, headless API | works |
+| Aseprite sprites with tag animations, tilemaps with view culling, save slots | works |
 | Level editor (`amigo editor`) | egui panels only; levels cannot be edited or saved yet |
-| Aseprite import, sprite animation | types only; load PNGs and animate in game code |
 | Replays, lockstep netcode | library types only; physics and collision still use `f32` |
 | AI tools (`amigo-artgen`, `amigo-audiogen`) | some tools are stubs that report success without output |
 | Targets | desktop only (Linux, macOS, Windows); no web or mobile |

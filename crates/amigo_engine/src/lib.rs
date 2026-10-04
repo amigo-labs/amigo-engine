@@ -176,7 +176,7 @@ pub mod prelude {
         PluginContext, SceneAction,
     };
     pub use amigo_animation::*;
-    pub use amigo_assets::{AssetError, AssetHandle, AssetState, HandleAllocator};
+    pub use amigo_assets::{AssetError, AssetHandle, AssetManager, AssetState, HandleAllocator};
     pub use amigo_core::ecs::{self, Component, SparseSet, join, join_mut, join3, join4};
     pub use amigo_core::events::EventHub;
     pub use amigo_core::math::{IVec2, vec2};

@@ -1,3 +1,4 @@
+use amigo_animation::AnimPlayer;
 use amigo_assets::AssetManager;
 use amigo_core::events::EventHub;
 use amigo_core::resources::Resources;
@@ -194,6 +195,7 @@ pub struct DrawContext<'a> {
     pub alpha: f32,
     game_ctx: &'a GameContext,
     white_texture: TextureId,
+    view: Rect,
 }
 
 impl<'a> DrawContext<'a> {
@@ -214,7 +216,26 @@ impl<'a> DrawContext<'a> {
             alpha,
             game_ctx,
             white_texture,
+            // Unzoomed default; the engine passes the camera's real view.
+            view: Rect::new(
+                camera_pos.x - virtual_width / 2.0,
+                camera_pos.y - virtual_height / 2.0,
+                virtual_width,
+                virtual_height,
+            ),
         }
+    }
+
+    /// Set the visible world rectangle (zoom and shake included) that
+    /// culling uses, e.g. `Camera::view_rect()`.
+    pub fn with_view(mut self, view: Rect) -> Self {
+        self.view = view;
+        self
+    }
+
+    /// The visible world rectangle. Draws outside it are wasted work.
+    pub fn view_rect(&self) -> Rect {
+        self.view
     }
 
     /// Draw a sprite at a position.
@@ -264,6 +285,61 @@ impl<'a> DrawContext<'a> {
             f(&mut instance);
             self.sprites.push(instance);
         }
+    }
+
+    /// Draw the current frame of `player`'s animation, from the sprite
+    /// `sprite`, at `pos`. The quad is one frame in size.
+    ///
+    /// Animations come from Aseprite files: `sprites/hero.aseprite` registers
+    /// the sprite `"hero"` and an animation `"hero/<tag>"` per tag.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext, draw: &mut DrawContext, hero: &mut AnimPlayer) {
+    /// // In update:
+    /// hero.play("hero/walk", PlayMode::Loop);
+    /// hero.advance(ctx.assets.animations());
+    /// // In draw:
+    /// draw.draw_animated("hero", hero, RenderVec2::new(100.0, 80.0));
+    /// # }
+    /// ```
+    ///
+    /// Draws nothing when the sprite or the animation is unknown.
+    pub fn draw_animated(&mut self, sprite: &str, player: &AnimPlayer, pos: RenderVec2) {
+        self.draw_animated_ex(sprite, player, pos, |_| {});
+    }
+
+    /// [`draw_animated`](Self::draw_animated) with extended options (flip,
+    /// tint, z-order), like [`draw_sprite_ex`](Self::draw_sprite_ex).
+    pub fn draw_animated_ex<F>(&mut self, sprite: &str, player: &AnimPlayer, pos: RenderVec2, f: F)
+    where
+        F: FnOnce(&mut SpriteInstance),
+    {
+        let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(sprite) else {
+            return;
+        };
+        let Some(animation) = self.game_ctx.assets.animation(&player.current_animation) else {
+            return;
+        };
+        let uv = player.current_uv(animation);
+        let mut instance = SpriteInstance {
+            texture_id: tex_id,
+            x: pos.x,
+            y: pos.y,
+            width: w as f32 * uv.w,
+            height: h as f32 * uv.h,
+            uv_x: uv.x,
+            uv_y: uv.y,
+            uv_w: uv.w,
+            uv_h: uv.h,
+            tint: Color::WHITE,
+            flip_x: false,
+            flip_y: false,
+            z_order: 0,
+            shaders: Vec::new(),
+        };
+        f(&mut instance);
+        self.sprites.push(instance);
     }
 
     /// Draw a colored rectangle.
@@ -446,8 +522,11 @@ impl<'a> DrawContext<'a> {
     ) where
         F: Fn(TileId) -> Option<Color>,
     {
-        for y in 0..layer.height {
-            for x in 0..layer.width {
+        let Some((xs, ys)) = self.visible_tiles(layer, tile_w, tile_h) else {
+            return;
+        };
+        for y in ys {
+            for x in xs.clone() {
                 let tile_id = layer.get(x, y);
                 if let Some(color) = color_fn(tile_id) {
                     self.draw_rect(
@@ -462,9 +541,14 @@ impl<'a> DrawContext<'a> {
     /// Draw a tilemap layer using sprites from a tileset texture.
     ///
     /// `tileset_name` is the sprite name registered with the engine.
-    /// `columns` is how many tile columns the tileset texture has.
-    /// Tile IDs map to tileset positions: column = id % columns, row = id / columns.
+    /// `columns` is how many tile columns the tileset texture has; 0 derives
+    /// it from the texture width. Tile IDs map to tileset positions:
+    /// column = (id - 1) % columns, row = (id - 1) / columns.
     /// TileId(0) is skipped (empty).
+    ///
+    /// Like [`draw_tilemap_colored`](Self::draw_tilemap_colored), only tiles
+    /// inside [`view_rect`](Self::view_rect) are drawn, and a hidden layer
+    /// draws nothing.
     pub fn draw_tilemap_sprite(
         &mut self,
         layer: &TileLayer,
@@ -476,11 +560,23 @@ impl<'a> DrawContext<'a> {
         let Some((tex_id, tex_w, tex_h)) = self.game_ctx.find_sprite_texture(tileset_name) else {
             return;
         };
+        let Some((xs, ys)) = self.visible_tiles(layer, tile_w, tile_h) else {
+            return;
+        };
+        // `columns == 0` divided by zero below and panicked the frame.
+        let columns = if columns > 0 {
+            columns
+        } else {
+            (tex_w as f32 / tile_w) as u32
+        };
+        if columns == 0 {
+            return;
+        }
         let uv_tile_w = tile_w / tex_w as f32;
         let uv_tile_h = tile_h / tex_h as f32;
 
-        for y in 0..layer.height {
-            for x in 0..layer.width {
+        for y in ys {
+            for x in xs.clone() {
                 let tile_id = layer.get(x, y);
                 if tile_id.is_empty() {
                     continue;
@@ -507,5 +603,34 @@ impl<'a> DrawContext<'a> {
                 });
             }
         }
+    }
+
+    /// The column and row ranges of `layer` that overlap the view, with one
+    /// tile of margin for the camera's pixel snapping. `None` when nothing
+    /// can be drawn: a hidden layer, a non-positive tile size, or a layer
+    /// entirely off screen. Both draw functions used to walk every tile of
+    /// the layer each frame, visible or not.
+    fn visible_tiles(
+        &self,
+        layer: &TileLayer,
+        tile_w: f32,
+        tile_h: f32,
+    ) -> Option<(std::ops::Range<u32>, std::ops::Range<u32>)> {
+        // `is_nan` too: NaN would pass a `<= 0.0` check.
+        let usable = |size: f32| size > 0.0 && !size.is_nan();
+        if !layer.visible || !usable(tile_w) || !usable(tile_h) {
+            return None;
+        }
+        let span = |start: f32, len: f32, tile: f32, count: u32| {
+            let first = ((start / tile).floor() - 1.0).max(0.0);
+            let last = ((start + len) / tile).ceil() + 1.0;
+            let last = last.min(count as f32).max(0.0);
+            (first < last).then_some(first as u32..last as u32)
+        };
+        let view = self.view;
+        Some((
+            span(view.x, view.w, tile_w, layer.width)?,
+            span(view.y, view.h, tile_h, layer.height)?,
+        ))
     }
 }

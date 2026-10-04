@@ -7,7 +7,7 @@
 | `amigo_core` | Fixed-point math, ECS, save system, scheduling, game-type presets |
 | `amigo_render` | wgpu renderer, camera, sprite batching, particles, lighting, post-processing |
 | `amigo_input` | Keyboard, mouse, gamepad input, action mapping |
-| `amigo_assets` | Asset loading (PNG), hot-reloading, atlas packing; an Aseprite importer not yet used by the loader |
+| `amigo_assets` | Asset loading (PNG, Aseprite with tag animations), hot-reloading, atlas packing |
 | `amigo_tilemap` | Tilemap data structures, autotiling, collision layers |
 | `amigo_animation` | Sprite animation state machine |
 | `amigo_scene` | Scene stack and transitions |
