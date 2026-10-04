@@ -636,39 +636,57 @@ mod tests {
 
     #[test]
     fn platform_data_dirs() {
-        let env = |pairs: &'static [(&'static str, &'static str)]| {
+        // `data_dir_for` only accepts absolute paths, and what counts as
+        // absolute depends on the host running the test: `/home/a` is not on
+        // Windows, which needs a drive. Build the fake environment from paths
+        // that are absolute here.
+        let root = if cfg!(windows) { "C:/" } else { "/" };
+        let abs = |p: &str| format!("{root}{p}");
+        let env = |pairs: Vec<(&'static str, String)>| {
             move |key: &str| {
                 pairs
                     .iter()
                     .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.to_string())
+                    .map(|(_, v)| v.clone())
             }
         };
+        let home = PathBuf::from(abs("home/a"));
+
         assert_eq!(
-            data_dir_for("linux", env(&[("HOME", "/home/a")])),
-            Some(PathBuf::from("/home/a/.local/share"))
+            data_dir_for("linux", env(vec![("HOME", abs("home/a"))])),
+            Some(home.join(".local").join("share"))
         );
         assert_eq!(
             data_dir_for(
                 "linux",
-                env(&[("HOME", "/home/a"), ("XDG_DATA_HOME", "/data")])
+                env(vec![
+                    ("HOME", abs("home/a")),
+                    ("XDG_DATA_HOME", abs("data"))
+                ])
             ),
-            Some(PathBuf::from("/data"))
+            Some(PathBuf::from(abs("data")))
         );
         // The XDG spec says to ignore a relative XDG_DATA_HOME.
         assert_eq!(
             data_dir_for(
                 "linux",
-                env(&[("HOME", "/home/a"), ("XDG_DATA_HOME", "rel")])
+                env(vec![
+                    ("HOME", abs("home/a")),
+                    ("XDG_DATA_HOME", "rel".into())
+                ])
             ),
-            Some(PathBuf::from("/home/a/.local/share"))
+            Some(home.join(".local").join("share"))
         );
         // macOS used to save into the working directory.
         assert_eq!(
-            data_dir_for("macos", env(&[("HOME", "/Users/a")])),
-            Some(PathBuf::from("/Users/a/Library/Application Support"))
+            data_dir_for("macos", env(vec![("HOME", abs("home/a"))])),
+            Some(home.join("Library").join("Application Support"))
         );
-        assert_eq!(data_dir_for("linux", env(&[])), None);
+        assert_eq!(
+            data_dir_for("windows", env(vec![("APPDATA", abs("Users/a/AppData"))])),
+            Some(PathBuf::from(abs("Users/a/AppData")))
+        );
+        assert_eq!(data_dir_for("linux", env(vec![])), None);
     }
 
     #[test]
