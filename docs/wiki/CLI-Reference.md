@@ -9,7 +9,7 @@
 | `amigo new <name> --rev <REV> \| --tag <TAG>` | ... pinned to an engine git rev or tag |
 | `amigo scene <name> [--preset P]` | Add a scene to the project |
 | `amigo info` | Show project information |
-| `amigo list-templates` | Available project templates |
+| `amigo list-templates` | Available project templates (the names `--template` takes) |
 | `amigo list-presets` | Available scene presets |
 
 ## Build & Run
@@ -87,3 +87,4 @@ was previously undocumented here despite being referenced by the agent-api spec.
 | Command | Description |
 |---------|-------------|
 | `amigo export-level <path> [--format json]` | Export level as JSON |
+| `amigo version` | CLI version and the engine revision new projects pin to |

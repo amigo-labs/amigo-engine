@@ -112,6 +112,20 @@ jobs:
           name: api-docs
           path: target/doc/
 
+  templates:
+    name: Project templates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/install-system-deps
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # `amigo new` output is otherwise only ever compiled by users.
+      - run: just templates
+
   msrv:
     name: MSRV (rust-version)
     runs-on: ubuntu-latest

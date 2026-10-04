@@ -7,7 +7,7 @@
 | `amigo_core` | Fixed-point math, ECS, save system, scheduling, game-type presets |
 | `amigo_render` | wgpu renderer, camera, sprite batching, particles, lighting, post-processing |
 | `amigo_input` | Keyboard, mouse, gamepad input, action mapping |
-| `amigo_assets` | Asset loading, Aseprite import, hot-reloading, atlas packing |
+| `amigo_assets` | Asset loading (PNG), hot-reloading, atlas packing; an Aseprite importer not yet used by the loader |
 | `amigo_tilemap` | Tilemap data structures, autotiling, collision layers |
 | `amigo_animation` | Sprite animation state machine |
 | `amigo_scene` | Scene stack and transitions |
@@ -17,7 +17,7 @@
 | `amigo_audio` | Audio playback via kira (feature-gated) |
 | `amigo_tidal_parser` | TidalCycles mini-notation parser and pattern evaluator |
 | `amigo_audio_pipeline` | Audio-to-TidalCycles conversion pipeline (Demucs, Basic Pitch) |
-| `amigo_editor` | Built-in level editor with Tidal Playground |
+| `amigo_editor` | Level editor types and egui panels (not yet able to edit or save levels), Tidal Playground |
 | `amigo_api` | JSON-RPC / WebSocket server for AI and tooling control (headless mode, screenshots, editor commands) |
 | `amigo_engine` | Top-level crate: `Game` trait, scene stack, fixed-timestep loop, contexts, prelude |
 | `amigo_reflect` | Runtime reflection (`Reflect`, `TypeRegistry`) used by the editor inspector |

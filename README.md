@@ -14,17 +14,39 @@
 </p>
 
 <p align="center">
-A pixel-art game engine with built-in editor, AI asset generation, and algorithmic chiptune music.
+A pixel-art game engine in Rust with AI asset generation and algorithmic chiptune music.
 </p>
 
 ## Features
 
-- Deterministic ECS with fixed-point math
-- wgpu-based pixel-art renderer with particles, lighting, and post-processing
-- Built-in level editor with Tidal Playground
-- AI pipelines for art generation, music generation, and audio analysis
+- ECS with Q16.16 fixed-point simulation math (`Fix`, `SimVec2`) and a fixed 60 Hz timestep
+- wgpu renderer for pixel art: sprites, particles, 2D lighting, post-processing, and an immediate-mode UI
+- Scene stack, keyboard and mouse input, sound effects and music, sprite hot reload
+- Headless mode with a JSON-RPC API, so Claude Code can drive a running game over MCP
+- AI pipelines for art generation, music generation, and audio analysis (ComfyUI, Demucs)
 - TidalCycles mini-notation for algorithmic chiptune music
 - 18 game-type project templates, each scaffolded as a playable skeleton
+
+## Status
+
+Pre-1.0 and not production-ready. Small single-player games with keyboard and
+mouse work end to end. Several subsystems exist as library types that the engine
+does not drive yet:
+
+| Area | State |
+|------|-------|
+| Game loop, scenes, sprites, particles, lighting, post-processing, UI | works |
+| Keyboard and mouse, SFX and music, sprite hot reload, headless API | works |
+| Pixel-perfect scaling | missing: the virtual resolution is stretched to the window |
+| Gamepad, rebindable action maps (`input.ron`) | types only, not wired |
+| Level editor (`amigo editor`) | egui panels only; levels cannot be edited or saved yet |
+| Aseprite import, sprite animation | types only; load PNGs and animate in game code |
+| Replays, lockstep netcode | library types only; physics and collision still use `f32` |
+| AI tools (`amigo-artgen`, `amigo-audiogen`) | some tools are stubs that report success without output |
+| Targets | desktop only (Linux, macOS, Windows); no web or mobile |
+
+The full list of open findings is in
+[`docs/audit/2026-10-backlog.md`](docs/audit/2026-10-backlog.md).
 
 ## Quick start
 
@@ -38,15 +60,23 @@ curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/instal
 irm https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.ps1 | iex
 ```
 
+Or build it from source, which needs the [Rust toolchain](https://rustup.rs/)
+(on Linux, install the [system libraries](https://github.com/amigo-labs/amigo-engine/wiki/Installation#system-dependencies-linux) first):
+
+```sh
+cargo install --git https://github.com/amigo-labs/amigo-engine amigo_cli
+```
+
 Then create and run a game:
 
 ```sh
-amigo new my_game
+amigo list-templates                   # platformer, roguelike, tower-defense, ...
+amigo new my_game --template platformer
 cd my_game
-cargo run
+amigo dev                              # run, rebuild on code changes, hot-reload assets
 ```
 
-> Building games requires the [Rust toolchain](https://rustup.rs/) and a Vulkan/Metal/DX12 capable GPU.
+> Building games requires the Rust toolchain and a Vulkan/Metal/DX12 capable GPU.
 
 ## Examples
 

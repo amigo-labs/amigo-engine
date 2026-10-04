@@ -6,6 +6,11 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-10-04
+
+The first release with attached binaries; v0.0.1–v0.0.3 were tagged but the
+release workflow never published anything (see "Fixed — distribution").
+
 ### Security
 
 - **Any web page could drive the JSON-RPC API.** The server binds 127.0.0.1,
@@ -129,6 +134,9 @@ Notable changes per release. Format loosely follows
 - Every workspace member inherits version, edition, license and dependencies
   from the workspace; 33 unused dependency edges (including `glam`) were
   removed.
+- CI builds a project from every `amigo new` template (`just templates`,
+  warnings as errors). Generated games were only ever compiled by users, so a
+  template that stopped building went unnoticed until someone scaffolded it.
 
 ### Fixed — distribution
 
@@ -159,6 +167,12 @@ Notable changes per release. Format loosely follows
   now explain that the platform builds from source, and their build-from-source
   hint points at the git URL rather than `--path tools/amigo_cli`, which a
   curl-installed user does not have.
+- `release.yml` refuses a tag that does not match the workspace version. v0.0.3
+  was tagged while `Cargo.toml` already said 0.1.0, so a successful run would
+  have shipped binaries that write `engine_version = "0.1.0"` into projects
+  under a 0.0.3 release.
+- `amigo list-templates` printed names such as `sandbox-/-survival`. It now
+  prints the slugs `amigo new --template` documents (`sandbox-survival`).
 
 ### Fixed — features that compiled and did nothing
 
@@ -226,6 +240,8 @@ Notable changes per release. Format loosely follows
   audio/input/windowing libraries, `cargo check` dies inside `libudev-sys`'s build
   script, which reads as a Rust error but is a missing `libudev.pc`.
 - `rust-toolchain.toml`, `CLAUDE.md`, this changelog.
+- `amigo version` (also `--version`, `-V`): the CLI version and the engine
+  revision that `amigo new` pins projects to.
 - ADRs 0009–0013, which code already referenced while the files did not exist.
 - Shader validation with `naga` in tests, covering the new lighting shaders and the
   pre-existing post-process and `gpu_broad_phase` shaders, which nothing checked.
@@ -241,6 +257,11 @@ where nothing runs them); crates named in `index.md` that do not exist
 application; duplicate `fog-of-war` and `spline` specs, one of each with unparseable
 or missing frontmatter; `EngineError` specified but absent; and MCP tool names in
 `dev-workflow.md` that never matched the code.
+
+The README now says what state the engine is in (pre-1.0; which subsystems run
+end to end and which are libraries nothing calls yet) instead of listing a
+"built-in level editor" and a "deterministic ECS" without qualification, and
+`Getting-Started` no longer promises `.aseprite` loading, which only PNG has.
 
 ## [0.0.3] — 2026-03-23
 

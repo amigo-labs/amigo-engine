@@ -13,8 +13,28 @@ env:
   BINARY_NAME: amigo
 
 jobs:
+  # A tag that disagrees with the crate version publishes binaries whose
+  # `amigo --version`, and the engine_version they write into amigo.toml, do
+  # not match the release (v0.0.3 went out while the workspace already said
+  # 0.1.0). Fail before building anything.
+  version:
+    name: Tag matches workspace version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare tag with [workspace.package] version
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match workspace version ${version} in Cargo.toml" >&2
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches workspace version ${version}"
+
   build:
     name: Build (${{ matrix.target }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
