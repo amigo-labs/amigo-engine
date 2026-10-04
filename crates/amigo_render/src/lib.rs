@@ -1,5 +1,6 @@
 pub mod atlas;
 pub mod atmosphere;
+pub mod blit;
 pub mod camera;
 pub mod font;
 pub mod instancing;
@@ -12,6 +13,7 @@ pub mod renderer;
 pub mod sprite_batcher;
 pub mod texture;
 pub mod vertex;
+pub mod viewport;
 
 #[cfg(feature = "editor")]
 pub mod egui_integration;
@@ -38,6 +40,7 @@ pub use renderer::{Renderer, SurfaceError};
 pub use sprite_batcher::{SpriteBatcher, SpriteInstance, SpriteShader};
 pub use texture::{Texture, TextureId};
 pub use vertex::Vertex;
+pub use viewport::{ScaleMode, Viewport};
 
 // ---------------------------------------------------------------------------
 // Art style configuration

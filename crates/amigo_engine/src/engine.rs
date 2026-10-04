@@ -8,6 +8,7 @@ use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
 use amigo_render::renderer::{Renderer, SurfaceError};
 use amigo_render::sprite_batcher::SpriteInstance;
+use amigo_render::{ArtStyle, ScaleMode};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info, info_span, trace, warn};
@@ -571,6 +572,25 @@ impl ApplicationHandler for EngineApp {
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
         #[cfg(feature = "audio")]
         game_ctx.audio.open_device();
+
+        // `[render] scale_mode` and `art_style` were parsed and never read:
+        // every window stretched the virtual resolution, and the pixel snap
+        // landed on the renderer's own camera, which the game's camera
+        // replaces for every frame.
+        let scale_mode =
+            ScaleMode::from_str_config(&self.config.render.scale_mode).unwrap_or_else(|| {
+                warn!(
+                    "Unknown render.scale_mode {:?}; using \"pixel_perfect\" \
+                     (expected \"pixel_perfect\", \"fit\" or \"stretch\")",
+                    self.config.render.scale_mode
+                );
+                ScaleMode::PixelPerfect
+            });
+        let art_style = ArtStyle::from_str_config(&self.config.render.art_style);
+        renderer.set_scale_mode(scale_mode);
+        renderer.set_art_style(art_style);
+        game_ctx.camera.pixel_snap = art_style.pixel_snap();
+
         let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
 
         // Hot reload only makes sense against loose files: a pak is a build
@@ -774,24 +794,24 @@ impl ApplicationHandler for EngineApp {
                         .input
                         .handle_mouse_move(position.x as f32, position.y as f32);
 
-                    // Pixel UI draws over the virtual resolution stretched to
-                    // the window, so its cursor is the window position scaled
-                    // by virtual / window size.
-                    let (ww, wh) = state.renderer.window_size();
-                    let camera = &state.game_ctx.camera;
-                    let ui_pos = RenderVec2::new(
-                        position.x as f32 * camera.virtual_width / (ww.max(1) as f32),
-                        position.y as f32 * camera.virtual_height / (wh.max(1) as f32),
+                    // The scene is drawn into the renderer's viewport, which
+                    // may be letterboxed, so window positions go through it
+                    // to land on virtual pixels.
+                    let camera = &mut state.game_ctx.camera;
+                    let virtual_size = (camera.virtual_width, camera.virtual_height);
+                    let ui_pos = state.renderer.viewport().window_to_virtual(
+                        RenderVec2::new(position.x as f32, position.y as f32),
+                        virtual_size,
                     );
                     state.game_ctx.input.set_mouse_ui_pos(ui_pos);
-
-                    // Update world-space mouse position
-                    let world_pos = state.game_ctx.camera.screen_to_world(
-                        position.x as f32,
-                        position.y as f32,
-                        ww as f32,
-                        wh as f32,
+                    // Edge-pan and free-pan camera modes read this; nothing
+                    // ever called it before.
+                    camera.set_mouse_normalized(
+                        ui_pos.x / virtual_size.0.max(1.0),
+                        ui_pos.y / virtual_size.1.max(1.0),
                     );
+                    let world_pos =
+                        camera.screen_to_world(ui_pos.x, ui_pos.y, virtual_size.0, virtual_size.1);
                     state.game_ctx.input.set_mouse_world_pos(world_pos);
                 }
             }
@@ -974,6 +994,20 @@ impl ApplicationHandler for EngineApp {
                 // Swap it into the renderer for update + render, then swap back.
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 state.renderer.camera.update(dt as f32);
+                // The world position under a resting cursor changes whenever
+                // the camera moves; mapping it only on CursorMoved left it
+                // pointing at where the camera used to be.
+                {
+                    let camera = &state.renderer.camera;
+                    let ui_pos = state.game_ctx.input.mouse_ui_pos();
+                    let world_pos = camera.screen_to_world(
+                        ui_pos.x,
+                        ui_pos.y,
+                        camera.virtual_width,
+                        camera.virtual_height,
+                    );
+                    state.game_ctx.input.set_mouse_world_pos(world_pos);
+                }
 
                 // Lighting: hand this frame's lights to the renderer. Swapped
                 // rather than cloned — a game with many lights should not pay for

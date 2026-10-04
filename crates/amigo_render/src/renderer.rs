@@ -1,3 +1,4 @@
+use crate::blit::BlitPipeline;
 use crate::camera::Camera;
 use crate::lighting::LightingState;
 use crate::lighting_pipeline::LightingPipeline;
@@ -5,6 +6,7 @@ use crate::post_process::PostProcessPipeline;
 use crate::sprite_batcher::SpriteBatcher;
 use crate::texture::{Texture, TextureId};
 use crate::vertex::Vertex;
+use crate::viewport::{ScaleMode, Viewport};
 use crate::{ArtStyle, SamplerMode};
 use amigo_core::Color;
 use rustc_hash::FxHashMap;
@@ -84,6 +86,14 @@ pub struct Renderer {
     pub lighting_pipeline: LightingPipeline,
     /// Ambient and point lights for this frame.
     pub lighting: LightingState,
+    /// Colour of the bars around the scene when the window's aspect ratio or
+    /// size does not match the scale mode exactly.
+    pub letterbox_color: Color,
+    /// The scene target every stage renders into, and the pass that scales it
+    /// into [`Renderer::viewport`].
+    blit: BlitPipeline,
+    scale_mode: ScaleMode,
+    viewport: Viewport,
     next_texture_id: u32,
     draw_call_count: u32,
 }
@@ -334,16 +344,26 @@ impl Renderer {
 
         let camera = Camera::new(virtual_width as f32, virtual_height as f32);
 
+        // Every stage renders at the virtual resolution (the default pixel-art
+        // style); the blit pass scales the result into the window.
+        let scale_mode = ScaleMode::default();
+        let virtual_size = (virtual_width.max(1), virtual_height.max(1));
+        let viewport = Viewport::compute(
+            scale_mode,
+            virtual_size,
+            (surface_config.width, surface_config.height),
+        );
+        let blit = BlitPipeline::new(&device, surface_format, virtual_size);
         let post_process = PostProcessPipeline::new(
             &device,
-            surface_config.width.max(1),
-            surface_config.height.max(1),
+            virtual_size.0,
+            virtual_size.1,
             surface_config.format,
         );
         let lighting_pipeline = LightingPipeline::new(
             &device,
-            surface_config.width.max(1),
-            surface_config.height.max(1),
+            virtual_size.0,
+            virtual_size.1,
             surface_config.format,
         );
 
@@ -368,6 +388,10 @@ impl Renderer {
             post_process,
             lighting_pipeline,
             lighting: LightingState::new(),
+            letterbox_color: Color::BLACK,
+            blit,
+            scale_mode,
+            viewport,
             next_texture_id: 1,
             draw_call_count: 0,
         }
@@ -378,10 +402,64 @@ impl Renderer {
             self.surface_config.width = width;
             self.surface_config.height = height;
             self.surface.configure(&self.device, &self.surface_config);
-            // The post-process offscreen target has to track the surface, or the
-            // composite pass would sample a stale-sized texture after a resize.
-            self.post_process.resize(&self.device, width, height);
-            self.lighting_pipeline.resize(&self.device, width, height);
+            // Pixel-art targets stay at the virtual resolution; only the
+            // viewport moves. Raster-art targets follow the viewport size.
+            self.sync_scene_targets();
+        }
+    }
+
+    /// How the scene is scaled into the window.
+    pub fn scale_mode(&self) -> ScaleMode {
+        self.scale_mode
+    }
+
+    /// Set how the scene is scaled into the window (`[render] scale_mode`).
+    pub fn set_scale_mode(&mut self, mode: ScaleMode) {
+        self.scale_mode = mode;
+        self.sync_scene_targets();
+    }
+
+    /// The window-pixel rectangle the scene is drawn into. Input maps window
+    /// positions through it with [`Viewport::window_to_virtual`].
+    pub fn viewport(&self) -> Viewport {
+        self.viewport
+    }
+
+    /// Size of the scene target: the virtual resolution for pixel art, so a
+    /// virtual pixel is one texel and scales up as a hard-edged block; the
+    /// viewport's window-pixel size for raster art, so high-resolution art is
+    /// not first squeezed down to the virtual resolution.
+    pub fn scene_size(&self) -> (u32, u32) {
+        match self.art_style {
+            ArtStyle::RasterArt => (
+                self.viewport.width.max(1.0) as u32,
+                self.viewport.height.max(1.0) as u32,
+            ),
+            ArtStyle::PixelArt | ArtStyle::Hybrid => self.virtual_size(),
+        }
+    }
+
+    fn virtual_size(&self) -> (u32, u32) {
+        (
+            self.camera.virtual_width.round().max(1.0) as u32,
+            self.camera.virtual_height.round().max(1.0) as u32,
+        )
+    }
+
+    /// Recompute the viewport and resize the scene targets to match. Cheap
+    /// when nothing changed, so it runs every frame: a game may change the
+    /// camera's virtual resolution at any time.
+    fn sync_scene_targets(&mut self) {
+        self.viewport = Viewport::compute(
+            self.scale_mode,
+            self.virtual_size(),
+            (self.surface_config.width, self.surface_config.height),
+        );
+        let size = self.scene_size();
+        if size != self.blit.size() {
+            self.blit.resize(&self.device, size);
+            self.post_process.resize(&self.device, size.0, size.1);
+            self.lighting_pipeline.resize(&self.device, size.0, size.1);
         }
     }
 
@@ -412,9 +490,15 @@ impl Renderer {
     }
 
     /// Set the global art style. Affects default sampler mode for newly loaded textures.
+    ///
+    /// The engine swaps the game's camera into [`Renderer::camera`] only for
+    /// the duration of a frame, so the camera's `pixel_snap` must also be set
+    /// on the game's camera; this sets it on whichever camera the renderer
+    /// holds right now.
     pub fn set_art_style(&mut self, style: ArtStyle) {
         self.art_style = style;
         self.camera.pixel_snap = style.pixel_snap();
+        self.sync_scene_targets();
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
@@ -447,6 +531,36 @@ impl Renderer {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render_encoder"),
+            });
+        self.record_scene(&mut encoder);
+        // Last: scale the finished scene, UI included, into the window. An
+        // editor overlay drawn on `view` afterwards stays at window resolution.
+        self.blit
+            .apply(&mut encoder, &view, self.viewport, self.letterbox_color);
+
+        // Everything queued is now in GPU buffers recorded into `encoder`.
+        // Clearing here rather than in end_frame also covers callers that
+        // finish the frame themselves (the editor submits egui's encoder and
+        // never cleared ui_batcher, so UI sprites accumulated every frame).
+        self.batcher.clear();
+        self.ui_batcher.clear();
+
+        Ok(FrameInProgress {
+            encoder,
+            view,
+            output,
+        })
+    }
+
+    /// Record every scene stage into the scene target. Leaves the batchers
+    /// filled, so a screenshot can record the same frame again.
+    fn record_scene(&mut self, encoder: &mut wgpu::CommandEncoder) {
+        self.sync_scene_targets();
 
         // Update projection uniform
         let proj = self.camera.projection_matrix();
@@ -485,15 +599,10 @@ impl Renderer {
             None
         };
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("render_encoder"),
-            });
-
-        // Stage chain, per conventions A.6: sprites -> lighting -> post -> UI.
-        // Each inactive stage drops out of the chain entirely, so a game using
-        // neither draws straight to the surface exactly as before.
+        // Stage chain, per conventions A.6: sprites -> lighting -> post -> UI,
+        // all into the scene target. Each inactive stage drops out of the
+        // chain entirely, so a game using neither draws straight into it.
+        let view = self.blit.target_view().clone();
         let post_enabled = self.post_process.enabled();
         let lighting_enabled = self.lighting.is_active();
         let scene_view = if lighting_enabled {
@@ -550,14 +659,14 @@ impl Renderer {
 
         if lighting_enabled {
             // Lighting writes into post's input when post is active, otherwise
-            // straight to the surface.
+            // straight to the scene target.
             let target = if post_enabled {
                 self.post_process.render_target_view()
             } else {
                 &view
             };
             self.lighting_pipeline.apply(
-                &mut encoder,
+                encoder,
                 &self.device,
                 &self.queue,
                 &self.lighting,
@@ -568,25 +677,12 @@ impl Renderer {
 
         if post_enabled {
             self.post_process
-                .apply(&mut encoder, &self.device, &self.queue, &view);
+                .apply(encoder, &self.device, &self.queue, &view);
         }
 
         // UI pass: after post-processing, in screen space, loading rather than
         // clearing so it composites over the scene.
-        self.draw_ui_pass(&mut encoder, &view);
-
-        // Everything queued is now in GPU buffers recorded into `encoder`.
-        // Clearing here rather than in end_frame also covers callers that
-        // finish the frame themselves (the editor submits egui's encoder and
-        // never cleared ui_batcher, so UI sprites accumulated every frame).
-        self.batcher.clear();
-        self.ui_batcher.clear();
-
-        Ok(FrameInProgress {
-            encoder,
-            view,
-            output,
-        })
+        self.draw_ui_pass(encoder, &view);
     }
 
     /// Draw `ui_batcher` over `target` with a screen-space projection.
@@ -688,118 +784,32 @@ impl Renderer {
 
     /// Capture the current frame to a PNG file at `path`.
     ///
-    /// This renders the current batcher contents to an offscreen texture,
-    /// reads the pixels back to CPU, and saves as PNG. The batcher is
-    /// NOT cleared — call this before `render()` so sprites are still queued.
+    /// Records the whole stage chain (sprites, lighting, post-processing, UI)
+    /// into the scene target and reads it back, so the image is what the
+    /// player sees minus the letterbox bars, at the scene resolution. The
+    /// batchers are NOT cleared — call this before `render()` so sprites are
+    /// still queued.
     pub fn capture_screenshot(&mut self, path: &str) -> Result<(), String> {
-        let width = self.camera.virtual_width as u32;
-        let height = self.camera.virtual_height as u32;
-
-        if width == 0 || height == 0 {
-            return Err("Invalid virtual resolution for screenshot".into());
-        }
-
-        // Create offscreen render target
-        let offscreen_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("screenshot_render_target"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let offscreen_view = offscreen_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Update projection
-        let proj = self.camera.projection_matrix();
-        let proj_flat: [f32; 16] = bytemuck::cast(proj);
-        self.queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&proj_flat));
-
-        // Build batches (non-destructive peek — batcher keeps data)
-        let batches = self.batcher.build();
-
-        // Create vertex/index buffers
-        let vertex_buffer = if !self.batcher.vertices().is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("screenshot_vertex_buffer"),
-                        contents: bytemuck::cast_slice(self.batcher.vertices()),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-            )
-        } else {
-            None
-        };
-
-        let index_buffer = if !self.batcher.indices().is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("screenshot_index_buffer"),
-                        contents: bytemuck::cast_slice(self.batcher.indices()),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-            )
-        } else {
-            None
-        };
-
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("screenshot_encoder"),
             });
+        self.record_scene(&mut encoder);
 
-        // Render pass to offscreen texture
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("screenshot_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &offscreen_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: self.clear_color.r as f64,
-                            g: self.clear_color.g as f64,
-                            b: self.clear_color.b as f64,
-                            a: self.clear_color.a as f64,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            if let (Some(vb), Some(ib)) = (&vertex_buffer, &index_buffer) {
-                render_pass.set_pipeline(&self.pipeline);
-                render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, vb.slice(..));
-                render_pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-
-                for batch in &batches {
-                    if let Some(texture) = self.textures.get(&batch.texture_id) {
-                        render_pass.set_bind_group(1, &texture.bind_group, &[]);
-                        render_pass.draw_indexed(
-                            batch.index_offset..batch.index_offset + batch.index_count,
-                            0,
-                            0..1,
-                        );
-                    }
-                }
+        let (width, height) = self.blit.size();
+        // The scene target uses the surface format, which is BGRA on most
+        // desktop backends; PNG wants RGBA.
+        let swap_red_blue = match self.blit.format() {
+            wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => false,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => true,
+            other => {
+                return Err(format!(
+                    "Screenshots of a {other:?} surface are not supported"
+                ));
             }
-        }
+        };
+        let offscreen_texture = self.blit.target();
 
         // Copy texture to readback buffer
         let bytes_per_row = (4 * width + 255) & !255; // align to 256
@@ -813,7 +823,7 @@ impl Renderer {
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &offscreen_texture,
+                texture: offscreen_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -860,11 +870,12 @@ impl Renderer {
             let row = &data[src_offset..src_offset + (4 * width) as usize];
             for x in 0..width {
                 let i = (x * 4) as usize;
-                img.put_pixel(
-                    x,
-                    y,
-                    image::Rgba([row[i], row[i + 1], row[i + 2], row[i + 3]]),
-                );
+                let (r, b) = if swap_red_blue {
+                    (row[i + 2], row[i])
+                } else {
+                    (row[i], row[i + 2])
+                };
+                img.put_pixel(x, y, image::Rgba([r, row[i + 1], b, row[i + 3]]));
             }
         }
 
