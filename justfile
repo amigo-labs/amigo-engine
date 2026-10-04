@@ -47,8 +47,14 @@ test-features:
 test-doc:
     cargo test --workspace --doc
 
+# Scaffold a project from every `amigo new` template against this checkout
+# and type-check each one with warnings as errors. Slow on the first run: it
+# compiles the engine in its own target directory (target/tmp/templates).
+templates:
+    cargo test -p amigo_cli --test templates -- --ignored --nocapture
+
 # Run everything CI runs (catch failures before pushing)
-ci: fmt-check check clippy clippy-features test test-features test-doc doc
+ci: fmt-check check clippy clippy-features test test-features test-doc doc templates
 
 # Build API docs for every library crate, failing on doc warnings
 doc:

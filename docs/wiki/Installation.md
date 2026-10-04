@@ -16,6 +16,10 @@ curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/instal
 irm https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.ps1 | iex
 ```
 
+Pre-built binaries exist from v0.1.0 on. The v0.0.x releases were tagged
+without any attached files, so `AMIGO_VERSION=v0.0.3` (or an older tag) fails
+to download; use **Build from Source** for those.
+
 The binary is installed to `~/.amigo/bin/amigo`. On Windows the installer adds it to your user PATH automatically; on Linux/macOS the install script prints the matching `export PATH=...` line for your shell — add it to your shell profile.
 
 ### Pre-built Platforms

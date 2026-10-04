@@ -1,6 +1,9 @@
 # Amigo Engine
 
-A pixel-art game engine with built-in editor, AI asset generation, and algorithmic chiptune music.
+A pixel-art game engine in Rust with AI asset generation and algorithmic chiptune music.
+
+Pre-1.0: the [README](https://github.com/amigo-labs/amigo-engine#status) lists
+which subsystems work end to end and which are not wired into the engine yet.
 
 ## Getting Started
 

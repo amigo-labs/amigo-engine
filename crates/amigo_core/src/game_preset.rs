@@ -413,6 +413,17 @@ pub struct ProjectTemplate {
 }
 
 impl ProjectTemplate {
+    /// Command-line name of the template: lowercase ASCII words joined by
+    /// single hyphens, so "Sandbox / Survival" becomes `sandbox-survival`.
+    pub fn slug(&self) -> String {
+        self.name
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_ascii_lowercase)
+            .collect::<Vec<_>>()
+            .join("-")
+    }
+
     /// Generate a GameProject from this template.
     pub fn create_project(&self, project_name: &str) -> GameProject {
         let mut project =
@@ -687,6 +698,35 @@ mod tests {
             assert!(project.find_scene("title_menu").is_some());
             assert!(project.find_scene("gameplay").is_some());
         }
+    }
+
+    #[test]
+    fn template_slugs_are_unique_and_shell_safe() {
+        let templates = project_templates();
+        let slugs: Vec<String> = templates.iter().map(ProjectTemplate::slug).collect();
+        for slug in &slugs {
+            assert!(!slug.is_empty());
+            assert!(
+                slug.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                "slug {slug:?} has characters other than [a-z0-9-]"
+            );
+            assert!(!slug.starts_with('-') && !slug.ends_with('-') && !slug.contains("--"));
+        }
+        let unique: std::collections::HashSet<&String> = slugs.iter().collect();
+        assert_eq!(unique.len(), slugs.len(), "duplicate slugs: {slugs:?}");
+
+        let by_name = |name: &str| {
+            templates
+                .iter()
+                .find(|t| t.name == name)
+                .map(ProjectTemplate::slug)
+        };
+        assert_eq!(
+            by_name("Sandbox / Survival").as_deref(),
+            Some("sandbox-survival")
+        );
+        assert_eq!(by_name("Auto-Battler").as_deref(), Some("auto-battler"));
     }
 
     #[test]

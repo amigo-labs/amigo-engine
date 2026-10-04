@@ -16,8 +16,8 @@ See [Installation](Installation) for detailed setup instructions.
 # Install the CLI
 curl -fsSL https://raw.githubusercontent.com/amigo-labs/amigo-engine/main/install.sh | sh
 
-# Scaffold a new game
-amigo new my_game
+# Scaffold a new game (`amigo list-templates` shows the other templates)
+amigo new my_game --template platformer
 cd my_game
 
 # Open in VS Code
@@ -108,8 +108,11 @@ Render positions are `RenderVec2` (f32). Simulation state uses `SimVec2` with
 fixed-point `Fix` components instead — see [ADR-0001](https://github.com/amigo-labs/amigo-engine/blob/main/docs/adrs/0001-fixed-point-simulation.md)
 for why the two are separate. There is no `Vec2` in the prelude.
 
-Place a `player.aseprite` or `player.png` in `assets/sprites/`. The asset pipeline
-auto-loads it with hot reload in dev mode.
+Place a `player.png` in `assets/sprites/`; subfolders become part of the name
+(`assets/sprites/enemies/bat.png` is `"enemies/bat"`). The asset pipeline
+auto-loads it with hot reload in dev mode. Only PNG is loaded today: the
+Aseprite importer exists (`amigo_assets::load_aseprite`) but nothing calls it
+yet, so export `.aseprite` files to PNG.
 
 ## Add a HUD
 

@@ -44,6 +44,7 @@ COMMANDS:
     list-presets                         Show available scene presets
     export-level <path> [--format json]  Convert a .amigo level to JSON
     info                                 Show current project info
+    version                              Show the CLI version (also --version)
 
 TEMPLATES:
     platformer, top-down-adventure, action-rpg, roguelike, turn-based-rpg,
@@ -88,6 +89,7 @@ fn main() {
         "help" | "--help" | "-h" => {
             print_usage();
         }
+        "version" | "--version" | "-V" => cmd_version(),
         other => {
             eprintln!("Unknown command: {other}");
             print_usage();
@@ -1100,10 +1102,12 @@ fn cmd_list_templates() {
     println!("Available project templates:");
     println!();
     for t in &templates {
-        let slug = t.name.to_lowercase().replace(' ', "-");
         println!(
             "  {:<20} {}x{} — {:?}",
-            slug, t.resolution.0, t.resolution.1, t.primary_preset
+            t.slug(),
+            t.resolution.0,
+            t.resolution.1,
+            t.primary_preset
         );
     }
 }
@@ -1295,6 +1299,18 @@ fn cmd_connect(args: &[String]) {
 
     println!();
     println!("Next: start the engine with `amigo run --api` then open Claude Code.");
+}
+
+// ---------------------------------------------------------------------------
+// `amigo version`
+// ---------------------------------------------------------------------------
+
+fn cmd_version() {
+    println!("amigo {}", env!("CARGO_PKG_VERSION"));
+    let rev = env!("AMIGO_ENGINE_REV");
+    if !rev.is_empty() {
+        println!("engine revision {rev}");
+    }
 }
 
 // ---------------------------------------------------------------------------
