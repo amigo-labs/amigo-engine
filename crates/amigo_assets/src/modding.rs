@@ -481,11 +481,12 @@ mod tests {
     use std::path::Path;
 
     fn setup_mods_dir() -> PathBuf {
-        let id = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let mods_path = std::env::temp_dir().join(format!("amigo_mod_test_{id}"));
+        // A counter, not the clock: macOS timestamps have microsecond
+        // resolution, so tests running in parallel got the same directory.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mods_path =
+            std::env::temp_dir().join(format!("amigo_mod_test_{}_{n}", std::process::id()));
         let _ = fs::remove_dir_all(&mods_path);
         fs::create_dir_all(&mods_path).unwrap();
         mods_path
