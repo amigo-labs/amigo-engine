@@ -1,10 +1,17 @@
+// Action bindings for the starter game. The engine loads this file from the
+// working directory (`[input] bindings` in amigo.toml) over the copy main.rs
+// embeds, so editing it rebinds the game without recompiling.
+//
+// Keys take winit names ("KeyW", "ArrowUp") or short ones ("W", "Up");
+// gamepad buttons take a name ("South"/"A"/"Cross", "DPadUp", "Start") or an
+// index. Mouse buttons are 0 = left, 1 = right, 2 = middle.
 (
-    actions: {
-        "move_up":    [Key(W), Key(Up)],
-        "move_down":  [Key(S), Key(Down)],
-        "move_left":  [Key(A), Key(Left)],
-        "move_right": [Key(D), Key(Right)],
-        "confirm":    [Key(Space), Key(Enter)],
-        "pause":      [Key(Escape)],
+    bindings: {
+        "move_up":    [Key("W"), Key("Up"), GamepadButton("DPadUp")],
+        "move_down":  [Key("S"), Key("Down"), GamepadButton("DPadDown")],
+        "move_left":  [Key("A"), Key("Left"), GamepadButton("DPadLeft")],
+        "move_right": [Key("D"), Key("Right"), GamepadButton("DPadRight")],
+        "confirm":    [Key("Space"), Key("Enter"), GamepadButton("South")],
+        "pause":      [Key("Escape"), GamepadButton("Start")],
     },
 )

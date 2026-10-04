@@ -58,16 +58,17 @@ impl Player {
         // Input -> velocity
         let mut vx: f32 = 0.0;
         let mut vy: f32 = 0.0;
-        if ctx.input.held(KeyCode::KeyW) || ctx.input.held(KeyCode::ArrowUp) {
+        // Actions come from input.ron: keyboard and gamepad d-pad alike.
+        if ctx.actions.held("move_up") {
             vy -= 1.0;
         }
-        if ctx.input.held(KeyCode::KeyS) || ctx.input.held(KeyCode::ArrowDown) {
+        if ctx.actions.held("move_down") {
             vy += 1.0;
         }
-        if ctx.input.held(KeyCode::KeyA) || ctx.input.held(KeyCode::ArrowLeft) {
+        if ctx.actions.held("move_left") {
             vx -= 1.0;
         }
-        if ctx.input.held(KeyCode::KeyD) || ctx.input.held(KeyCode::ArrowRight) {
+        if ctx.actions.held("move_right") {
             vx += 1.0;
         }
 

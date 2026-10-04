@@ -190,7 +190,10 @@ pub mod prelude {
     };
     pub use amigo_core::{Color, EntityId, Fix, Rect, RenderVec2, SimVec2, TimeInfo, World};
     pub use amigo_debug::DebugOverlay;
-    pub use amigo_input::InputState;
+    pub use amigo_input::{
+        ActionBindings, ActionState, GamepadAxis, GamepadButton, GamepadId, GamepadState,
+        InputBinding, InputState,
+    };
     pub use amigo_net::checksum::StateHasher;
     pub use amigo_net::lobby::{LobbyManager, Room, RoomConfig, RoomId, RoomPhase};
     pub use amigo_net::stats::{ConnectionQuality, NetStats};

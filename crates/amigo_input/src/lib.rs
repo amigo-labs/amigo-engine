@@ -1,6 +1,13 @@
 pub mod action_map;
 pub mod gamepad;
 
+pub use action_map::{ActionBindings, ActionState, InputBinding};
+pub use gamepad::GamepadState;
+/// Gamepad types used by [`GamepadState`]'s queries, re-exported so games do
+/// not need their own `gilrs` dependency. Renamed because `Button` and `Axis`
+/// are too generic for a prelude.
+pub use gilrs::{Axis as GamepadAxis, Button as GamepadButton, GamepadId};
+
 use amigo_core::RenderVec2;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
@@ -65,6 +72,18 @@ impl InputState {
         self.mouse_buttons_released.clear();
         self.mouse_scroll_delta = 0.0;
         self.typed_chars.clear();
+    }
+
+    /// Release every held key and mouse button, reporting each as released
+    /// this frame.
+    ///
+    /// Call when the window loses focus: the release events for keys let go
+    /// while another window has focus never arrive, so without this they
+    /// stay held and a character keeps walking until the key is tapped again.
+    pub fn release_all(&mut self) {
+        self.keys_released.extend(self.keys_down.drain());
+        self.mouse_buttons_released
+            .extend(self.mouse_buttons_down.drain());
     }
 
     /// Process a keyboard event.
@@ -194,5 +213,32 @@ impl InputState {
 impl Default for InputState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_all_reports_held_inputs_as_released() {
+        let mut input = InputState::new();
+        input.handle_key_event(PhysicalKey::Code(KeyCode::KeyW), ElementState::Pressed);
+        input.handle_mouse_button(MouseButton::Left, ElementState::Pressed);
+        input.begin_frame();
+
+        input.release_all();
+
+        assert!(!input.held(KeyCode::KeyW));
+        assert!(input.released(KeyCode::KeyW));
+        assert!(!input.mouse_held(MouseButton::Left));
+        assert!(input.mouse_released(MouseButton::Left));
+
+        // The release is a one-frame event like any other.
+        input.begin_frame();
+        assert!(!input.released(KeyCode::KeyW));
+        // And pressing again registers as a fresh press.
+        input.handle_key_event(PhysicalKey::Code(KeyCode::KeyW), ElementState::Pressed);
+        assert!(input.pressed(KeyCode::KeyW));
     }
 }

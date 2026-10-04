@@ -17,7 +17,7 @@ impl Default for MenuState {
 
 impl Game for MenuState {
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
-        if ctx.input.pressed(KeyCode::Space) || ctx.input.pressed(KeyCode::Enter) {
+        if ctx.actions.pressed("confirm") {
             // Push, not Replace: gameplay's Escape then pops back to this very
             // menu instance instead of rebuilding it.
             SceneAction::Push(Box::new(|| Box::new(PlayingState::new()) as Box<dyn Game>))

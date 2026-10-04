@@ -4,7 +4,7 @@ use amigo_core::resources::Resources;
 use amigo_core::save::{SaveConfig, SaveManager};
 use amigo_core::scheduler::TickScheduler;
 use amigo_core::{Color, Rect, RenderVec2, TimeInfo, World};
-use amigo_input::InputState;
+use amigo_input::{ActionBindings, ActionState, GamepadState, InputState};
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontId, FontManager};
 use amigo_render::lighting::LightingState;
@@ -22,6 +22,30 @@ use amigo_audio::AudioManager;
 pub struct GameContext {
     pub world: World,
     pub input: InputState,
+    /// Connected gamepads. The engine polls them once per frame; like
+    /// `input`, presses and releases are visible to exactly one tick.
+    ///
+    /// A context built directly (in a test, say) has no gamepad backend and
+    /// reports none connected, so constructing one touches no OS device API.
+    pub gamepad: GamepadState,
+    /// Named actions ("jump", "pause") bound to keys, mouse buttons and
+    /// gamepad buttons. The engine loads them from `input.ron` (the path is
+    /// `[input] bindings` in `amigo.toml`) over the defaults given to
+    /// `EngineBuilder::input_bindings`; a game can also edit them at runtime,
+    /// e.g. from a rebinding menu.
+    pub bindings: ActionBindings,
+    /// Which bound actions are pressed, held or released this tick, refreshed
+    /// from `input`, `gamepad` and `bindings` before every `Game::update`.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext) {
+    /// if ctx.actions.pressed("jump") {
+    ///     // ...
+    /// }
+    /// # }
+    /// ```
+    pub actions: ActionState,
     pub time: TimeInfo,
     pub camera: Camera,
     pub save: SaveManager,
@@ -84,6 +108,9 @@ impl GameContext {
         Self {
             world: World::new(),
             input: InputState::new(),
+            gamepad: GamepadState::disabled(),
+            bindings: ActionBindings::new(),
+            actions: ActionState::new(),
             time: TimeInfo::new(),
             camera: Camera::new(virtual_width, virtual_height),
             save: SaveManager::new(SaveConfig {
@@ -107,6 +134,21 @@ impl GameContext {
             tasks: amigo_core::tasks::TaskPool::new(),
             sprite_textures: Vec::new(),
         }
+    }
+
+    /// Refresh [`actions`](Self::actions) from the current input. The engine
+    /// calls this before every tick; call it after injecting input yourself,
+    /// e.g. in a test.
+    pub fn update_actions(&mut self) {
+        self.actions
+            .update(&self.input, &self.bindings, Some(&self.gamepad));
+    }
+
+    /// Clear the one-tick input events (presses, releases, scroll, typed
+    /// text, gamepad hot-plug) once a tick has consumed them.
+    pub(crate) fn end_tick_input(&mut self) {
+        self.input.begin_frame();
+        self.gamepad.begin_frame();
     }
 
     /// Load a TTF/OTF font at the given pixel size. Returns a FontId handle.

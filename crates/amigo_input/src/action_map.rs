@@ -14,81 +14,186 @@ impl ActionId {
 
 /// An input source that can be bound to an action.
 /// Keys are stored as strings (e.g. "Space", "KeyW") since winit KeyCode
-/// doesn't implement Serialize.
+/// doesn't implement Serialize; [`key_from_name`] lists the accepted names.
+///
+/// In RON a gamepad button can be written by name or by index:
+/// `GamepadButton("South")` and `GamepadButton(0)` are the same binding.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InputBinding {
     Key(String),
     MouseButton(u8), // 0=Left, 1=Right, 2=Middle
-    GamepadButton(u8),
+    GamepadButton(#[serde(deserialize_with = "gamepad_button_index")] u8),
 }
 
-/// Convert a string key name to a winit KeyCode.
-fn str_to_keycode(s: &str) -> Option<KeyCode> {
-    match s {
-        "Space" => Some(KeyCode::Space),
-        "Enter" => Some(KeyCode::Enter),
-        "Escape" => Some(KeyCode::Escape),
-        "Tab" => Some(KeyCode::Tab),
-        "ShiftLeft" => Some(KeyCode::ShiftLeft),
-        "ShiftRight" => Some(KeyCode::ShiftRight),
-        "ControlLeft" => Some(KeyCode::ControlLeft),
-        "ControlRight" => Some(KeyCode::ControlRight),
-        "AltLeft" => Some(KeyCode::AltLeft),
-        "AltRight" => Some(KeyCode::AltRight),
-        "ArrowUp" => Some(KeyCode::ArrowUp),
-        "ArrowDown" => Some(KeyCode::ArrowDown),
-        "ArrowLeft" => Some(KeyCode::ArrowLeft),
-        "ArrowRight" => Some(KeyCode::ArrowRight),
-        "KeyA" => Some(KeyCode::KeyA),
-        "KeyB" => Some(KeyCode::KeyB),
-        "KeyC" => Some(KeyCode::KeyC),
-        "KeyD" => Some(KeyCode::KeyD),
-        "KeyE" => Some(KeyCode::KeyE),
-        "KeyF" => Some(KeyCode::KeyF),
-        "KeyG" => Some(KeyCode::KeyG),
-        "KeyH" => Some(KeyCode::KeyH),
-        "KeyI" => Some(KeyCode::KeyI),
-        "KeyJ" => Some(KeyCode::KeyJ),
-        "KeyK" => Some(KeyCode::KeyK),
-        "KeyL" => Some(KeyCode::KeyL),
-        "KeyM" => Some(KeyCode::KeyM),
-        "KeyN" => Some(KeyCode::KeyN),
-        "KeyO" => Some(KeyCode::KeyO),
-        "KeyP" => Some(KeyCode::KeyP),
-        "KeyQ" => Some(KeyCode::KeyQ),
-        "KeyR" => Some(KeyCode::KeyR),
-        "KeyS" => Some(KeyCode::KeyS),
-        "KeyT" => Some(KeyCode::KeyT),
-        "KeyU" => Some(KeyCode::KeyU),
-        "KeyV" => Some(KeyCode::KeyV),
-        "KeyW" => Some(KeyCode::KeyW),
-        "KeyX" => Some(KeyCode::KeyX),
-        "KeyY" => Some(KeyCode::KeyY),
-        "KeyZ" => Some(KeyCode::KeyZ),
-        "Digit0" => Some(KeyCode::Digit0),
-        "Digit1" => Some(KeyCode::Digit1),
-        "Digit2" => Some(KeyCode::Digit2),
-        "Digit3" => Some(KeyCode::Digit3),
-        "Digit4" => Some(KeyCode::Digit4),
-        "Digit5" => Some(KeyCode::Digit5),
-        "Digit6" => Some(KeyCode::Digit6),
-        "Digit7" => Some(KeyCode::Digit7),
-        "Digit8" => Some(KeyCode::Digit8),
-        "Digit9" => Some(KeyCode::Digit9),
-        "F1" => Some(KeyCode::F1),
-        "F2" => Some(KeyCode::F2),
-        "F3" => Some(KeyCode::F3),
-        "F4" => Some(KeyCode::F4),
-        "F5" => Some(KeyCode::F5),
-        "F6" => Some(KeyCode::F6),
-        "F7" => Some(KeyCode::F7),
-        "F8" => Some(KeyCode::F8),
-        "F9" => Some(KeyCode::F9),
-        "F10" => Some(KeyCode::F10),
-        "F11" => Some(KeyCode::F11),
-        "F12" => Some(KeyCode::F12),
-        _ => None,
+/// Accept a gamepad button as its index or as any name
+/// [`str_to_button`](super::gamepad::str_to_button) knows ("South", "A",
+/// "Cross", ...). Hand-written binding files should not need the index table.
+fn gamepad_button_index<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IndexOrName {
+        Index(u8),
+        Name(String),
     }
+    match IndexOrName::deserialize(deserializer)? {
+        IndexOrName::Index(index) => Ok(index),
+        IndexOrName::Name(name) => super::gamepad::str_to_button(&name)
+            .map(button_to_index)
+            .filter(|&index| index != UNMAPPED_BUTTON)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown gamepad button {name:?}"))),
+    }
+}
+
+const LETTERS: [KeyCode; 26] = [
+    KeyCode::KeyA,
+    KeyCode::KeyB,
+    KeyCode::KeyC,
+    KeyCode::KeyD,
+    KeyCode::KeyE,
+    KeyCode::KeyF,
+    KeyCode::KeyG,
+    KeyCode::KeyH,
+    KeyCode::KeyI,
+    KeyCode::KeyJ,
+    KeyCode::KeyK,
+    KeyCode::KeyL,
+    KeyCode::KeyM,
+    KeyCode::KeyN,
+    KeyCode::KeyO,
+    KeyCode::KeyP,
+    KeyCode::KeyQ,
+    KeyCode::KeyR,
+    KeyCode::KeyS,
+    KeyCode::KeyT,
+    KeyCode::KeyU,
+    KeyCode::KeyV,
+    KeyCode::KeyW,
+    KeyCode::KeyX,
+    KeyCode::KeyY,
+    KeyCode::KeyZ,
+];
+
+const DIGITS: [KeyCode; 10] = [
+    KeyCode::Digit0,
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+    KeyCode::Digit5,
+    KeyCode::Digit6,
+    KeyCode::Digit7,
+    KeyCode::Digit8,
+    KeyCode::Digit9,
+];
+
+const NUMPAD_DIGITS: [KeyCode; 10] = [
+    KeyCode::Numpad0,
+    KeyCode::Numpad1,
+    KeyCode::Numpad2,
+    KeyCode::Numpad3,
+    KeyCode::Numpad4,
+    KeyCode::Numpad5,
+    KeyCode::Numpad6,
+    KeyCode::Numpad7,
+    KeyCode::Numpad8,
+    KeyCode::Numpad9,
+];
+
+const FUNCTION_KEYS: [KeyCode; 12] = [
+    KeyCode::F1,
+    KeyCode::F2,
+    KeyCode::F3,
+    KeyCode::F4,
+    KeyCode::F5,
+    KeyCode::F6,
+    KeyCode::F7,
+    KeyCode::F8,
+    KeyCode::F9,
+    KeyCode::F10,
+    KeyCode::F11,
+    KeyCode::F12,
+];
+
+/// Convert a key name from a binding file to a winit `KeyCode`.
+///
+/// Accepts winit's own names (`"KeyW"`, `"Digit1"`, `"ArrowUp"`, `"Escape"`,
+/// `"ShiftLeft"`, `"Numpad4"`, `"F1"`), and the short forms people write by
+/// hand: single letters and digits (`"W"`, `"1"`), `"Up"`/`"Down"`/`"Left"`/
+/// `"Right"`, `"Esc"`, `"Return"`, and `"Shift"`/`"Ctrl"`/`"Alt"` for the
+/// left-hand modifier.
+pub fn key_from_name(name: &str) -> Option<KeyCode> {
+    // Single letters and digits, and winit's "KeyX" / "DigitN" / "NumpadN".
+    let indexed = |rest: &str, table: &[KeyCode], first: u8| -> Option<KeyCode> {
+        match rest.as_bytes() {
+            [c] => table
+                .get(c.to_ascii_uppercase().checked_sub(first)? as usize)
+                .copied(),
+            _ => None,
+        }
+    };
+    if let Some(key) = indexed(name, &LETTERS, b'A').or_else(|| indexed(name, &DIGITS, b'0')) {
+        return Some(key);
+    }
+    if let Some(rest) = name.strip_prefix("Key") {
+        return indexed(rest, &LETTERS, b'A');
+    }
+    if let Some(rest) = name.strip_prefix("Digit") {
+        return indexed(rest, &DIGITS, b'0');
+    }
+    if let Some(rest) = name.strip_prefix("Numpad")
+        && let Some(key) = indexed(rest, &NUMPAD_DIGITS, b'0')
+    {
+        return Some(key);
+    }
+    if let Some(n) = name.strip_prefix('F').and_then(|n| n.parse::<usize>().ok()) {
+        return n.checked_sub(1).and_then(|i| FUNCTION_KEYS.get(i)).copied();
+    }
+
+    Some(match name {
+        "Space" => KeyCode::Space,
+        "Enter" | "Return" => KeyCode::Enter,
+        "Escape" | "Esc" => KeyCode::Escape,
+        "Tab" => KeyCode::Tab,
+        "Backspace" => KeyCode::Backspace,
+        "Delete" => KeyCode::Delete,
+        "Insert" => KeyCode::Insert,
+        "Home" => KeyCode::Home,
+        "End" => KeyCode::End,
+        "PageUp" => KeyCode::PageUp,
+        "PageDown" => KeyCode::PageDown,
+        "CapsLock" => KeyCode::CapsLock,
+        "ShiftLeft" | "Shift" => KeyCode::ShiftLeft,
+        "ShiftRight" => KeyCode::ShiftRight,
+        "ControlLeft" | "Ctrl" | "Control" => KeyCode::ControlLeft,
+        "ControlRight" => KeyCode::ControlRight,
+        "AltLeft" | "Alt" => KeyCode::AltLeft,
+        "AltRight" => KeyCode::AltRight,
+        "ArrowUp" | "Up" => KeyCode::ArrowUp,
+        "ArrowDown" | "Down" => KeyCode::ArrowDown,
+        "ArrowLeft" | "Left" => KeyCode::ArrowLeft,
+        "ArrowRight" | "Right" => KeyCode::ArrowRight,
+        "Minus" => KeyCode::Minus,
+        "Equal" => KeyCode::Equal,
+        "Comma" => KeyCode::Comma,
+        "Period" => KeyCode::Period,
+        "Slash" => KeyCode::Slash,
+        "Backslash" => KeyCode::Backslash,
+        "Semicolon" => KeyCode::Semicolon,
+        "Quote" => KeyCode::Quote,
+        "Backquote" => KeyCode::Backquote,
+        "BracketLeft" => KeyCode::BracketLeft,
+        "BracketRight" => KeyCode::BracketRight,
+        "NumpadAdd" => KeyCode::NumpadAdd,
+        "NumpadSubtract" => KeyCode::NumpadSubtract,
+        "NumpadMultiply" => KeyCode::NumpadMultiply,
+        "NumpadDivide" => KeyCode::NumpadDivide,
+        "NumpadEnter" => KeyCode::NumpadEnter,
+        "NumpadDecimal" => KeyCode::NumpadDecimal,
+        _ => return None,
+    })
 }
 
 /// A complete set of action bindings, serializable for save/load.
@@ -173,7 +278,30 @@ impl ActionBindings {
         let contents = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         Self::from_ron(&contents)
     }
+
+    /// Bindings that can never fire: key names [`key_from_name`] does not
+    /// know, mouse buttons other than 0-2, and gamepad indices other than
+    /// 0-11. `ActionState::update` skips these silently, so check after
+    /// loading a hand-written file.
+    pub fn unknown_inputs(&self) -> Vec<(String, InputBinding)> {
+        let mut unknown: Vec<(String, InputBinding)> = self
+            .bindings
+            .iter()
+            .flat_map(|(action, inputs)| inputs.iter().map(move |input| (action, input)))
+            .filter(|(_, input)| match input {
+                InputBinding::Key(name) => key_from_name(name).is_none(),
+                InputBinding::MouseButton(button) => *button > 2,
+                InputBinding::GamepadButton(index) => index_to_button(*index).is_none(),
+            })
+            .map(|(action, input)| (action.clone(), input.clone()))
+            .collect();
+        unknown.sort_by(|a, b| a.0.cmp(&b.0));
+        unknown
+    }
 }
+
+/// `button_to_index` result for buttons with no binding slot.
+const UNMAPPED_BUTTON: u8 = 255;
 
 /// Map a gilrs Button to a u8 index for storage in `InputBinding::GamepadButton`.
 fn button_to_index(button: gilrs::Button) -> u8 {
@@ -191,7 +319,7 @@ fn button_to_index(button: gilrs::Button) -> u8 {
         RightTrigger => 9,
         Start => 10,
         Select => 11,
-        _ => 255,
+        _ => UNMAPPED_BUTTON,
     }
 }
 
@@ -249,7 +377,7 @@ impl ActionState {
             for binding in inputs {
                 match binding {
                     InputBinding::Key(key_name) => {
-                        let Some(key) = str_to_keycode(key_name) else {
+                        let Some(key) = key_from_name(key_name) else {
                             continue;
                         };
                         if input.pressed(key) {
@@ -339,6 +467,98 @@ mod tests {
         let loaded = ActionBindings::from_ron(&ron).unwrap();
         assert_eq!(loaded.get_bindings("jump").len(), 2);
         assert_eq!(loaded.get_bindings("attack").len(), 1);
+    }
+
+    #[test]
+    fn short_and_winit_key_names_resolve_to_the_same_key() {
+        for (short, long) in [
+            ("W", "KeyW"),
+            ("w", "KeyW"),
+            ("7", "Digit7"),
+            ("Up", "ArrowUp"),
+            ("Esc", "Escape"),
+            ("Return", "Enter"),
+            ("Shift", "ShiftLeft"),
+        ] {
+            assert_eq!(key_from_name(short), key_from_name(long), "{short}");
+            assert!(key_from_name(long).is_some(), "{long}");
+        }
+        assert_eq!(key_from_name("F12"), Some(KeyCode::F12));
+        assert_eq!(key_from_name("Numpad3"), Some(KeyCode::Numpad3));
+        assert_eq!(key_from_name("F13"), None);
+        assert_eq!(key_from_name("F0"), None);
+        assert_eq!(key_from_name("KeyAA"), None);
+        assert_eq!(key_from_name("Jump"), None);
+    }
+
+    #[test]
+    fn gamepad_buttons_load_by_name_or_index() {
+        let bindings = ActionBindings::from_ron(
+            r#"(bindings: { "jump": [GamepadButton("South"), GamepadButton("A"), GamepadButton(0)] })"#,
+        )
+        .unwrap();
+        assert_eq!(
+            bindings.get_bindings("jump"),
+            vec![InputBinding::GamepadButton(0); 3].as_slice()
+        );
+        assert!(
+            ActionBindings::from_ron(r#"(bindings: { "jump": [GamepadButton("Turbo")] })"#)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn unknown_inputs_lists_bindings_that_cannot_fire() {
+        let mut bindings = ActionBindings::new();
+        bindings.bind_key("jump", "Space");
+        bindings.bind_key("jump", "Spacebar");
+        bindings.bind_mouse("attack", 7);
+        bindings
+            .bindings
+            .entry("menu".to_string())
+            .or_default()
+            .push(InputBinding::GamepadButton(40));
+        assert_eq!(
+            bindings.unknown_inputs(),
+            vec![
+                ("attack".to_string(), InputBinding::MouseButton(7)),
+                (
+                    "jump".to_string(),
+                    InputBinding::Key("Spacebar".to_string())
+                ),
+                ("menu".to_string(), InputBinding::GamepadButton(40)),
+            ]
+        );
+    }
+
+    #[test]
+    fn actions_follow_bound_keys_and_mouse_buttons() {
+        use winit::event::{ElementState, MouseButton};
+        use winit::keyboard::PhysicalKey;
+
+        let mut bindings = ActionBindings::new();
+        bindings.bind_key("jump", "Space");
+        bindings.bind_key("jump", "W");
+        bindings.bind_mouse("attack", 0);
+        let gamepad = super::super::gamepad::GamepadState::disabled();
+        let mut input = super::super::InputState::new();
+        let mut actions = ActionState::new();
+
+        input.handle_key_event(PhysicalKey::Code(KeyCode::KeyW), ElementState::Pressed);
+        actions.update(&input, &bindings, Some(&gamepad));
+        assert!(actions.pressed("jump") && actions.held("jump"));
+        assert!(!actions.held("attack"));
+
+        input.begin_frame();
+        input.handle_mouse_button(MouseButton::Left, ElementState::Pressed);
+        actions.update(&input, &bindings, Some(&gamepad));
+        assert!(!actions.pressed("jump") && actions.held("jump"));
+        assert!(actions.pressed("attack"));
+
+        input.begin_frame();
+        input.handle_key_event(PhysicalKey::Code(KeyCode::KeyW), ElementState::Released);
+        actions.update(&input, &bindings, Some(&gamepad));
+        assert!(actions.released("jump") && !actions.held("jump"));
     }
 
     #[test]

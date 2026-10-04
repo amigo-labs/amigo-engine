@@ -73,6 +73,21 @@ impl GamepadState {
         }
     }
 
+    /// A `GamepadState` with no backend: no gamepads are ever reported.
+    ///
+    /// Unlike [`GamepadState::new`] this touches no OS device API, so tests and
+    /// headless runs can build one freely. The engine replaces it with a live
+    /// state when it opens a window.
+    pub fn disabled() -> Self {
+        Self {
+            gilrs: None,
+            pads: FxHashMap::default(),
+            connected_this_frame: Vec::new(),
+            disconnected_this_frame: Vec::new(),
+            deadzone: 0.15,
+        }
+    }
+
     /// Returns `true` if the platform gamepad backend was initialised
     /// successfully. When `false`, all queries report no gamepads.
     pub fn backend_available(&self) -> bool {
@@ -336,11 +351,16 @@ const ALL_BUTTONS: [Button; 12] = [
     Button::Select,
 ];
 
-const ALL_AXES: [Axis; 4] = [
+// The analog triggers (`LeftZ`/`RightZ`) are synced too: `left_trigger` and
+// `right_trigger` read them, and without the sync they only changed on
+// `AxisChanged` events, which coalesced input can skip.
+const ALL_AXES: [Axis; 6] = [
     Axis::LeftStickX,
     Axis::LeftStickY,
     Axis::RightStickX,
     Axis::RightStickY,
+    Axis::LeftZ,
+    Axis::RightZ,
 ];
 
 // ── Deadzone helper ─────────────────────────────────────────────────────────
@@ -440,6 +460,16 @@ mod tests {
                 "roundtrip failed for {name}"
             );
         }
+    }
+
+    #[test]
+    fn a_disabled_state_reports_no_gamepads() {
+        let mut gp = GamepadState::disabled();
+        gp.update();
+        gp.begin_frame();
+        assert!(!gp.backend_available());
+        assert!(!gp.any_connected());
+        assert_eq!(gp.connected_ids().count(), 0);
     }
 
     #[test]

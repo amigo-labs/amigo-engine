@@ -182,7 +182,7 @@ impl Game for PlayingState {
             Color::rgb(0.4, 0.8, 1.0),
         );
 
-        if ctx.input.pressed(KeyCode::Escape) {
+        if ctx.actions.pressed("pause") {
             // Pop back to the menu that pushed us.
             return SceneAction::Pop;
         }

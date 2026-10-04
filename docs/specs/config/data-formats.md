@@ -28,7 +28,7 @@ let config: EngineConfig = toml::from_str(&std::fs::read_to_string("amigo.toml")
 |--------|----------|------------|-----------|
 | **TOML** | Engine configuration (`amigo.toml`) | No (restart required) | Standard config format, familiar to Rust developers, flat key-value structure ideal for settings |
 | **RON** | Game data (tower stats, wave configs, enemy definitions) | Yes (dev mode) | Rust-native, supports enums/structs directly, readable, maps 1:1 to Rust types |
-| **RON** | Input mappings (`input.ron`) | Yes | Rebindable by player, complex nested structure |
+| **RON** | Input mappings (`input.ron`) | No (read at startup) | Rebindable by player, complex nested structure |
 | **RON** | Level files (`.amigo`) | Yes (dev mode) | Complex nested data (tilemaps, entity lists, paths) |
 | **RON** | Style definitions (art + audio) | Yes (dev mode) | Nested structures with enums, palettes, prompt templates |
 | **RON** | Adaptive music configs (`.music.ron`, `.sequence.ron`) | Yes (dev mode) | Complex layer rules, transition definitions |
@@ -195,9 +195,9 @@ Generated output is original -- not copies of training data. Standard disclaimer
 ```rust
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InputBinding {
-    Key(String),         // e.g., "Space", "KeyW", "ArrowUp"
+    Key(String),         // e.g., "Space", "KeyW", "W", "ArrowUp", "Up"
     MouseButton(u8),     // 0=Left, 1=Right, 2=Middle
-    GamepadButton(u8),   // Button index
+    GamepadButton(u8),   // Button index; RON also accepts a name: GamepadButton("South")
 }
 ```
 
