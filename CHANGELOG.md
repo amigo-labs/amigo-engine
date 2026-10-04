@@ -6,6 +6,35 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed — input
+
+- **Gamepads work.** `GamepadState` was complete but never constructed, so no
+  game could see a controller. It is now `GameContext::gamepad`, polled once per
+  frame, with presses visible to exactly one tick like keyboard input. A context
+  built directly (tests, headless) gets `GamepadState::disabled()` and touches no
+  device API. The analog triggers are synced with the sticks; before,
+  `left_trigger`/`right_trigger` changed only on axis events.
+- **Action maps work.** `ActionBindings`/`ActionState` had no caller and
+  `examples/starter/input.ron` was never read (and did not parse).
+  `GameContext::bindings` and `GameContext::actions` now hold them, refreshed
+  before every `Game::update`: `ctx.actions.pressed("jump")`. Bindings come from
+  `EngineBuilder::input_bindings`, replaced by the file named in
+  `[input] bindings` (default `input.ron`) when it exists. Unknown key names log
+  a warning instead of silently never firing.
+- **Keys no longer stick after the window loses focus.** The release of a key
+  let go in another window never arrives; `InputState::release_all` now runs on
+  focus loss. With the editor overlay, the release of a key or button the game saw
+  pressed reaches it even when egui consumed the release, which also left keys
+  held.
+
+### Added — input
+
+- Binding files accept short key names (`"W"`, `"Up"`, `"Esc"`, `"Shift"`) and
+  more keys (Backspace, Home/End, PageUp/Down, punctuation, numpad), and gamepad
+  buttons by name: `GamepadButton("South")`.
+- The prelude exports `ActionBindings`, `ActionState`, `InputBinding`,
+  `GamepadState`, `GamepadButton`, `GamepadAxis` and `GamepadId`.
+
 ### Fixed — rendering
 
 - **Pixel-perfect scaling exists.** `[render] scale_mode` was parsed and never

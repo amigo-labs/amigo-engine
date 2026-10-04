@@ -6,6 +6,7 @@ use crate::stack::GameStack;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
+use amigo_input::{ActionBindings, GamepadState};
 use amigo_render::renderer::{Renderer, SurfaceError};
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::{ArtStyle, ScaleMode};
@@ -73,6 +74,7 @@ pub struct EngineBuilder {
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: PluginContext,
     restore_snapshot: Option<std::path::PathBuf>,
+    input_bindings: Option<ActionBindings>,
 }
 
 impl EngineBuilder {
@@ -89,6 +91,7 @@ impl EngineBuilder {
                 .ok()
                 .filter(|p| !p.is_empty())
                 .map(std::path::PathBuf::from),
+            input_bindings: None,
         }
     }
 
@@ -146,6 +149,24 @@ impl EngineBuilder {
         self
     }
 
+    /// Default action bindings, for `GameContext::actions`.
+    ///
+    /// A bindings file (`[input] bindings` in `amigo.toml`, `input.ron` by
+    /// default) replaces these when it exists, so a game can ship defaults in
+    /// code and let players override them in the file:
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// let mut bindings = ActionBindings::new();
+    /// bindings.bind_key("jump", "Space");
+    /// bindings.bind_gamepad("jump", "South");
+    /// Engine::build().input_bindings(bindings);
+    /// ```
+    pub fn input_bindings(mut self, bindings: ActionBindings) -> Self {
+        self.input_bindings = Some(bindings);
+        self
+    }
+
     /// Add a plugin to the engine.
     pub fn add_plugin(mut self, plugin: impl Plugin) -> Self {
         plugin.build(&mut self.plugin_ctx);
@@ -160,6 +181,7 @@ impl EngineBuilder {
             plugins: self.plugins,
             plugin_ctx: self.plugin_ctx,
             restore_snapshot: self.restore_snapshot,
+            input_bindings: self.input_bindings,
         }
     }
 }
@@ -177,6 +199,7 @@ pub struct Engine {
     plugins: Vec<Box<dyn Plugin>>,
     plugin_ctx: PluginContext,
     restore_snapshot: Option<std::path::PathBuf>,
+    input_bindings: Option<ActionBindings>,
 }
 
 impl Engine {
@@ -184,13 +207,18 @@ impl Engine {
         EngineBuilder::new()
     }
 
-    pub fn run<G: Game>(self, game: G) {
+    pub fn run<G: Game>(mut self, game: G) {
         amigo_debug::init_logging();
         info!("Amigo Engine starting: {}", self.config.window.title);
 
+        let bindings = load_input_bindings(
+            self.input_bindings.take(),
+            std::path::Path::new(&self.config.input.bindings),
+        );
+
         #[cfg(feature = "api")]
         if self.config.dev.headless {
-            self.run_headless(game);
+            self.run_headless(game, bindings);
             return;
         }
 
@@ -224,6 +252,7 @@ impl Engine {
             plugin_ctx: Some(self.plugin_ctx),
             state: None,
             restore_snapshot: self.restore_snapshot,
+            input_bindings: Some(bindings),
         };
 
         event_loop.run_app(&mut app).expect("Event loop failed");
@@ -232,7 +261,7 @@ impl Engine {
     /// Run the engine in headless mode: simulation only, no window or renderer.
     /// Controlled entirely via the JSON-RPC API server.
     #[cfg(feature = "api")]
-    fn run_headless<G: Game>(self, game: G) {
+    fn run_headless<G: Game>(self, game: G, bindings: ActionBindings) {
         use amigo_api::handler::new_shared_state;
         use amigo_api::server::ApiServer;
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -245,6 +274,9 @@ impl Engine {
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
         #[cfg(feature = "audio")]
         game_ctx.audio.open_device();
+        // No gamepad backend headless: there is no player at the machine,
+        // and agents drive input over the API.
+        game_ctx.bindings = bindings;
 
         // Apply plugin registrations
         let plugin_ctx = self.plugin_ctx;
@@ -342,6 +374,7 @@ impl Engine {
                         quit = true;
                         break;
                     };
+                    game_ctx.update_actions();
                     let action = active.update(&mut game_ctx);
                     game_ctx.time.tick += 1;
 
@@ -356,7 +389,7 @@ impl Engine {
                     // Clear edge-detected input AFTER the update consumed
                     // it (clearing before update would hide injected
                     // just-pressed state from the game).
-                    game_ctx.input.begin_frame();
+                    game_ctx.end_tick_input();
                 }
                 let elapsed = start.elapsed();
                 info!(
@@ -485,6 +518,40 @@ fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
     }
 }
 
+/// The action bindings a game starts with: `defaults` (from
+/// `EngineBuilder::input_bindings`), replaced by the file at `path` when it
+/// exists. A file that fails to parse is reported and ignored rather than
+/// leaving the game with no controls.
+fn load_input_bindings(defaults: Option<ActionBindings>, path: &std::path::Path) -> ActionBindings {
+    let bindings = match std::fs::read_to_string(path) {
+        Ok(text) => match ActionBindings::from_ron(&text) {
+            Ok(bindings) => {
+                info!("Loaded input bindings from {}", path.display());
+                bindings
+            }
+            Err(e) => {
+                error!(
+                    "Ignoring input bindings in '{}': {e}. Using the defaults.",
+                    path.display()
+                );
+                defaults.unwrap_or_default()
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => defaults.unwrap_or_default(),
+        Err(e) => {
+            warn!(
+                "Could not read '{}': {e}. Using the default input bindings.",
+                path.display()
+            );
+            defaults.unwrap_or_default()
+        }
+    };
+    for (action, input) in bindings.unknown_inputs() {
+        warn!("Input binding {input:?} for action '{action}' matches no input and will never fire");
+    }
+    bindings
+}
+
 /// React to a frame the surface could not provide. The frame is skipped
 /// either way; the sprites queued for it were already dropped.
 fn recover_from_surface_error(renderer: &mut Renderer, err: SurfaceError) {
@@ -540,6 +607,8 @@ struct EngineApp {
     /// Dev snapshot to restore once the contexts exist, from
     /// `EngineBuilder::restore_snapshot`.
     restore_snapshot: Option<std::path::PathBuf>,
+    /// Resolved action bindings, moved into the context on startup.
+    input_bindings: Option<ActionBindings>,
 }
 
 impl ApplicationHandler for EngineApp {
@@ -590,6 +659,11 @@ impl ApplicationHandler for EngineApp {
         renderer.set_scale_mode(scale_mode);
         renderer.set_art_style(art_style);
         game_ctx.camera.pixel_snap = art_style.pixel_snap();
+
+        // GameContext::new leaves gamepads disabled so tests touch no device
+        // API; a windowed game has a player who may hold one.
+        game_ctx.gamepad = GamepadState::new();
+        game_ctx.bindings = self.input_bindings.take().unwrap_or_default();
 
         let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
 
@@ -759,8 +833,23 @@ impl ApplicationHandler for EngineApp {
                 state.renderer.resize(size.width, size.height);
             }
 
+            // Releases that happen while another window has focus never
+            // arrive, so held keys stuck down until pressed again.
+            WindowEvent::Focused(false) => {
+                state.game_ctx.input.release_all();
+            }
+
             WindowEvent::KeyboardInput { event, .. } => {
-                if !egui_consumed {
+                // A release reaches the game even when egui took it, if the
+                // game saw the press: dropping it left that key held. A
+                // release whose press egui had is still egui's alone.
+                let ends_game_press = event.state == ElementState::Released
+                    && matches!(
+                        event.physical_key,
+                        winit::keyboard::PhysicalKey::Code(code)
+                            if state.game_ctx.input.held(code)
+                    );
+                if !egui_consumed || ends_game_press {
                     state
                         .game_ctx
                         .input
@@ -821,7 +910,9 @@ impl ApplicationHandler for EngineApp {
                 button,
                 ..
             } => {
-                if !egui_consumed {
+                let ends_game_press =
+                    btn_state == ElementState::Released && state.game_ctx.input.mouse_held(button);
+                if !egui_consumed || ends_game_press {
                     state.game_ctx.input.handle_mouse_button(button, btn_state);
                 }
             }
@@ -923,6 +1014,10 @@ impl ApplicationHandler for EngineApp {
                 state.game_ctx.time.dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
 
+                // Gamepads: drain this frame's events once. Like keyboard
+                // presses they stay visible until a tick consumes them.
+                state.game_ctx.gamepad.update();
+
                 // Hot reload: re-upload changed sprite textures.
                 if let Some(reloader) = &state.hot_reloader {
                     for path in reloader.poll_changes() {
@@ -944,6 +1039,7 @@ impl ApplicationHandler for EngineApp {
                     // just build widgets in `update` without bookkeeping. Calling
                     // `ui.begin()` again in game code is harmless.
                     state.game_ctx.ui.begin();
+                    state.game_ctx.update_actions();
                     let action = {
                         let _update_span = info_span!("game_update").entered();
                         active.update(&mut state.game_ctx)
@@ -982,7 +1078,7 @@ impl ApplicationHandler for EngineApp {
                     // tick START would instead wipe the events winit delivered
                     // before this redraw, and zero-tick frames keep their
                     // presses for the next tick. Headless does the same.
-                    state.game_ctx.input.begin_frame();
+                    state.game_ctx.end_tick_input();
                 }
 
                 state.game_ctx.time.alpha = budget.alpha;
@@ -1244,5 +1340,58 @@ impl ApplicationHandler for EngineApp {
         if let Some(state) = &self.state {
             state.window.request_redraw();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_input_bindings;
+    use amigo_input::{ActionBindings, InputBinding};
+
+    fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("amigo_input_{name}_{}.ron", std::process::id()));
+        std::fs::write(&path, contents).expect("write temp bindings");
+        path
+    }
+
+    fn defaults() -> ActionBindings {
+        let mut bindings = ActionBindings::new();
+        bindings.bind_key("jump", "Space");
+        bindings
+    }
+
+    #[test]
+    fn missing_file_keeps_the_builder_defaults() {
+        let path = std::env::temp_dir().join("amigo_input_definitely_absent.ron");
+        let _ = std::fs::remove_file(&path);
+        let bindings = load_input_bindings(Some(defaults()), &path);
+        assert_eq!(
+            bindings.get_bindings("jump"),
+            [InputBinding::Key("Space".to_string())]
+        );
+        assert!(load_input_bindings(None, &path).bindings.is_empty());
+    }
+
+    #[test]
+    fn a_bindings_file_replaces_the_defaults() {
+        let path = temp_file("override", r#"(bindings: { "jump": [Key("W")] })"#);
+        let bindings = load_input_bindings(Some(defaults()), &path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            bindings.get_bindings("jump"),
+            [InputBinding::Key("W".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_broken_bindings_file_falls_back_to_the_defaults() {
+        let path = temp_file("broken", "(bindings: { jump: Key(W) ");
+        let bindings = load_input_bindings(Some(defaults()), &path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            bindings.get_bindings("jump"),
+            [InputBinding::Key("Space".to_string())]
+        );
     }
 }

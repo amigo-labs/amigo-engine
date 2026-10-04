@@ -37,7 +37,7 @@ Saved when player changes settings.
 | Layer | Format | File | Hot Reload | Purpose |
 |-------|--------|------|------------|---------|
 | Engine | TOML | `amigo.toml` | No (restart) | Window, rendering, audio hardware, dev settings |
-| Input | RON | `input.ron` | Yes | Key/gamepad bindings, rebindable by player |
+| Input | RON | `input.ron` (`[input] bindings`) | No (read at startup) | Key/mouse/gamepad action bindings, rebindable by player; see engine/input |
 | Game Data | RON | `assets/data/*.ron` | Yes (dev mode) | Tower stats, wave configs, enemy definitions |
 
 ### Engine Config Example
@@ -60,6 +60,9 @@ scale_mode = "pixel_perfect"
 master_volume = 0.8
 sfx_volume = 1.0
 music_volume = 0.6
+
+[input]
+bindings = "input.ron"   # optional; this is the default
 
 [dev]
 hot_reload = true
@@ -145,6 +148,7 @@ All config structs live in `crates/amigo_engine/src/config.rs`:
 | `EngineConfig` | `window`, `render`, `audio`, `dev`, `splash`, `art`, `audio_defaults` |
 | `WindowConfig` | `title`, `width`, `height`, `fullscreen`, `vsync` |
 | `RenderConfig` | `virtual_width`, `virtual_height`, `scale_mode`, `art_style` |
+| `InputConfig` | `bindings` (path of the action bindings file, default `input.ron`) |
 | `AudioConfig` | `master_volume`, `sfx_volume`, `music_volume` |
 | `DevConfig` | `hot_reload`, `debug_overlay`, `api_server`, `api_port`, `headless` |
 | `SplashConfig` | `enabled` (default: `true`) |

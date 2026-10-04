@@ -15,6 +15,8 @@ pub struct EngineConfig {
     pub dev: DevConfig,
     #[serde(default)]
     pub splash: SplashConfig,
+    #[serde(default)]
+    pub input: InputConfig,
     /// Art generation defaults (parsed by amigo_artgen, ignored by engine).
     #[serde(default, skip_serializing)]
     pub art: Option<toml::Value>,
@@ -66,6 +68,28 @@ pub struct SplashConfig {
     pub enabled: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InputConfig {
+    /// Action bindings file (RON), relative to the working directory like
+    /// `amigo.toml`. When it exists it replaces the defaults passed to
+    /// `EngineBuilder::input_bindings`, so it is where a player's rebinds
+    /// belong. A missing file is not an error.
+    #[serde(default = "default_bindings_path")]
+    pub bindings: String,
+}
+
+fn default_bindings_path() -> String {
+    "input.ron".to_string()
+}
+
+impl Default for InputConfig {
+    fn default() -> Self {
+        Self {
+            bindings: default_bindings_path(),
+        }
+    }
+}
+
 impl Default for SplashConfig {
     fn default() -> Self {
         Self { enabled: true }
@@ -101,6 +125,7 @@ impl Default for EngineConfig {
                 headless: false,
             },
             splash: SplashConfig::default(),
+            input: InputConfig::default(),
             art: None,
         }
     }
