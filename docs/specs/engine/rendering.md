@@ -15,7 +15,12 @@ Provides the GPU rendering pipeline for pixel art games: sprite batching, virtua
 
 - **Backend:** wgpu (Vulkan/DX12/Metal/WebGPU)
 - **Sprite Batcher:** Collect all sprites per frame, sort by texture atlas, one draw call per atlas. Target: 5-10 draw calls for a full TD scene.
-- **Virtual Resolution:** Configurable (e.g., 480x270), pixel-perfect scaling via nearest-neighbor to window size.
+- **Virtual Resolution:** Configurable (e.g., 480x270). Every stage (sprites, lighting, post-processing, UI) renders into an offscreen scene target; a final blit pass scales it into the window with nearest-neighbor sampling (`amigo_render::blit`, `amigo_render::viewport`). `[render] scale_mode` picks the viewport:
+  - `pixel_perfect` (default): the largest whole-number scale that fits, centred, with letterbox bars (`Renderer::letterbox_color`). Falls back to `fit` when the window is smaller than the virtual resolution.
+  - `fit`: the largest scale that keeps the aspect ratio, bars on the remaining sides.
+  - `stretch`: fill the window, ignoring the aspect ratio.
+
+  The scene target is the virtual resolution for `art_style = "pixel_art"` and `"hybrid"`, and the viewport's window-pixel size for `"raster_art"`, so high-resolution art is not reduced to the virtual resolution first. Mouse positions map back through `Viewport::window_to_virtual`.
 - **No artificial limits:** Unlimited colors, alpha, blend modes, shaders.
 
 ## Behavior

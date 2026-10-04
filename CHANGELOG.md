@@ -6,6 +6,37 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed — rendering
+
+- **Pixel-perfect scaling exists.** `[render] scale_mode` was parsed and never
+  read: the projection mapped the virtual resolution straight onto the window,
+  so any window that was not an exact multiple stretched the image and gave
+  virtual pixels uneven widths. Every stage now renders into an offscreen
+  scene target that a final pass scales into the window. `pixel_perfect` (the
+  default) uses the largest whole-number scale with letterbox bars
+  (`Renderer::letterbox_color`), `fit` keeps the aspect ratio at any scale, and
+  `stretch` keeps the old behaviour. An unknown value logs a warning.
+- Mouse positions go through the same viewport, so `mouse_ui_pos` and
+  `mouse_world_pos` stay on the right virtual pixel when the image is
+  letterboxed. `mouse_world_pos` is also recomputed every frame instead of
+  only when the cursor moves, so it follows a moving camera, and the camera's
+  edge-pan and free-pan modes receive the cursor at all
+  (`Camera::set_mouse_normalized` had no caller).
+- `art_style` was never applied either. The pixel snap it controls was set on
+  the renderer's own camera, which the game's camera replaces every frame; it
+  is now set on the game's camera.
+- API screenshots include lighting, post-processing and UI, and no longer fail
+  validation on surfaces whose format is not `Rgba8UnormSrgb` (most desktop
+  surfaces are BGRA).
+
+### Changed — rendering
+
+- With `art_style = "pixel_art"` (the default) or `"hybrid"`, the scene
+  renders at the virtual resolution. Sprites at fractional positions snap to
+  virtual pixels instead of moving in window-pixel steps, and bloom and the CRT
+  filter work per virtual pixel. `"raster_art"` renders at the window size of
+  the viewport, as before.
+
 ## [0.1.0] — 2026-10-04
 
 The first release with attached binaries; v0.0.1–v0.0.3 were tagged but the

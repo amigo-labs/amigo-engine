@@ -221,3 +221,17 @@ fn the_post_process_shaders_compile() {
         amigo_render::post_process::POST_PROCESS_FRAGMENT_SHADER,
     );
 }
+
+#[test]
+fn the_blit_shader_compiles() {
+    // The pipeline builds one module from both sources: the fragment shader
+    // reads the vertex shader's `VertexOutput`.
+    validate_wgsl(
+        "blit shader",
+        &format!(
+            "{}\n{}",
+            amigo_render::post_process::FULLSCREEN_VERTEX_SHADER,
+            amigo_render::blit::BLIT_FRAGMENT_SHADER
+        ),
+    );
+}
