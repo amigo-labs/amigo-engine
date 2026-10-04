@@ -20,8 +20,11 @@ ctx.draw_sprite("pirates/captain", pos);
 // Typed handles (performance, compile-time safe, build-script generated)
 ctx.draw_sprite_handle(assets::sprites::CAPTAIN, pos);
 
-// Animated sprites from Aseprite tags
-ctx.draw_sprite_animated("player", "walk_right", pos);
+// Animated sprites from Aseprite tags: sprites/player.aseprite registers the
+// sprite "player" and one animation per tag, "player/walk_right", ...
+player_anim.play("player/walk_right", PlayMode::Loop); // in update
+player_anim.advance(ctx.assets.animations());          // in update, once per tick
+ctx.draw_animated("player", &player_anim, pos);        // in draw
 ```
 
 ## Behavior
@@ -43,7 +46,7 @@ Dev: loose files, hot reload, Aseprite native. Release: packed into `game.pak`.
 
 ### Aseprite Integration
 
-Engine reads `.aseprite` directly via `asefile`. Tags become named animations, layers are composited, slices become 9-patch UI elements.
+Engine reads `.aseprite`/`.ase` directly via `asefile` (`amigo_assets::load_sprite_file`), in dev mode, on hot reload and in `amigo pack`. Visible layers are composited and the frames laid out left to right as one strip sprite. Each tag becomes an animation `"{sprite}/{tag}"` whose frame UVs point into the strip; the tag's direction is applied to the frame order (reverse lists frames backwards, ping-pong lists the way back too) and a repeat count unrolls the frames and makes the animation play once. Tags beyond the last frame are clamped or skipped with a warning. Frame durations convert to 60 Hz ticks. `amigo pack` stores the animations as `anims.ron` in `game.pak`. Not implemented: slices (9-patch).
 
 ### Asset Loading Strategy
 

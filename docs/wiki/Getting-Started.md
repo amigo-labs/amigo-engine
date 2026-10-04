@@ -108,11 +108,23 @@ Render positions are `RenderVec2` (f32). Simulation state uses `SimVec2` with
 fixed-point `Fix` components instead — see [ADR-0001](https://github.com/amigo-labs/amigo-engine/blob/main/docs/adrs/0001-fixed-point-simulation.md)
 for why the two are separate. There is no `Vec2` in the prelude.
 
-Place a `player.png` in `assets/sprites/`; subfolders become part of the name
-(`assets/sprites/enemies/bat.png` is `"enemies/bat"`). The asset pipeline
-auto-loads it with hot reload in dev mode. Only PNG is loaded today: the
-Aseprite importer exists (`amigo_assets::load_aseprite`) but nothing calls it
-yet, so export `.aseprite` files to PNG.
+Place a `player.png` or `player.aseprite` in `assets/sprites/`; subfolders
+become part of the name (`assets/sprites/enemies/bat.png` is `"enemies/bat"`).
+The asset pipeline auto-loads it with hot reload in dev mode.
+
+An Aseprite file's tags become animations named `"<sprite>/<tag>"`. Play one
+with an `AnimPlayer`:
+
+```rust
+// fields: hero: AnimPlayer = AnimPlayer::new("player/idle")
+// in update:
+self.hero.play("player/walk", PlayMode::Loop);
+self.hero.advance(ctx.assets.animations());
+// in draw:
+ctx.draw_animated("player", &self.hero, RenderVec2::new(100.0, 80.0));
+```
+
+`examples/animation_demo` shows idle, walk and a one-shot jump.
 
 ## Add a HUD
 

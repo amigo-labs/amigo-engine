@@ -24,5 +24,8 @@ toml = { workspace = true }
 asefile = { workspace = true }
 amigo_animation = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

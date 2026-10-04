@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,8 @@ pub struct SlotInfo {
 
 pub struct SaveManager {
     config: SaveConfig,
+    /// Overrides the platform save directory (tests, portable installs).
+    base_dir: Option<PathBuf>,
     /// Index that rotates through autosave slots (1-based slot ids).
     next_autosave_index: u32,
     /// Accumulated elapsed time since last autosave (seconds).
@@ -116,43 +118,59 @@ impl SaveManager {
     pub fn new(config: SaveConfig) -> Self {
         Self {
             config,
+            base_dir: None,
             next_autosave_index: 0,
             time_since_autosave: 0.0,
         }
     }
 
+    /// A `SaveManager` that keeps its slots directly in `dir` instead of the
+    /// platform save directory: for tests, and for portable installs that
+    /// save next to the executable.
+    pub fn with_base_dir(config: SaveConfig, dir: impl Into<PathBuf>) -> Self {
+        Self {
+            base_dir: Some(dir.into()),
+            ..Self::new(config)
+        }
+    }
+
+    /// The configuration this manager was created with.
+    pub fn config(&self) -> &SaveConfig {
+        &self.config
+    }
+
     /// Returns the platform-aware save directory for this application.
     ///
-    /// - Linux: `~/.local/share/{app_name}/saves`
-    /// - Windows: `%APPDATA%/{app_name}/saves`
-    /// - Fallback: `./saves`
+    /// - Linux: `$XDG_DATA_HOME/{app}/saves`, by default
+    ///   `~/.local/share/{app}/saves`
+    /// - macOS: `~/Library/Application Support/{app}/saves`
+    /// - Windows: `%APPDATA%\{app}\saves`
+    /// - Fallback (variable unset, other platforms): `./{app}/saves`
+    ///
+    /// `{app}` is `app_name` reduced to characters that are safe in a
+    /// directory name, so a title like "Space Race: Remix" cannot escape the
+    /// data directory or fail to create. With
+    /// [`with_base_dir`](Self::with_base_dir), slots go straight into that
+    /// directory.
     pub fn save_dir(&self) -> PathBuf {
-        let base = if cfg!(target_os = "linux") {
-            if let Ok(home) = std::env::var("HOME") {
-                PathBuf::from(home)
-                    .join(".local")
-                    .join("share")
-                    .join(&self.config.app_name)
-            } else {
-                PathBuf::from(".")
-            }
-        } else if cfg!(target_os = "windows") {
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                PathBuf::from(appdata).join(&self.config.app_name)
-            } else {
-                PathBuf::from(".")
-            }
-        } else {
-            // macOS / other: fallback
-            PathBuf::from(".")
-        };
-
-        base.join("saves")
+        if let Some(dir) = &self.base_dir {
+            return dir.clone();
+        }
+        let os = std::env::consts::OS;
+        let data =
+            data_dir_for(os, |key| std::env::var(key).ok()).unwrap_or_else(|| PathBuf::from("."));
+        data.join(sanitize_app_name(&self.config.app_name))
+            .join("saves")
     }
 
     /// Returns the directory path for a specific slot.
     fn slot_dir(&self, slot: u32) -> PathBuf {
         self.save_dir().join(format!("slot_{slot}"))
+    }
+
+    /// Where the previous contents of a slot wait while a save replaces it.
+    fn previous_slot_dir(&self, slot: u32) -> PathBuf {
+        self.save_dir().join(format!("slot_{slot}.old"))
     }
 
     /// Save game data into a numbered slot.
@@ -167,30 +185,22 @@ impl SaveManager {
     }
 
     /// Load game data from a numbered slot, verifying the CRC checksum.
+    ///
+    /// When the slot is missing or corrupt but the previous version of it
+    /// survived an interrupted save (see [`save`](Self::save)), that version
+    /// is returned instead.
     pub fn load<T: DeserializeOwned>(&self, slot: u32) -> Result<T, SaveError> {
-        let dir = self.slot_dir(slot);
-        let meta_path = dir.join("meta.json");
-        let data_path = dir.join("data.json");
-
-        if !meta_path.exists() || !data_path.exists() {
-            return Err(SaveError::SlotNotFound(slot));
+        match load_slot_dir(&self.slot_dir(slot), slot) {
+            Err(e @ (SaveError::SlotNotFound(_) | SaveError::CorruptedSave(_))) => {
+                let previous = self.previous_slot_dir(slot);
+                if previous.exists() {
+                    load_slot_dir(&previous, slot)
+                } else {
+                    Err(e)
+                }
+            }
+            other => other,
         }
-
-        let meta_bytes = fs::read(&meta_path)?;
-        let info: SlotInfo = serde_json::from_slice(&meta_bytes)
-            .map_err(|e| SaveError::DeserializeError(e.to_string()))?;
-
-        let data_bytes = fs::read(&data_path)?;
-        let checksum = crc32(&data_bytes);
-
-        if checksum != info.checksum {
-            return Err(SaveError::CorruptedSave(slot));
-        }
-
-        let value: T = serde_json::from_slice(&data_bytes)
-            .map_err(|e| SaveError::DeserializeError(e.to_string()))?;
-
-        Ok(value)
     }
 
     /// List metadata for all occupied save slots without loading full save data.
@@ -209,7 +219,14 @@ impl SaveManager {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() {
+            // Only `slot_<n>`: the `.tmp` and `.old` directories of a save in
+            // progress hold copies of the same slot.
+            let is_slot = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix("slot_"))
+                .is_some_and(|n| n.parse::<u32>().is_ok());
+            if !path.is_dir() || !is_slot {
                 continue;
             }
             let meta_path = path.join("meta.json");
@@ -234,6 +251,9 @@ impl SaveManager {
             return Err(SaveError::SlotNotFound(slot));
         }
         fs::remove_dir_all(&dir)?;
+        // A leftover from an interrupted save would otherwise come back as
+        // the slot's contents on the next load.
+        let _ = fs::remove_dir_all(self.previous_slot_dir(slot));
         Ok(())
     }
 
@@ -295,9 +315,6 @@ impl SaveManager {
         play_time: f64,
         is_autosave: bool,
     ) -> Result<(), SaveError> {
-        let dir = self.slot_dir(slot);
-        fs::create_dir_all(&dir)?;
-
         let data_bytes = serde_json::to_vec_pretty(data)
             .map_err(|e| SaveError::SerializeError(e.to_string()))?;
 
@@ -320,12 +337,99 @@ impl SaveManager {
         let meta_bytes = serde_json::to_vec_pretty(&info)
             .map_err(|e| SaveError::SerializeError(e.to_string()))?;
 
-        // Write data first, then metadata – if we crash between the two writes
-        // the slot will appear missing rather than corrupted.
-        fs::write(dir.join("data.json"), &data_bytes)?;
-        fs::write(dir.join("meta.json"), &meta_bytes)?;
+        // Replace the slot as a whole. Writing data.json and meta.json in
+        // place meant a crash between or during the two writes left a new
+        // data.json beside the old meta.json (a checksum mismatch, so the
+        // slot read as corrupt) or a truncated data.json: either way the
+        // previous save was gone too.
+        //
+        // Instead: write both files into `slot_N.tmp` and flush them, move
+        // the current slot aside to `slot_N.old`, move the new one into
+        // place, then delete the old one. A crash at any point leaves either
+        // a complete `slot_N` or a complete `slot_N.old`, and `load` falls
+        // back to the latter.
+        let dir = self.slot_dir(slot);
+        let tmp = self.save_dir().join(format!("slot_{slot}.tmp"));
+        let previous = self.previous_slot_dir(slot);
+
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp)?;
+        write_synced(&tmp.join("data.json"), &data_bytes)?;
+        write_synced(&tmp.join("meta.json"), &meta_bytes)?;
+
+        if dir.exists() {
+            let _ = fs::remove_dir_all(&previous);
+            fs::rename(&dir, &previous)?;
+        }
+        fs::rename(&tmp, &dir)?;
+        let _ = fs::remove_dir_all(&previous);
 
         Ok(())
+    }
+}
+
+/// Read and verify one slot directory.
+fn load_slot_dir<T: DeserializeOwned>(dir: &Path, slot: u32) -> Result<T, SaveError> {
+    let meta_path = dir.join("meta.json");
+    let data_path = dir.join("data.json");
+
+    if !meta_path.exists() || !data_path.exists() {
+        return Err(SaveError::SlotNotFound(slot));
+    }
+
+    let meta_bytes = fs::read(&meta_path)?;
+    let info: SlotInfo = serde_json::from_slice(&meta_bytes)
+        .map_err(|e| SaveError::DeserializeError(e.to_string()))?;
+
+    let data_bytes = fs::read(&data_path)?;
+    if crc32(&data_bytes) != info.checksum {
+        return Err(SaveError::CorruptedSave(slot));
+    }
+
+    serde_json::from_slice(&data_bytes).map_err(|e| SaveError::DeserializeError(e.to_string()))
+}
+
+/// Write `bytes` to `path` and flush it to disk before returning, so a
+/// rename that follows cannot publish a file the OS has not written yet.
+fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = fs::File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// The per-user data directory on `os`, from the environment `env` reads.
+/// `None` when the variable it needs is unset or not an absolute path.
+fn data_dir_for(os: &str, env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let absolute = |key: &str| env(key).map(PathBuf::from).filter(|p| p.is_absolute());
+    match os {
+        "windows" => absolute("APPDATA"),
+        "macos" => absolute("HOME").map(|home| home.join("Library").join("Application Support")),
+        // Linux and the BSDs follow the XDG base directory spec.
+        _ => absolute("XDG_DATA_HOME")
+            .or_else(|| absolute("HOME").map(|home| home.join(".local").join("share"))),
+    }
+}
+
+/// `name` reduced to a single safe path component: letters, digits, `-`,
+/// `_` and `.`, everything else as `_`, no leading dots, never empty.
+fn sanitize_app_name(name: &str) -> String {
+    let cleaned: String = name
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let cleaned = cleaned.trim_start_matches('.');
+    if cleaned.is_empty() {
+        "amigo_game".to_string()
+    } else {
+        cleaned.to_string()
     }
 }
 
@@ -446,5 +550,151 @@ mod tests {
             mgr.autosave(&42u32, 0.0),
             Err(SaveError::SlotNotFound(6))
         ));
+    }
+
+    fn manager_in(dir: &Path) -> SaveManager {
+        SaveManager::with_base_dir(
+            SaveConfig {
+                max_slots: 5,
+                autosave_slots: 2,
+                autosave_interval_secs: 60.0,
+                app_name: "unused".into(),
+            },
+            dir,
+        )
+    }
+
+    #[test]
+    fn save_and_load_through_the_manager() {
+        let tmp = temp_test_dir();
+        let mgr = manager_in(&tmp);
+        let first = FakeState {
+            level: 1,
+            health: 10.0,
+            name: "a".into(),
+        };
+        let second = FakeState {
+            level: 2,
+            health: 20.0,
+            name: "b".into(),
+        };
+
+        mgr.save(1, "one", &first, 1.0).unwrap();
+        assert_eq!(mgr.load::<FakeState>(1).unwrap(), first);
+        // Overwriting replaces the slot and leaves no .tmp/.old behind.
+        mgr.save(1, "two", &second, 2.0).unwrap();
+        assert_eq!(mgr.load::<FakeState>(1).unwrap(), second);
+        assert!(!tmp.join("slot_1.tmp").exists());
+        assert!(!tmp.join("slot_1.old").exists());
+        assert_eq!(mgr.list_slots().len(), 1);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn an_interrupted_save_keeps_the_previous_one_loadable() {
+        let tmp = temp_test_dir();
+        let mgr = manager_in(&tmp);
+        let old = FakeState {
+            level: 7,
+            health: 1.0,
+            name: "old".into(),
+        };
+        mgr.save(2, "old", &old, 0.0).unwrap();
+
+        // A crash after the current slot was moved aside but before the new
+        // one moved into place: only slot_2.old and a half-written .tmp.
+        fs::rename(tmp.join("slot_2"), tmp.join("slot_2.old")).unwrap();
+        fs::create_dir_all(tmp.join("slot_2.tmp")).unwrap();
+        fs::write(tmp.join("slot_2.tmp/data.json"), b"{\"lev").unwrap();
+        assert_eq!(mgr.load::<FakeState>(2).unwrap(), old);
+        // The leftovers are not listed as extra slots.
+        assert!(mgr.list_slots().is_empty());
+
+        // A crash halfway through writing data.json in place, the old way:
+        // the slot is corrupt, and the surviving .old copy is used.
+        mgr.save(2, "old", &old, 0.0).unwrap();
+        fs::rename(tmp.join("slot_2"), tmp.join("slot_2.old")).unwrap();
+        fs::create_dir_all(tmp.join("slot_2")).unwrap();
+        fs::copy(
+            tmp.join("slot_2.old/meta.json"),
+            tmp.join("slot_2/meta.json"),
+        )
+        .unwrap();
+        fs::write(tmp.join("slot_2/data.json"), b"{\"level\": 99").unwrap();
+        assert_eq!(mgr.load::<FakeState>(2).unwrap(), old);
+
+        // Deleting the slot also deletes the fallback.
+        mgr.delete_slot(2).unwrap();
+        assert!(matches!(
+            mgr.load::<FakeState>(2),
+            Err(SaveError::SlotNotFound(2))
+        ));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn platform_data_dirs() {
+        // `data_dir_for` only accepts absolute paths, and what counts as
+        // absolute depends on the host running the test: `/home/a` is not on
+        // Windows, which needs a drive. Build the fake environment from paths
+        // that are absolute here.
+        let root = if cfg!(windows) { "C:/" } else { "/" };
+        let abs = |p: &str| format!("{root}{p}");
+        let env = |pairs: Vec<(&'static str, String)>| {
+            move |key: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == key)
+                    .map(|(_, v)| v.clone())
+            }
+        };
+        let home = PathBuf::from(abs("home/a"));
+
+        assert_eq!(
+            data_dir_for("linux", env(vec![("HOME", abs("home/a"))])),
+            Some(home.join(".local").join("share"))
+        );
+        assert_eq!(
+            data_dir_for(
+                "linux",
+                env(vec![
+                    ("HOME", abs("home/a")),
+                    ("XDG_DATA_HOME", abs("data"))
+                ])
+            ),
+            Some(PathBuf::from(abs("data")))
+        );
+        // The XDG spec says to ignore a relative XDG_DATA_HOME.
+        assert_eq!(
+            data_dir_for(
+                "linux",
+                env(vec![
+                    ("HOME", abs("home/a")),
+                    ("XDG_DATA_HOME", "rel".into())
+                ])
+            ),
+            Some(home.join(".local").join("share"))
+        );
+        // macOS used to save into the working directory.
+        assert_eq!(
+            data_dir_for("macos", env(vec![("HOME", abs("home/a"))])),
+            Some(home.join("Library").join("Application Support"))
+        );
+        assert_eq!(
+            data_dir_for("windows", env(vec![("APPDATA", abs("Users/a/AppData"))])),
+            Some(PathBuf::from(abs("Users/a/AppData")))
+        );
+        assert_eq!(data_dir_for("linux", env(vec![])), None);
+    }
+
+    #[test]
+    fn app_names_become_safe_directory_names() {
+        assert_eq!(sanitize_app_name("Space Race: Remix"), "Space_Race__Remix");
+        assert_eq!(sanitize_app_name("../../etc"), "_.._etc");
+        assert_eq!(sanitize_app_name("my-game_2"), "my-game_2");
+        assert_eq!(sanitize_app_name("  "), "amigo_game");
+        assert_eq!(sanitize_app_name("..."), "amigo_game");
     }
 }

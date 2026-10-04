@@ -46,7 +46,13 @@ pub fn emit_ui_sprites(
         ctx.camera.virtual_height,
         0.0,
         white_texture,
-    );
+    )
+    .with_view(amigo_core::Rect::new(
+        0.0,
+        0.0,
+        ctx.camera.virtual_width,
+        ctx.camera.virtual_height,
+    ));
 
     for command in commands {
         match command {

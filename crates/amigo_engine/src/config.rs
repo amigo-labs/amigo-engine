@@ -9,6 +9,11 @@ use tracing::warn;
 /// coexist because serde ignores unknown fields by default.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngineConfig {
+    /// The game's name (`name = "..."` at the top of `amigo.toml`, which
+    /// `amigo new` writes). Save files go into a directory named after it;
+    /// without it, the window title is used.
+    #[serde(default)]
+    pub name: Option<String>,
     pub window: WindowConfig,
     pub render: RenderConfig,
     pub audio: AudioConfig,
@@ -99,6 +104,7 @@ impl Default for SplashConfig {
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
+            name: None,
             window: WindowConfig {
                 title: "Amigo Game".to_string(),
                 width: 1280,
@@ -132,6 +138,24 @@ impl Default for EngineConfig {
 }
 
 impl EngineConfig {
+    /// The save configuration for this game: slots in a directory named after
+    /// [`name`](Self::name), or the window title when there is none. Every
+    /// game used to share one hard-coded `amigo_game` directory, so two
+    /// games overwrote each other's saves.
+    pub fn save_config(&self) -> amigo_core::save::SaveConfig {
+        let app_name = self
+            .name
+            .clone()
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| self.window.title.clone());
+        amigo_core::save::SaveConfig {
+            max_slots: 10,
+            autosave_slots: 3,
+            autosave_interval_secs: 300.0,
+            app_name,
+        }
+    }
+
     /// Try to load from `amigo.toml` in the current directory, falling back to
     /// defaults.
     ///
@@ -214,6 +238,46 @@ mod tests {
         let mut f = std::fs::File::create(&path).expect("create temp config");
         f.write_all(contents.as_bytes()).expect("write temp config");
         path
+    }
+
+    #[test]
+    fn saves_are_named_after_the_game() {
+        let path = write_temp(
+            "named",
+            r#"
+            name = "space_race"
+
+            [window]
+            title = "Space Race!"
+            width = 800
+            height = 600
+            fullscreen = false
+            vsync = true
+
+            [render]
+            virtual_width = 320
+            virtual_height = 180
+            scale_mode = "pixel_perfect"
+
+            [audio]
+            master_volume = 1.0
+            sfx_volume = 1.0
+            music_volume = 1.0
+
+            [dev]
+            hot_reload = false
+            debug_overlay = false
+            api_server = false
+            api_port = 9999
+            "#,
+        );
+        let mut config = EngineConfig::load_from(&path, env_of(&[]));
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(config.save_config().app_name, "space_race");
+
+        // Without a name, the title; never the shared "amigo_game".
+        config.name = None;
+        assert_eq!(config.save_config().app_name, "Space Race!");
     }
 
     #[test]

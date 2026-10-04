@@ -137,6 +137,7 @@ dependencies = [
  "rustc-hash 2.1.3",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "toml",
  "tracing",
@@ -196,6 +197,7 @@ dependencies = [
 name = "amigo_cli"
 version = "0.1.0"
 dependencies = [
+ "amigo_animation",
  "amigo_assets",
  "amigo_audio_pipeline",
  "amigo_core",

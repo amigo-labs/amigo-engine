@@ -6,6 +6,52 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed — assets, tilemaps, saves
+
+- **Aseprite files load.** `load_aseprite` had no caller, so `.aseprite` files in
+  `assets/sprites/` were silently ignored although the docs said they load. The
+  loader, hot reload and `amigo pack` now read them (`load_sprite_file`): the
+  frames become one strip sprite and each tag an animation `"<sprite>/<tag>"`,
+  reachable as `ctx.assets.animation(name)`. Its frame UVs used to hold a frame
+  index in `uv.x`; they are now real rects into the strip. Tag direction
+  (reverse, ping-pong) and repeat counts are applied, and tags past the last
+  frame are clamped or skipped with a warning instead of indexing out of range.
+- **Sprite animation reaches the screen.** `DrawContext::draw_animated` and
+  `draw_animated_ex` draw an `AnimPlayer`'s current frame;
+  `AnimPlayer::advance(ctx.assets.animations())` ticks it by name.
+  `Animation::looping` was read by nothing; `AnimPlayer::play_animation` now
+  plays an animation in its own mode, and `restart` replays a finished one.
+  `examples/animation_demo` uses all of it with a real Aseprite sprite.
+- Animation events on the last tick of a pass were dropped: a wrap in `Loop`
+  produced an empty window, and the finishing tick of `Once` never reached the
+  end of the timeline.
+- **Tilemaps are culled.** `draw_tilemap_colored`/`draw_tilemap_sprite` drew
+  every tile of the layer every frame; they now draw the tiles in the camera's
+  view (`DrawContext::view_rect`, set by the engine; `with_view` for callers
+  building their own context). `columns == 0` no longer divides by zero (it is
+  derived from the tileset width), a non-positive or NaN tile size draws
+  nothing, and hidden layers (`visible = false`) are skipped.
+- `TileLayer` and `CollisionLayer` no longer panic on a `tiles`/`data` vector
+  shorter than `width * height` (hand-edited or truncated level files).
+- **Each game has its own saves.** `GameContext::save` used the hard-coded name
+  `amigo_game`, so every game shared one save directory. It is named after
+  `name` in `amigo.toml` (`EngineBuilder::app_name`), else the window title;
+  the name is reduced to a safe directory name. Saves made under the old shared
+  directory are not migrated.
+- macOS saved into `./saves` in the working directory; it now uses
+  `~/Library/Application Support/<app>/saves`. Linux honours `XDG_DATA_HOME`.
+- **Saves are atomic.** A crash during a save could leave a new `data.json`
+  beside the old `meta.json` (read as corrupt) or a truncated file, losing the
+  previous save as well. A save now writes a complete slot to `slot_N.tmp`,
+  then swaps directories; `load` falls back to the previous version if the swap
+  was interrupted. `SaveManager::with_base_dir` saves into a given directory.
+
+### Added — assets
+
+- `scripts/gen_aseprite_fixtures.py` writes the repository's `.aseprite` files
+  (the loader test fixture and the demo's hero) without needing Aseprite.
+- The prelude exports `AssetManager`.
+
 ### Fixed — input
 
 - **Gamepads work.** `GamepadState` was complete but never constructed, so no

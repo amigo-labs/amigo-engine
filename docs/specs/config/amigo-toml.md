@@ -149,6 +149,7 @@ All config structs live in `crates/amigo_engine/src/config.rs`:
 | `WindowConfig` | `title`, `width`, `height`, `fullscreen`, `vsync` |
 | `RenderConfig` | `virtual_width`, `virtual_height`, `scale_mode`, `art_style` |
 | `InputConfig` | `bindings` (path of the action bindings file, default `input.ron`) |
+| `EngineConfig.name` | top-level `name`, optional: names the save directory (falls back to `window.title`) |
 | `AudioConfig` | `master_volume`, `sfx_volume`, `music_volume` |
 | `DevConfig` | `hot_reload`, `debug_overlay`, `api_server`, `api_port`, `headless` |
 | `SplashConfig` | `enabled` (default: `true`) |

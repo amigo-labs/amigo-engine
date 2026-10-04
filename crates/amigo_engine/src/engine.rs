@@ -149,6 +149,13 @@ impl EngineBuilder {
         self
     }
 
+    /// The game's name, which names its save directory. Overrides `name` in
+    /// `amigo.toml`; without either, the window title is used.
+    pub fn app_name(mut self, name: &str) -> Self {
+        self.config.name = Some(name.to_string());
+        self
+    }
+
     /// Default action bindings, for `GameContext::actions`.
     ///
     /// A bindings file (`[input] bindings` in `amigo.toml`, `input.ron` by
@@ -277,6 +284,7 @@ impl Engine {
         // No gamepad backend headless: there is no player at the machine,
         // and agents drive input over the API.
         game_ctx.bindings = bindings;
+        game_ctx.save = amigo_core::save::SaveManager::new(self.config.save_config());
 
         // Apply plugin registrations
         let plugin_ctx = self.plugin_ctx;
@@ -664,6 +672,7 @@ impl ApplicationHandler for EngineApp {
         // API; a windowed game has a player who may hold one.
         game_ctx.gamepad = GamepadState::new();
         game_ctx.bindings = self.input_bindings.take().unwrap_or_default();
+        game_ctx.save = amigo_core::save::SaveManager::new(self.config.save_config());
 
         let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
 
@@ -1138,7 +1147,8 @@ impl ApplicationHandler for EngineApp {
                         vh,
                         alpha,
                         white_tex,
-                    );
+                    )
+                    .with_view(state.renderer.camera.view_rect());
                     if let Some(active) = self.stack.top() {
                         active.draw(&mut draw_ctx);
                     }
@@ -1174,7 +1184,8 @@ impl ApplicationHandler for EngineApp {
                         vh,
                         state.game_ctx.time.alpha,
                         white_tex,
-                    );
+                    )
+                    .with_view(view);
 
                     // Everything draws in world space, so anchor to the visible
                     // rect's top-left instead of (0,0) — otherwise the overlay
