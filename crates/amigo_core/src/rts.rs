@@ -441,8 +441,14 @@ impl FormationSystem {
                 }
             }
             FormationType::Block => {
-                // Rectangular grid: width = ceil(sqrt(count)).
-                let width = (unit_count as f32).sqrt().ceil() as usize;
+                // Rectangular grid: width = ceil(sqrt(count)), in integers
+                // so every machine lays out the same block.
+                let root = unit_count.isqrt();
+                let width = if root * root < unit_count {
+                    root + 1
+                } else {
+                    root
+                };
                 let width = width.max(1);
                 let half_w = Fix::from_num(width as i32 - 1) / Fix::from_num(2);
                 for i in 0..unit_count {
@@ -505,10 +511,9 @@ impl FormationSystem {
 /// Rotate (lateral, depth) by a facing angle.
 /// lateral = perpendicular to facing, depth = along facing direction.
 fn rotate_offset(lateral: Fix, depth: Fix, facing: Fix) -> SimVec2 {
-    // Use fixed-point-friendly approximation via f32 conversion for sin/cos.
-    let angle: f32 = facing.to_num();
-    let cos_a = Fix::from_num(angle.cos());
-    let sin_a = Fix::from_num(angle.sin());
+    // Deterministic: f32 sin/cos differ in the last bits between platforms,
+    // which put formation slots in different places on two machines.
+    let (sin_a, cos_a) = crate::math::trig::sin_cos_fix(facing);
     SimVec2::new(
         lateral * cos_a - depth * sin_a,
         lateral * sin_a + depth * cos_a,

@@ -42,13 +42,28 @@ pub enum Direction {
 }
 
 impl Direction {
-    /// Get direction from a delta vector.
+    /// Get direction from a delta vector. Converts to [`Fix`] and uses
+    /// [`Direction::from_delta_fix`], so render code and simulation agree.
     pub fn from_delta(dx: f32, dy: f32) -> Self {
-        if dx.abs() < 0.001 && dy.abs() < 0.001 {
+        Self::from_delta_fix(Fix::from_num(dx), Fix::from_num(dy))
+    }
+
+    /// Get direction from a fixed-point delta, deterministically: the octant
+    /// comes from [`crate::math::trig::atan2_fix`], not `f32::atan2`, whose
+    /// last bits differ between platforms and could flip a unit's facing on
+    /// one machine and not the other.
+    pub fn from_delta_fix(dx: Fix, dy: Fix) -> Self {
+        let dead_zone = Fix::from_bits(66); // ~0.001
+        if dx.abs() < dead_zone && dy.abs() < dead_zone {
             return Direction::Down;
         }
-        let angle = dy.atan2(dx);
-        let octant = ((angle + std::f32::consts::PI) / (std::f32::consts::PI / 4.0)) as i32 % 8;
+        use crate::math::trig::{PI, atan2_fix};
+        let angle = atan2_fix(dy, dx);
+        // Eighths of a turn from -π, in integers, centred on each direction:
+        // without the half-eighth offset, (-300, 0.5) and (1, -0.01) fell into
+        // the neighbouring diagonal.
+        let eighth = PI.to_bits() / 4;
+        let octant = ((angle + PI).to_bits() + eighth / 2) / eighth % 8;
         match octant {
             0 => Direction::Left,
             1 => Direction::UpLeft,
@@ -219,7 +234,7 @@ impl NavAgent {
                 self.position.y += move_y;
 
                 // Update facing direction
-                self.facing = Direction::from_delta(dx.to_num::<f32>(), dy.to_num::<f32>());
+                self.facing = Direction::from_delta_fix(dx, dy);
             }
         }
     }
@@ -242,9 +257,8 @@ impl NavAgent {
     pub fn distance_to_goal(&self) -> f32 {
         if let Some(&last) = self.path.last() {
             let goal = self.tile_to_world(last);
-            let dx = goal.x - self.position.x;
-            let dy = goal.y - self.position.y;
-            (dx * dx + dy * dy).to_num::<f32>().sqrt()
+            // Squaring in Fix overflowed past ~181 units; `length` does not.
+            (goal - self.position).length().to_num::<f32>()
         } else {
             0.0
         }
@@ -313,5 +327,23 @@ mod tests {
         assert_eq!(Direction::from_delta(0.0, 1.0), Direction::Down);
         assert_eq!(Direction::from_delta(-1.0, 0.0), Direction::Left);
         assert_eq!(Direction::from_delta(0.0, -1.0), Direction::Up);
+        assert_eq!(Direction::from_delta(0.0, 0.0), Direction::Down);
+        let f = |v: f32| Fix::from_num(v);
+        for (dx, dy, want) in [
+            (1.0, 1.0, Direction::DownRight),
+            (-1.0, 1.0, Direction::DownLeft),
+            (-1.0, -1.0, Direction::UpLeft),
+            (1.0, -1.0, Direction::UpRight),
+            (300.0, 1.0, Direction::Right),
+            (-300.0, 0.5, Direction::Left),
+            (1.0, -0.01, Direction::Right),
+            (0.3, 1.0, Direction::Down),
+        ] {
+            assert_eq!(
+                Direction::from_delta_fix(f(dx), f(dy)),
+                want,
+                "({dx}, {dy})"
+            );
+        }
     }
 }

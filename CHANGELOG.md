@@ -6,6 +6,27 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed — deterministic math
+
+- **Trigonometry without libm.** There was none in fixed point, so simulation
+  code converted to `f32` and called `sin`/`cos`/`atan2`, whose last bits
+  differ between platforms (ADR-0001). New `amigo_core::math::trig`:
+  `sin_cos_fix`, `sin_fix`, `cos_fix`, `atan2_fix`, `acos_fix`, `asin_fix`
+  (integer CORDIC) and `exp2_fix`, plus `SimVec2::from_angle`, `angle`,
+  `rotate` and `dot`, and the constants `PI`, `TAU`, `FRAC_PI_2`.
+- **RTS formations** rotate with `sin_cos_fix` and size blocks with an integer
+  square root instead of going through `f32`.
+- **Navigation facing** comes from `Direction::from_delta_fix` (the `f32`
+  `from_delta` now converts and calls it). Its eight directions were off by
+  half a sector, so moving almost straight left or right picked a diagonal;
+  they are now centred. `NavAgent::distance_to_goal` no longer overflows past
+  ~181 units.
+- **`EasingFn::apply_fix`** gives the easing curves in fixed point for
+  simulation code; `Tween` stays `f32` and presentation-only.
+- **Golden hashes** of all of the above (`amigo_core/tests/determinism.rs`)
+  run on Linux, Windows and macOS in CI. ADR-0001 now lists which modules are
+  deterministic and which still are not.
+
 ### Fixed — the level editor edits levels
 
 - **Edits change the level.** `EditorState::execute` only pushed commands onto

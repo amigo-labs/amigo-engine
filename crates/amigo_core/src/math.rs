@@ -1,6 +1,8 @@
 use fixed::types::I16F16;
 use serde::{Deserialize, Serialize};
 
+pub mod trig;
+
 /// Fixed-point type for deterministic simulation (Q16.16).
 pub type Fix = I16F16;
 

@@ -274,6 +274,184 @@ impl EasingFn {
     }
 }
 
+impl EasingFn {
+    /// [`apply`](Self::apply) in fixed point, for simulation code: the same
+    /// curves, computed without `f32` (whose `sin`, `powf` and `sqrt` differ
+    /// between platforms) so every machine gets the same bits.
+    ///
+    /// [`Tween`] itself counts time in `f32` seconds and is meant for
+    /// presentation; a lockstep simulation that eases a value should step
+    /// its own `t` in [`Fix`] and call this.
+    pub fn apply_fix(self, t: Fix) -> Fix {
+        use crate::math::sqrt_fix;
+        use crate::math::trig::{PI, exp2_fix, sin_fix};
+
+        let n = |v: f64| Fix::from_num(v);
+        let one = Fix::ONE;
+        let two = n(2.0);
+        let half = n(0.5);
+        let t = t.clamp(Fix::ZERO, one);
+        let pow = |v: Fix, k: u32| (0..k).fold(one, |acc, _| acc * v);
+        let cos = |a: Fix| crate::math::trig::cos_fix(a);
+        match self {
+            Self::Linear => t,
+
+            Self::QuadIn => t * t,
+            Self::QuadOut => one - pow(one - t, 2),
+            Self::QuadInOut => {
+                if t < half {
+                    two * t * t
+                } else {
+                    one - pow(two - two * t, 2) / two
+                }
+            }
+
+            Self::CubicIn => pow(t, 3),
+            Self::CubicOut => one - pow(one - t, 3),
+            Self::CubicInOut => {
+                if t < half {
+                    n(4.0) * pow(t, 3)
+                } else {
+                    one - pow(two - two * t, 3) / two
+                }
+            }
+
+            Self::QuartIn => pow(t, 4),
+            Self::QuartOut => one - pow(one - t, 4),
+            Self::QuartInOut => {
+                if t < half {
+                    n(8.0) * pow(t, 4)
+                } else {
+                    one - pow(two - two * t, 4) / two
+                }
+            }
+
+            Self::QuintIn => pow(t, 5),
+            Self::QuintOut => one - pow(one - t, 5),
+            Self::QuintInOut => {
+                if t < half {
+                    n(16.0) * pow(t, 5)
+                } else {
+                    one - pow(two - two * t, 5) / two
+                }
+            }
+
+            Self::SineIn => one - cos(t * PI / two),
+            Self::SineOut => sin_fix(t * PI / two),
+            Self::SineInOut => (one - cos(t * PI)) / two,
+
+            Self::ExpoIn => {
+                if t == Fix::ZERO {
+                    Fix::ZERO
+                } else {
+                    exp2_fix(n(10.0) * t - n(10.0))
+                }
+            }
+            Self::ExpoOut => {
+                if t == one {
+                    one
+                } else {
+                    one - exp2_fix(n(-10.0) * t)
+                }
+            }
+            Self::ExpoInOut => {
+                if t == Fix::ZERO || t == one {
+                    t
+                } else if t < half {
+                    exp2_fix(n(20.0) * t - n(10.0)) / two
+                } else {
+                    (two - exp2_fix(n(10.0) - n(20.0) * t)) / two
+                }
+            }
+
+            Self::CircIn => one - sqrt_fix(one - t * t),
+            Self::CircOut => sqrt_fix(one - pow(t - one, 2)),
+            Self::CircInOut => {
+                if t < half {
+                    (one - sqrt_fix(one - pow(two * t, 2))) / two
+                } else {
+                    (sqrt_fix(one - pow(two - two * t, 2)) + one) / two
+                }
+            }
+
+            Self::ElasticIn => {
+                if t == Fix::ZERO || t == one {
+                    t
+                } else {
+                    let c4 = two * PI / n(3.0);
+                    -exp2_fix(n(10.0) * t - n(10.0)) * sin_fix((n(10.0) * t - n(10.75)) * c4)
+                }
+            }
+            Self::ElasticOut => {
+                if t == Fix::ZERO || t == one {
+                    t
+                } else {
+                    let c4 = two * PI / n(3.0);
+                    exp2_fix(n(-10.0) * t) * sin_fix((n(10.0) * t - n(0.75)) * c4) + one
+                }
+            }
+            Self::ElasticInOut => {
+                if t == Fix::ZERO || t == one {
+                    t
+                } else {
+                    let c5 = two * PI / n(4.5);
+                    let wave = sin_fix((n(20.0) * t - n(11.125)) * c5);
+                    if t < half {
+                        -exp2_fix(n(20.0) * t - n(10.0)) * wave / two
+                    } else {
+                        exp2_fix(n(10.0) - n(20.0) * t) * wave / two + one
+                    }
+                }
+            }
+
+            Self::BackIn => {
+                let c1 = n(1.70158);
+                let c3 = c1 + one;
+                c3 * pow(t, 3) - c1 * t * t
+            }
+            Self::BackOut => {
+                let c1 = n(1.70158);
+                let c3 = c1 + one;
+                one + c3 * pow(t - one, 3) + c1 * pow(t - one, 2)
+            }
+            Self::BackInOut => {
+                let c1 = n(1.70158);
+                let c2 = c1 * n(1.525);
+                if t < half {
+                    (pow(two * t, 2) * ((c2 + one) * two * t - c2)) / two
+                } else {
+                    (pow(two * t - two, 2) * ((c2 + one) * (two * t - two) + c2) + two) / two
+                }
+            }
+
+            Self::BounceOut => bounce_out_fix(t),
+            Self::BounceIn => one - bounce_out_fix(one - t),
+            Self::BounceInOut => {
+                if t < half {
+                    (one - bounce_out_fix(one - two * t)) / two
+                } else {
+                    (one + bounce_out_fix(two * t - one)) / two
+                }
+            }
+        }
+    }
+}
+
+fn bounce_out_fix(t: Fix) -> Fix {
+    let n = |v: f64| Fix::from_num(v);
+    let (n1, d1) = (n(7.5625), n(2.75));
+    let sq = |t: Fix| n1 * t * t;
+    if t < Fix::ONE / d1 {
+        sq(t)
+    } else if t < n(2.0) / d1 {
+        sq(t - n(1.5) / d1) + n(0.75)
+    } else if t < n(2.5) / d1 {
+        sq(t - n(2.25) / d1) + n(0.9375)
+    } else {
+        sq(t - n(2.625) / d1) + n(0.984375)
+    }
+}
+
 fn bounce_out(t: f32) -> f32 {
     let n1 = 7.5625;
     let d1 = 2.75;
@@ -714,6 +892,60 @@ impl Default for TweenManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The fixed-point curves follow the f32 ones everywhere in [0, 1].
+    #[test]
+    fn apply_fix_matches_apply() {
+        use EasingFn::*;
+        for easing in [
+            Linear,
+            QuadIn,
+            QuadOut,
+            QuadInOut,
+            CubicIn,
+            CubicOut,
+            CubicInOut,
+            QuartIn,
+            QuartOut,
+            QuartInOut,
+            QuintIn,
+            QuintOut,
+            QuintInOut,
+            SineIn,
+            SineOut,
+            SineInOut,
+            ExpoIn,
+            ExpoOut,
+            ExpoInOut,
+            CircIn,
+            CircOut,
+            CircInOut,
+            ElasticIn,
+            ElasticOut,
+            ElasticInOut,
+            BackIn,
+            BackOut,
+            BackInOut,
+            BounceIn,
+            BounceOut,
+            BounceInOut,
+        ] {
+            for step in 0..=100 {
+                let t = Fix::from_num(step) / Fix::from_num(100);
+                let want = easing.apply(t.to_num::<f32>());
+                let got = easing.apply_fix(t).to_num::<f32>();
+                assert!(
+                    (got - want).abs() < 2e-3,
+                    "{easing:?}({t}) = {got}, f32 gives {want}"
+                );
+            }
+            assert_eq!(
+                easing.apply_fix(Fix::ZERO).round(),
+                Fix::ZERO,
+                "{easing:?}(0)"
+            );
+        }
+    }
 
     #[test]
     fn test_easing_linear() {
