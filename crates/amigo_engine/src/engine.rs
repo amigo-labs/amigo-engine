@@ -300,6 +300,10 @@ impl Engine {
             plugin.init(&mut game_ctx);
         }
 
+        // No window to draw it in, but the `editor.*` API commands work.
+        #[cfg(feature = "editor")]
+        open_editor_session(&mut game_ctx);
+
         // Initialize the game (there is no splash in headless mode)
         let mut stack = GameStack::new(Box::new(game));
         stack.enter_root(&mut game_ctx);
@@ -515,6 +519,66 @@ fn reload_changed_asset(
     }
 }
 
+/// The editor's session, kept in `ctx.resources` so the window loop, the
+/// headless loop and the API bridge share one.
+#[cfg(feature = "editor")]
+fn editor_session(ctx: &mut GameContext) -> Option<&mut amigo_editor::EditorSession> {
+    ctx.resources.get_mut::<amigo_editor::EditorSession>()
+}
+
+/// Open the first level under `assets/levels/` for editing.
+#[cfg(feature = "editor")]
+fn open_editor_session(ctx: &mut GameContext) {
+    let session = amigo_editor::EditorSession::open(ctx.assets.base_path().join("levels"));
+    if let Some(status) = &session.status {
+        info!("Editor: {status}");
+    }
+    ctx.resources.insert(session);
+}
+
+/// F9: open or close the editor. Opening releases everything the game held,
+/// since the game stops seeing input until it closes.
+#[cfg(feature = "editor")]
+fn toggle_editor(ctx: &mut GameContext, pointer: &mut amigo_editor::PointerState) {
+    let Some(session) = editor_session(ctx) else {
+        return;
+    };
+    session.state.toggle();
+    session.finish_stroke();
+    session.state.cursor_tile = None;
+    let active = session.state.active;
+    *pointer = amigo_editor::PointerState::default();
+    if active {
+        ctx.input.release_all();
+        info!("Editor opened (F9 closes it)");
+    } else {
+        info!("Editor closed");
+    }
+}
+
+/// Run a file action from the editor UI. A save tells the game through
+/// [`crate::LevelReloaded`].
+#[cfg(feature = "editor")]
+pub(crate) fn run_editor_action(ctx: &mut GameContext, action: amigo_editor::EditorAction) {
+    let Some(session) = editor_session(ctx) else {
+        return;
+    };
+    let result = session.perform(action);
+    let status = session.status.clone();
+    match result {
+        Ok(Some(saved)) => {
+            info!("Editor: saved {}", saved.display());
+            ctx.emit_level_reloaded(&saved);
+        }
+        Ok(None) => {
+            if let Some(status) = status {
+                info!("Editor: {status}");
+            }
+        }
+        Err(e) => warn!("Editor: {e}"),
+    }
+}
+
 fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
     for font_atlas in game_ctx.fonts.iter_mut() {
         if font_atlas.dirty || font_atlas.texture_id.is_none() {
@@ -593,10 +657,13 @@ struct EngineState {
     api_control: crate::api_bridge::ApiControl,
     #[cfg(feature = "editor")]
     egui: amigo_render::egui_integration::EguiRenderer,
+    /// Left mouse button over the viewport, for the editor's tools. The
+    /// session itself lives in `game_ctx.resources`, so the API bridge and
+    /// game code reach it the same way.
     #[cfg(feature = "editor")]
-    editor_state: amigo_editor::EditorState,
+    editor_pointer: amigo_editor::PointerState,
     #[cfg(feature = "editor")]
-    editor_level: amigo_editor::AmigoLevel,
+    modifiers: winit::keyboard::ModifiersState,
 }
 
 #[cfg(feature = "api")]
@@ -764,6 +831,11 @@ impl ApplicationHandler for EngineApp {
             renderer.surface_config.format,
             &window,
         );
+        #[cfg(feature = "editor")]
+        {
+            open_editor_session(&mut game_ctx);
+            info!("Editor ready: F9 opens it");
+        }
 
         info!("Engine initialized successfully");
 
@@ -785,22 +857,9 @@ impl ApplicationHandler for EngineApp {
             #[cfg(feature = "editor")]
             egui,
             #[cfg(feature = "editor")]
-            editor_state: amigo_editor::EditorState::new(),
+            editor_pointer: Default::default(),
             #[cfg(feature = "editor")]
-            editor_level: amigo_editor::AmigoLevel {
-                name: "Untitled".to_string(),
-                width: 30,
-                height: 20,
-                tile_size: 16,
-                layers: vec![amigo_editor::LayerData {
-                    name: "ground".to_string(),
-                    tiles: vec![0; 600],
-                    visible: true,
-                }],
-                entities: Vec::new(),
-                paths: Vec::new(),
-                metadata: std::collections::HashMap::new(),
-            },
+            modifiers: Default::default(),
         });
 
         // Restore a dev snapshot, now that the game has been initialized (the
@@ -832,6 +891,13 @@ impl ApplicationHandler for EngineApp {
         #[cfg(not(feature = "editor"))]
         let egui_consumed = false;
 
+        // While the editor is open, keys and buttons drive it instead of the
+        // game (releases of what the game holds still reach it).
+        #[cfg(feature = "editor")]
+        let editor_active = editor_session(&mut state.game_ctx).is_some_and(|s| s.state.active);
+        #[cfg(not(feature = "editor"))]
+        let editor_active = false;
+
         match event {
             WindowEvent::CloseRequested => {
                 info!("Window close requested");
@@ -848,6 +914,11 @@ impl ApplicationHandler for EngineApp {
                 state.game_ctx.input.release_all();
             }
 
+            #[cfg(feature = "editor")]
+            WindowEvent::ModifiersChanged(modifiers) => {
+                state.modifiers = modifiers.state();
+            }
+
             WindowEvent::KeyboardInput { event, .. } => {
                 // A release reaches the game even when egui took it, if the
                 // game saw the press: dropping it left that key held. A
@@ -858,11 +929,32 @@ impl ApplicationHandler for EngineApp {
                         winit::keyboard::PhysicalKey::Code(code)
                             if state.game_ctx.input.held(code)
                     );
-                if !egui_consumed || ends_game_press {
+                if (!egui_consumed && !editor_active) || ends_game_press {
                     state
                         .game_ctx
                         .input
                         .handle_key_event(event.physical_key, event.state);
+                }
+
+                #[cfg(feature = "editor")]
+                if event.state == ElementState::Pressed
+                    && let winit::keyboard::PhysicalKey::Code(code) = event.physical_key
+                {
+                    if code == KeyCode::F9 {
+                        if !event.repeat {
+                            toggle_editor(&mut state.game_ctx, &mut state.editor_pointer);
+                        }
+                    } else if editor_active && !egui_consumed && !event.repeat {
+                        let (ctrl, shift) = (
+                            state.modifiers.control_key() || state.modifiers.super_key(),
+                            state.modifiers.shift_key(),
+                        );
+                        let action = editor_session(&mut state.game_ctx)
+                            .and_then(|s| s.handle_key(code, ctrl, shift));
+                        if let Some(action) = action {
+                            run_editor_action(&mut state.game_ctx, action);
+                        }
+                    }
                 }
 
                 // Debug overlay toggle (always active, even when egui has focus)
@@ -921,13 +1013,23 @@ impl ApplicationHandler for EngineApp {
             } => {
                 let ends_game_press =
                     btn_state == ElementState::Released && state.game_ctx.input.mouse_held(button);
-                if !egui_consumed || ends_game_press {
+                if (!egui_consumed && !editor_active) || ends_game_press {
                     state.game_ctx.input.handle_mouse_button(button, btn_state);
+                }
+                #[cfg(feature = "editor")]
+                if button == winit::event::MouseButton::Left {
+                    let down = btn_state == ElementState::Pressed;
+                    // A press on a panel is egui's; a release always ends
+                    // the stroke.
+                    if !down || (editor_active && !egui_consumed) {
+                        state.editor_pointer.pressed |= down && !state.editor_pointer.held;
+                        state.editor_pointer.held = down;
+                    }
                 }
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                if !egui_consumed {
+                if !egui_consumed && !editor_active {
                     let scroll = match delta {
                         winit::event::MouseScrollDelta::LineDelta(_, y) => y,
                         winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
@@ -1029,8 +1131,26 @@ impl ApplicationHandler for EngineApp {
 
                 // Hot reload: re-upload changed sprite textures.
                 if let Some(reloader) = &state.hot_reloader {
+                    let mut levels = Vec::new();
                     for path in reloader.poll_changes() {
-                        reload_changed_asset(&path, &mut state.renderer, &mut state.game_ctx);
+                        // The temporary file an atomic level save renames
+                        // into place.
+                        if path.extension().is_some_and(|e| e == "tmp") {
+                            continue;
+                        }
+                        if path.extension().is_some_and(|e| e == "amigo") {
+                            // One event per file however many writes the
+                            // watcher reported.
+                            if !levels.contains(&path) {
+                                levels.push(path);
+                            }
+                        } else {
+                            reload_changed_asset(&path, &mut state.renderer, &mut state.game_ctx);
+                        }
+                    }
+                    for path in levels {
+                        info!("Hot reload: level '{}' changed", path.display());
+                        state.game_ctx.emit_level_reloaded(&path);
                     }
                 }
 
@@ -1114,6 +1234,29 @@ impl ApplicationHandler for EngineApp {
                     state.game_ctx.input.set_mouse_world_pos(world_pos);
                 }
 
+                // Editor tools act where the cursor is now, after the camera
+                // moved, unless the cursor is over an egui panel.
+                #[cfg(feature = "editor")]
+                {
+                    let over_panel = state.egui.wants_pointer_input();
+                    let world = state.game_ctx.input.mouse_world_pos();
+                    let pointer = amigo_editor::PointerState {
+                        world: (world.x, world.y),
+                        ..state.editor_pointer
+                    };
+                    state.editor_pointer.pressed = false;
+                    if let Some(session) = editor_session(&mut state.game_ctx)
+                        && session.state.active
+                    {
+                        if over_panel {
+                            session.finish_stroke();
+                            session.state.cursor_tile = None;
+                        } else {
+                            session.pointer(pointer);
+                        }
+                    }
+                }
+
                 // Lighting: hand this frame's lights to the renderer. Swapped
                 // rather than cloned — a game with many lights should not pay for
                 // a per-frame Vec copy.
@@ -1151,6 +1294,20 @@ impl ApplicationHandler for EngineApp {
                     .with_view(state.renderer.camera.view_rect());
                     if let Some(active) = self.stack.top() {
                         active.draw(&mut draw_ctx);
+                    }
+
+                    // The level being edited, over the game: tile preview,
+                    // grid, entity markers and cursor.
+                    #[cfg(feature = "editor")]
+                    if let Some(session) = state
+                        .game_ctx
+                        .resources
+                        .get::<amigo_editor::EditorSession>()
+                        && session.state.active
+                    {
+                        for (rect, color) in session.overlay(state.renderer.camera.view_rect()) {
+                            draw_ctx.draw_rect(rect, color);
+                        }
                     }
                 }
 
@@ -1285,8 +1442,8 @@ impl ApplicationHandler for EngineApp {
                                     size_in_pixels: [sw, sh],
                                     pixels_per_point: state.window.scale_factor() as f32,
                                 };
-                            let editor_state = &mut state.editor_state;
-                            let editor_level = &state.editor_level;
+                            let mut editor_action = None;
+                            let mut session = editor_session(&mut state.game_ctx);
                             state.egui.render(
                                 &state.renderer.device,
                                 &state.renderer.queue,
@@ -1294,13 +1451,17 @@ impl ApplicationHandler for EngineApp {
                                 &frame.view,
                                 screen_desc,
                                 |ui| {
-                                    amigo_editor::egui_ui::draw_editor_panels(
-                                        ui,
-                                        editor_state,
-                                        editor_level,
-                                    );
+                                    if let Some(session) = session.as_deref_mut()
+                                        && session.state.active
+                                    {
+                                        editor_action =
+                                            amigo_editor::egui_ui::draw_editor_panels(ui, session);
+                                    }
                                 },
                             );
+                            if let Some(action) = editor_action {
+                                run_editor_action(&mut state.game_ctx, action);
+                            }
 
                             state.renderer.queue.present(frame.output);
                             state.renderer.batcher.clear();

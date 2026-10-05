@@ -43,6 +43,8 @@ serde = { workspace = true }
 [dev-dependencies]
 # Asset-loading tests build real PNGs and pak archives on disk.
 image = { workspace = true }
+# Level tests write `.amigo` files the way the editor does.
+ron = { workspace = true }
 
 [lints]
 workspace = true

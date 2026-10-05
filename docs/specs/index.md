@@ -271,7 +271,7 @@ engine ever called them.
 | [assets/atlas](assets/atlas.md)                           | done   | amigo_assets      | assets/format                 |
 | [tooling/cli](tooling/cli.md)                             | done   | amigo_cli         | engine/core                   |
 | [tooling/setup](tooling/setup.md)                         | done   | amigo_cli         | tooling/cli                   |
-| [tooling/editor](tooling/editor.md)                       | done   | amigo_editor      | engine/core, engine/ui        |
+| [tooling/editor](tooling/editor.md)                       | partial | amigo_editor      | engine/core, engine/ui        |
 | [tooling/debug](tooling/debug.md)                         | done   | amigo_debug       | engine/core                   |
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | partial | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | partial | amigo_audiogen    | engine/audio                  |

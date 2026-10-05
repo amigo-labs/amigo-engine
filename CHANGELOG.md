@@ -6,6 +6,38 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed — the level editor edits levels
+
+- **Edits change the level.** `EditorState::execute` only pushed commands onto
+  the undo stack, and the Edit menu's Undo/Redo popped them and threw the
+  result away, so no tile ever changed. `amigo_editor::apply` now applies a
+  command (refusing ones that do not fit the level instead of panicking), and
+  `EditorState::execute_in`/`undo_in`/`redo_in` apply and record together.
+  New commands: `Batch` (a brush stroke, a fill or a rectangle is one undo
+  step), `AddPath`/`RemovePath`; entity commands carry the entity's
+  properties so undoing a removal restores it whole.
+- **The editor opens, paints and saves.** F9 opens it over the running game.
+  It loads the first `assets/levels/*.amigo` instead of a hard-coded empty
+  level; paint, erase, flood fill and entity placement work in the viewport,
+  with the level previewed over the game. The File menu's New, Save and Revert
+  did nothing; they now work, and Ctrl+Z/Y/S and tool shortcuts were added.
+  While the editor is open the game gets no key or button input.
+- **`editor.*` API commands run.** They went to the game's `ApiInbox`. With the
+  `editor` feature they now edit the engine's level (window or headless), and
+  `engine.get_property` with key `editor` reports the result.
+  `editor.auto_decorate` is not implemented and says so in the log.
+- **Games can read editor levels.** `LoadedLevel` required per-layer sizes and
+  `zones`, so it rejected every file the editor and `amigo new` wrote. The
+  format now lives in `amigo_core::level` (`AmigoLevel`, re-exported by
+  `amigo_editor`) and `LoadedLevel` reads it. New:
+  `GameContext::load_level(name)`, `GameContext::level_reloaded(name)`, the
+  `LevelReloaded` event (on editor saves and, with hot reload, on file
+  changes), and `TileLayer::from_level`. Levels are saved atomically.
+- **Templates use their level.** `amigo new` wrote `level_01.amigo` and nothing
+  read it. The platformer and free-roam templates now load their map and spawn
+  point from it and reload it when it is saved; the file carries the map they
+  used to hard-code.
+
 ### Fixed — AI tools and publishing
 
 - **artgen generates images.** The generation tools returned made-up paths

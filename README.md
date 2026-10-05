@@ -38,7 +38,7 @@ does not drive yet:
 | Game loop, scenes, sprites, particles, lighting, post-processing, UI, pixel-perfect scaling | works |
 | Keyboard, mouse and gamepad with action maps, SFX and music, sprite hot reload, headless API | works |
 | Aseprite sprites with tag animations, tilemaps with view culling, save slots | works |
-| Level editor (`amigo editor`) | egui panels only; levels cannot be edited or saved yet |
+| Level editor (`amigo editor`) | Paints, fills, places entities, undoes and saves `.amigo` levels (F9); tiles preview as colours, no tileset rendering or path tool yet |
 | Replays, lockstep netcode | library types only; physics and collision still use `f32` |
 | AI tools (`amigo-artgen`, `amigo-audiogen`) | sprite, tileset, variation, inpaint and upscale generation, music, SFX, TTS and stem splitting run for real; the rest report "not implemented" |
 | Targets | desktop only (Linux, macOS, Windows); no web or mobile |

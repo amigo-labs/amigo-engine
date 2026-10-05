@@ -3,7 +3,6 @@ use crate::{AmigoLevel, EditorCommand, EditorState};
 use amigo_core::{Color, Rect};
 use amigo_input::InputState;
 use amigo_ui::UiContext;
-use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Editor events (emitted through the engine's EventHub)
@@ -65,21 +64,7 @@ impl EditorRuntime {
 
     /// Create with default empty level.
     pub fn with_empty_level(width: u32, height: u32, tile_size: u32) -> Self {
-        let level = AmigoLevel {
-            name: "Untitled".to_string(),
-            width,
-            height,
-            tile_size,
-            layers: vec![crate::LayerData {
-                name: "ground".to_string(),
-                tiles: vec![0; crate::grid_len(width, height)],
-                visible: true,
-            }],
-            entities: Vec::new(),
-            paths: Vec::new(),
-            metadata: HashMap::new(),
-        };
-        Self::new(level)
+        Self::new(AmigoLevel::new("Untitled", width, height, tile_size))
     }
 
     /// Process a frame of editor input. Call from Game::update().
@@ -144,11 +129,17 @@ impl EditorRuntime {
 
         // Undo/Redo
         if input.held(KeyCode::ControlLeft) && input.pressed(KeyCode::KeyZ) {
-            if input.held(KeyCode::ShiftLeft) {
-                return self.state.redo();
+            let cmd = if input.held(KeyCode::ShiftLeft) {
+                self.state.redo()
             } else {
-                return self.state.undo();
+                self.state.undo()
+            };
+            // Keep this runtime's own level in step; the command is also
+            // returned for game state that mirrors it (a tilemap, say).
+            if let Some(cmd) = &cmd {
+                let _ = crate::apply(&mut self.level, cmd);
             }
+            return cmd;
         }
 
         None
@@ -211,20 +202,7 @@ mod tests {
     use super::*;
 
     fn test_level() -> AmigoLevel {
-        AmigoLevel {
-            name: "Test".to_string(),
-            width: 8,
-            height: 8,
-            tile_size: 16,
-            layers: vec![crate::LayerData {
-                name: "ground".to_string(),
-                tiles: vec![0; 64],
-                visible: true,
-            }],
-            entities: Vec::new(),
-            paths: Vec::new(),
-            metadata: HashMap::new(),
-        }
+        AmigoLevel::new("Test", 8, 8, 16)
     }
 
     #[test]

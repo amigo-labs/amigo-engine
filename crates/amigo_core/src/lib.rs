@@ -22,6 +22,7 @@ pub mod fog_of_war;
 pub mod frame_arena;
 pub mod game_preset;
 pub mod inventory;
+pub mod level;
 pub mod level_loader;
 pub mod localization;
 pub mod loot;

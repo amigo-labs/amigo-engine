@@ -6,13 +6,23 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 /// A tile layer loaded from a level file.
+///
+/// `.amigo` files written by the editor carry no per-layer size; a missing
+/// `width`/`height` is filled in from the level's by [`load_level_from_str`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TileLayerData {
     pub name: String,
     pub tiles: Vec<u16>,
+    #[serde(default)]
     pub width: u32,
+    #[serde(default)]
     pub height: u32,
+    #[serde(default = "visible_by_default")]
     pub visible: bool,
+}
+
+fn visible_by_default() -> bool {
+    true
 }
 
 impl TileLayerData {
@@ -35,6 +45,7 @@ pub struct EntityDef {
     pub entity_type: String,
     pub x: f32,
     pub y: f32,
+    #[serde(default)]
     pub properties: HashMap<String, String>,
 }
 
@@ -69,6 +80,7 @@ impl EntityDef {
 pub struct PathDef {
     pub name: String,
     pub points: Vec<(f32, f32)>,
+    #[serde(default)]
     pub closed: bool,
 }
 
@@ -80,10 +92,14 @@ pub struct ZoneDef {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    #[serde(default)]
     pub properties: HashMap<String, String>,
 }
 
 /// A fully loaded level ready for use.
+///
+/// Reads the same `.amigo` files the editor writes ([`crate::level::AmigoLevel`]);
+/// everything but the grid is optional.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LoadedLevel {
     pub name: String,
@@ -91,10 +107,58 @@ pub struct LoadedLevel {
     pub height: u32,
     pub tile_size: u32,
     pub layers: Vec<TileLayerData>,
+    #[serde(default)]
     pub entities: Vec<EntityDef>,
+    #[serde(default)]
     pub paths: Vec<PathDef>,
+    #[serde(default)]
     pub zones: Vec<ZoneDef>,
+    #[serde(default)]
     pub metadata: HashMap<String, String>,
+}
+
+impl From<crate::level::AmigoLevel> for LoadedLevel {
+    fn from(level: crate::level::AmigoLevel) -> Self {
+        let (width, height) = (level.width, level.height);
+        Self {
+            name: level.name,
+            width,
+            height,
+            tile_size: level.tile_size,
+            layers: level
+                .layers
+                .into_iter()
+                .map(|l| TileLayerData {
+                    name: l.name,
+                    tiles: l.tiles,
+                    width,
+                    height,
+                    visible: l.visible,
+                })
+                .collect(),
+            entities: level
+                .entities
+                .into_iter()
+                .map(|e| EntityDef {
+                    entity_type: e.entity_type,
+                    x: e.x,
+                    y: e.y,
+                    properties: e.properties,
+                })
+                .collect(),
+            paths: level
+                .paths
+                .into_iter()
+                .map(|p| PathDef {
+                    name: p.name,
+                    points: p.points,
+                    closed: p.closed,
+                })
+                .collect(),
+            zones: level.zones,
+            metadata: level.metadata,
+        }
+    }
 }
 
 impl LoadedLevel {
@@ -124,7 +188,19 @@ impl LoadedLevel {
     /// Check the level's dimensions and that every layer holds exactly
     /// `width * height` tiles.
     pub fn validate(&self) -> Result<(), String> {
+        if self.tile_size == 0 {
+            return Err("tile_size must be greater than 0".to_string());
+        }
         for layer in &self.layers {
+            if u64::from(layer.width) * u64::from(layer.height) > crate::level::MAX_LEVEL_TILES {
+                return Err(format!(
+                    "layer '{}' is {}x{}, past the {} tile limit",
+                    layer.name,
+                    layer.width,
+                    layer.height,
+                    crate::level::MAX_LEVEL_TILES
+                ));
+            }
             let expected = u64::from(layer.width) * u64::from(layer.height);
             if layer.tiles.len() as u64 != expected {
                 return Err(format!(
@@ -202,7 +278,8 @@ impl LoadedLevel {
         if let Some(layer) = self.find_layer(layer_name) {
             layer.tiles.iter().map(|&t| t != 0).collect()
         } else {
-            vec![false; (self.width * self.height) as usize]
+            let cells = u64::from(self.width) * u64::from(self.height);
+            vec![false; cells.min(crate::level::MAX_LEVEL_TILES) as usize]
         }
     }
 
@@ -218,11 +295,19 @@ impl LoadedLevel {
 
 /// Load a level from a RON string (for embedding or testing).
 ///
-/// Besides parsing, checks that every layer's `tiles` holds exactly
-/// `width * height` entries, so a malformed level file is reported here
-/// instead of producing out-of-range lookups later.
+/// Accepts the `.amigo` files the editor and `amigo new` write: a layer
+/// without its own `width`/`height` takes the level's. Besides parsing,
+/// checks that every layer's `tiles` holds exactly `width * height` entries,
+/// so a malformed level file is reported here instead of producing
+/// out-of-range lookups later.
 pub fn load_level_from_str(ron_str: &str) -> Result<LoadedLevel, String> {
-    let level: LoadedLevel = ron::from_str(ron_str).map_err(|e| e.to_string())?;
+    let mut level: LoadedLevel = ron::from_str(ron_str).map_err(|e| e.to_string())?;
+    for layer in &mut level.layers {
+        if layer.width == 0 && layer.height == 0 {
+            layer.width = level.width;
+            layer.height = level.height;
+        }
+    }
     level.validate()?;
     Ok(level)
 }
@@ -425,6 +510,41 @@ mod tests {
         assert_eq!(loaded.name, "Test Level");
         assert_eq!(loaded.entities.len(), 3);
         assert_eq!(loaded.layers.len(), 2);
+    }
+
+    /// The format the editor saves and `amigo new` writes: no per-layer size,
+    /// no zones. `LoadedLevel` used to require both and rejected every such
+    /// file.
+    #[test]
+    fn reads_the_files_the_editor_writes() {
+        let mut level = crate::level::AmigoLevel::new("Editor", 3, 2, 16);
+        level.layers[0].tiles = vec![0, 1, 0, 0, 0, 2];
+        level.entities.push(crate::level::EntityPlacement {
+            entity_type: "player_spawn".into(),
+            x: 8.0,
+            y: 8.0,
+            properties: HashMap::new(),
+        });
+        let text = ron::ser::to_string_pretty(&level, ron::ser::PrettyConfig::default()).unwrap();
+
+        let loaded = load_level_from_str(&text).expect("editor files load");
+        assert_eq!((loaded.layers[0].width, loaded.layers[0].height), (3, 2));
+        assert_eq!(loaded.tile_at_layer("ground", 1, 0), 1);
+        assert_eq!(loaded.tile_at_layer("ground", 2, 1), 2);
+        assert_eq!(loaded.spawn_points("player_spawn"), [(8.0, 8.0)]);
+        assert!(loaded.zones.is_empty());
+
+        let converted = LoadedLevel::from(level);
+        assert_eq!(converted.layers[0].tiles, loaded.layers[0].tiles);
+        assert_eq!(converted.layers[0].width, 3);
+        assert!(converted.validate().is_ok());
+    }
+
+    #[test]
+    fn zero_tile_size_is_rejected() {
+        let mut level = sample_level();
+        level.tile_size = 0;
+        assert!(level.validate().is_err());
     }
 
     #[test]

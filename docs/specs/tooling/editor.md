@@ -1,8 +1,8 @@
 ---
-status: done
+status: partial
 crate: amigo_editor
 depends_on: ["engine/core", "engine/ui"]
-last_updated: 2026-03-16
+last_updated: 2026-10-05
 ---
 
 # Integrated Level Editor
@@ -26,8 +26,46 @@ amigo editor
 cargo run --features amigo_engine/editor
 ```
 
-`amigo_editor::EditorRuntime` (`crates/amigo_editor/src/plugin.rs`) is the entry
-point for driving the editor from game code or over the API.
+**F9** opens and closes the editor (F1–F8 belong to the debug overlay). While it
+is open, keys and mouse buttons go to the editor instead of the game; the
+simulation keeps running.
+
+The engine keeps one `amigo_editor::EditorSession` in `ctx.resources`: the level
+being edited, its file, the undo history and the active tool. On startup it opens
+the first `assets/levels/*.amigo` by name, or starts `level_01.amigo` when there
+is none. The same session serves the window, the headless loop and the
+`editor.*` API commands.
+
+The level format is `amigo_core::level::AmigoLevel` (re-exported by
+`amigo_editor`). Games read it with `ctx.load_level("level_01")`, which returns
+an `amigo_core::level_loader::LoadedLevel`, and react to edits with
+`ctx.level_reloaded("level_01")`: saving in the editor, over the API, or
+changing the file on disk with hot reload on emits `amigo_engine::LevelReloaded`.
+The platformer and free-roam templates do both.
+
+### What works (2026-10)
+
+| Feature | How |
+|---|---|
+| Paint, erase, flood fill | Click or drag in the viewport; one stroke is one undo step |
+| Layer select | Properties panel or Tab |
+| Place and remove entities | Entity tool (N) with a type name; Erase on an entity removes it |
+| Undo / redo | Edit menu, Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z, `editor.undo/redo` |
+| Save, revert, new level | File menu, Ctrl+S, `editor.save/load/new_level`; saves are atomic |
+| Grid, cursor, tile preview | Drawn over the game; tiles show as one colour per id |
+| `editor.*` API | All commands below except `auto_decorate`; `engine.get_property {"key": "editor"}` reports the result |
+
+### Not implemented yet
+
+- Drawing the level with its tileset: tiles are previewed as coloured squares,
+  since a level does not name its tileset.
+- The path tool in the viewport (paths can be added and moved over the API only).
+- Zones (kept when saving, not editable), entity properties, multi-select.
+- A file dialog: Save writes the open file, New picks the next `level_NN.amigo`.
+- `editor.auto_decorate`, wave balancing, AI playtesting (Phase 3 below).
+- `EditorRuntime` (`plugin.rs`) is a separate game-side helper with its own
+  level and F5–F7 keys, which clash with the debug overlay; the engine does not
+  use it.
 
 ### Editor UI Widgets (Tier 2, behind `editor` feature flag)
 

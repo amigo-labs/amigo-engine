@@ -1,6 +1,7 @@
 use amigo_animation::AnimPlayer;
 use amigo_assets::AssetManager;
 use amigo_core::events::EventHub;
+use amigo_core::level_loader::LoadedLevel;
 use amigo_core::resources::Resources;
 use amigo_core::save::{SaveConfig, SaveManager};
 use amigo_core::scheduler::TickScheduler;
@@ -18,6 +19,19 @@ use amigo_ui::UiContext;
 
 #[cfg(feature = "audio")]
 use amigo_audio::AudioManager;
+
+/// A level file under `assets/levels/` changed: the editor saved it, or it
+/// was edited on disk while hot reload is on.
+///
+/// Read it like any event; [`GameContext::level_reloaded`] does that for one
+/// level by name. It may arrive more than once for one save (the editor and
+/// the file watcher both report it), so reloading should be idempotent.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LevelReloaded {
+    /// File name without `.amigo`, as [`GameContext::load_level`] takes it.
+    pub name: String,
+    pub path: std::path::PathBuf,
+}
 
 /// Context passed to Game::update() with access to all engine systems.
 pub struct GameContext {
@@ -106,6 +120,8 @@ pub struct GameContext {
 
 impl GameContext {
     pub fn new(virtual_width: f32, virtual_height: f32, assets_path: &str) -> Self {
+        let mut events = EventHub::new();
+        events.register::<LevelReloaded>();
         Self {
             world: World::new(),
             input: InputState::new(),
@@ -123,7 +139,7 @@ impl GameContext {
             scheduler: TickScheduler::new(),
             particles: ParticleSystem::new(),
             fonts: FontManager::new(),
-            events: EventHub::new(),
+            events,
             resources: Resources::new(),
             assets: AssetManager::new(assets_path),
             ui: UiContext::new(),
@@ -150,6 +166,48 @@ impl GameContext {
     pub(crate) fn end_tick_input(&mut self) {
         self.input.begin_frame();
         self.gamepad.begin_frame();
+    }
+
+    /// Load `assets/levels/{name}.amigo`, the format the editor saves and
+    /// `amigo new` writes.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext) -> Result<(), String> {
+    /// let level = ctx.load_level("level_01")?;
+    /// let walls = level.collision_from_layer("ground");
+    /// # Ok(()) }
+    /// ```
+    pub fn load_level(&self, name: &str) -> Result<LoadedLevel, String> {
+        let path = self
+            .assets
+            .base_path()
+            .join("levels")
+            .join(format!("{name}.amigo"));
+        amigo_core::level_loader::load_level_from_file(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// Whether the level `name` changed on disk since the last tick (see
+    /// [`LevelReloaded`]). Call [`load_level`](Self::load_level) again when it
+    /// did.
+    pub fn level_reloaded(&self, name: &str) -> bool {
+        self.events
+            .read::<LevelReloaded>()
+            .iter()
+            .any(|e| e.name == name)
+    }
+
+    /// Announce that the level file at `path` changed.
+    pub(crate) fn emit_level_reloaded(&mut self, path: &std::path::Path) {
+        let name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.events.emit(LevelReloaded {
+            name,
+            path: path.to_path_buf(),
+        });
     }
 
     /// Load a TTF/OTF font at the given pixel size. Returns a FontId handle.
