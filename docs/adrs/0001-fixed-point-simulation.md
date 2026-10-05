@@ -21,8 +21,8 @@ positions/velocities in simulation space use `SimVec2 { x: Fix, y: Fix }`.
 Rendering and presentation code (sprite positions, cameras, particles, UI)
 uses `f32`/`RenderVec2`; values cross from simulation to render space through
 explicit conversions. Operations that overflow easily are wrapped in
-deterministic helpers (e.g. `SimVec2::length` pre-scales large vectors because
-`x*x` exceeds the I16F16 range above ~181).
+deterministic helpers (e.g. `SimVec2::length` and `distance_squared` work on
+widened integers because `x*x` exceeds the I16F16 range above ~181).
 
 ## Consequences
 
@@ -35,3 +35,26 @@ deterministic helpers (e.g. `SimVec2::length` pre-scales large vectors because
   f32 for rendering").
 - Math helpers (sqrt, trig) must be implemented or wrapped deterministically
   rather than calling libm directly.
+
+## Status of the implementation (2026-10)
+
+Deterministic helpers, all integer arithmetic:
+
+- `math::sqrt_fix`, `SimVec2::length`, `normalize`, `distance_squared`, `dot`.
+- `math::trig`: `sin_cos_fix`, `sin_fix`, `cos_fix`, `atan2_fix`, `acos_fix`,
+  `asin_fix` (CORDIC on Q2.30), `exp2_fix`, and `SimVec2::from_angle`,
+  `angle`, `rotate`.
+- `EasingFn::apply_fix` for easing in simulation code.
+
+`crates/amigo_core/tests/determinism.rs` pins golden hashes of these on every
+CI platform.
+
+Modules that follow this ADR: `rts` (formations), `navigation`, `spline`,
+`math`, the genre modules built on `SimVec2`.
+
+Modules that still compute simulation state in `f32` and are therefore not
+safe for lockstep or cross-platform replays yet: `physics`, `collision`,
+`broad_phase`, `raycast` and `bullet_pattern` (planned to move to `Fix`, a
+breaking change), and `combat`, `ai` (steering), `td_systems`, `platformer`
+and `idle` (f64 economy). `tween::Tween` counts time in `f32` seconds and is
+presentation-only by design.
