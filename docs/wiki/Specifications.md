@@ -47,6 +47,8 @@ All engine modules are documented as specs under `docs/specs/`. Each spec has a 
 | [GPU Instancing](https://github.com/amigo-labs/amigo-engine/blob/main/docs/specs/engine/gpu-instancing.md) | Batch rendering |
 | [Modding](https://github.com/amigo-labs/amigo-engine/blob/main/docs/specs/engine/modding.md) | Mod support |
 | [Accessibility](https://github.com/amigo-labs/amigo-engine/blob/main/docs/specs/engine/accessibility.md) | Accessibility features |
+| [Rendering Extensions](https://github.com/amigo-labs/amigo-engine/blob/main/docs/specs/engine/rendering-extensions.md) | Sprite rotation and pivots, blend modes, screen-space drawing, Unicode text, shapes, custom post effects (spec) |
+| [Audio Playback Control](https://github.com/amigo-labs/amigo-engine/blob/main/docs/specs/engine/audio-playback.md) | Sound handles, delayed and partial playback, buses, pause (spec) |
 
 ## Game Types
 

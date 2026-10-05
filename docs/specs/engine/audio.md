@@ -2,7 +2,7 @@
 status: done
 crate: amigo_audio
 depends_on: ["engine/core"]
-last_updated: 2026-03-16
+last_updated: 2026-10-05
 ---
 
 # Audio System
@@ -12,6 +12,8 @@ last_updated: 2026-03-16
 Wrapper around `kira`. Three subsystems: SFX playback, Adaptive Music Engine, and Ambient layers.
 
 For audio generation pipeline, see [ai-pipelines/audiogen](../ai-pipelines/audiogen.md).
+
+Handles to playing sounds, delayed and partial playback, real music/SFX/ambient buses, pause and resume, and loading from bytes are specified in [engine/audio-playback](audio-playback.md) (not implemented yet).
 
 ## Public API
 
@@ -179,5 +181,7 @@ Master Volume
 ```
 
 All configurable in settings. Saved to user preferences.
+
+Today the SFX and master volumes do not reach sound effects (backlog sub-33); [engine/audio-playback](audio-playback.md) A3 turns the channels into kira sub-tracks.
 
 > For complete adaptive music configuration (RON definitions, stingers, world audio profiles, stem strategy), see [ai-pipelines/audiogen](../ai-pipelines/audiogen.md).
