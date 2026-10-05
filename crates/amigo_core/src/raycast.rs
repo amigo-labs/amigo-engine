@@ -6,7 +6,8 @@
 
 use crate::collision::{CollisionShape, CollisionWorld};
 use crate::ecs::EntityId;
-use crate::math::RenderVec2;
+use crate::math::{Fix, SimVec2};
+use crate::rect::SimRect;
 
 // ---------------------------------------------------------------------------
 // TileQuery trait (for tilemap raycasts without depending on amigo_tilemap)
@@ -36,19 +37,28 @@ pub trait TileQuery {
 // RayHit
 // ---------------------------------------------------------------------------
 
-/// Result of a raycast hit.
-#[derive(Clone, Copy, Debug)]
+/// Result of a raycast hit, in simulation space.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RayHit {
     /// World position where the ray hit.
-    pub point: RenderVec2,
+    pub point: SimVec2,
     /// Surface normal at the hit point.
-    pub normal: RenderVec2,
+    pub normal: SimVec2,
     /// Distance from ray origin to hit point.
-    pub distance: f32,
+    pub distance: Fix,
     /// Entity that was hit (None for tilemap hits).
     pub entity: Option<EntityId>,
     /// Tile type that was hit (only for tile raycasts).
     pub tile_block: Option<TileBlock>,
+}
+
+/// `num / den`, saturating, with a zero denominator meaning "never".
+fn ratio(num: Fix, den: Fix) -> Fix {
+    if den == Fix::ZERO {
+        Fix::MAX
+    } else {
+        num.saturating_div(den)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -59,93 +69,75 @@ pub struct RayHit {
 /// `tile_size` is the size of each tile in world units.
 /// Returns the first blocking tile hit.
 pub fn raycast_tiles(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    max_distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    max_distance: Fix,
     tiles: &dyn TileQuery,
-    tile_size: f32,
+    tile_size: Fix,
 ) -> Option<RayHit> {
-    let inv_tile = 1.0 / tile_size;
-
-    // Normalize direction
-    let len = (direction.x * direction.x + direction.y * direction.y).sqrt();
-    if len < 1e-8 {
+    if tile_size <= Fix::ZERO {
         return None;
     }
-    let dx = direction.x / len;
-    let dy = direction.y / len;
+    let dir = direction.normalize();
+    if dir == SimVec2::ZERO {
+        return None;
+    }
+    let (dx, dy) = (dir.x, dir.y);
+    let tile_of = |v: Fix| v.saturating_div(tile_size).floor().to_num::<i32>();
 
     // Current tile coordinates
-    let mut tile_x = (origin.x * inv_tile).floor() as i32;
-    let mut tile_y = (origin.y * inv_tile).floor() as i32;
+    let mut tile_x = tile_of(origin.x);
+    let mut tile_y = tile_of(origin.y);
 
     // Step direction
-    let step_x: i32 = if dx > 0.0 { 1 } else { -1 };
-    let step_y: i32 = if dy > 0.0 { 1 } else { -1 };
+    let step_x: i32 = if dx > Fix::ZERO { 1 } else { -1 };
+    let step_y: i32 = if dy > Fix::ZERO { 1 } else { -1 };
 
-    // Distance to next tile boundary along each axis
-    let t_delta_x = if dx.abs() < 1e-8 {
-        f32::MAX
-    } else {
-        tile_size / dx.abs()
-    };
-    let t_delta_y = if dy.abs() < 1e-8 {
-        f32::MAX
-    } else {
-        tile_size / dy.abs()
-    };
+    // Distance along the ray between tile boundaries on each axis
+    let t_delta_x = ratio(tile_size, dx.abs());
+    let t_delta_y = ratio(tile_size, dy.abs());
 
-    // Initial t to first boundary
-    let t_max_x = if dx.abs() < 1e-8 {
-        f32::MAX
-    } else {
-        let border = if dx > 0.0 {
-            (tile_x as f32 + 1.0) * tile_size
-        } else {
-            tile_x as f32 * tile_size
-        };
-        (border - origin.x) / dx
+    // Distance to the first boundary on each axis
+    let first_border = |tile: i32, d: Fix| {
+        let edge = if d > Fix::ZERO { tile + 1 } else { tile };
+        Fix::saturating_from_num(edge).saturating_mul(tile_size)
     };
-    let t_max_y = if dy.abs() < 1e-8 {
-        f32::MAX
+    let mut t_max_x = if dx == Fix::ZERO {
+        Fix::MAX
     } else {
-        let border = if dy > 0.0 {
-            (tile_y as f32 + 1.0) * tile_size
-        } else {
-            tile_y as f32 * tile_size
-        };
-        (border - origin.y) / dy
+        ratio(first_border(tile_x, dx) - origin.x, dx)
     };
-
-    let mut t_max_x = t_max_x;
-    let mut t_max_y = t_max_y;
-    let mut distance = 0.0_f32;
+    let mut t_max_y = if dy == Fix::ZERO {
+        Fix::MAX
+    } else {
+        ratio(first_border(tile_y, dy) - origin.y, dy)
+    };
+    let mut distance = Fix::ZERO;
+    let at = |t: Fix| origin + dir * t;
 
     // DDA loop
     while distance <= max_distance {
         let block = tiles.tile_at(tile_x, tile_y);
         if block == TileBlock::Solid {
-            let hit_point = RenderVec2::new(origin.x + dx * distance, origin.y + dy * distance);
             // Normal points back toward the ray origin
             let normal = if t_max_x < t_max_y {
-                RenderVec2::new(-step_x as f32, 0.0)
+                SimVec2::from_num(-step_x, 0)
             } else {
-                RenderVec2::new(0.0, -step_y as f32)
+                SimVec2::from_num(0, -step_y)
             };
             return Some(RayHit {
-                point: hit_point,
+                point: at(distance),
                 normal,
                 distance,
                 entity: None,
                 tile_block: Some(block),
             });
         }
-        if block == TileBlock::OneWay && dy > 0.0 {
+        if block == TileBlock::OneWay && dy > Fix::ZERO {
             // OneWay blocks only downward rays
-            let hit_point = RenderVec2::new(origin.x + dx * distance, origin.y + dy * distance);
             return Some(RayHit {
-                point: hit_point,
-                normal: RenderVec2::new(0.0, -1.0),
+                point: at(distance),
+                normal: SimVec2::from_num(0, -1),
                 distance,
                 entity: None,
                 tile_block: Some(block),
@@ -157,17 +149,17 @@ pub fn raycast_tiles(
         } = block
         {
             // Interpolate slope height at the ray's x position within the tile
-            let local_x = (origin.x + dx * distance) - tile_x as f32 * tile_size;
-            let frac = (local_x / tile_size).clamp(0.0, 1.0);
-            let slope_height =
-                left_height as f32 + (right_height as f32 - left_height as f32) * frac;
-            let tile_top_y = tile_y as f32 * tile_size;
+            let tile_left = Fix::saturating_from_num(tile_x).saturating_mul(tile_size);
+            let local_x = at(distance).x - tile_left;
+            let frac = local_x.saturating_div(tile_size).clamp(Fix::ZERO, Fix::ONE);
+            let (left, right) = (Fix::from_num(left_height), Fix::from_num(right_height));
+            let slope_height = left + (right - left) * frac;
+            let tile_top_y = Fix::saturating_from_num(tile_y).saturating_mul(tile_size);
             let surface_y = tile_top_y + tile_size - slope_height;
-            let ray_y = origin.y + dy * distance;
-            if ray_y >= surface_y {
+            if at(distance).y >= surface_y {
                 return Some(RayHit {
-                    point: RenderVec2::new(origin.x + dx * distance, surface_y),
-                    normal: RenderVec2::new(0.0, -1.0), // Simplified upward normal
+                    point: SimVec2::new(at(distance).x, surface_y),
+                    normal: SimVec2::from_num(0, -1), // Simplified upward normal
                     distance,
                     entity: None,
                     tile_block: Some(block),
@@ -178,12 +170,15 @@ pub fn raycast_tiles(
         // Advance to next tile
         if t_max_x < t_max_y {
             distance = t_max_x;
-            t_max_x += t_delta_x;
+            t_max_x = t_max_x.saturating_add(t_delta_x);
             tile_x += step_x;
         } else {
             distance = t_max_y;
-            t_max_y += t_delta_y;
+            t_max_y = t_max_y.saturating_add(t_delta_y);
             tile_y += step_y;
+        }
+        if distance == Fix::MAX {
+            break;
         }
     }
 
@@ -191,39 +186,36 @@ pub fn raycast_tiles(
 }
 
 /// Cast a ray against all bodies in the CollisionWorld.
-/// Returns the closest hit. Uses SpatialHash for broad-phase.
+/// Returns the closest hit (the smaller entity id on a tie). Uses SpatialHash
+/// for broad-phase.
 pub fn raycast_bodies(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    max_distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    max_distance: Fix,
     world: &CollisionWorld,
     exclude: Option<EntityId>,
 ) -> Option<RayHit> {
-    // Normalize direction
-    let len = (direction.x * direction.x + direction.y * direction.y).sqrt();
-    if len < 1e-8 {
+    let dir = direction.normalize();
+    if dir == SimVec2::ZERO {
         return None;
     }
-    let dx = direction.x / len;
-    let dy = direction.y / len;
 
     // Build a bounding rect along the ray for broad-phase query
-    let end = RenderVec2::new(origin.x + dx * max_distance, origin.y + dy * max_distance);
-    let min_x = origin.x.min(end.x) - 1.0;
-    let min_y = origin.y.min(end.y) - 1.0;
-    let max_x = origin.x.max(end.x) + 1.0;
-    let max_y = origin.y.max(end.y) + 1.0;
-    let query_rect = crate::rect::Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+    let end = origin + dir * max_distance;
+    let one = Fix::ONE;
+    let min_x = origin.x.min(end.x) - one;
+    let min_y = origin.y.min(end.y) - one;
+    let max_x = origin.x.max(end.x) + one;
+    let max_y = origin.y.max(end.y) + one;
+    let query_rect = SimRect::new(min_x, min_y, max_x - min_x, max_y - min_y);
 
-    let candidates = world.query_aabb(&query_rect);
     let mut closest: Option<RayHit> = None;
-
-    for entity in candidates {
+    // Candidates come back sorted, so ties go to the smaller id everywhere.
+    for entity in world.query_aabb(&query_rect) {
         if exclude == Some(entity) {
             continue;
         }
-        // Test ray against each candidate's shape
-        if let Some(hit) = ray_vs_entity(origin, dx, dy, max_distance, entity, world)
+        if let Some(hit) = ray_vs_entity(origin, dir, max_distance, entity, world)
             && closest.as_ref().is_none_or(|c| hit.distance < c.distance)
         {
             closest = Some(hit);
@@ -234,72 +226,58 @@ pub fn raycast_bodies(
 }
 
 fn ray_vs_entity(
-    origin: RenderVec2,
-    dx: f32,
-    dy: f32,
-    max_distance: f32,
+    origin: SimVec2,
+    dir: SimVec2,
+    max_distance: Fix,
     entity: EntityId,
     world: &CollisionWorld,
 ) -> Option<RayHit> {
     let (pos, shape) = world.get_shape(entity)?;
-
     match shape {
-        CollisionShape::Circle { cx, cy, radius } => {
-            let center_x = pos.x + cx;
-            let center_y = pos.y + cy;
-            ray_vs_circle(
-                origin,
-                dx,
-                dy,
-                max_distance,
-                center_x,
-                center_y,
-                *radius,
-                entity,
-            )
+        CollisionShape::Circle { center, radius } => {
+            ray_vs_circle(origin, dir, max_distance, pos + *center, *radius, entity)
         }
         CollisionShape::Aabb(rect) => {
-            let aabb = crate::rect::Rect::new(pos.x + rect.x, pos.y + rect.y, rect.w, rect.h);
-            ray_vs_aabb(origin, dx, dy, max_distance, &aabb, entity)
+            ray_vs_aabb(origin, dir, max_distance, &rect.translated(pos), entity)
         }
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "flat parameter list mirrors the immediate-mode call site; a params struct would be a breaking change"
-)]
+/// Ray (unit direction) against a circle. The quadratic is solved on raw
+/// Q16.16 bits in `i128`: its squared terms overflow Q16.16 for anything
+/// more than ~181 units away.
 fn ray_vs_circle(
-    origin: RenderVec2,
-    dx: f32,
-    dy: f32,
-    max_distance: f32,
-    cx: f32,
-    cy: f32,
-    radius: f32,
+    origin: SimVec2,
+    dir: SimVec2,
+    max_distance: Fix,
+    center: SimVec2,
+    radius: Fix,
     entity: EntityId,
 ) -> Option<RayHit> {
-    let ocx = origin.x - cx;
-    let ocy = origin.y - cy;
-    let a = dx * dx + dy * dy; // = 1.0 for normalized direction
-    let b = 2.0 * (ocx * dx + ocy * dy);
-    let c = ocx * ocx + ocy * ocy - radius * radius;
-    let discriminant = b * b - 4.0 * a * c;
-    if discriminant < 0.0 {
+    let raw = |v: Fix| i128::from(v.to_bits());
+    let oc = origin - center;
+    // With |dir| = 1: t = -b ± sqrt(b² - c), b = oc·dir, c = |oc|² - r².
+    let b = (raw(oc.x) * raw(dir.x) + raw(oc.y) * raw(dir.y)) >> 16;
+    let c = (raw(oc.x) * raw(oc.x) + raw(oc.y) * raw(oc.y) - raw(radius) * raw(radius)) >> 16;
+    let disc = ((b * b) >> 16) - c;
+    if disc < 0 {
         return None;
     }
-    let sqrt_d = discriminant.sqrt();
-    let t = (-b - sqrt_d) / (2.0 * a);
-    if t < 0.0 || t > max_distance {
+    let sqrt_d = ((disc as u128) << 16).isqrt() as i128;
+    let t = -b - sqrt_d;
+    if t < 0 || t > raw(max_distance) {
         return None;
     }
-    let hit_x = origin.x + dx * t;
-    let hit_y = origin.y + dy * t;
-    let nx = (hit_x - cx) / radius;
-    let ny = (hit_y - cy) / radius;
+    let t = Fix::from_bits(t as i32);
+    let point = origin + dir * t;
+    let normal = if radius > Fix::ZERO {
+        (point - center) / radius
+    } else {
+        -dir
+    };
     Some(RayHit {
-        point: RenderVec2::new(hit_x, hit_y),
-        normal: RenderVec2::new(nx, ny),
+        point,
+        normal,
         distance: t,
         entity: Some(entity),
         tile_block: None,
@@ -307,53 +285,45 @@ fn ray_vs_circle(
 }
 
 fn ray_vs_aabb(
-    origin: RenderVec2,
-    dx: f32,
-    dy: f32,
-    max_distance: f32,
-    aabb: &crate::rect::Rect,
+    origin: SimVec2,
+    dir: SimVec2,
+    max_distance: Fix,
+    aabb: &SimRect,
     entity: EntityId,
 ) -> Option<RayHit> {
-    let inv_dx = if dx.abs() < 1e-8 {
-        f32::MAX.copysign(dx)
-    } else {
-        1.0 / dx
+    // Slab test per axis; an axis the ray does not move along either
+    // contains the origin (no limit) or misses outright.
+    let slab = |o: Fix, d: Fix, lo: Fix, hi: Fix| -> Option<(Fix, Fix)> {
+        if d == Fix::ZERO {
+            return (o >= lo && o <= hi).then_some((Fix::MIN, Fix::MAX));
+        }
+        let (t1, t2) = ((lo - o).saturating_div(d), (hi - o).saturating_div(d));
+        Some((t1.min(t2), t1.max(t2)))
     };
-    let inv_dy = if dy.abs() < 1e-8 {
-        f32::MAX.copysign(dy)
-    } else {
-        1.0 / dy
-    };
+    let (tx_near, tx_far) = slab(origin.x, dir.x, aabb.x, aabb.right())?;
+    let (ty_near, ty_far) = slab(origin.y, dir.y, aabb.y, aabb.bottom())?;
 
-    let tx1 = (aabb.x - origin.x) * inv_dx;
-    let tx2 = (aabb.x + aabb.w - origin.x) * inv_dx;
-    let ty1 = (aabb.y - origin.y) * inv_dy;
-    let ty2 = (aabb.y + aabb.h - origin.y) * inv_dy;
+    let t_min = tx_near.max(ty_near);
+    let t_max = tx_far.min(ty_far);
 
-    let t_min = tx1.min(tx2).max(ty1.min(ty2));
-    let t_max = tx1.max(tx2).min(ty1.max(ty2));
-
-    if t_max < 0.0 || t_min > t_max || t_min > max_distance {
+    if t_max < Fix::ZERO || t_min > t_max || t_min > max_distance {
         return None;
     }
 
-    let t = if t_min >= 0.0 { t_min } else { t_max };
+    let t = if t_min >= Fix::ZERO { t_min } else { t_max };
     if t > max_distance {
         return None;
     }
 
-    let hit_x = origin.x + dx * t;
-    let hit_y = origin.y + dy * t;
-
-    // Determine hit normal
-    let normal = if (t - tx1.min(tx2)).abs() < 0.001 {
-        RenderVec2::new(-dx.signum(), 0.0)
+    // The face hit is on the axis whose slab was entered last.
+    let normal = if tx_near >= ty_near {
+        SimVec2::new(-dir.x.signum(), Fix::ZERO)
     } else {
-        RenderVec2::new(0.0, -dy.signum())
+        SimVec2::new(Fix::ZERO, -dir.y.signum())
     };
 
     Some(RayHit {
-        point: RenderVec2::new(hit_x, hit_y),
+        point: origin + dir * t,
         normal,
         distance: t,
         entity: Some(entity),
@@ -363,11 +333,11 @@ fn ray_vs_aabb(
 
 /// Cast a ray against both tiles and bodies, returning the closest overall hit.
 pub fn raycast(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    max_distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    max_distance: Fix,
     tiles: &dyn TileQuery,
-    tile_size: f32,
+    tile_size: Fix,
     world: &CollisionWorld,
     exclude: Option<EntityId>,
 ) -> Option<RayHit> {
@@ -390,11 +360,11 @@ pub fn raycast(
 /// Short-range directional sensor (convenience for platformer controllers).
 /// Returns `true` if any solid tile is within `distance` along `direction`.
 pub fn sensor(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    distance: Fix,
     tiles: &dyn TileQuery,
-    tile_size: f32,
+    tile_size: Fix,
 ) -> bool {
     raycast_tiles(origin, direction, distance, tiles, tile_size).is_some()
 }
@@ -408,6 +378,13 @@ pub fn sensor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn f(v: impl fixed::traits::ToFixed) -> Fix {
+        Fix::from_num(v)
+    }
+    fn v(x: impl fixed::traits::ToFixed, y: impl fixed::traits::ToFixed) -> SimVec2 {
+        SimVec2::from_num(x, y)
+    }
 
     struct TestGrid {
         width: i32,
@@ -436,15 +413,15 @@ mod tests {
             solid: vec![(5, 0)],
         };
         let hit = raycast_tiles(
-            RenderVec2::new(8.0, 8.0), // In tile (0,0) with tile_size=16
-            RenderVec2::new(1.0, 0.0), // Cast right
-            200.0,
+            v(8.0, 8.0), // In tile (0,0) with tile_size=16
+            v(1.0, 0.0), // Cast right
+            f(200),
             &grid,
-            16.0,
+            f(16),
         );
         assert!(hit.is_some());
         let hit = hit.unwrap();
-        assert!(hit.distance > 0.0);
+        assert_eq!(hit.distance, f(72), "edge of tile 5 is 80, origin at 8");
         assert!(hit.tile_block == Some(TileBlock::Solid));
     }
 
@@ -455,13 +432,7 @@ mod tests {
             height: 10,
             solid: vec![],
         };
-        let hit = raycast_tiles(
-            RenderVec2::new(8.0, 8.0),
-            RenderVec2::new(1.0, 0.0),
-            200.0,
-            &grid,
-            16.0,
-        );
+        let hit = raycast_tiles(v(8.0, 8.0), v(1.0, 0.0), f(200), &grid, f(16));
         // Should hit the out-of-bounds boundary (treated as Solid)
         assert!(hit.is_some());
         let hit = hit.unwrap();
@@ -476,11 +447,11 @@ mod tests {
             solid: vec![(50, 0)], // Far away solid
         };
         let hit = raycast_tiles(
-            RenderVec2::new(8.0, 8.0),
-            RenderVec2::new(1.0, 0.0),
-            10.0, // Very short range
+            v(8.0, 8.0),
+            v(1.0, 0.0),
+            f(10), // Very short range
             &grid,
-            16.0,
+            f(16),
         );
         assert!(hit.is_none());
     }
@@ -494,11 +465,11 @@ mod tests {
         };
         // Standing above solid tile (2,3), cast down
         let has_ground = sensor(
-            RenderVec2::new(2.0 * 16.0 + 8.0, 2.0 * 16.0 + 15.0), // Bottom of tile (2,2)
-            RenderVec2::new(0.0, 1.0),                            // Down
-            2.0,                                                  // 2px range
+            v(40, 47),   // Bottom of tile (2,2)
+            v(0.0, 1.0), // Down
+            f(2),        // 2px range
             &grid,
-            16.0,
+            f(16),
         );
         assert!(has_ground);
     }
@@ -510,43 +481,33 @@ mod tests {
             height: 10,
             solid: vec![],
         };
-        let has_ground = sensor(
-            RenderVec2::new(32.0, 32.0),
-            RenderVec2::new(0.0, 1.0),
-            2.0,
-            &grid,
-            16.0,
-        );
+        let has_ground = sensor(v(32.0, 32.0), v(0.0, 1.0), f(2), &grid, f(16));
         assert!(!has_ground);
     }
 
     #[test]
     fn ray_vs_circle_hit() {
         let hit = ray_vs_circle(
-            RenderVec2::new(0.0, 0.0),
-            1.0,
-            0.0, // Right
-            100.0,
-            50.0,
-            0.0,  // Circle center
-            10.0, // Radius
+            v(0, 0),
+            v(1, 0), // Right
+            f(100),
+            v(50, 0), // Circle center
+            f(10),    // Radius
             EntityId::from_raw(1, 0),
         );
-        assert!(hit.is_some());
-        let hit = hit.unwrap();
-        assert!((hit.distance - 40.0).abs() < 0.01); // 50 - 10 = 40
+        let hit = hit.expect("hit");
+        assert_eq!(hit.distance, f(40)); // 50 - 10
+        assert_eq!(hit.normal, v(-1, 0));
     }
 
     #[test]
     fn ray_vs_circle_miss() {
         let hit = ray_vs_circle(
-            RenderVec2::new(0.0, 0.0),
-            1.0,
-            0.0, // Right
-            100.0,
-            50.0,
-            50.0, // Far off to the side
-            5.0,
+            v(0, 0),
+            v(1, 0), // Right
+            f(100),
+            v(50, 50), // Far off to the side
+            f(5),
             EntityId::from_raw(1, 0),
         );
         assert!(hit.is_none());
@@ -554,17 +515,54 @@ mod tests {
 
     #[test]
     fn ray_vs_aabb_hit() {
-        let aabb = crate::rect::Rect::new(40.0, -10.0, 20.0, 20.0);
-        let hit = ray_vs_aabb(
-            RenderVec2::new(0.0, 0.0),
-            1.0,
-            0.0,
-            100.0,
-            &aabb,
+        let aabb = SimRect::from_num(40, -10, 20, 20);
+        let hit = ray_vs_aabb(v(0, 0), v(1, 0), f(100), &aabb, EntityId::from_raw(1, 0));
+        let hit = hit.expect("hit");
+        assert_eq!(hit.distance, f(40));
+        assert_eq!(hit.normal, v(-1, 0));
+        // A ray parallel to a slab outside it misses.
+        assert!(ray_vs_aabb(v(0, 50), v(1, 0), f(100), &aabb, EntityId::from_raw(1, 0)).is_none());
+    }
+
+    /// Far from the origin, the circle quadratic used to overflow Q16.16.
+    #[test]
+    fn far_circle_hits_without_overflow() {
+        let hit = ray_vs_circle(
+            v(-15000, 0),
+            v(1, 0),
+            f(30000),
+            v(10000, 3),
+            f(5),
             EntityId::from_raw(1, 0),
+        )
+        .expect("hit");
+        assert!(
+            (hit.distance - f(24996)).abs() < f(0.01),
+            "{}",
+            hit.distance
         );
-        assert!(hit.is_some());
-        let hit = hit.unwrap();
-        assert!((hit.distance - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn body_raycast_picks_the_nearest_body() {
+        let mut world = CollisionWorld::new(f(32));
+        let shape = CollisionShape::Circle {
+            center: SimVec2::ZERO,
+            radius: f(4),
+        };
+        world.update_entity(EntityId::from_raw(2, 0), v(80, 0), shape);
+        world.update_entity(EntityId::from_raw(1, 0), v(40, 0), shape);
+        let hit = raycast_bodies(v(0, 0), v(1, 0), f(200), &world, None).expect("hit");
+        assert_eq!(hit.entity, Some(EntityId::from_raw(1, 0)));
+        assert_eq!(hit.distance, f(36));
+        let hit = raycast_bodies(
+            v(0, 0),
+            v(1, 0),
+            f(200),
+            &world,
+            Some(EntityId::from_raw(1, 0)),
+        )
+        .expect("hit");
+        assert_eq!(hit.entity, Some(EntityId::from_raw(2, 0)));
     }
 }

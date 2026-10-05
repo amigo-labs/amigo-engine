@@ -8,6 +8,7 @@ use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::bullet_pattern::BulletPool;
+use crate::math::{Fix, SimVec2};
 
 // ---------------------------------------------------------------------------
 // ScrollMode
@@ -72,62 +73,49 @@ impl Default for ShmupConfig {
 
 /// Precision hitbox for shmup entities. Player hitboxes are much smaller than
 /// sprites; enemy hitboxes match their visual size.
+///
+/// Fixed point like the bullets it is tested against (`bullet_pattern`), so a
+/// hit or a graze is decided the same way on every machine.
 #[derive(Clone, Debug)]
 pub struct ShmupHitbox {
     /// Circle hitbox radius for collision with bullets/enemies.
     /// Player: typically 1–3 pixels. Enemies: match their visual size.
-    pub collision_radius: f32,
+    pub collision_radius: Fix,
     /// Graze detection radius. Bullets within this radius but outside
     /// `collision_radius` trigger graze events. Player only.
-    pub graze_radius: f32,
-    /// Center offset from the entity's position (X).
-    pub offset_x: f32,
-    /// Center offset from the entity's position (Y).
-    pub offset_y: f32,
+    pub graze_radius: Fix,
+    /// Center offset from the entity's position.
+    pub offset: SimVec2,
 }
 
 impl ShmupHitbox {
     /// Create a player hitbox with tiny collision and larger graze radius.
-    pub fn player(collision: f32, graze: f32) -> Self {
+    pub fn player(collision: Fix, graze: Fix) -> Self {
         Self {
             collision_radius: collision,
             graze_radius: graze,
-            offset_x: 0.0,
-            offset_y: 0.0,
+            offset: SimVec2::ZERO,
         }
     }
 
     /// Create an enemy hitbox (no graze radius).
-    pub fn enemy(radius: f32) -> Self {
-        Self {
-            collision_radius: radius,
-            graze_radius: 0.0,
-            offset_x: 0.0,
-            offset_y: 0.0,
-        }
+    pub fn enemy(radius: Fix) -> Self {
+        Self::player(radius, Fix::ZERO)
+    }
+
+    fn distance(&self, owner: SimVec2, point: SimVec2) -> Fix {
+        (point - (owner + self.offset)).length()
     }
 
     /// Check if a point (bullet position) is within the collision circle.
-    /// Uses squared-distance comparison (no sqrt).
-    pub fn hit_test(&self, self_x: f32, self_y: f32, point_x: f32, point_y: f32) -> bool {
-        let cx = self_x + self.offset_x;
-        let cy = self_y + self.offset_y;
-        let dx = point_x - cx;
-        let dy = point_y - cy;
-        let dist_sq = dx * dx + dy * dy;
-        dist_sq <= self.collision_radius * self.collision_radius
+    pub fn hit_test(&self, owner: SimVec2, point: SimVec2) -> bool {
+        self.distance(owner, point) <= self.collision_radius
     }
 
     /// Check if a point is within the graze circle but outside collision.
-    pub fn graze_test(&self, self_x: f32, self_y: f32, point_x: f32, point_y: f32) -> bool {
-        let cx = self_x + self.offset_x;
-        let cy = self_y + self.offset_y;
-        let dx = point_x - cx;
-        let dy = point_y - cy;
-        let dist_sq = dx * dx + dy * dy;
-        let col_sq = self.collision_radius * self.collision_radius;
-        let grz_sq = self.graze_radius * self.graze_radius;
-        dist_sq > col_sq && dist_sq <= grz_sq
+    pub fn graze_test(&self, owner: SimVec2, point: SimVec2) -> bool {
+        let d = self.distance(owner, point);
+        d > self.collision_radius && d <= self.graze_radius
     }
 }
 
@@ -172,16 +160,10 @@ impl GrazingSystem {
     /// player's graze hitbox. `generations` maps pool index to a generation
     /// counter (pass `None` to use index-only dedup, treating index 0 as
     /// generation 0). Returns the number of new grazes this frame.
-    pub fn tick(
-        &mut self,
-        player_x: f32,
-        player_y: f32,
-        hitbox: &ShmupHitbox,
-        pool: &BulletPool,
-    ) -> u32 {
+    pub fn tick(&mut self, player: SimVec2, hitbox: &ShmupHitbox, pool: &BulletPool) -> u32 {
         self.frame_graze_count = 0;
         for (i, bullet) in pool.active_iter() {
-            if hitbox.graze_test(player_x, player_y, bullet.x, bullet.y) {
+            if hitbox.graze_test(player, bullet.pos) {
                 // Use kind as a stand-in for generation when BulletPool lacks
                 // a dedicated generation counter. Callers who track generations
                 // can store them in bullet.kind or wrap the pool.
@@ -621,34 +603,56 @@ impl ShmupScoring {
 mod tests {
     use super::*;
 
+    fn v(x: i32, y: i32) -> SimVec2 {
+        SimVec2::from_num(x, y)
+    }
+    fn f(v: i32) -> Fix {
+        Fix::from_num(v)
+    }
+
     #[test]
     fn hitbox_hit_test() {
-        let hb = ShmupHitbox::player(2.0, 10.0);
+        let hb = ShmupHitbox::player(f(2), f(10));
         // Point inside collision radius.
-        assert!(hb.hit_test(100.0, 100.0, 101.0, 100.0));
+        assert!(hb.hit_test(v(100, 100), v(101, 100)));
         // Point outside collision but inside graze.
-        assert!(!hb.hit_test(100.0, 100.0, 105.0, 100.0));
+        assert!(!hb.hit_test(v(100, 100), v(105, 100)));
         // Point far away.
-        assert!(!hb.hit_test(100.0, 100.0, 200.0, 200.0));
+        assert!(!hb.hit_test(v(100, 100), v(200, 200)));
     }
 
     #[test]
     fn hitbox_graze_test() {
-        let hb = ShmupHitbox::player(2.0, 10.0);
+        let hb = ShmupHitbox::player(f(2), f(10));
         // Inside graze but outside collision.
-        assert!(hb.graze_test(100.0, 100.0, 105.0, 100.0));
+        assert!(hb.graze_test(v(100, 100), v(105, 100)));
         // Inside collision — not a graze.
-        assert!(!hb.graze_test(100.0, 100.0, 101.0, 100.0));
+        assert!(!hb.graze_test(v(100, 100), v(101, 100)));
         // Outside graze radius entirely.
-        assert!(!hb.graze_test(100.0, 100.0, 200.0, 200.0));
+        assert!(!hb.graze_test(v(100, 100), v(200, 200)));
     }
 
     #[test]
     fn hitbox_enemy_no_graze() {
-        let hb = ShmupHitbox::enemy(8.0);
-        assert!(hb.hit_test(50.0, 50.0, 55.0, 50.0));
+        let hb = ShmupHitbox::enemy(f(8));
+        assert!(hb.hit_test(v(50, 50), v(55, 50)));
         // Graze radius is 0, so graze_test always false.
-        assert!(!hb.graze_test(50.0, 50.0, 55.0, 50.0));
+        assert!(!hb.graze_test(v(50, 50), v(55, 50)));
+    }
+
+    #[test]
+    fn grazing_counts_each_bullet_once() {
+        let mut pool = BulletPool::new(4);
+        pool.spawn(v(105, 100), v(0, 0), 100, f(1), Fix::ONE, 0);
+        pool.spawn(v(300, 100), v(0, 0), 100, f(1), Fix::ONE, 1);
+        let hitbox = ShmupHitbox::player(f(2), f(10));
+        let mut grazing = GrazingSystem::new(10, 1.0);
+        assert_eq!(grazing.tick(v(100, 100), &hitbox, &pool), 1);
+        assert_eq!(
+            grazing.tick(v(100, 100), &hitbox, &pool),
+            0,
+            "already grazed"
+        );
     }
 
     #[test]

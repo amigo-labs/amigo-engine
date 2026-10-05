@@ -1,8 +1,16 @@
+//! Rigid-body physics: gravity, integration and impulse-based collision
+//! resolution, in fixed point ([`Fix`], [`SimVec2`]).
+//!
+//! Deterministic by construction (ADR-0001): no `f32`, bodies are kept in a
+//! `BTreeMap` so every pass visits them in [`EntityId`] order (the
+//! `FxHashMap` this used before iterated in hash order), and contact pairs
+//! are resolved in sorted order whichever broad phase found them.
+
 use crate::collision::{CollisionShape, ContactInfo, SpatialHash, check_shapes, shape_to_aabb};
 use crate::ecs::EntityId;
-use crate::math::RenderVec2;
-use crate::rect::Rect;
-use rustc_hash::FxHashMap;
+use crate::math::{Fix, SimVec2};
+use crate::rect::SimRect;
+use std::collections::BTreeMap;
 
 /// Determines how a body participates in the physics simulation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,72 +28,69 @@ pub enum BodyType {
 #[derive(Clone, Debug)]
 pub struct RigidBody {
     pub body_type: BodyType,
-    pub position: RenderVec2,
-    pub velocity: RenderVec2,
+    pub position: SimVec2,
+    pub velocity: SimVec2,
     pub shape: CollisionShape,
     /// Mass in arbitrary units. Ignored for Static/Kinematic bodies.
-    pub mass: f32,
-    inv_mass: f32,
-    /// Bounciness. 0.0 = no bounce, 1.0 = perfectly elastic.
-    pub restitution: f32,
+    pub mass: Fix,
+    inv_mass: Fix,
+    /// Bounciness. 0 = no bounce, 1 = perfectly elastic.
+    pub restitution: Fix,
     /// Friction coefficient for tangential velocity damping.
-    pub friction: f32,
-    /// Multiplier on gravity for this body. 0.0 = no gravity.
-    pub gravity_scale: f32,
+    pub friction: Fix,
+    /// Multiplier on gravity for this body. 0 = no gravity.
+    pub gravity_scale: Fix,
 }
 
 impl RigidBody {
-    pub fn dynamic(position: RenderVec2, shape: CollisionShape, mass: f32) -> Self {
-        assert!(mass > 0.0, "Dynamic body must have positive mass");
+    /// # Panics
+    /// If `mass` is not positive.
+    pub fn dynamic(position: SimVec2, shape: CollisionShape, mass: Fix) -> Self {
+        assert!(mass > Fix::ZERO, "Dynamic body must have positive mass");
         Self {
             body_type: BodyType::Dynamic,
             position,
-            velocity: RenderVec2::new(0.0, 0.0),
+            velocity: SimVec2::ZERO,
             shape,
             mass,
-            inv_mass: 1.0 / mass,
-            restitution: 0.0,
-            friction: 0.2,
-            gravity_scale: 1.0,
+            inv_mass: Fix::ONE / mass,
+            restitution: Fix::ZERO,
+            friction: Fix::from_num(0.2),
+            gravity_scale: Fix::ONE,
         }
     }
 
-    pub fn static_body(position: RenderVec2, shape: CollisionShape) -> Self {
+    pub fn static_body(position: SimVec2, shape: CollisionShape) -> Self {
         Self {
             body_type: BodyType::Static,
             position,
-            velocity: RenderVec2::new(0.0, 0.0),
+            velocity: SimVec2::ZERO,
             shape,
-            mass: 0.0,
-            inv_mass: 0.0,
-            restitution: 0.0,
-            friction: 0.5,
-            gravity_scale: 0.0,
+            mass: Fix::ZERO,
+            inv_mass: Fix::ZERO,
+            restitution: Fix::ZERO,
+            friction: Fix::from_num(0.5),
+            gravity_scale: Fix::ZERO,
         }
     }
 
-    pub fn kinematic(position: RenderVec2, shape: CollisionShape) -> Self {
+    pub fn kinematic(position: SimVec2, shape: CollisionShape) -> Self {
         Self {
             body_type: BodyType::Kinematic,
-            position,
-            velocity: RenderVec2::new(0.0, 0.0),
-            shape,
-            mass: 0.0,
-            inv_mass: 0.0,
-            restitution: 0.0,
-            friction: 0.5,
-            gravity_scale: 0.0,
+            ..Self::static_body(position, shape)
         }
     }
 
-    pub fn inverse_mass(&self) -> f32 {
+    pub fn inverse_mass(&self) -> Fix {
         self.inv_mass
     }
 
-    pub fn set_mass(&mut self, mass: f32) {
-        assert!(mass > 0.0);
+    /// # Panics
+    /// If `mass` is not positive.
+    pub fn set_mass(&mut self, mass: Fix) {
+        assert!(mass > Fix::ZERO, "mass must be positive");
         self.mass = mass;
-        self.inv_mass = 1.0 / mass;
+        self.inv_mass = Fix::ONE / mass;
     }
 }
 
@@ -99,32 +104,31 @@ pub struct PhysicsContact {
 
 /// 2D physics world with gravity, integration, and impulse-based collision resolution.
 pub struct PhysicsWorld {
-    /// Gravity in pixels/tick². Typically (0.0, positive_value) for downward gravity.
-    pub gravity: RenderVec2,
+    /// Gravity in units/tick². Typically (0, positive) for downward gravity.
+    pub gravity: SimVec2,
     /// Number of iterations for constraint/collision solving per step.
     pub solver_iterations: u32,
-    bodies: FxHashMap<EntityId, RigidBody>,
+    bodies: BTreeMap<EntityId, RigidBody>,
     spatial_hash: SpatialHash,
     /// Optional pluggable broad phase. When set, it replaces the built-in
     /// spatial hash for collision-pair detection (see [`set_broad_phase`](Self::set_broad_phase)).
     broad_phase: Option<Box<dyn crate::broad_phase::BroadPhase>>,
     /// Velocity threshold for CCD. Bodies faster than this use swept tests.
-    /// Default: 0.0 (disabled). Set via `set_ccd_threshold()`.
-    ccd_threshold: f32,
+    /// Default: 0 (disabled). Set via `set_ccd_threshold()`.
+    ccd_threshold: Fix,
 }
 
 impl PhysicsWorld {
-    pub fn new(gravity: RenderVec2, cell_size: f32) -> Self {
+    pub fn new(gravity: SimVec2, cell_size: Fix) -> Self {
         Self {
             gravity,
             solver_iterations: 4,
-            bodies: FxHashMap::default(),
+            bodies: BTreeMap::new(),
             spatial_hash: SpatialHash::new(cell_size),
             broad_phase: None,
-            ccd_threshold: 0.0,
+            ccd_threshold: Fix::ZERO,
         }
     }
-
     /// Replace the built-in spatial-hash broad phase with a custom
     /// [`BroadPhase`](crate::broad_phase::BroadPhase) implementation, e.g.
     /// `amigo_render::gpu_broad_phase::GpuBroadPhase` (feature `gpu_physics`)
@@ -204,10 +208,8 @@ impl PhysicsWorld {
             if body.body_type != BodyType::Dynamic {
                 continue;
             }
-            body.velocity.x += gravity.x * body.gravity_scale;
-            body.velocity.y += gravity.y * body.gravity_scale;
-            body.position.x += body.velocity.x;
-            body.position.y += body.velocity.y;
+            body.velocity += gravity * body.gravity_scale;
+            body.position += body.velocity;
         }
     }
 
@@ -235,14 +237,19 @@ impl PhysicsWorld {
         &self,
         broad_phase: &mut dyn crate::broad_phase::BroadPhase,
     ) -> Vec<(EntityId, EntityId, ContactInfo)> {
-        let bodies: Vec<(EntityId, Rect)> = self
+        let bodies: Vec<(EntityId, SimRect)> = self
             .bodies
             .iter()
             .map(|(&entity, body)| (entity, shape_to_aabb(body.position, &body.shape)))
             .collect();
 
+        // Resolved in id order whatever order the broad phase used, so a
+        // GPU or third-party implementation cannot change the outcome.
+        let mut candidates = broad_phase.find_candidates(&bodies);
+        candidates.sort_unstable_by_key(|p| (p.a, p.b));
+        candidates.dedup();
         let mut pairs = Vec::new();
-        for candidate in broad_phase.find_candidates(&bodies) {
+        for candidate in candidates {
             let (Some(body_a), Some(body_b)) =
                 (self.bodies.get(&candidate.a), self.bodies.get(&candidate.b))
             else {
@@ -268,25 +275,23 @@ impl PhysicsWorld {
 
     fn find_collision_pairs_spatial_hash(&self) -> Vec<(EntityId, EntityId, ContactInfo)> {
         let mut pairs = Vec::new();
-        let mut checked = rustc_hash::FxHashSet::default();
+        let one = Fix::ONE;
 
+        // Bodies in id order, candidates sorted: each pair is visited once,
+        // from its smaller id, in the same order on every machine.
         for (&entity_a, body_a) in &self.bodies {
             let aabb = shape_to_aabb(body_a.position, &body_a.shape);
             // Expand AABB slightly for the broad phase query
-            let query_rect = Rect::new(aabb.x - 1.0, aabb.y - 1.0, aabb.w + 2.0, aabb.h + 2.0);
+            let query_rect = SimRect::new(
+                aabb.x - one,
+                aabb.y - one,
+                aabb.w + one * 2,
+                aabb.h + one * 2,
+            );
             let candidates = self.spatial_hash.query_aabb(&query_rect);
 
             for entity_b in candidates {
-                if entity_a == entity_b {
-                    continue;
-                }
-                // Canonical pair ordering to avoid duplicate checks
-                let pair = if entity_a < entity_b {
-                    (entity_a, entity_b)
-                } else {
-                    (entity_b, entity_a)
-                };
-                if !checked.insert(pair) {
+                if entity_b <= entity_a {
                     continue;
                 }
 
@@ -327,105 +332,86 @@ impl PhysicsWorld {
             let inv_a = if a.body_type == BodyType::Dynamic {
                 a.inv_mass
             } else {
-                0.0
+                Fix::ZERO
             };
             let inv_b = if b.body_type == BodyType::Dynamic {
                 b.inv_mass
             } else {
-                0.0
+                Fix::ZERO
             };
             let rest = a.restitution.max(b.restitution);
-            let friction = (a.friction + b.friction) * 0.5;
+            let friction = (a.friction + b.friction) / 2;
             (inv_a, inv_b, a.velocity, b.velocity, rest, friction)
         };
 
         let inv_total = inv_a + inv_b;
-        if inv_total == 0.0 {
+        if inv_total == Fix::ZERO {
             return;
         }
 
         let normal = contact.normal;
 
         // --- Positional correction (push bodies apart) ---
-        let correction_ratio = contact.penetration / inv_total;
+        let correction_ratio = contact.penetration.saturating_div(inv_total);
         if let Some(a) = self.bodies.get_mut(&id_a)
             && a.body_type == BodyType::Dynamic
         {
-            a.position.x += normal.x * correction_ratio * inv_a;
-            a.position.y += normal.y * correction_ratio * inv_a;
+            a.position += normal * (correction_ratio * inv_a);
         }
         if let Some(b) = self.bodies.get_mut(&id_b)
             && b.body_type == BodyType::Dynamic
         {
-            b.position.x -= normal.x * correction_ratio * inv_b;
-            b.position.y -= normal.y * correction_ratio * inv_b;
+            b.position = b.position - normal * (correction_ratio * inv_b);
         }
 
         // --- Impulse resolution ---
-        let rel_vel = RenderVec2::new(vel_a.x - vel_b.x, vel_a.y - vel_b.y);
-        let vel_along_normal = rel_vel.x * normal.x + rel_vel.y * normal.y;
+        let vel_along_normal = (vel_a - vel_b).dot(normal);
 
         // Only resolve if bodies are approaching
-        if vel_along_normal > 0.0 {
+        if vel_along_normal > Fix::ZERO {
             return;
         }
 
         // Normal impulse
-        let j = -(1.0 + rest) * vel_along_normal / inv_total;
-        let impulse_x = j * normal.x;
-        let impulse_y = j * normal.y;
+        let j = (-(Fix::ONE + rest) * vel_along_normal).saturating_div(inv_total);
+        let impulse = normal * j;
 
         if let Some(a) = self.bodies.get_mut(&id_a)
             && a.body_type == BodyType::Dynamic
         {
-            a.velocity.x += impulse_x * inv_a;
-            a.velocity.y += impulse_y * inv_a;
+            a.velocity += impulse * inv_a;
         }
         if let Some(b) = self.bodies.get_mut(&id_b)
             && b.body_type == BodyType::Dynamic
         {
-            b.velocity.x -= impulse_x * inv_b;
-            b.velocity.y -= impulse_y * inv_b;
+            b.velocity = b.velocity - impulse * inv_b;
         }
 
         // --- Friction impulse ---
         // Recompute relative velocity after normal impulse
-        let vel_a = self
-            .bodies
-            .get(&id_a)
-            .map(|b| b.velocity)
-            .unwrap_or(RenderVec2::new(0.0, 0.0));
-        let vel_b = self
-            .bodies
-            .get(&id_b)
-            .map(|b| b.velocity)
-            .unwrap_or(RenderVec2::new(0.0, 0.0));
-        let rel_vel = RenderVec2::new(vel_a.x - vel_b.x, vel_a.y - vel_b.y);
-        let vel_along_normal = rel_vel.x * normal.x + rel_vel.y * normal.y;
-        let tangent_x = rel_vel.x - vel_along_normal * normal.x;
-        let tangent_y = rel_vel.y - vel_along_normal * normal.y;
-        let tangent_len = (tangent_x * tangent_x + tangent_y * tangent_y).sqrt();
-        if tangent_len < 0.0001 {
+        let velocity = |id| self.bodies.get(&id).map_or(SimVec2::ZERO, |b| b.velocity);
+        let rel_vel = velocity(id_a) - velocity(id_b);
+        let tangent = rel_vel - normal * rel_vel.dot(normal);
+        let tangent_len = tangent.length();
+        if tangent_len == Fix::ZERO {
             return;
         }
-        let tx = tangent_x / tangent_len;
-        let ty = tangent_y / tangent_len;
+        let t = tangent / tangent_len;
 
-        let jt = -(rel_vel.x * tx + rel_vel.y * ty) / inv_total;
+        let jt = (-rel_vel.dot(t)).saturating_div(inv_total);
         // Coulomb friction: clamp tangent impulse
-        let jt = jt.clamp(-j.abs() * friction, j.abs() * friction);
+        let limit = j.abs() * friction;
+        let jt = jt.clamp(-limit, limit);
 
         if let Some(a) = self.bodies.get_mut(&id_a)
             && a.body_type == BodyType::Dynamic
         {
-            a.velocity.x += jt * tx * inv_a;
-            a.velocity.y += jt * ty * inv_a;
+            a.velocity += t * (jt * inv_a);
         }
         if let Some(b) = self.bodies.get_mut(&id_b)
             && b.body_type == BodyType::Dynamic
         {
-            b.velocity.x -= jt * tx * inv_b;
-            b.velocity.y -= jt * ty * inv_b;
+            b.velocity = b.velocity - t * (jt * inv_b);
         }
     }
 }
@@ -435,7 +421,7 @@ impl PhysicsWorld {
 // ---------------------------------------------------------------------------
 
 /// Position component used by the ECS bridge.
-pub type Position = RenderVec2;
+pub type Position = SimVec2;
 
 /// Synchronize PhysicsWorld body positions back into ECS Position components.
 /// Call after `PhysicsWorld::step()`.
@@ -462,7 +448,7 @@ pub fn sync_ecs_to_physics(positions: &crate::ecs::SparseSet<Position>, world: &
 impl PhysicsWorld {
     /// Set a CCD velocity threshold. Bodies moving faster than this per tick
     /// will use swept collision tests to prevent tunneling.
-    pub fn set_ccd_threshold(&mut self, threshold: f32) {
+    pub fn set_ccd_threshold(&mut self, threshold: Fix) {
         self.ccd_threshold = threshold;
     }
 
@@ -481,67 +467,50 @@ impl PhysicsWorld {
 mod tests {
     use super::*;
     use crate::ecs::EntityId;
-    use crate::rect::Rect;
 
     fn make_id(index: u32) -> EntityId {
         EntityId::from_raw(index, 0)
+    }
+
+    fn f(v: impl fixed::traits::ToFixed) -> Fix {
+        Fix::from_num(v)
+    }
+    fn v(x: impl fixed::traits::ToFixed, y: impl fixed::traits::ToFixed) -> SimVec2 {
+        SimVec2::from_num(x, y)
+    }
+    fn aabb(x: i32, y: i32, w: i32, h: i32) -> CollisionShape {
+        CollisionShape::Aabb(SimRect::from_num(x, y, w, h))
     }
 
     // ── Integration and gravity ─────────────────────────────
 
     #[test]
     fn dynamic_body_falls_with_gravity() {
-        let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 0.5), 64.0);
-        let body = RigidBody::dynamic(
-            RenderVec2::new(0.0, 0.0),
-            CollisionShape::Aabb(Rect::new(-8.0, -8.0, 16.0, 16.0)),
-            1.0,
-        );
+        let mut world = PhysicsWorld::new(v(0, 0.5), f(64));
         let id = make_id(1);
-        world.add_body(id, body);
+        world.add_body(id, RigidBody::dynamic(v(0, 0), aabb(-8, -8, 16, 16), f(1)));
 
         world.step();
 
         let body = world.get_body(id).unwrap();
-        assert!(body.position.y > 0.0, "Body should have fallen");
-        assert!(body.velocity.y > 0.0, "Body should have downward velocity");
+        assert_eq!(body.velocity.y, f(0.5));
+        assert_eq!(body.position.y, f(0.5));
     }
 
     #[test]
     fn static_body_does_not_move() {
-        let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 0.5), 64.0);
-        let body = RigidBody::static_body(
-            RenderVec2::new(100.0, 100.0),
-            CollisionShape::Aabb(Rect::new(-50.0, -5.0, 100.0, 10.0)),
-        );
+        let mut world = PhysicsWorld::new(v(0, 0.5), f(64));
         let id = make_id(1);
-        world.add_body(id, body);
+        world.add_body(
+            id,
+            RigidBody::static_body(v(100, 100), aabb(-50, -5, 100, 10)),
+        );
 
-        // Run multiple ticks and verify position and velocity remain unchanged.
         for tick in 0..10 {
             world.step();
-
             let body = world.get_body(id).unwrap();
-            assert_eq!(
-                body.position.x, 100.0,
-                "Static body X should not change after tick {}",
-                tick
-            );
-            assert_eq!(
-                body.position.y, 100.0,
-                "Static body Y should not change after tick {}",
-                tick
-            );
-            assert_eq!(
-                body.velocity.x, 0.0,
-                "Static body velocity.x should remain 0 after tick {}",
-                tick
-            );
-            assert_eq!(
-                body.velocity.y, 0.0,
-                "Static body velocity.y should remain 0 after tick {}",
-                tick
-            );
+            assert_eq!(body.position, v(100, 100), "moved after tick {tick}");
+            assert_eq!(body.velocity, SimVec2::ZERO, "velocity after tick {tick}");
         }
     }
 
@@ -549,35 +518,25 @@ mod tests {
 
     #[test]
     fn dynamic_lands_on_static() {
-        let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 0.5), 64.0);
-
-        // Dynamic body above
-        let mut dyn_body = RigidBody::dynamic(
-            RenderVec2::new(0.0, 0.0),
-            CollisionShape::Aabb(Rect::new(-8.0, -8.0, 16.0, 16.0)),
-            1.0,
-        );
-        dyn_body.restitution = 0.0;
+        let mut world = PhysicsWorld::new(v(0, 0.5), f(64));
         let dyn_id = make_id(1);
-        world.add_body(dyn_id, dyn_body);
-
-        // Static floor
-        let floor = RigidBody::static_body(
-            RenderVec2::new(0.0, 20.0),
-            CollisionShape::Aabb(Rect::new(-100.0, 0.0, 200.0, 20.0)),
+        world.add_body(
+            dyn_id,
+            RigidBody::dynamic(v(0, 0), aabb(-8, -8, 16, 16), f(1)),
         );
-        let floor_id = make_id(2);
-        world.add_body(floor_id, floor);
+        world.add_body(
+            make_id(2),
+            RigidBody::static_body(v(0, 20), aabb(-100, 0, 200, 20)),
+        );
 
-        // Run enough steps for the dynamic body to hit the floor
         for _ in 0..100 {
             world.step();
         }
 
         let body = world.get_body(dyn_id).unwrap();
-        // Body should rest on or near the floor, not fall through
+        // Resting on the floor (top at y = 20, half height 8), not through it.
         assert!(
-            body.position.y < 25.0,
+            body.position.y < f(13) && body.position.y > f(11),
             "Body should be resting on floor, got y={}",
             body.position.y
         );
@@ -585,38 +544,27 @@ mod tests {
 
     #[test]
     fn bouncy_body_rebounds() {
-        let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 1.0), 64.0);
-
+        let mut world = PhysicsWorld::new(v(0, 1), f(64));
         let mut ball = RigidBody::dynamic(
-            RenderVec2::new(0.0, 0.0),
+            v(0, 0),
             CollisionShape::Circle {
-                cx: 0.0,
-                cy: 0.0,
-                radius: 8.0,
+                center: SimVec2::ZERO,
+                radius: f(8),
             },
-            1.0,
+            f(1),
         );
-        ball.restitution = 1.0;
+        ball.restitution = Fix::ONE;
         let ball_id = make_id(1);
         world.add_body(ball_id, ball);
-
-        let floor = RigidBody::static_body(
-            RenderVec2::new(0.0, 50.0),
-            CollisionShape::Aabb(Rect::new(-100.0, 0.0, 200.0, 20.0)),
+        world.add_body(
+            make_id(2),
+            RigidBody::static_body(v(0, 50), aabb(-100, 0, 200, 20)),
         );
-        let floor_id = make_id(2);
-        world.add_body(floor_id, floor);
 
-        // Let the ball fall and bounce
-        let mut bounced = false;
-        for _ in 0..100 {
+        let bounced = (0..100).any(|_| {
             world.step();
-            let body = world.get_body(ball_id).unwrap();
-            if body.velocity.y < -0.1 {
-                bounced = true;
-                break;
-            }
-        }
+            world.get_body(ball_id).unwrap().velocity.y < f(-0.1)
+        });
         assert!(bounced, "Bouncy body should rebound off the floor");
     }
 
@@ -624,16 +572,9 @@ mod tests {
 
     #[test]
     fn remove_body_works() {
-        let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 0.0), 64.0);
+        let mut world = PhysicsWorld::new(SimVec2::ZERO, f(64));
         let id = make_id(1);
-        world.add_body(
-            id,
-            RigidBody::dynamic(
-                RenderVec2::new(0.0, 0.0),
-                CollisionShape::Aabb(Rect::new(0.0, 0.0, 10.0, 10.0)),
-                1.0,
-            ),
-        );
+        world.add_body(id, RigidBody::dynamic(v(0, 0), aabb(0, 0, 10, 10), f(1)));
         assert_eq!(world.body_count(), 1);
         world.remove_body(id);
         assert_eq!(world.body_count(), 0);
@@ -645,22 +586,14 @@ mod tests {
         // Two overlapping dynamic bodies must produce a contact both with the
         // built-in spatial hash and with an installed custom broad phase.
         let make_world = || {
-            let mut world = PhysicsWorld::new(RenderVec2::new(0.0, 0.0), 64.0);
+            let mut world = PhysicsWorld::new(SimVec2::ZERO, f(64));
             world.add_body(
                 make_id(1),
-                RigidBody::dynamic(
-                    RenderVec2::new(0.0, 0.0),
-                    CollisionShape::Aabb(Rect::new(-8.0, -8.0, 16.0, 16.0)),
-                    1.0,
-                ),
+                RigidBody::dynamic(v(0, 0), aabb(-8, -8, 16, 16), f(1)),
             );
             world.add_body(
                 make_id(2),
-                RigidBody::dynamic(
-                    RenderVec2::new(4.0, 0.0),
-                    CollisionShape::Aabb(Rect::new(-8.0, -8.0, 16.0, 16.0)),
-                    1.0,
-                ),
+                RigidBody::dynamic(v(4, 0), aabb(-8, -8, 16, 16), f(1)),
             );
             world
         };
@@ -674,8 +607,47 @@ mod tests {
         let bp_contacts = bp_world.step();
         assert!(!bp_contacts.is_empty());
 
+        // Both paths resolve the same contacts the same way.
+        let positions = |w: &PhysicsWorld| -> Vec<SimVec2> {
+            w.iter_bodies().map(|(_, b)| b.position).collect()
+        };
+        assert_eq!(positions(&hash_world), positions(&bp_world));
+
         // Reverting restores the spatial-hash path.
         bp_world.clear_broad_phase();
         let _ = bp_world.step();
+    }
+
+    /// The order bodies are added in must not change the result.
+    #[test]
+    fn insertion_order_does_not_change_the_simulation() {
+        let run = |order: &[u32]| {
+            let mut world = PhysicsWorld::new(v(0, 0.25), f(32));
+            world.add_body(
+                make_id(100),
+                RigidBody::static_body(v(0, 200), aabb(-200, 0, 400, 20)),
+            );
+            for &i in order {
+                let x = (i as i32 % 5) * 9 - 20;
+                let y = (i as i32 / 5) * 12;
+                world.add_body(
+                    make_id(i),
+                    RigidBody::dynamic(v(x, y), aabb(-5, -5, 10, 10), f(1)),
+                );
+            }
+            for _ in 0..300 {
+                world.step();
+            }
+            world
+                .iter_bodies()
+                .map(|(id, b)| (*id, b.position, b.velocity))
+                .collect::<Vec<_>>()
+        };
+        let forward: Vec<u32> = (0..20).collect();
+        let backward: Vec<u32> = (0..20).rev().collect();
+        let shuffled: Vec<u32> = (0..20).map(|i| (i * 7) % 20).collect();
+        let a = run(&forward);
+        assert_eq!(a, run(&backward));
+        assert_eq!(a, run(&shuffled));
     }
 }

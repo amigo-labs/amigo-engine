@@ -8,13 +8,20 @@
 //! For small body counts (< 32), falls back to [`CpuBroadPhase`] to avoid
 //! GPU dispatch overhead.
 //!
+//! The shader compares in `f32`, which is not bit-identical across GPUs and
+//! drivers, while the simulation is fixed point (ADR-0001). Bodies are
+//! therefore uploaded one unit larger on every side, so the GPU returns a
+//! superset of the overlapping pairs, and each pair is then confirmed in
+//! fixed point and the list sorted. The result equals [`CpuBroadPhase`]'s on
+//! every machine; the GPU only does the quadratic part.
+//!
 //! Gated behind `cfg(feature = "gpu_physics")`.
 
 use std::sync::Arc;
 
-use amigo_core::broad_phase::{BroadPhase, CollisionPair, CpuBroadPhase};
+use amigo_core::broad_phase::{Aabb, BroadPhase, CollisionPair, CpuBroadPhase};
 use amigo_core::ecs::EntityId;
-use amigo_core::rect::Rect;
+use amigo_core::rect::SimRect;
 use bytemuck::{Pod, Zeroable};
 use tracing::debug;
 
@@ -209,7 +216,7 @@ impl GpuBroadPhase {
     }
 
     /// Run the GPU broad-phase. Falls back to CPU for small inputs.
-    fn find_candidates_gpu(&mut self, bodies: &[(EntityId, Rect)]) -> Vec<CollisionPair> {
+    fn find_candidates_gpu(&mut self, bodies: &[(EntityId, SimRect)]) -> Vec<CollisionPair> {
         let n = bodies.len();
 
         // CPU fallback for small counts or exceeding max.
@@ -223,10 +230,12 @@ impl GpuBroadPhase {
         let gpu_bodies: Vec<GpuBody> = bodies
             .iter()
             .map(|(id, r)| GpuBody {
-                min_x: r.x,
-                min_y: r.y,
-                max_x: r.x + r.w,
-                max_y: r.y + r.h,
+                // One unit of slack per side: f32 rounding on the GPU can
+                // then only add candidates, never drop a real overlap.
+                min_x: r.x.to_num::<f32>() - 1.0,
+                min_y: r.y.to_num::<f32>() - 1.0,
+                max_x: r.right().to_num::<f32>() + 1.0,
+                max_y: r.bottom().to_num::<f32>() + 1.0,
                 entity_index: id.index(),
                 entity_gen: id.generation(),
                 _pad: [0; 2],
@@ -327,12 +336,24 @@ impl GpuBroadPhase {
         drop(data);
         self.staging_buffer.unmap();
 
+        // Confirm each candidate in fixed point and sort, so the result does
+        // not depend on the GPU's rounding or its atomic write order.
+        let bounds: std::collections::HashMap<EntityId, Aabb> = bodies
+            .iter()
+            .map(|(id, r)| (*id, Aabb::from_rect(r)))
+            .collect();
+        pairs.retain(|p| match (bounds.get(&p.a), bounds.get(&p.b)) {
+            (Some(a), Some(b)) => a.overlaps(b),
+            _ => false,
+        });
+        pairs.sort_unstable_by_key(|p| (p.a, p.b));
+        pairs.dedup();
         pairs
     }
 }
 
 impl BroadPhase for GpuBroadPhase {
-    fn find_candidates(&mut self, bodies: &[(EntityId, Rect)]) -> Vec<CollisionPair> {
+    fn find_candidates(&mut self, bodies: &[(EntityId, SimRect)]) -> Vec<CollisionPair> {
         self.find_candidates_gpu(bodies)
     }
 }
@@ -381,24 +402,8 @@ mod tests {
 
         // Two overlapping bodies (below GPU_THRESHOLD=32, uses CPU fallback).
         let bodies = vec![
-            (
-                id(1),
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w: 10.0,
-                    h: 10.0,
-                },
-            ),
-            (
-                id(2),
-                Rect {
-                    x: 5.0,
-                    y: 5.0,
-                    w: 10.0,
-                    h: 10.0,
-                },
-            ),
+            (id(1), SimRect::from_num(0.0, 0.0, 10.0, 10.0)),
+            (id(2), SimRect::from_num(5.0, 5.0, 10.0, 10.0)),
         ];
         let pairs = bp.find_candidates(&bodies);
         assert_eq!(pairs.len(), 1);
@@ -419,12 +424,7 @@ mod tests {
         for i in 0..8 {
             for j in 0..8 {
                 let eid = id(i * 8 + j);
-                let rect = Rect {
-                    x: (j as f32) * 8.0,
-                    y: (i as f32) * 8.0,
-                    w: 10.0,
-                    h: 10.0,
-                };
+                let rect = SimRect::from_num((j as f32) * 8.0, (i as f32) * 8.0, 10.0, 10.0);
                 bodies.push((eid, rect));
             }
         }
@@ -456,17 +456,7 @@ mod tests {
 
         // 64 bodies far apart — no overlaps.
         let bodies: Vec<_> = (0..64)
-            .map(|i| {
-                (
-                    id(i),
-                    Rect {
-                        x: (i as f32) * 100.0,
-                        y: 0.0,
-                        w: 5.0,
-                        h: 5.0,
-                    },
-                )
-            })
+            .map(|i| (id(i), SimRect::from_num((i as f32) * 100.0, 0.0, 5.0, 5.0)))
             .collect();
 
         let pairs = bp.find_candidates(&bodies);
@@ -483,16 +473,8 @@ mod tests {
 
         assert!(bp.find_candidates(&[]).is_empty());
         assert!(
-            bp.find_candidates(&[(
-                id(1),
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w: 1.0,
-                    h: 1.0
-                }
-            )])
-            .is_empty()
+            bp.find_candidates(&[(id(1), SimRect::from_num(0.0, 0.0, 1.0, 1.0))])
+                .is_empty()
         );
     }
 }

@@ -122,12 +122,12 @@ impl Default for ContactTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::RenderVec2;
+    use crate::math::{Fix, SimVec2};
 
     fn dummy_contact() -> ContactInfo {
         ContactInfo {
-            penetration: 1.0,
-            normal: RenderVec2::new(1.0, 0.0),
+            penetration: Fix::ONE,
+            normal: SimVec2::from_num(1, 0),
         }
     }
 

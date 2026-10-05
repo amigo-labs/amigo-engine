@@ -555,13 +555,13 @@ impl BossRoomSystem {
                     // Already an AABB — keep it (it becomes the sealed barrier).
                     **shape = CollisionShape::Aabb(rect);
                 }
-                CollisionShape::Circle { cx, cy, radius } => {
+                CollisionShape::Circle { center, radius } => {
                     // Convert circle to AABB for sealing.
-                    **shape = CollisionShape::Aabb(Rect::new(
-                        cx - radius,
-                        cy - radius,
-                        radius * 2.0,
-                        radius * 2.0,
+                    **shape = CollisionShape::Aabb(crate::rect::SimRect::new(
+                        center.x - radius,
+                        center.y - radius,
+                        radius * 2,
+                        radius * 2,
                     ));
                 }
             }
@@ -589,7 +589,7 @@ impl BossRoomSystem {
 
         // Unseal doors by setting shapes to zero-size (passable).
         for (_entity, shape) in doors.iter_mut() {
-            **shape = CollisionShape::Aabb(Rect::new(0.0, 0.0, 0.0, 0.0));
+            **shape = CollisionShape::Aabb(crate::rect::SimRect::default());
         }
 
         *room_bounds
@@ -1190,7 +1190,7 @@ mod tests {
             seal_doors: vec![EntityId::from_raw(1, 0)],
             defeated: false,
         };
-        let mut shape = CollisionShape::Aabb(Rect::new(10.0, 20.0, 5.0, 50.0));
+        let mut shape = CollisionShape::Aabb(crate::rect::SimRect::from_num(10, 20, 5, 50));
         let mut doors: Vec<(EntityId, &mut CollisionShape)> =
             vec![(EntityId::from_raw(1, 0), &mut shape)];
 
@@ -1210,7 +1210,7 @@ mod tests {
             seal_doors: vec![EntityId::from_raw(1, 0)],
             defeated: false,
         };
-        let mut shape = CollisionShape::Aabb(Rect::new(10.0, 20.0, 5.0, 50.0));
+        let mut shape = CollisionShape::Aabb(crate::rect::SimRect::from_num(10, 20, 5, 50));
         let mut doors: Vec<(EntityId, &mut CollisionShape)> =
             vec![(EntityId::from_raw(1, 0), &mut shape)];
         let room_bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
@@ -1220,8 +1220,8 @@ mod tests {
         // Door shape should be zeroed out (passable).
         match shape {
             CollisionShape::Aabb(r) => {
-                assert!((r.w).abs() < 0.01);
-                assert!((r.h).abs() < 0.01);
+                assert_eq!(r.w, crate::math::Fix::ZERO);
+                assert_eq!(r.h, crate::math::Fix::ZERO);
             }
             _ => panic!("Expected Aabb"),
         }

@@ -2,7 +2,7 @@
 status: done
 crate: amigo_core
 depends_on: ["engine/core", "engine/particles"]
-last_updated: 2026-03-18
+last_updated: 2026-10-05
 ---
 
 # Bullet Patterns
@@ -15,26 +15,27 @@ Existing implementation in `crates/amigo_core/src/bullet_pattern.rs` (812 lines)
 
 ## Public API
 
+All positions, velocities, radii and angles are fixed point (`Fix`, `SimVec2`,
+`SimRect`) since 0.2.0, and the pattern math uses `amigo_core::math::trig`, so
+a pattern fires the same bullets on every machine (ADR-0001).
+`crates/amigo_core/tests/determinism.rs` pins a 600-tick golden hash of all
+pattern shapes.
+
 ### Bullet
 
 ```rust
 /// A single bullet in the pool.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bullet {
-    pub x: f32,
-    pub y: f32,
-    pub vx: f32,
-    pub vy: f32,
+    pub pos: SimVec2,
+    pub vel: SimVec2,
     pub lifetime: u32,
     pub max_lifetime: u32,
-    pub radius: f32,
-    pub damage: f32,
+    pub radius: Fix,
+    pub damage: Fix,
     pub active: bool,
     /// User-defined type tag for rendering/effects.
     pub kind: u32,
-    /// Generation counter — incremented each time this slot is reused.
-    /// Used by shmup grazing system to distinguish recycled bullets.
-    pub generation: u32,
 }
 ```
 
@@ -58,20 +59,17 @@ pub enum BulletEvent {
 pub struct BulletPool {
     pub bullets: Vec<Bullet>,
     pub active_count: usize,
-    pub bounds_x: f32,
-    pub bounds_y: f32,
-    pub bounds_w: f32,
-    pub bounds_h: f32,
+    pub bounds: SimRect,
 }
 
 impl BulletPool {
     pub fn new(capacity: usize) -> Self;
-    pub fn with_bounds(mut self, x: f32, y: f32, w: f32, h: f32) -> Self;
-    pub fn spawn(&mut self, x: f32, y: f32, vx: f32, vy: f32,
-                 lifetime: u32, radius: f32, damage: f32, kind: u32) -> Option<usize>;
+    pub fn with_bounds(self, bounds: SimRect) -> Self;
+    pub fn spawn(&mut self, pos: SimVec2, vel: SimVec2, lifetime: u32,
+                 radius: Fix, damage: Fix, kind: u32) -> Option<usize>;
     pub fn despawn(&mut self, index: usize);
     pub fn tick(&mut self) -> Vec<BulletEvent>;
-    pub fn check_circle_hits(&self, cx: f32, cy: f32, radius: f32) -> Vec<usize>;
+    pub fn check_circle_hits(&self, center: SimVec2, radius: Fix) -> Vec<usize>;
     pub fn clear(&mut self);
     pub fn active_iter(&self) -> impl Iterator<Item = (usize, &Bullet)>;
 }
@@ -80,64 +78,54 @@ impl BulletPool {
 ### PatternShape
 
 ```rust
-/// Shape of a bullet pattern spawn.
+/// Shape of a bullet pattern spawn. Speeds are units per tick, angles radians.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PatternShape {
-    /// Evenly distributed bullets in a circle.
-    Radial { count: u32, speed: f32 },
-    /// Spiral pattern that rotates over time.
-    Spiral { count: u32, speed: f32, rotation_speed: f32 },
-    /// Aimed at a target with spread.
-    Aimed { count: u32, speed: f32, spread_angle: f32 },
-    /// Sine wave pattern.
-    Wave { count: u32, speed: f32, amplitude: f32, frequency: f32 },
-    /// Random directions.
-    Random { count: u32, min_speed: f32, max_speed: f32 },
+    Radial { count: u32, speed: Fix },
+    Spiral { count: u32, speed: Fix, rotation_speed: Fix },
+    Aimed { count: u32, speed: Fix, spread_angle: Fix },
+    Wave { count: u32, speed: Fix, amplitude: Fix, frequency: Fix },
+    Random { count: u32, min_speed: Fix, max_speed: Fix },
 }
 ```
 
 ### compute_pattern
 
 ```rust
-/// Compute bullet velocities for a pattern shape.
-/// `rotation` is the current emitter rotation in radians.
-/// `target_angle` is the angle toward the target (for Aimed).
-/// `rng_state` is for Random patterns (XorShift64).
+/// Bullet velocities for a pattern shape. `rng_state` drives Random
+/// (XorShift64, 16 random fraction bits per draw).
 pub fn compute_pattern(
     shape: &PatternShape,
-    rotation: f32,
-    target_angle: f32,
+    rotation: Fix,
+    target_angle: Fix,
     rng_state: &mut u64,
-) -> Vec<(f32, f32)>;
+) -> Vec<SimVec2>;
 ```
 
 ### BulletEmitter
 
 ```rust
-/// A bullet emitter that fires patterns at a fixed rate.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BulletEmitter {
-    pub x: f32,
-    pub y: f32,
+    pub pos: SimVec2,
     pub pattern: PatternShape,
     pub fire_interval: u32,      // ticks between firings
     pub timer: u32,
-    pub rotation: f32,           // current rotation (accumulates for Spiral)
+    pub rotation: Fix,           // accumulates for Spiral, kept in [0, 2π)
     pub bullet_lifetime: u32,
-    pub bullet_radius: f32,
-    pub bullet_damage: f32,
+    pub bullet_radius: Fix,
+    pub bullet_damage: Fix,
     pub bullet_kind: u32,
     pub active: bool,
-    pub target_x: f32,
-    pub target_y: f32,
+    pub target: SimVec2,
     rng_state: u64,
 }
 
 impl BulletEmitter {
-    pub fn new(x: f32, y: f32, pattern: PatternShape, fire_interval: u32) -> Self;
-    pub fn with_bullet(self, lifetime: u32, radius: f32, damage: f32, kind: u32) -> Self;
+    pub fn new(pos: SimVec2, pattern: PatternShape, fire_interval: u32) -> Self;
+    pub fn with_bullet(self, lifetime: u32, radius: Fix, damage: Fix, kind: u32) -> Self;
     pub fn with_seed(self, seed: u64) -> Self;
-    pub fn set_target(&mut self, x: f32, y: f32);
+    pub fn set_target(&mut self, target: SimVec2);
     /// Tick the emitter. If it fires, spawns bullets into the pool.
     /// Returns the number of bullets spawned.
     pub fn tick(&mut self, pool: &mut BulletPool) -> u32;

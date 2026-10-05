@@ -24,6 +24,14 @@ impl SimVec2 {
         Self { x, y }
     }
 
+    /// From any numbers `Fix::from_num` accepts, e.g. `SimVec2::from_num(3, 4)`.
+    pub fn from_num(x: impl fixed::traits::ToFixed, y: impl fixed::traits::ToFixed) -> Self {
+        Self {
+            x: Fix::from_num(x),
+            y: Fix::from_num(y),
+        }
+    }
+
     pub fn from_f32(x: f32, y: f32) -> Self {
         Self {
             x: Fix::from_num(x),

@@ -122,7 +122,7 @@ pub use physics::{
 };
 pub use projectile::ProjectileManager;
 pub use raycast::{RayHit, TileBlock, TileQuery, raycast, raycast_bodies, raycast_tiles, sensor};
-pub use rect::Rect;
+pub use rect::{Rect, SimRect};
 pub use resources::Resources;
 pub use save::{SaveConfig, SaveError, SaveManager, SlotInfo};
 pub use scheduler::{CallbackId, TickScheduler};

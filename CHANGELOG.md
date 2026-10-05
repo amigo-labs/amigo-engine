@@ -6,6 +6,59 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Breaking — physics, collision and bullet patterns in fixed point
+
+These changes break the public API, so the next release has to be **0.2.0**.
+
+Physics, collision, raycasts and bullet patterns now compute in fixed point
+(`Fix`, `SimVec2`, the new `SimRect`) instead of `f32`, as ADR-0001 requires
+of simulation code. They iterate in a fixed order, and
+`amigo_core/tests/determinism.rs` pins golden hashes of a 100-body physics run
+and of every bullet pattern on Linux, Windows and macOS.
+
+Migration:
+- **New `SimRect`** (`x, y, w, h: Fix`), in the prelude, replaces `Rect` in
+  simulation APIs. `SimRect::from_num(0, 0, 16, 16)` and
+  `SimVec2::from_num(3, 4)` build values from literals; `to_render()`
+  converts them for drawing.
+- **`collision`**:
+  - `CollisionShape::Aabb(SimRect)`, and
+    `CollisionShape::Circle { center: SimVec2, radius: Fix }` (it was
+    `{ cx, cy, radius }` in `f32`).
+  - `circle_vs_circle(a, ar, b, br)`, `circle_vs_aabb(center, radius, &rect)`,
+    and `ContactInfo`/`SweptContact` fields are fixed point.
+  - `SpatialHash::new(Fix)` and `CollisionWorld::new(Fix)`.
+    `query_point(SimVec2)` and `query_circle(SimVec2, Fix)` take vectors.
+    Every query returns ids sorted, without duplicates.
+  - `CapsuleShape` angles go through `sin_cos_fix`. Crossing capsules were
+    missed before and now collide.
+- **`physics`**:
+  - `RigidBody` positions and velocities are `SimVec2`. Mass, restitution,
+    friction and gravity scale are `Fix`.
+  - `PhysicsWorld::new(SimVec2, Fix)`. Bodies are visited in `EntityId`
+    order and contacts are resolved in sorted order.
+  - `physics::Position` is `SimVec2`.
+- **`broad_phase`**:
+  - `Aabb` is fixed point, and `BroadPhase::find_candidates` takes
+    `&[(EntityId, SimRect)]`.
+  - `CpuBroadPhase` breaks ties on the sweep axis by id and returns its pairs
+    sorted.
+  - The GPU broad phase pads in `f32` and confirms each pair in fixed point.
+- **`raycast`**: `raycast_tiles`, `raycast_bodies`, `raycast` and `sensor`
+  take `SimVec2`/`Fix`, and `RayHit` is fixed point. Long rays and far
+  circles no longer overflow.
+- **`bullet_pattern`**:
+  - `Bullet { pos, vel, radius, damage }` replaces `x, y, vx, vy`.
+  - `BulletPool::with_bounds(SimRect)`, `spawn(pos, vel, lifetime, radius,
+    damage, kind)` and `check_circle_hits(center, radius)`.
+  - `PatternShape` speeds and angles are `Fix`, and `compute_pattern`
+    returns `Vec<SimVec2>`.
+  - `BulletEmitter::new(pos, pattern, interval)` and `set_target(SimVec2)`.
+    A spiral's rotation wraps to [0, 2π).
+- **`shmup`**: `ShmupHitbox` takes `Fix` radii and a `SimVec2` offset, and
+  `hit_test`/`graze_test` take `(owner, point)` as `SimVec2`.
+  `GrazingSystem::tick(player: SimVec2, …)`.
+
 ### Fixed — deterministic math
 
 - **Trigonometry without libm.** There was none in fixed point, so simulation

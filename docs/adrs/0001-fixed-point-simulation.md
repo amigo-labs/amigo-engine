@@ -50,11 +50,15 @@ Deterministic helpers, all integer arithmetic:
 CI platform.
 
 Modules that follow this ADR: `rts` (formations), `navigation`, `spline`,
-`math`, the genre modules built on `SimVec2`.
+`math`, `physics`, `collision`, `broad_phase`, `raycast`, `bullet_pattern`,
+the shmup hitbox and graze test, and the genre modules built on `SimVec2`.
+Physics iterates bodies in `EntityId` order and sorts contact pairs and
+spatial-hash results, so hash-map order no longer leaks into the simulation.
+The GPU broad phase computes in `f32` with one unit of slack and confirms each
+pair in fixed point, so it returns exactly what the CPU one does.
 
 Modules that still compute simulation state in `f32` and are therefore not
-safe for lockstep or cross-platform replays yet: `physics`, `collision`,
-`broad_phase`, `raycast` and `bullet_pattern` (planned to move to `Fix`, a
-breaking change), and `combat`, `ai` (steering), `td_systems`, `platformer`
-and `idle` (f64 economy). `tween::Tween` counts time in `f32` seconds and is
-presentation-only by design.
+safe for lockstep or cross-platform replays yet: `combat`, `ai` (steering),
+`td_systems`, `platformer`, `idle` (f64 economy), the rest of `shmup`
+(rank, scoring, player config) and `metroidvania` room bounds (`Rect`).
+`tween::Tween` counts time in `f32` seconds and is presentation-only by design.
