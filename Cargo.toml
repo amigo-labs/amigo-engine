@@ -106,7 +106,7 @@ crossbeam-channel = "0.5"
 # wgpu 30's shader front-end. Used in tests to validate WGSL without a GPU.
 naga = { version = "30", features = ["wgsl-in"] }
 # Proc-macro toolchain for amigo_reflect_derive.
-syn = { version = "2", features = ["full"] }
+syn = { version = "3", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
 # Test-only.
