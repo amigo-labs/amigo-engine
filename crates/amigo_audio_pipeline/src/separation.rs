@@ -85,20 +85,19 @@ impl SeparationStage {
 
         std::fs::create_dir_all(output_dir).map_err(PipelineError::Io)?;
 
+        let python = self.venv_python.display().to_string();
+        let out = output_dir.display().to_string();
+        let input_arg = input.display().to_string();
+        let mut args = vec!["run", "--python", &python, "demucs"];
+        // `stem_count` was ignored and every run split into vocals and
+        // accompaniment only. Two stems keeps that split; anything else
+        // runs Demucs's full drums/bass/vocals/other separation.
+        if self.config.stem_count <= 2 {
+            args.extend(["--two-stems", "vocals"]);
+        }
+        args.extend(["-n", &self.config.model, "--out", &out, &input_arg]);
         let output = Command::new(&self.uv_path)
-            .args([
-                "run",
-                "--python",
-                &self.venv_python.display().to_string(),
-                "demucs",
-                "--two-stems",
-                "vocals",
-                "-n",
-                &self.config.model,
-                "--out",
-                &output_dir.display().to_string(),
-                &input.display().to_string(),
-            ])
+            .args(&args)
             .output()
             .map_err(|e| PipelineError::ToolExecFailed {
                 tool: "demucs".into(),

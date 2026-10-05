@@ -176,6 +176,7 @@ dependencies = [
 name = "amigo_audiogen"
 version = "0.1.0"
 dependencies = [
+ "amigo_audio_pipeline",
  "amigo_comfyui",
  "ron",
  "serde",

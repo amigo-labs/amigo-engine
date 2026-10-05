@@ -66,11 +66,11 @@ pub const DEMUCS_STEMS: &[&str] = &["drums", "bass", "vocals", "other"];
 /// Extended stems for 6-stem model.
 pub const DEMUCS6_STEMS: &[&str] = &["drums", "bass", "vocals", "guitar", "piano", "other"];
 
-/// Split a track into stems.
-///
-/// Placeholder: actual implementation calls the Demucs model via subprocess
-/// or a Python bridge.
-pub fn split_stems(
+/// The stem files Demucs writes for `input_path` with `config`: the names
+/// and paths only. This does not run Demucs; it used to be called
+/// `split_stems` and returned these paths as if the split had happened. The
+/// `amigo_audiogen_split_stems` tool runs the real separation.
+pub fn expected_stem_paths(
     input_path: &str,
     config: &StemSplitConfig,
 ) -> Result<StemSplitResult, StemError> {
@@ -100,7 +100,6 @@ pub fn split_stems(
         stems.insert(name.to_string(), path);
     }
 
-    // Placeholder: would run demucs here
     Ok(StemSplitResult {
         stems,
         processing_time_ms: 0,
@@ -198,7 +197,7 @@ mod tests {
     #[test]
     fn split_stems_demucs() {
         let config = StemSplitConfig::default();
-        let result = split_stems("track.wav", &config).unwrap();
+        let result = expected_stem_paths("track.wav", &config).unwrap();
 
         assert_eq!(result.stems.len(), 4);
         assert!(result.stems.contains_key("drums"));
@@ -213,7 +212,7 @@ mod tests {
             model: StemModel::Demucs6,
             ..Default::default()
         };
-        let result = split_stems("track.wav", &config).unwrap();
+        let result = expected_stem_paths("track.wav", &config).unwrap();
         assert_eq!(result.stems.len(), 6);
         assert!(result.stems.contains_key("guitar"));
         assert!(result.stems.contains_key("piano"));
@@ -222,7 +221,7 @@ mod tests {
     #[test]
     fn split_stems_empty_input_fails() {
         let config = StemSplitConfig::default();
-        assert!(split_stems("", &config).is_err());
+        assert!(expected_stem_paths("", &config).is_err());
     }
 
     // ── Adaptive config generation ──────────────────────────────
@@ -230,7 +229,7 @@ mod tests {
     #[test]
     fn generate_config_has_all_layers() {
         let config = StemSplitConfig::default();
-        let result = split_stems("battle_theme.ogg", &config).unwrap();
+        let result = expected_stem_paths("battle_theme.ogg", &config).unwrap();
         let adaptive = generate_adaptive_config(&result, &MusicSection::Battle, 140.0);
 
         assert_eq!(adaptive.section_name, "battle");
@@ -241,14 +240,14 @@ mod tests {
     #[test]
     fn stem_paths_include_base_name() {
         let config = StemSplitConfig::default();
-        let result = split_stems("caribbean_calm.ogg", &config).unwrap();
+        let result = expected_stem_paths("caribbean_calm.ogg", &config).unwrap();
         assert!(result.stems["drums"].contains("caribbean_calm_drums"));
     }
 
     #[test]
     fn adaptive_config_drum_rule() {
         let config = StemSplitConfig::default();
-        let result = split_stems("track.wav", &config).unwrap();
+        let result = expected_stem_paths("track.wav", &config).unwrap();
         let adaptive = generate_adaptive_config(&result, &MusicSection::Calm, 120.0);
 
         let drums = adaptive.layers.iter().find(|l| l.name == "drums").unwrap();

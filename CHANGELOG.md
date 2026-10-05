@@ -6,6 +6,47 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed — AI tools and publishing
+
+- **artgen generates images.** The generation tools returned made-up paths
+  (`assets/generated/sprites/<prompt>_v1.png`) without contacting ComfyUI or
+  writing a file, so an agent "succeeded" and then found nothing.
+  `generate_sprite`, `generate_tileset`, `variation`, `inpaint` and `upscale`
+  now run their ComfyUI workflow and write the images to
+  `assets/generated/<kind>/`; input images are uploaded first
+  (`ComfyUiClient::upload_image`), since `LoadImage` only reads ComfyUI's input
+  folder. `server_status` and `list_checkpoints`/`list_loras` ask ComfyUI
+  instead of returning fixed values. `generate_spritesheet`, `palette_swap` and
+  `post_process` have no backend yet and say so.
+- **audiogen reports failures as failures.** Errors (ComfyUI unreachable, an
+  unknown voice or style, a failed save) came back as successful results with
+  an `"error"` field; the eleven processing and clean-mode tools returned
+  plausible paths to files that were never written. They now return errors,
+  and both MCP servers report a failed tool as an MCP `isError` result.
+- **Stem splitting runs Demucs.** `split_stems` and `generate_music` with
+  `split_stems` invented four stem paths. They now run Demucs through the
+  toolchain `amigo setup --only audio` installs. `SeparationStage` honours
+  `stem_count` (it always split vocals/accompaniment only): two stems keeps that
+  split, the default four runs the full drums/bass/vocals/other separation,
+  which also changes `amigo pipeline convert`. The placeholder
+  `stems::split_stems` is renamed `expected_stem_paths`, which is what it
+  computes.
+- **ComfyUI starts on demand.** The lifecycle was created and never asked to
+  start anything, and could not have: it passed command strings such as
+  `python -m comfy` as a program name and probed candidates with `--version`,
+  which would start a server and never return. It now looks for the
+  `comfyui` launcher in `~/.amigo/venv` and on `PATH`, logs to
+  `amigo-comfyui.log` in the temp directory instead of a pipe nobody read (a
+  full pipe stalls the child), and both MCP servers start it before the first
+  tool that needs it.
+- **`amigo publish` ships the game.** It uploaded `target/release/`, the cargo
+  build directory, without any assets. Both channels now stage
+  `target/dist/<channel>/` with the binary, `assets/` (loose sprites left out
+  when `game.pak` holds them) and `amigo.toml`/`input.ron`, and pass
+  `--target` through.
+- audiogen's MCP server passes its working directory as the project, so
+  `[audio]` defaults in `amigo.toml` apply.
+
 ### Fixed — assets, tilemaps, saves
 
 - **Aseprite files load.** `load_aseprite` had no caller, so `.aseprite` files in

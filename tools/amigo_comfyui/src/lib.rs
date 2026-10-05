@@ -6,6 +6,9 @@
 //! Communicates with a local ComfyUI instance to queue generation prompts,
 //! poll for completion, and retrieve output images or audio.
 
+#[cfg(any(test, feature = "fake-server"))]
+pub mod fake;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -371,6 +374,102 @@ impl ComfyUiClient {
         Ok(resp)
     }
 
+    /// Upload a local image into ComfyUI's input folder via
+    /// `POST /upload/image`, so a `LoadImage` node can read it. Returns the
+    /// name to put in that node's `image` input.
+    ///
+    /// `LoadImage` only reads from ComfyUI's own input folder; passing a
+    /// local path (what the img2img, inpaint and upscale workflows used to
+    /// get) fails as soon as the prompt runs.
+    pub fn upload_image(&self, path: &std::path::Path) -> Result<String, ComfyError> {
+        let bytes = std::fs::read(path)?;
+        let filename = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "upload.png".into());
+        let (content_type, body) = multipart_image_body(&filename, &bytes);
+
+        let resp: Value = self
+            .agent
+            .post(&self.url("/upload/image"))
+            .header("Content-Type", &content_type)
+            .send(&body[..])
+            .map_err(ComfyError::from_ureq)?
+            .body_mut()
+            .read_json()
+            .map_err(ComfyError::from_ureq)?;
+
+        let name = resp["name"]
+            .as_str()
+            .ok_or_else(|| ComfyError::Http("Missing name in upload response".into()))?;
+        Ok(match resp["subfolder"].as_str() {
+            Some(sub) if !sub.is_empty() => format!("{sub}/{name}"),
+            _ => name.to_string(),
+        })
+    }
+
+    /// The values a node's combo input accepts, from `GET /object_info/{node}`
+    /// (e.g. `("LoraLoader", "lora_name")`).
+    pub fn list_node_options(&self, node: &str, input: &str) -> Result<Vec<String>, ComfyError> {
+        let resp = self.get_json(&format!("/object_info/{node}"))?;
+        Ok(resp[node]["input"]["required"][input][0]
+            .as_array()
+            .map(|names| {
+                names
+                    .iter()
+                    .filter_map(|n| n.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Available LoRA files (`LoraLoader`'s `lora_name` options).
+    pub fn list_loras(&self) -> Result<Vec<String>, ComfyError> {
+        self.list_node_options("LoraLoader", "lora_name")
+    }
+
+    /// Queue `prompt`, wait for it, and download every output image into
+    /// `out_dir` as `{stem}.png`, `{stem}_2.png`, ... Returns the written
+    /// paths. A failed or empty run is an error, never an empty success.
+    pub fn run_image_workflow(
+        &self,
+        prompt: &ComfyPrompt,
+        out_dir: &std::path::Path,
+        stem: &str,
+        timeout: Duration,
+    ) -> Result<Vec<std::path::PathBuf>, ComfyError> {
+        let queued = self.queue_prompt(prompt)?;
+        match self.wait_for_completion(&queued.prompt_id, timeout.as_millis() as u64, 500)? {
+            PromptStatus::Completed => {}
+            PromptStatus::Failed { error } => return Err(ComfyError::PromptFailed(error)),
+            other => {
+                return Err(ComfyError::PromptFailed(format!(
+                    "prompt ended as {other:?}"
+                )));
+            }
+        }
+        let images = self.get_images(&queued.prompt_id)?;
+        if images.is_empty() {
+            return Err(ComfyError::PromptFailed(
+                "the workflow finished without an output image".into(),
+            ));
+        }
+
+        std::fs::create_dir_all(out_dir)?;
+        let mut paths = Vec::with_capacity(images.len());
+        for (i, image) in images.iter().enumerate() {
+            let name = if i == 0 {
+                format!("{stem}.png")
+            } else {
+                format!("{stem}_{}.png", i + 1)
+            };
+            let path = out_dir.join(name);
+            self.download_image(image, &path.to_string_lossy())?;
+            paths.push(path);
+        }
+        Ok(paths)
+    }
+
     /// Poll for prompt completion with a timeout.
     /// Returns the final status once completed, failed, or timed out.
     pub fn wait_for_completion(
@@ -433,6 +532,30 @@ impl ComfyError {
     }
 }
 
+/// A `multipart/form-data` body with one image file field and
+/// `overwrite=true`, as ComfyUI's `/upload/image` expects. Returns the
+/// content type (with its boundary) and the body.
+fn multipart_image_body(filename: &str, bytes: &[u8]) -> (String, Vec<u8>) {
+    let boundary = "----amigo-comfyui-upload-7d1f3c";
+    let mut body = Vec::with_capacity(bytes.len() + 512);
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"{}\"\r\n\
+             Content-Type: application/octet-stream\r\n\r\n",
+            filename.replace('"', "_")
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(
+        format!(
+            "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\ntrue\r\n--{boundary}--\r\n"
+        )
+        .as_bytes(),
+    );
+    (format!("multipart/form-data; boundary={boundary}"), body)
+}
+
 /// An agent for talking to a local ComfyUI instance.
 ///
 /// ureq 3 picks up `HTTP(S)_PROXY` from the environment by default; ComfyUI
@@ -489,10 +612,20 @@ impl ComfyUiLifecycle {
 
         tracing::info!("Starting ComfyUI on port {}...", self.config.port);
 
-        // Try to find comfyui in PATH or common locations
-        let comfyui_cmd = self.find_comfyui_binary()?;
+        let program = find_comfyui(
+            home_dir().as_deref(),
+            std::env::var_os("PATH").as_deref(),
+            |p| p.is_file(),
+        )
+        .ok_or(ComfyError::NotInstalled)?;
 
-        let child = std::process::Command::new(&comfyui_cmd)
+        // ComfyUI logs heavily. A piped stderr that nobody reads fills its
+        // buffer and blocks the child mid-startup, so it goes to a file
+        // that also helps when startup fails.
+        let log_path = std::env::temp_dir().join("amigo-comfyui.log");
+        let log = std::fs::File::create(&log_path)?;
+
+        let child = std::process::Command::new(&program)
             .args([
                 "--listen",
                 &self.config.host,
@@ -502,12 +635,17 @@ impl ComfyUiLifecycle {
                 "none",
             ])
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
+            .stderr(log)
             .spawn()
-            .map_err(|e| ComfyError::StartFailed(format!("{comfyui_cmd}: {e}")))?;
+            .map_err(|e| ComfyError::StartFailed(format!("{}: {e}", program.display())))?;
 
         self.process = Some(child);
-        self.wait_for_startup()
+        self.wait_for_startup().map_err(|e| match e {
+            ComfyError::StartFailed(msg) => {
+                ComfyError::StartFailed(format!("{msg} (log: {})", log_path.display()))
+            }
+            other => other,
+        })
     }
 
     /// Shut down the managed ComfyUI process (if we started it).
@@ -525,36 +663,6 @@ impl ComfyUiLifecycle {
     }
 
     // -- private --
-
-    fn find_comfyui_binary(&self) -> Result<String, ComfyError> {
-        // Check common locations
-        let candidates = [
-            "comfyui",
-            "python -m comfy",
-            // ~/.amigo/venv/bin/python -m comfyui
-        ];
-
-        for cmd in &candidates {
-            let parts: Vec<&str> = cmd.split_whitespace().collect();
-            if let Ok(output) = std::process::Command::new(parts[0])
-                .args(&parts[1..])
-                .arg("--version")
-                .output()
-                && output.status.success()
-            {
-                return Ok(cmd.to_string());
-            }
-        }
-
-        // Check amigo venv
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
-        let venv_python = format!("{home}/.amigo/venv/bin/python");
-        if std::path::Path::new(&venv_python).exists() {
-            return Ok(format!("{venv_python} -m comfyui"));
-        }
-
-        Err(ComfyError::NotInstalled)
-    }
 
     fn wait_for_startup(&self) -> Result<(), ComfyError> {
         let max_wait = std::time::Duration::from_secs(30);
@@ -576,6 +684,41 @@ impl ComfyUiLifecycle {
     }
 }
 
+/// The user's home directory: `HOME`, or `USERPROFILE` on Windows.
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|h| !h.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// Locate the `comfyui` launcher: first in the venv `amigo setup artgen`
+/// creates (`~/.amigo/venv/bin/comfyui`, `Scripts\comfyui.exe` on Windows),
+/// then on `PATH`. `exists` is injected for testing.
+///
+/// The old lookup returned commands such as `"python -m comfy"` and passed
+/// the whole string to `Command::new` as a program name, which can never
+/// spawn; it also probed candidates with `--version`, which a ComfyUI that
+/// does not know the flag answers by starting a server and never exiting.
+fn find_comfyui(
+    home: Option<&std::path::Path>,
+    path_var: Option<&std::ffi::OsStr>,
+    exists: impl Fn(&std::path::Path) -> bool,
+) -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) {
+        "comfyui.exe"
+    } else {
+        "comfyui"
+    };
+    let bin = if cfg!(windows) { "Scripts" } else { "bin" };
+    let venv = home.map(|h| h.join(".amigo").join("venv").join(bin).join(exe));
+    let on_path = path_var
+        .into_iter()
+        .flat_map(std::env::split_paths)
+        .map(|dir| dir.join(exe));
+    venv.into_iter().chain(on_path).find(|p| exists(p))
+}
+
 impl Drop for ComfyUiLifecycle {
     fn drop(&mut self) {
         self.shutdown();
@@ -589,6 +732,104 @@ impl Drop for ComfyUiLifecycle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upload_image_returns_the_name_load_image_needs() {
+        let server = fake::FakeComfyUi::start();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("knight.png");
+        std::fs::write(&path, b"pixels").unwrap();
+
+        let client = ComfyUiClient::new(server.config());
+        assert_eq!(client.upload_image(&path).unwrap(), "knight.png");
+        assert_eq!(server.uploads(), ["knight.png"]);
+    }
+
+    #[test]
+    fn run_image_workflow_downloads_every_output() {
+        let server = fake::FakeComfyUi::start();
+        server.set_outputs_per_prompt(2);
+        let dir = tempfile::tempdir().unwrap();
+        let client = ComfyUiClient::new(server.config());
+        let mut prompt = ComfyPrompt {
+            prompt: HashMap::new(),
+            client_id: None,
+        };
+        prompt
+            .prompt
+            .insert("9".into(), serde_json::json!({"class_type": "SaveImage"}));
+
+        let paths = client
+            .run_image_workflow(&prompt, dir.path(), "tower", Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(
+            paths,
+            [dir.path().join("tower.png"), dir.path().join("tower_2.png")]
+        );
+        assert_eq!(std::fs::read(&paths[1]).unwrap(), fake::FAKE_IMAGE);
+        assert_eq!(server.prompts().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_or_empty_run_is_an_error() {
+        let server = fake::FakeComfyUi::start();
+        let dir = tempfile::tempdir().unwrap();
+        let client = ComfyUiClient::new(server.config());
+        let mut prompt = ComfyPrompt {
+            prompt: HashMap::new(),
+            client_id: None,
+        };
+        prompt.prompt.insert("9".into(), serde_json::json!({}));
+
+        server.set_outputs_per_prompt(0);
+        let empty = client.run_image_workflow(&prompt, dir.path(), "x", Duration::from_secs(5));
+        assert!(
+            matches!(empty, Err(ComfyError::PromptFailed(_))),
+            "{empty:?}"
+        );
+
+        server.fail_prompts_with("CUDA out of memory");
+        let failed = client.run_image_workflow(&prompt, dir.path(), "x", Duration::from_secs(5));
+        match failed {
+            Err(ComfyError::PromptFailed(msg)) => assert!(msg.contains("CUDA out of memory")),
+            other => panic!("expected a failure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn node_options_and_loras_come_from_object_info() {
+        let server = fake::FakeComfyUi::start();
+        let client = ComfyUiClient::new(server.config());
+        assert_eq!(client.list_loras().unwrap(), ["pixel-art.safetensors"]);
+        assert_eq!(client.list_models().unwrap(), ["qwen-image.gguf"]);
+    }
+
+    #[test]
+    fn the_launcher_is_looked_up_in_the_venv_then_on_path() {
+        let exe = if cfg!(windows) {
+            "comfyui.exe"
+        } else {
+            "comfyui"
+        };
+        let bin = if cfg!(windows) { "Scripts" } else { "bin" };
+        let home = std::path::Path::new("/home/a");
+        let venv = home.join(".amigo/venv").join(bin).join(exe);
+        let path_dir = std::path::PathBuf::from("/opt/tools");
+        let path_var = std::env::join_paths([path_dir.clone()]).unwrap();
+
+        // Both present: the venv wins.
+        assert_eq!(
+            find_comfyui(Some(home), Some(&path_var), |_| true),
+            Some(venv.clone())
+        );
+        // Only on PATH.
+        assert_eq!(
+            find_comfyui(Some(home), Some(&path_var), |p| p.starts_with(&path_dir)),
+            Some(path_dir.join(exe))
+        );
+        // Nowhere: not installed, instead of a command string that cannot spawn.
+        assert_eq!(find_comfyui(Some(home), Some(&path_var), |_| false), None);
+    }
 
     #[test]
     fn config_default_url() {

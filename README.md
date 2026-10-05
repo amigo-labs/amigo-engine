@@ -40,7 +40,7 @@ does not drive yet:
 | Aseprite sprites with tag animations, tilemaps with view culling, save slots | works |
 | Level editor (`amigo editor`) | egui panels only; levels cannot be edited or saved yet |
 | Replays, lockstep netcode | library types only; physics and collision still use `f32` |
-| AI tools (`amigo-artgen`, `amigo-audiogen`) | some tools are stubs that report success without output |
+| AI tools (`amigo-artgen`, `amigo-audiogen`) | sprite, tileset, variation, inpaint and upscale generation, music, SFX, TTS and stem splitting run for real; the rest report "not implemented" |
 | Targets | desktop only (Linux, macOS, Windows); no web or mobile |
 
 The full list of open findings is in

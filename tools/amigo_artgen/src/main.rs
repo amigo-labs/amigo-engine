@@ -4,9 +4,9 @@
 //! ComfyUI is managed automatically — started on first generation request
 //! and shut down when the server exits.
 
-use amigo_artgen::comfyui::{ComfyUiConfig, ComfyUiLifecycle};
+use amigo_artgen::comfyui::ComfyUiConfig;
 use amigo_artgen::config::load_art_defaults;
-use amigo_artgen::tools;
+use amigo_artgen::tools::{self, ArtgenServer};
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
 
@@ -66,9 +66,10 @@ fn main() {
         art_mode
     );
 
-    // ComfyUI lifecycle — will auto-start on first ensure_running() call
-    // and auto-shutdown on drop.
-    let _lifecycle = ComfyUiLifecycle::new(comfy_config);
+    // Starts ComfyUI on the first generation request if nothing answers at
+    // the address, and stops it when the server exits. The lifecycle used to
+    // be created here and never asked to start anything.
+    let mut server = ArtgenServer::new(project_dir, comfy_config).with_autostart();
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -102,13 +103,13 @@ fn main() {
             }
         };
 
-        let response = handle_request(&request);
+        let response = handle_request(&mut server, &request);
         let _ = writeln!(stdout, "{}", serde_json::to_string(&response).unwrap());
         let _ = stdout.flush();
     }
 }
 
-fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
+fn handle_request(server: &mut ArtgenServer, req: &JsonRpcRequest) -> JsonRpcResponse {
     match req.method.as_str() {
         "initialize" => JsonRpcResponse {
             jsonrpc: "2.0".into(),
@@ -157,7 +158,7 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
 
-            match tools::dispatch_tool(tool_name, tool_args) {
+            match server.call(tool_name, tool_args) {
                 Ok(result) => JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: req.id.clone(),
@@ -166,6 +167,18 @@ fn handle_request(req: &JsonRpcRequest) -> JsonRpcResponse {
                             "type": "text",
                             "text": serde_json::to_string_pretty(&result).unwrap_or_default()
                         }]
+                    })),
+                    error: None,
+                },
+                // A tool that ran and failed is reported to the model as an
+                // `isError` result it can read, per MCP; only an unknown tool
+                // or malformed arguments are protocol errors.
+                Err(e) if !e.is_protocol_error() => JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id.clone(),
+                    result: Some(serde_json::json!({
+                        "content": [{ "type": "text", "text": e.to_string() }],
+                        "isError": true
                     })),
                     error: None,
                 },
