@@ -96,7 +96,7 @@ pub use amigo_ui;
 pub use amigo_audio;
 
 pub use config::EngineConfig;
-pub use context::{DrawContext, GameContext};
+pub use context::{DrawContext, GameContext, LevelReloaded};
 pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
 pub use stack::GameStack;
 
@@ -172,13 +172,14 @@ pub trait Game: 'static {
 /// Prelude with commonly used types.
 pub mod prelude {
     pub use crate::{
-        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack, Plugin,
-        PluginContext, SceneAction,
+        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack,
+        LevelReloaded, Plugin, PluginContext, SceneAction,
     };
     pub use amigo_animation::*;
     pub use amigo_assets::{AssetError, AssetHandle, AssetManager, AssetState, HandleAllocator};
     pub use amigo_core::ecs::{self, Component, SparseSet, join, join_mut, join3, join4};
     pub use amigo_core::events::EventHub;
+    pub use amigo_core::level_loader::{EntityDef, LoadedLevel, PathDef, ZoneDef};
     pub use amigo_core::math::{IVec2, vec2};
     pub use amigo_core::resources::Resources;
     pub use amigo_core::save::{SaveConfig, SaveError, SaveManager, SlotInfo};

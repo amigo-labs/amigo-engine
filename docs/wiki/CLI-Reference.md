@@ -21,7 +21,7 @@
 | `amigo run --port <PORT>` | ... with the API server on a specific port |
 | `amigo run --restore-snapshot <PATH>` | ... resuming a dev snapshot |
 | `amigo dev [--port PORT]` | Watch mode: rebuild + restart on changes |
-| `amigo editor` | Open the level editor |
+| `amigo editor` | Run the game with the level editor built in; F9 opens it over the game |
 | `amigo pack` | Pack assets into atlas |
 | `amigo release [--target T]` | Build optimized release binary |
 

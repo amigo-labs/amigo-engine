@@ -18,6 +18,7 @@
 //! generated code points at it rather than pretending to wrap it.
 
 use amigo_core::game_preset::ScenePreset;
+use amigo_core::level::{AmigoLevel, EntityPlacement};
 
 /// Which gameplay skeleton a preset gets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +91,60 @@ impl Family {
             ScenePreset::WorldMap => "amigo_core::navigation",
             ScenePreset::Menu | ScenePreset::Custom => return None,
         })
+    }
+}
+
+/// The `assets/levels/level_01.amigo` a new project starts with.
+///
+/// The tile-based families read their map from it, so it carries the map
+/// their gameplay used to hard-code: walls around a room for free roam, a
+/// floor and two platforms for the platformer, each with a `player_spawn`.
+/// The other families do not read a level yet and get an empty one to edit.
+pub fn starter_level(preset: ScenePreset, project_name: &str, virtual_width: u32) -> AmigoLevel {
+    let name = format!("{project_name} - Level 1");
+    let spawn = |x: f32, y: f32| EntityPlacement {
+        entity_type: "player_spawn".to_string(),
+        x,
+        y,
+        properties: Default::default(),
+    };
+    match Family::of(preset) {
+        Family::FreeRoam => {
+            let (w, h) = (24, 16);
+            let mut level = AmigoLevel::new(name, w, h, 16);
+            for y in 0..h {
+                for x in 0..w {
+                    let edge = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+                    if edge || ((6..10).contains(&x) && (5..7).contains(&y)) {
+                        level.layers[0].tiles[(y * w + x) as usize] = 1;
+                    }
+                }
+            }
+            level.entities.push(spawn(32.0, 32.0));
+            level
+        }
+        Family::Platformer => {
+            let (w, h) = (30, 14);
+            let mut level = AmigoLevel::new(name, w, h, 16);
+            let mut solid = |x: u32, y: u32| level.layers[0].tiles[(y * w + x) as usize] = 1;
+            for x in 0..w {
+                solid(x, h - 1); // floor
+            }
+            // A couple of platforms to jump between.
+            for x in 6..11 {
+                solid(x, h - 5);
+            }
+            for x in 15..21 {
+                solid(x, h - 8);
+            }
+            level.entities.push(spawn(32.0, 16.0 * (h as f32 - 3.0)));
+            level
+        }
+        _ => {
+            let mut level = AmigoLevel::new(name, 40, 23, (virtual_width / 20).max(1));
+            level.entities.push(spawn(160.0, 90.0));
+            level
+        }
     }
 }
 
@@ -328,13 +383,17 @@ const PAUSE_SNIPPET: &str = r#"        if ctx.input.pressed(KeyCode::Escape) {
 
 const FREE_ROAM_BODY: &str = r#"use amigo_engine::prelude::*;
 
+/// The level this scene plays, `assets/levels/level_01.amigo`. Open it with
+/// `amigo editor` (F9 shows the editor); saving there reloads it here.
+const LEVEL: &str = "level_01";
+
 /// Eight-way movement over a tile grid, with walls that block.
 pub struct Gameplay {
     x: f32,
     y: f32,
     speed: f32,
-    /// Flat tile grid: 0 = floor, 1 = wall.
-    tiles: Vec<u8>,
+    /// The level's `ground` layer: 0 = floor, anything else = wall.
+    tiles: Vec<u16>,
     map_w: usize,
     map_h: usize,
 }
@@ -343,36 +402,51 @@ const TILE: f32 = 16.0;
 
 impl Gameplay {
     pub fn new() -> Self {
-        let (map_w, map_h) = (24, 16);
-        let mut tiles = vec![0u8; map_w * map_h];
-        // Border walls, plus a couple of blocks to bump into.
-        for y in 0..map_h {
-            for x in 0..map_w {
-                let edge = x == 0 || y == 0 || x == map_w - 1 || y == map_h - 1;
-                if edge || ((6..10).contains(&x) && (5..7).contains(&y)) {
-                    tiles[y * map_w + x] = 1;
-                }
-            }
-        }
         Self {
             x: TILE * 2.0,
             y: TILE * 2.0,
             speed: 70.0,
-            tiles,
-            map_w,
-            map_h,
+            tiles: Vec::new(),
+            map_w: 0,
+            map_h: 0,
+        }
+    }
+
+    /// Read the level's walls, and the player's start when `spawn` is set.
+    /// A level that does not load keeps the current map.
+    fn load_level(&mut self, ctx: &GameContext, spawn: bool) {
+        let level = match ctx.load_level(LEVEL) {
+            Ok(level) => level,
+            Err(e) => {
+                eprintln!("could not load {LEVEL}: {e}");
+                return;
+            }
+        };
+        if let Some(ground) = level.find_layer("ground").or(level.layers.first()) {
+            self.tiles = ground.tiles.clone();
+            self.map_w = ground.width as usize;
+            self.map_h = ground.height as usize;
+        }
+        if spawn {
+            if let Some(start) = level.find_entity("player_spawn") {
+                self.x = start.x;
+                self.y = start.y;
+            }
         }
     }
 
     /// True if a 12x12 body at (x, y) overlaps a wall.
     fn blocked(&self, x: f32, y: f32) -> bool {
+        if self.map_w == 0 {
+            return false; // no level loaded: nothing to bump into
+        }
         for (ox, oy) in [(2.0, 2.0), (13.0, 2.0), (2.0, 13.0), (13.0, 13.0)] {
             let tx = ((x + ox) / TILE) as isize;
             let ty = ((y + oy) / TILE) as isize;
             if tx < 0 || ty < 0 || tx as usize >= self.map_w || ty as usize >= self.map_h {
                 return true;
             }
-            if self.tiles[ty as usize * self.map_w + tx as usize] == 1 {
+            if self.tiles[ty as usize * self.map_w + tx as usize] != 0 {
                 return true;
             }
         }
@@ -387,8 +461,17 @@ impl Default for Gameplay {
 }
 
 impl Game for Gameplay {
+    fn init(&mut self, ctx: &mut GameContext) {
+        self.load_level(ctx, true);
+    }
+
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
 PAUSE_PLACEHOLDER
+        // Saved in the editor: pick up the new walls, keep the player put.
+        if ctx.level_reloaded(LEVEL) {
+            self.load_level(ctx, false);
+        }
+
         // Typed: `0.0` alone is an ambiguous float literal, and `sqrt` below
         // cannot be called on one.
         let mut dx: f32 = 0.0;
@@ -441,7 +524,7 @@ PAUSE_PLACEHOLDER
         );
         for y in 0..self.map_h {
             for x in 0..self.map_w {
-                let color = if self.tiles[y * self.map_w + x] == 1 {
+                let color = if self.tiles[y * self.map_w + x] != 0 {
                     Color::rgb(0.35, 0.33, 0.30)
                 } else {
                     Color::rgb(0.18, 0.24, 0.18)
@@ -463,14 +546,18 @@ PAUSE_PLACEHOLDER
 const PLATFORMER_BODY: &str = r#"use amigo_engine::amigo_core::platformer::{PlatformerConfig, PlatformerController, PlatformerInput};
 use amigo_engine::prelude::*;
 
+/// The level this scene plays, `assets/levels/level_01.amigo`. Open it with
+/// `amigo editor` (F9 shows the editor); saving there reloads it here.
+const LEVEL: &str = "level_01";
+
 /// Side-on movement driven by `amigo_core`'s platformer controller, which brings
 /// coyote time, jump buffering and variable jump height with it.
 pub struct Gameplay {
     controller: PlatformerController,
     x: f32,
     y: f32,
-    /// Flat tile grid: 0 = air, 1 = solid.
-    tiles: Vec<u8>,
+    /// The level's `ground` layer: 0 = air, anything else = solid.
+    tiles: Vec<u16>,
     map_w: usize,
     map_h: usize,
 }
@@ -480,25 +567,36 @@ const GRAVITY: f32 = 0.5;
 
 impl Gameplay {
     pub fn new() -> Self {
-        let (map_w, map_h) = (30, 14);
-        let mut tiles = vec![0u8; map_w * map_h];
-        for x in 0..map_w {
-            tiles[(map_h - 1) * map_w + x] = 1; // floor
-        }
-        // A couple of platforms to jump between.
-        for x in 6..11 {
-            tiles[(map_h - 5) * map_w + x] = 1;
-        }
-        for x in 15..21 {
-            tiles[(map_h - 8) * map_w + x] = 1;
-        }
         Self {
             controller: PlatformerController::new(PlatformerConfig::default()),
             x: TILE * 2.0,
-            y: TILE * (map_h as f32 - 3.0),
-            tiles,
-            map_w,
-            map_h,
+            y: TILE * 2.0,
+            tiles: Vec::new(),
+            map_w: 0,
+            map_h: 0,
+        }
+    }
+
+    /// Read the level's solids, and the player's start when `spawn` is set.
+    /// A level that does not load keeps the current map.
+    fn load_level(&mut self, ctx: &GameContext, spawn: bool) {
+        let level = match ctx.load_level(LEVEL) {
+            Ok(level) => level,
+            Err(e) => {
+                eprintln!("could not load {LEVEL}: {e}");
+                return;
+            }
+        };
+        if let Some(ground) = level.find_layer("ground").or(level.layers.first()) {
+            self.tiles = ground.tiles.clone();
+            self.map_w = ground.width as usize;
+            self.map_h = ground.height as usize;
+        }
+        if spawn {
+            if let Some(start) = level.find_entity("player_spawn") {
+                self.x = start.x;
+                self.y = start.y;
+            }
         }
     }
 
@@ -508,7 +606,7 @@ impl Gameplay {
         if tx < 0 || ty < 0 || tx as usize >= self.map_w || ty as usize >= self.map_h {
             return ty as usize >= self.map_h; // out the bottom counts as ground
         }
-        self.tiles[ty as usize * self.map_w + tx as usize] == 1
+        self.tiles[ty as usize * self.map_w + tx as usize] != 0
     }
 
     fn on_ground(&self) -> bool {
@@ -523,8 +621,17 @@ impl Default for Gameplay {
 }
 
 impl Game for Gameplay {
+    fn init(&mut self, ctx: &mut GameContext) {
+        self.load_level(ctx, true);
+    }
+
     fn update(&mut self, ctx: &mut GameContext) -> SceneAction {
 PAUSE_PLACEHOLDER
+        // Saved in the editor: pick up the new level, keep the player put.
+        if ctx.level_reloaded(LEVEL) {
+            self.load_level(ctx, false);
+        }
+
         let mut move_x = 0.0;
         if ctx.input.held(KeyCode::KeyA) || ctx.input.held(KeyCode::ArrowLeft) {
             move_x -= 1.0;
@@ -581,7 +688,7 @@ PAUSE_PLACEHOLDER
         );
         for y in 0..self.map_h {
             for x in 0..self.map_w {
-                if self.tiles[y * self.map_w + x] == 1 {
+                if self.tiles[y * self.map_w + x] != 0 {
                     ctx.draw_rect(
                         Rect::new(x as f32 * TILE, y as f32 * TILE, TILE, TILE),
                         Color::rgb(0.30, 0.28, 0.34),
@@ -1277,6 +1384,54 @@ mod tests {
                 files.iter().any(|f| f.path == "src/main.rs"),
                 "{preset:?} produced no main.rs"
             );
+        }
+    }
+
+    /// The starter level is what the tile-based gameplay reads, through the
+    /// same loader a game uses, and the player must not start inside a wall.
+    #[test]
+    fn starter_levels_load_and_spawn_the_player_in_the_open() {
+        for preset in [
+            ScenePreset::TopDown,
+            ScenePreset::Platformer,
+            ScenePreset::Puzzle,
+            ScenePreset::Idle,
+        ] {
+            let level = starter_level(preset, "g", 480);
+            level
+                .validate()
+                .unwrap_or_else(|e| panic!("{preset:?}: {e}"));
+            let text =
+                ron::ser::to_string_pretty(&level, ron::ser::PrettyConfig::default()).unwrap();
+            let loaded = amigo_core::level_loader::load_level_from_str(&text)
+                .unwrap_or_else(|e| panic!("{preset:?}: {e}"));
+            let spawn = loaded
+                .find_entity("player_spawn")
+                .unwrap_or_else(|| panic!("{preset:?} has no player_spawn"));
+            let (tx, ty) = loaded.world_to_tile(spawn.x, spawn.y);
+            assert_eq!(loaded.tile_at_layer("ground", tx, ty), 0, "{preset:?}");
+        }
+
+        let room = starter_level(ScenePreset::TopDown, "g", 480);
+        assert_eq!((room.width, room.height), (24, 16));
+        assert_eq!(room.tile(0, 0, 0), Some(1), "border wall");
+        assert_eq!(room.tile(0, 7, 5), Some(1), "inner block");
+        let side = starter_level(ScenePreset::Platformer, "g", 480);
+        assert!((0..30).all(|x| side.tile(0, x, 13) == Some(1)), "floor");
+    }
+
+    /// Gameplay that reads the level reloads it when the editor saves.
+    #[test]
+    fn tile_based_gameplay_loads_and_reloads_the_level() {
+        for preset in [ScenePreset::TopDown, ScenePreset::Platformer] {
+            let files = project_files(preset, "g", 480, 270);
+            let gameplay = &files
+                .iter()
+                .find(|f| f.path == "src/scenes/gameplay.rs")
+                .unwrap()
+                .contents;
+            assert!(gameplay.contains("ctx.load_level(LEVEL)"), "{preset:?}");
+            assert!(gameplay.contains("ctx.level_reloaded(LEVEL)"), "{preset:?}");
         }
     }
 

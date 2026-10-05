@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use amigo_core::game_preset::{GameProject, ScenePreset, project_templates};
-use amigo_editor::{AmigoLevel, EntityPlacement, LayerData, save_level};
+use amigo_editor::save_level;
 
 mod pipeline_cmd;
 mod setup;
@@ -447,26 +447,8 @@ fn cmd_new(args: &[String]) {
     let contents = toml::to_string_pretty(&manifest).expect("Failed to serialize manifest");
     std::fs::write(&manifest_path, contents).expect("Failed to write amigo.toml");
 
-    // Write a starter level for the gameplay scene
-    let level = AmigoLevel {
-        name: format!("{name} - Level 1"),
-        width: 40,
-        height: 23,
-        tile_size: project.virtual_width / 20, // reasonable default
-        layers: vec![LayerData {
-            name: "ground".to_string(),
-            tiles: vec![0; 40 * 23],
-            visible: true,
-        }],
-        entities: vec![EntityPlacement {
-            entity_type: "player_spawn".to_string(),
-            x: 160.0,
-            y: 90.0,
-            properties: std::collections::HashMap::new(),
-        }],
-        paths: Vec::new(),
-        metadata: std::collections::HashMap::new(),
-    };
+    // Write the starter level the gameplay scene loads.
+    let level = templates::starter_level(template.primary_preset, name, project.virtual_width);
     let level_path = base.join("assets").join("levels").join("level_01.amigo");
     save_level(&level_path, &level).expect("Failed to write starter level");
 

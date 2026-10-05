@@ -1,50 +1,61 @@
-use crate::{AmigoLevel, EditorState, EditorTool};
+use crate::session::tile_preview_color;
+use crate::{AmigoLevel, EditorAction, EditorSession, EditorState, EditorTool};
 
 /// Draw the complete editor UI using egui.
 ///
 /// Call this from within the engine's egui render closure with the root
 /// [`egui::Ui`] (egui 0.36 lays panels out inside a `Ui`, not a `Context`).
-pub fn draw_editor_panels(ui: &mut egui::Ui, state: &mut EditorState, level: &AmigoLevel) {
-    draw_menu_bar(ui, state);
-    draw_tools_panel(ui, state);
-    draw_properties_panel(ui, state, level);
-    draw_status_bar(ui, state, level);
+/// Undo and redo act on the session's level directly; the file actions are
+/// returned for the engine to run, since saving also tells the game.
+pub fn draw_editor_panels(ui: &mut egui::Ui, session: &mut EditorSession) -> Option<EditorAction> {
+    let action = draw_menu_bar(ui, session);
+    draw_tools_panel(ui, &mut session.state);
+    draw_properties_panel(ui, &mut session.state, &session.level);
+    draw_status_bar(ui, session);
+    action
 }
 
-fn draw_menu_bar(ui: &mut egui::Ui, state: &mut EditorState) {
+fn draw_menu_bar(ui: &mut egui::Ui, session: &mut EditorSession) -> Option<EditorAction> {
+    let mut action = None;
     egui::Panel::top("editor_menu").show(ui, |ui| {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("New Level").clicked() {
+                    action = Some(EditorAction::NewLevel);
                     ui.close();
                 }
-                if ui.button("Save").clicked() {
+                if ui.button("Save (Ctrl+S)").clicked() {
+                    action = Some(EditorAction::Save);
                     ui.close();
                 }
-                if ui.button("Load").clicked() {
+                if ui.button("Revert to Saved").clicked() {
+                    action = Some(EditorAction::Reload);
                     ui.close();
                 }
             });
 
             ui.menu_button("Edit", |ui| {
+                let state = &session.state;
                 let undo_label = format!("Undo ({})", state.undo_stack.len());
                 if ui
                     .add_enabled(state.can_undo(), egui::Button::new(undo_label))
                     .clicked()
                 {
-                    state.undo();
+                    session.undo();
                     ui.close();
                 }
+                let state = &session.state;
                 let redo_label = format!("Redo ({})", state.redo_stack.len());
                 if ui
                     .add_enabled(state.can_redo(), egui::Button::new(redo_label))
                     .clicked()
                 {
-                    state.redo();
+                    session.redo();
                     ui.close();
                 }
             });
 
+            let state = &mut session.state;
             ui.menu_button("View", |ui| {
                 ui.checkbox(&mut state.grid_visible, "Grid");
                 ui.checkbox(&mut state.show_collision, "Collision");
@@ -52,6 +63,7 @@ fn draw_menu_bar(ui: &mut egui::Ui, state: &mut EditorState) {
             });
         });
     });
+    action
 }
 
 fn draw_tools_panel(ui: &mut egui::Ui, state: &mut EditorState) {
@@ -82,7 +94,10 @@ fn draw_tools_panel(ui: &mut egui::Ui, state: &mut EditorState) {
             ui.label("Shortcuts:");
             ui.small("S=Select P=Paint");
             ui.small("E=Erase F=Fill");
-            ui.small("G=Toggle Grid");
+            ui.small("N=Entity G=Grid");
+            ui.small("[ ] tile, Tab layer");
+            ui.small("Ctrl+Z/Y/S");
+            ui.small("F9 closes");
         });
 }
 
@@ -119,13 +134,32 @@ fn draw_properties_panel(ui: &mut egui::Ui, state: &mut EditorState, level: &Ami
 
             ui.separator();
 
+            // Layer that painting goes to
+            ui.label("Layer:");
+            for (i, layer) in level.layers.iter().enumerate() {
+                if ui
+                    .selectable_label(state.selected_layer == i, &layer.name)
+                    .clicked()
+                {
+                    state.selected_layer = i;
+                }
+            }
+
+            if state.tool == EditorTool::PlaceEntity {
+                ui.separator();
+                ui.label("Entity type:");
+                ui.text_edit_singleline(&mut state.selected_entity_type);
+            }
+
+            ui.separator();
+
             // Toggles
             ui.checkbox(&mut state.grid_visible, "Show Grid");
             ui.checkbox(&mut state.show_collision, "Show Collision");
             ui.checkbox(&mut state.show_paths, "Show Paths");
 
             // Tile palette when paint tool is active
-            if state.tool == EditorTool::PaintTile {
+            if matches!(state.tool, EditorTool::PaintTile | EditorTool::Fill) {
                 ui.separator();
                 ui.heading("Tile Palette");
 
@@ -138,16 +172,26 @@ fn draw_properties_panel(ui: &mut egui::Ui, state: &mut EditorState, level: &Ami
                     .show(ui, |ui| {
                         for i in 0..total_tiles {
                             let selected = state.selected_tile == i;
-                            let color = if selected {
-                                egui::Color32::from_rgb(77, 128, 204)
+                            // The same colour the viewport preview uses.
+                            let [r, g, b] = tile_preview_color(i);
+                            let color = if i == 0 {
+                                egui::Color32::from_rgb(40, 40, 40)
                             } else {
-                                egui::Color32::from_rgb(64, 64, 64)
+                                egui::Color32::from_rgb(r, g, b)
                             };
                             let (rect, response) = ui.allocate_exact_size(
                                 egui::vec2(tile_size, tile_size),
                                 egui::Sense::click(),
                             );
                             ui.painter().rect_filled(rect, 0.0, color);
+                            if selected {
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    0.0,
+                                    egui::Stroke::new(2.0, egui::Color32::WHITE),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
                             ui.painter().text(
                                 rect.center(),
                                 egui::Align2::CENTER_CENTER,
@@ -167,9 +211,18 @@ fn draw_properties_panel(ui: &mut egui::Ui, state: &mut EditorState, level: &Ami
         });
 }
 
-fn draw_status_bar(ui: &mut egui::Ui, state: &EditorState, _level: &AmigoLevel) {
+fn draw_status_bar(ui: &mut egui::Ui, session: &EditorSession) {
+    let state = &session.state;
     egui::Panel::bottom("editor_status").show(ui, |ui| {
         ui.horizontal(|ui| {
+            let file = session
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            ui.label(format!("{file}{}", if session.dirty { " *" } else { "" }));
+            ui.separator();
+
             let tool_name = match state.tool {
                 EditorTool::Select => "Select",
                 EditorTool::PaintTile => "Paint",
@@ -195,6 +248,11 @@ fn draw_status_bar(ui: &mut egui::Ui, state: &EditorState, _level: &AmigoLevel) 
                 state.undo_stack.len(),
                 state.redo_stack.len()
             ));
+
+            if let Some(status) = &session.status {
+                ui.separator();
+                ui.label(status);
+            }
         });
     });
 }

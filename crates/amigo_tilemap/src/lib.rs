@@ -102,6 +102,28 @@ impl TileLayer {
         }
     }
 
+    /// A layer read from a level file (`amigo_core::level_loader`), so a game
+    /// can draw an editor-made level with `DrawContext::draw_tilemap_*`.
+    pub fn from_level(layer: &amigo_core::level_loader::TileLayerData) -> Self {
+        let cells = u64::from(layer.width) * u64::from(layer.height);
+        let mut tiles: Vec<TileId> = layer.tiles.iter().map(|&t| TileId(u32::from(t))).collect();
+        // A layer built by hand may be short; pad so `get`/`set` see the
+        // full grid.
+        tiles.resize(
+            cells.min(amigo_core::level::MAX_LEVEL_TILES) as usize,
+            TileId::EMPTY,
+        );
+        Self {
+            name: layer.name.clone(),
+            tiles,
+            width: layer.width,
+            height: layer.height,
+            visible: layer.visible,
+            scroll_factor_x: 1.0,
+            scroll_factor_y: 1.0,
+        }
+    }
+
     pub fn fill_rect(&mut self, x: u32, y: u32, w: u32, h: u32, tile: TileId) {
         for ty in y..y + h {
             for tx in x..x + w {
@@ -263,6 +285,24 @@ impl TileMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_level_layer_becomes_a_tile_layer() {
+        let layer = amigo_core::level_loader::TileLayerData {
+            name: "ground".into(),
+            tiles: vec![0, 4, 7],
+            width: 2,
+            height: 2,
+            visible: false,
+        };
+        let tiles = TileLayer::from_level(&layer);
+        assert_eq!((tiles.width, tiles.height, tiles.visible), (2, 2, false));
+        assert_eq!(tiles.get(1, 0), TileId(4));
+        assert_eq!(tiles.get(0, 1), TileId(7));
+        // The missing fourth tile reads as empty instead of out of bounds.
+        assert_eq!(tiles.tiles.len(), 4);
+        assert_eq!(tiles.get(1, 1), TileId::EMPTY);
+    }
 
     #[test]
     fn truncated_layers_read_as_empty_instead_of_panicking() {

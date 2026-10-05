@@ -161,6 +161,16 @@ pub fn drain_api_commands(
                     Err(e) => warn!("dev.restore_snapshot with an unreadable payload: {e}"),
                 }
             }
+            // With the editor built in, `editor.*` edits the engine's level.
+            // Without it there is no level to edit, and they go to the inbox
+            // like any other command a game may want to handle.
+            #[cfg(feature = "editor")]
+            action
+                if action.starts_with("editor.")
+                    && ctx.resources.contains::<amigo_editor::EditorSession>() =>
+            {
+                run_editor_command(ctx, &action["editor.".len()..], &cmd.params);
+            }
             // `camera.follow` deliberately falls through to the inbox. Its
             // `entity_id` is a bare u64 and nothing in the repo defines how that
             // maps onto a generational `EntityId`, so the engine cannot resolve
@@ -188,6 +198,24 @@ pub fn drain_api_commands(
             "{} API command(s) queued for game code",
             inbox.commands.len()
         );
+    }
+}
+
+/// Apply one `editor.*` command to the editor session. A save announces the
+/// level to the game; a refused command is logged, since the API already
+/// answered the client when it queued the command.
+#[cfg(feature = "editor")]
+fn run_editor_command(ctx: &mut GameContext, action: &str, params: &serde_json::Value) {
+    let Some(session) = ctx.resources.get_mut::<amigo_editor::EditorSession>() else {
+        return;
+    };
+    match session.run_api(action, params) {
+        Ok(Some(saved)) => {
+            info!("editor.{action}: saved {}", saved.display());
+            ctx.emit_level_reloaded(&saved);
+        }
+        Ok(None) => debug!("editor.{action} applied"),
+        Err(e) => warn!("editor.{action} refused: {e}"),
     }
 }
 
@@ -313,4 +341,12 @@ pub fn publish_snapshot(shared: &SharedState, ctx: &GameContext, control: &ApiCo
         "camera".to_string(),
         serde_json::json!({ "x": pos.x, "y": pos.y, "zoom": ctx.camera.zoom }),
     );
+    // What the `editor.*` commands did, since they are fire-and-forget:
+    // `engine.get_property {"key": "editor"}`.
+    #[cfg(feature = "editor")]
+    if let Some(session) = ctx.resources.get::<amigo_editor::EditorSession>() {
+        s.snapshot
+            .custom
+            .insert("editor".to_string(), session.summary());
+    }
 }
