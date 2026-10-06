@@ -1,7 +1,14 @@
-//! Rollback netcode for peer-to-peer multiplayer.
+//! Rollback netcode for peer-to-peer multiplayer. **Experimental.**
 //!
 //! Implements GGPO-style rollback with input prediction, snapshot/restore,
-//! and resimulation on mismatch.
+//! and resimulation on mismatch. Nothing in the engine drives it yet, and it
+//! has only been tested against the in-memory scenarios below; the supported
+//! way to play over the network is [`lockstep`](crate::lockstep).
+//!
+//! What it guarantees: it never predicts more than `max_rollback_frames`
+//! ticks past the last tick with every player's input ([`RollbackError::Stalled`]),
+//! and a correction it cannot apply is an error ([`RollbackError::TooLate`],
+//! [`RollbackError::SnapshotMissing`]) rather than a silent desync.
 
 use crate::PlayerId;
 use crate::checksum::StateHasher;
@@ -17,9 +24,40 @@ use serde::{Deserialize, Serialize};
 pub struct RollbackConfig {
     /// Maximum number of frames we are willing to roll back.
     pub max_rollback_frames: u32,
-    /// Capacity of the snapshot ring buffer. Must be > `max_rollback_frames`.
+    /// Capacity of the snapshot ring buffer. Raised to
+    /// `max_rollback_frames + 2` if smaller, since a rollback needs the
+    /// snapshot of the oldest tick it may redo.
     pub snapshot_buffer_size: usize,
 }
+
+/// Why [`RollbackSession::advance_tick`] did not advance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RollbackError {
+    /// `waiting_for` is more than `max_rollback_frames` ticks behind, so
+    /// predicting further would risk a rollback deeper than the window.
+    /// Nothing was simulated; call again (with that player's inputs once
+    /// they arrive).
+    Stalled { waiting_for: PlayerId, tick: u64 },
+    /// A correction arrived for `tick`, which is older than the rollback
+    /// window. The state can no longer be repaired: treat it as a desync.
+    TooLate { tick: u64 },
+    /// The snapshot to roll back to (`tick`) was overwritten. Also a desync.
+    SnapshotMissing { tick: u64 },
+}
+
+impl std::fmt::Display for RollbackError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stalled { waiting_for, tick } => {
+                write!(f, "tick {tick} waits for player {}", waiting_for.0)
+            }
+            Self::TooLate { tick } => write!(f, "a correction for tick {tick} came too late"),
+            Self::SnapshotMissing { tick } => write!(f, "no snapshot of tick {tick} left"),
+        }
+    }
+}
+
+impl std::error::Error for RollbackError {}
 
 impl Default for RollbackConfig {
     fn default() -> Self {
@@ -65,6 +103,9 @@ pub struct RollbackStats {
     pub max_rollback_depth: u32,
     /// Ratio of correct predictions (0.0 – 1.0).
     pub prediction_accuracy: f32,
+    /// Remote inputs dropped: from an unknown or the local player, too far
+    /// in the future, or contradicting an input already confirmed.
+    pub rejected_inputs: u64,
     total_predictions: u64,
     correct_predictions: u64,
 }
@@ -100,7 +141,10 @@ pub struct RollbackSession<S: RollbackState> {
 
 impl<S: RollbackState> RollbackSession<S> {
     /// Create a new rollback session.
-    pub fn new(config: RollbackConfig, local_player: PlayerId, players: Vec<PlayerId>) -> Self {
+    pub fn new(mut config: RollbackConfig, local_player: PlayerId, players: Vec<PlayerId>) -> Self {
+        config.snapshot_buffer_size = config
+            .snapshot_buffer_size
+            .max(config.max_rollback_frames as usize + 2);
         let snapshot_buf = vec![None; config.snapshot_buffer_size];
         let mut confirmed_inputs = FxHashMap::default();
         let mut predicted_inputs = FxHashMap::default();
@@ -131,13 +175,17 @@ impl<S: RollbackState> RollbackSession<S> {
     /// * `state` — the mutable game state
     /// * `local_input` — this player's input for the current tick
     /// * `remote_inputs` — newly received remote inputs: `(player, tick, input)`
+    ///
+    /// The remote inputs are kept even when this returns an error, so a
+    /// stalled caller only passes what arrived since.
     pub fn advance_tick(
         &mut self,
         state: &mut S,
         local_input: S::Input,
         remote_inputs: Vec<(PlayerId, u64, S::Input)>,
-    ) {
+    ) -> Result<(), RollbackError> {
         let tick = self.current_tick;
+        let window = u64::from(self.config.max_rollback_frames);
 
         // 1. Store local input as confirmed for this tick.
         self.confirmed_inputs
@@ -146,67 +194,97 @@ impl<S: RollbackState> RollbackSession<S> {
             .insert(tick, local_input.clone());
         self.last_known_input.insert(self.local_player, local_input);
 
-        // 2. Process remote inputs — store as confirmed.
-        for (pid, remote_tick, input) in &remote_inputs {
-            self.confirmed_inputs
-                .entry(*pid)
-                .or_default()
-                .insert(*remote_tick, input.clone());
-            self.last_known_input.insert(*pid, input.clone());
+        // 2. Validate and store remote inputs.
+        let mut accepted = Vec::with_capacity(remote_inputs.len());
+        for (pid, remote_tick, input) in remote_inputs {
+            let known_player = pid != self.local_player && self.players.contains(&pid);
+            let in_range = remote_tick <= tick + self.config.snapshot_buffer_size as u64;
+            if !known_player || !in_range {
+                self.stats.rejected_inputs += 1;
+                continue;
+            }
+            let confirmed = self.confirmed_inputs.entry(pid).or_default();
+            match confirmed.get(&remote_tick) {
+                // A resend of a tick everyone has confirmed and that was
+                // pruned since: nothing to check it against or apply.
+                None if remote_tick < self.last_confirmed_tick => {}
+                // A resend of what we have.
+                Some(existing) if *existing == input => {}
+                // Inputs are final once sent; a different one is a bug or
+                // a lie.
+                Some(_) => self.stats.rejected_inputs += 1,
+                None => {
+                    confirmed.insert(remote_tick, input.clone());
+                    self.last_known_input.insert(pid, input.clone());
+                    accepted.push((pid, remote_tick, input));
+                }
+            }
         }
 
         // 3. Check for prediction mismatches — find earliest mismatch tick.
         let mut earliest_mismatch: Option<u64> = None;
-        for (pid, remote_tick, input) in &remote_inputs {
+        for (pid, remote_tick, input) in &accepted {
             if let Some(predicted) = self
                 .predicted_inputs
                 .get(pid)
                 .and_then(|m| m.get(remote_tick))
             {
-                // Track prediction accuracy.
                 self.stats.total_predictions += 1;
                 if predicted == input {
                     self.stats.correct_predictions += 1;
                 } else {
-                    // Mismatch!
-                    match earliest_mismatch {
-                        Some(prev) => {
-                            if *remote_tick < prev {
-                                earliest_mismatch = Some(*remote_tick);
-                            }
-                        }
-                        None => {
-                            earliest_mismatch = Some(*remote_tick);
-                        }
-                    }
+                    earliest_mismatch =
+                        Some(earliest_mismatch.map_or(*remote_tick, |e| e.min(*remote_tick)));
                 }
             }
         }
 
-        // 4. If mismatch: rollback and resimulate.
+        // 4. If mismatch: roll back and resimulate, or say why not. Rolling
+        // back only part of the way would leave the state wrong for good.
         if let Some(mismatch_tick) = earliest_mismatch {
-            // Clamp: don't roll back further than max_rollback_frames.
-            let min_tick = tick.saturating_sub(self.config.max_rollback_frames as u64);
-            let rollback_to = mismatch_tick.max(min_tick);
-
-            if let Some(snap_data) = self.restore_snapshot(rollback_to) {
-                let snap_data = snap_data.to_vec();
-                state.restore(&snap_data);
-
-                let depth = tick.saturating_sub(rollback_to) as u32;
-                self.stats.rollbacks_this_second += 1;
-                if depth > self.stats.max_rollback_depth {
-                    self.stats.max_rollback_depth = depth;
-                }
-
-                // Resimulate from rollback_to up to (but not including) current tick.
-                for resim_tick in rollback_to..tick {
-                    let inputs = self.gather_inputs(resim_tick);
-                    state.simulate_tick(&inputs);
-                    // Re-save snapshot after resimulation.
-                    self.save_snapshot(state, resim_tick + 1);
-                }
+            if mismatch_tick < tick.saturating_sub(window) {
+                return Err(RollbackError::TooLate {
+                    tick: mismatch_tick,
+                });
             }
+            let snap_data = self
+                .restore_snapshot(mismatch_tick)
+                .ok_or(RollbackError::SnapshotMissing {
+                    tick: mismatch_tick,
+                })?
+                .to_vec();
+            state.restore(&snap_data);
+
+            let depth = tick.saturating_sub(mismatch_tick) as u32;
+            self.stats.rollbacks_this_second += 1;
+            self.stats.max_rollback_depth = self.stats.max_rollback_depth.max(depth);
+
+            for resim_tick in mismatch_tick..tick {
+                let inputs = self.gather_inputs(resim_tick);
+                state.simulate_tick(&inputs);
+                // The old hash described the mispredicted state.
+                self.record_checksum(state, resim_tick);
+                self.save_snapshot(state, resim_tick + 1);
+            }
+        }
+
+        // 4b. Do not predict deeper than the window: wait for the player
+        // whose input is missing longest.
+        self.update_confirmed_tick();
+        if tick >= self.last_confirmed_tick + window {
+            let missing = self.last_confirmed_tick;
+            let waiting_for = self
+                .players
+                .iter()
+                .copied()
+                .find(|pid| {
+                    !self
+                        .confirmed_inputs
+                        .get(pid)
+                        .is_some_and(|m| m.contains_key(&missing))
+                })
+                .unwrap_or(self.local_player);
+            return Err(RollbackError::Stalled { waiting_for, tick });
         }
 
         // 5. Save snapshot for current tick (before simulating it).
@@ -217,9 +295,7 @@ impl<S: RollbackState> RollbackSession<S> {
         state.simulate_tick(&inputs);
 
         // 7. Compute and store checksum.
-        let mut hasher = StateHasher::new();
-        state.checksum(&mut hasher);
-        self.checksums.insert(tick, hasher.finish_crc());
+        self.record_checksum(state, tick);
 
         // 8. Increment current_tick.
         self.current_tick += 1;
@@ -242,6 +318,20 @@ impl<S: RollbackState> RollbackSession<S> {
         if self.current_tick.is_multiple_of(60) {
             self.stats.rollbacks_this_second = 0;
         }
+        Ok(())
+    }
+
+    fn record_checksum(&mut self, state: &S, tick: u64) {
+        let mut hasher = StateHasher::new();
+        state.checksum(&mut hasher);
+        self.checksums.insert(tick, hasher.finish_crc());
+    }
+
+    /// The state hash after `tick`, as last simulated (a rollback replaces
+    /// it). Compare it with the other players' to detect a desync. Kept
+    /// for about two rollback windows past the last confirmed tick.
+    pub fn checksum(&self, tick: u64) -> Option<u32> {
+        self.checksums.get(&tick).copied()
     }
 
     /// Predict the input for a remote player (returns last known or default).
@@ -291,11 +381,11 @@ impl<S: RollbackState> RollbackSession<S> {
 
     // ── Internal helpers ────────────────────────────────────────
 
-    /// Advance `last_confirmed_tick` to the highest tick below the current
-    /// tick for which every player has a confirmed input.
+    /// Advance `last_confirmed_tick` past every tick for which every player
+    /// has a confirmed input.
     fn update_confirmed_tick(&mut self) {
         let mut confirmed = self.last_confirmed_tick;
-        'outer: while confirmed < self.current_tick {
+        'outer: loop {
             for pid in &self.players {
                 let has_input = self
                     .confirmed_inputs
@@ -421,7 +511,7 @@ mod tests {
         // Run 100 ticks. Each tick: player 1 inputs 1, player 2 inputs 2.
         for tick in 0..100u64 {
             let remote_inputs = vec![(p(2), tick, 2)];
-            session.advance_tick(&mut state, 1, remote_inputs);
+            session.advance_tick(&mut state, 1, remote_inputs).unwrap();
         }
 
         // Each tick adds 1 + 2 = 3. After 100 ticks: 300.
@@ -441,7 +531,7 @@ mod tests {
         // After receiving an input from player 2, prediction should reflect it.
         let mut state = MockState::default();
         let remote_inputs = vec![(p(2), 0, 7)];
-        session.advance_tick(&mut state, 1, remote_inputs);
+        session.advance_tick(&mut state, 1, remote_inputs).unwrap();
 
         assert_eq!(session.predict_input(p(2)), 7);
     }
@@ -461,7 +551,7 @@ mod tests {
         // (confirmed immediately).
         for tick in 0..50u64 {
             let remote_inputs = vec![(p(2), tick, 2)];
-            session.advance_tick(&mut state, 1, remote_inputs);
+            session.advance_tick(&mut state, 1, remote_inputs).unwrap();
         }
         // state.value = 50 * 3 = 150
         assert_eq!(state.value, 150);
@@ -469,7 +559,7 @@ mod tests {
         // Now run ticks 50..60 with NO remote inputs (player 2 predicted as 2,
         // since last known = 2).
         for _tick in 50..60 {
-            session.advance_tick(&mut state, 1, vec![]);
+            session.advance_tick(&mut state, 1, vec![]).unwrap();
         }
         // Predicted: each tick still adds 1 + 2 = 3. state.value = 150 + 30 = 180
         assert_eq!(state.value, 180);
@@ -481,7 +571,7 @@ mod tests {
             corrections.push((p(2), tick, 10));
         }
         // Advance tick 60 with these corrections.
-        session.advance_tick(&mut state, 1, corrections);
+        session.advance_tick(&mut state, 1, corrections).unwrap();
 
         // After rollback and resimulation:
         // Ticks 0..50: each adds 3 → 150
@@ -507,16 +597,20 @@ mod tests {
 
         // Run a few ticks with confirmed inputs.
         for tick in 0..5u64 {
-            session.advance_tick(&mut state, 1, vec![(p(2), tick, 2)]);
+            session
+                .advance_tick(&mut state, 1, vec![(p(2), tick, 2)])
+                .unwrap();
         }
         assert_eq!(session.stats().rollbacks_this_second, 0);
 
         // Run tick 5 without remote input (prediction kicks in: predicts 2).
-        session.advance_tick(&mut state, 1, vec![]);
+        session.advance_tick(&mut state, 1, vec![]).unwrap();
 
         // Now deliver a mismatched input for tick 5.
         // Tick 6 with correction for tick 5.
-        session.advance_tick(&mut state, 1, vec![(p(2), 5, 999)]);
+        session
+            .advance_tick(&mut state, 1, vec![(p(2), 5, 999)])
+            .unwrap();
 
         // Should have recorded a rollback.
         assert!(session.stats().rollbacks_this_second > 0);
@@ -534,7 +628,7 @@ mod tests {
 
         // Run 20 ticks — buffer wraps around at size 8
         for _tick in 0..20u64 {
-            session.advance_tick(&mut state, 1, vec![]);
+            session.advance_tick(&mut state, 1, vec![]).unwrap();
         }
 
         // Recent snapshot should exist (tick 19 was saved during tick 19's advance)
@@ -547,27 +641,36 @@ mod tests {
     fn stale_snapshot_returns_none() {
         let config = RollbackConfig {
             max_rollback_frames: 4,
-            snapshot_buffer_size: 4,
+            snapshot_buffer_size: 6,
         };
         let players = vec![p(1)];
         let mut session = RollbackSession::<MockState>::new(config, p(1), players);
         let mut state = MockState::default();
 
         // Tick 0 snapshot saved in slot 0
-        session.advance_tick(&mut state, 1, vec![]);
+        session.advance_tick(&mut state, 1, vec![]).unwrap();
         assert!(session.restore_snapshot(0).is_some());
 
-        // Run 4 more ticks — slot 0 now holds tick 4, not tick 0
-        for _ in 1..5 {
-            session.advance_tick(&mut state, 1, vec![]);
+        // Run 6 more ticks — slot 0 now holds tick 6, not tick 0
+        for _ in 1..7 {
+            session.advance_tick(&mut state, 1, vec![]).unwrap();
         }
         assert!(session.restore_snapshot(0).is_none()); // stale — overwritten
-        assert!(session.restore_snapshot(4).is_some()); // current occupant of slot 0
+        assert!(session.restore_snapshot(6).is_some()); // current occupant of slot 0
     }
 
     #[test]
-    fn rollback_depth_limited() {
-        // If mismatch tick is too old (snapshot overwritten), no crash
+    fn the_snapshot_buffer_covers_the_window() {
+        let config = RollbackConfig {
+            max_rollback_frames: 8,
+            snapshot_buffer_size: 2,
+        };
+        let session = RollbackSession::<MockState>::new(config, p(1), vec![p(1)]);
+        assert_eq!(session.config.snapshot_buffer_size, 10);
+    }
+
+    #[test]
+    fn contradicting_and_foreign_inputs_are_rejected() {
         let config = RollbackConfig {
             max_rollback_frames: 4,
             snapshot_buffer_size: 4,
@@ -575,17 +678,95 @@ mod tests {
         let players = vec![p(1), p(2)];
         let mut session = RollbackSession::<MockState>::new(config, p(1), players);
         let mut state = MockState::default();
-
-        // Run 20 ticks with confirmed inputs
         for tick in 0..20u64 {
-            session.advance_tick(&mut state, 1, vec![(p(2), tick, 2)]);
+            session
+                .advance_tick(&mut state, 1, vec![(p(2), tick, 2)])
+                .unwrap();
         }
+        assert_eq!(state.value, 60);
 
-        // Deliver a correction for tick 2 (way too old, snapshot gone).
-        // This should NOT crash — rollback_to is clamped by max_rollback_frames
-        // and the snapshot for that tick is gone, so rollback is skipped.
-        session.advance_tick(&mut state, 1, vec![(p(2), 2, 999)]);
-        // Session should still be functional
+        // Tick 15 was confirmed as 2; a different value used to be applied
+        // half-way, leaving the state wrong for good.
+        session
+            .advance_tick(
+                &mut state,
+                1,
+                vec![
+                    (p(2), 15, 999), // contradicts a confirmed input
+                    (p(2), 2, 999),  // too old to check, ignored
+                    (p(2), 3, 2),    // a harmless resend
+                    (p(9), 20, 5),   // nobody in this session
+                    (p(1), 20, 5),   // claims to be us
+                    (p(2), 900, 5),  // far beyond any snapshot
+                    (p(2), 20, 2),   // the real one
+                ],
+            )
+            .unwrap();
+        assert_eq!(session.stats().rejected_inputs, 4);
+        assert_eq!(state.value, 63);
         assert_eq!(session.current_tick(), 21);
+    }
+
+    #[test]
+    fn prediction_stops_at_the_window() {
+        let config = RollbackConfig {
+            max_rollback_frames: 4,
+            snapshot_buffer_size: 8,
+        };
+        let mut session = RollbackSession::<MockState>::new(config, p(1), vec![p(1), p(2)]);
+        let mut state = MockState::default();
+        session
+            .advance_tick(&mut state, 1, vec![(p(2), 0, 2)])
+            .unwrap();
+        // Ticks 1..5 run on predictions...
+        for _ in 1..5 {
+            session.advance_tick(&mut state, 1, vec![]).unwrap();
+        }
+        // ...and the fifth predicted tick waits.
+        assert_eq!(
+            session.advance_tick(&mut state, 1, vec![]),
+            Err(RollbackError::Stalled {
+                waiting_for: p(2),
+                tick: 5
+            })
+        );
+        assert_eq!(session.current_tick(), 5);
+        let before = state.value;
+        assert_eq!(
+            session.advance_tick(&mut state, 1, vec![]),
+            Err(RollbackError::Stalled {
+                waiting_for: p(2),
+                tick: 5
+            })
+        );
+        assert_eq!(state.value, before, "a stalled call simulates nothing");
+
+        // The late inputs arrive, differ from the prediction, and are
+        // rolled back in, all within the window.
+        let late = (1..6).map(|t| (p(2), t, 7)).collect();
+        session.advance_tick(&mut state, 1, late).unwrap();
+        // 2 + 1 for tick 0, then 1 + 7 for ticks 1..=5.
+        assert_eq!(state.value, 3 + 5 * 8);
+        assert_eq!(session.current_tick(), 6);
+    }
+
+    #[test]
+    fn checksums_follow_the_rollback() {
+        let config = RollbackConfig::default();
+        let mut session = RollbackSession::<MockState>::new(config, p(1), vec![p(1), p(2)]);
+        let mut state = MockState::default();
+        session
+            .advance_tick(&mut state, 1, vec![(p(2), 0, 2)])
+            .unwrap();
+        session.advance_tick(&mut state, 1, vec![]).unwrap(); // tick 1 predicted 2
+        let predicted = session.checksum(1).unwrap();
+        session
+            .advance_tick(&mut state, 1, vec![(p(2), 1, 5)])
+            .unwrap();
+
+        let mut expected = StateHasher::new();
+        MockState { value: 3 + 6 }.checksum(&mut expected);
+        assert_eq!(session.checksum(1), Some(expected.finish_crc()));
+        assert_ne!(session.checksum(1), Some(predicted));
     }
 }

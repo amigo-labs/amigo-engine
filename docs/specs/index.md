@@ -260,7 +260,7 @@ engine ever called them.
 | [engine/animation](engine/animation.md)                   | done   | amigo_animation   | engine/core                   |
 | [engine/camera](engine/camera.md)                         | done   | amigo_render      | engine/core                   |
 | [engine/ui](engine/ui.md)                                 | done   | amigo_ui          | engine/core, engine/rendering |
-| [engine/networking](engine/networking.md)                 | done   | amigo_net         | engine/core                   |
+| [engine/networking](engine/networking.md)                 | partial | amigo_net        | engine/core, engine/replays   |
 | [engine/memory-performance](engine/memory-performance.md) | done   | amigo_core        | --                            |
 | [engine/plugin-system](engine/plugin-system.md)           | partial | amigo_engine     | engine/core                   |
 | [engine/dynamic-tilemap](engine/dynamic-tilemap.md)       | done   | amigo_tilemap     | engine/core, engine/tilemap   |

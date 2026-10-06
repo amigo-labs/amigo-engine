@@ -1,4 +1,6 @@
-use crate::protocol::{MAX_PACKET_SIZE, Packet, PacketKind, SeqNum};
+use crate::protocol::{
+    Packet, PacketKind, RECV_BUFFER_SIZE, SeqNum, is_ignorable_recv_error, send_packet,
+};
 use crate::{PlayerId, Transport};
 use rustc_hash::FxHashMap;
 use serde::Serialize;
@@ -26,6 +28,8 @@ pub struct NetworkServer<C> {
     inbound: Vec<(PlayerId, Vec<C>)>,
     /// How many seconds of silence before we consider a client timed out.
     pub timeout_secs: f32,
+    /// Connections beyond this many are ignored until a slot frees up.
+    pub max_clients: usize,
     recv_buf: Vec<u8>,
 }
 
@@ -42,7 +46,8 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkServer<C> {
             local_seq: SeqNum::default(),
             inbound: Vec::new(),
             timeout_secs: 10.0,
-            recv_buf: vec![0u8; MAX_PACKET_SIZE],
+            max_clients: 8,
+            recv_buf: vec![0u8; RECV_BUFFER_SIZE],
         })
     }
 
@@ -58,12 +63,12 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkServer<C> {
     pub fn poll(&mut self) {
         loop {
             match self.socket.recv_from(&mut self.recv_buf) {
-                Ok((len, src)) => {
-                    if let Some(packet) = Packet::decode(&self.recv_buf[..len]) {
-                        self.handle_packet(src, packet);
-                    }
-                }
+                Ok((len, src)) => match Packet::decode(&self.recv_buf[..len]) {
+                    Ok(packet) => self.handle_packet(src, packet),
+                    Err(e) => debug!("Dropping datagram from {src}: {e}"),
+                },
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(ref e) if is_ignorable_recv_error(e) => continue,
                 Err(e) => {
                     warn!("Server recv error: {}", e);
                     break;
@@ -86,14 +91,19 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkServer<C> {
     fn handle_packet(&mut self, src: SocketAddr, packet: Packet) {
         match packet.header.kind {
             PacketKind::Connect => {
-                if self.clients.contains_key(&src) {
-                    // Already connected, resend accept
-                    let pid = self.clients[&src].player_id;
+                if let Some(slot) = self.clients.get_mut(&src) {
+                    // Already connected: the Accept was lost, resend it.
+                    slot.last_seen = Instant::now();
+                    let pid = slot.player_id;
                     self.send_accept(src, pid);
                     return;
                 }
+                if self.clients.len() >= self.max_clients {
+                    debug!("Server full, ignoring a connect from {src}");
+                    return;
+                }
                 let pid = PlayerId(self.next_player_id);
-                self.next_player_id += 1;
+                self.next_player_id = self.next_player_id.wrapping_add(1);
                 debug!("Client connected from {}: assigned {:?}", src, pid);
                 self.clients.insert(
                     src,
@@ -132,9 +142,7 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkServer<C> {
     fn send_accept(&self, addr: SocketAddr, pid: PlayerId) {
         let payload = pid.0.to_le_bytes().to_vec();
         let pkt = Packet::new(PacketKind::Accept, 0, 0, pid.0, payload);
-        if let Some(data) = pkt.encode() {
-            let _ = self.socket.send_to(&data, addr);
-        }
+        send_packet(&self.socket, addr, &pkt);
     }
 
     /// Broadcast commands from all players to all connected clients.
@@ -149,8 +157,11 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkServer<C> {
         let seq = self.local_seq.next();
         let pkt = Packet::new(PacketKind::Broadcast, seq, 0, 0, payload);
         let data = match pkt.encode() {
-            Some(d) => d,
-            None => return,
+            Ok(d) => d,
+            Err(e) => {
+                warn!("Not broadcasting: {e}");
+                return;
+            }
         };
         for slot in self.clients.values() {
             let _ = self.socket.send_to(&data, slot.addr);

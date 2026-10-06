@@ -6,6 +6,49 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Added — lockstep networking (amigo_net)
+
+- **`amigo_net::lockstep`.** A two-player lockstep session: input delay,
+  inputs repeated until acknowledged, a stall while an input is missing, and a
+  state hash per tick exchanged to report the first desync tick. It is pure
+  bookkeeping over a `Link`. The engine does not wire it up yet.
+- **`amigo_net::peer`.**
+  - `UdpPeer` with a handshake that agrees on seed, input delay and action
+    table, then listens only to the other player's address.
+  - `loopback_pair`, a repeatable lossy in-memory link for tests.
+- **`amigo_net::wire`.** Bounds-checked little-endian `ByteWriter` and
+  `ByteReader`.
+
+### Fixed — networking
+
+- **Packets over ~300 bytes were lost silently.** A packet was JSON with its
+  payload as a JSON number array inside, so a modest command batch outgrew the
+  1200-byte buffer and the receiver dropped it without a word. Packets are now
+  a 14-byte binary header plus the raw payload (up to 1186 bytes), with a
+  version check. A batch too large to send is logged.
+- **Anyone could talk to a client, and slots never expired.**
+  - `UdpTransport` and `NetworkClient` accept packets only from their server.
+  - `UdpTransport` frees the slots of clients silent past `timeout`, and sends
+    the heartbeats and connect retries its config always promised.
+  - `NetworkServer` enforces `max_clients`.
+  - A `UdpTransport` client reports the real player id instead of 0.
+- **Rollback (experimental, feature `rollback_net`):**
+  - A correction older than the rollback window was applied half-way, a
+    permanent desync. It now returns `RollbackError::TooLate`, and a missing
+    snapshot returns `SnapshotMissing`.
+  - Prediction stops at the window (`Stalled`).
+  - Inputs that contradict a confirmed one, or come from unknown players, are
+    rejected.
+  - Checksums are refreshed after a rollback and readable via `checksum(tick)`.
+
+### Breaking — networking
+
+- `Packet::encode` returns `Result<Vec<u8>, WireError>` and `Packet::decode`
+  returns `Result<Packet, WireError>` (both were `Option`). `Packet` and
+  `PacketHeader` no longer implement serde's traits; the wire format is
+  binary.
+- `RollbackSession::advance_tick` returns `Result<(), RollbackError>`.
+
 ### Added — replays
 
 - **Record and replay sessions.** `amigo run --record <file>` records every

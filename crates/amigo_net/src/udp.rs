@@ -3,11 +3,14 @@
 //! Provides `UdpTransport` which implements the `Transport` trait using
 //! standard library UDP sockets with the engine's packet protocol.
 
-use crate::protocol::{MAX_PACKET_SIZE, Packet, PacketKind, SeqNum};
+use crate::protocol::{
+    Packet, PacketKind, RECV_BUFFER_SIZE, SeqNum, is_ignorable_recv_error, send_packet,
+};
 use crate::{PlayerId, Transport};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 /// Configuration for the UDP transport.
@@ -17,9 +20,10 @@ pub struct UdpConfig {
     pub bind_addr: String,
     /// Maximum number of clients (server mode).
     pub max_clients: usize,
-    /// Heartbeat interval in seconds.
+    /// Client mode: seconds between heartbeats, and between connect
+    /// attempts until the server answers.
     pub heartbeat_interval: f64,
-    /// Connection timeout in seconds.
+    /// Server mode: seconds of silence after which a client's slot is freed.
     pub timeout: f64,
 }
 
@@ -39,7 +43,7 @@ impl Default for UdpConfig {
 struct ClientSlot {
     player_id: PlayerId,
     addr: SocketAddr,
-    last_seen: std::time::Instant,
+    last_seen: Instant,
     remote_seq: u16,
 }
 
@@ -67,8 +71,12 @@ enum UdpMode {
         server_addr: SocketAddr,
         player_id: Option<PlayerId>,
         connected: bool,
-        /// Inbound broadcasts from the server this frame.
-        inbound: Vec<Vec<u8>>,
+        /// Inbound broadcasts from the server this frame, with the player
+        /// the header names.
+        inbound: Vec<(PlayerId, Vec<u8>)>,
+        /// When the client last sent anything, for heartbeats and connect
+        /// retries.
+        last_sent: Instant,
     },
 }
 
@@ -94,6 +102,12 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
 
     /// Create a client transport that will connect to the given server.
     pub fn connect_client(server_addr: &str) -> std::io::Result<Self> {
+        Self::connect_client_with(server_addr, UdpConfig::default())
+    }
+
+    /// [`connect_client`](Self::connect_client) with explicit timing
+    /// (`heartbeat_interval` paces heartbeats and connect retries).
+    pub fn connect_client_with(server_addr: &str, config: UdpConfig) -> std::io::Result<Self> {
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.set_nonblocking(true)?;
         let server_addr: SocketAddr = server_addr
@@ -102,11 +116,11 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
 
         info!("UDP client connecting to {}", server_addr);
 
-        // Send connect packet
-        let pkt = Packet::new(PacketKind::Connect, 0, 0, 0, Vec::new());
-        if let Some(data) = pkt.encode() {
-            let _ = socket.send_to(&data, server_addr);
-        }
+        send_packet(
+            &socket,
+            server_addr,
+            &Packet::new(PacketKind::Connect, 0, 0, 0, Vec::new()),
+        );
 
         Ok(Self {
             socket,
@@ -115,32 +129,66 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
                 player_id: None,
                 connected: false,
                 inbound: Vec::new(),
+                last_sent: Instant::now(),
             },
             local_seq: SeqNum(0),
-            config: UdpConfig::default(),
+            config,
             _marker: std::marker::PhantomData,
         })
     }
 
     /// Poll for incoming packets (non-blocking). Call once per tick.
+    ///
+    /// Also frees the slots of clients silent for longer than
+    /// `config.timeout` (server), and sends heartbeats or connect retries
+    /// every `config.heartbeat_interval` (client).
     pub fn poll(&mut self) {
-        let mut buf = [0u8; MAX_PACKET_SIZE];
+        let mut buf = vec![0u8; RECV_BUFFER_SIZE];
         loop {
             match self.socket.recv_from(&mut buf) {
-                Ok((len, addr)) => {
-                    if let Some(packet) = Packet::decode(&buf[..len]) {
-                        self.handle_packet(packet, addr);
-                    }
-                }
-                Err(ref e)
-                    if e.kind() == std::io::ErrorKind::WouldBlock
-                        || e.kind() == std::io::ErrorKind::Interrupted =>
-                {
-                    break;
-                }
+                Ok((len, addr)) => match Packet::decode(&buf[..len]) {
+                    Ok(packet) => self.handle_packet(packet, addr),
+                    Err(e) => tracing::debug!("Dropping datagram from {addr}: {e}"),
+                },
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(ref e) if is_ignorable_recv_error(e) => continue,
                 Err(e) => {
                     warn!("UDP recv error: {}", e);
                     break;
+                }
+            }
+        }
+
+        let timeout = Duration::from_secs_f64(self.config.timeout.max(0.0));
+        let heartbeat = Duration::from_secs_f64(self.config.heartbeat_interval.max(0.0));
+        match &mut self.mode {
+            UdpMode::Server { clients, .. } => clients.retain(|addr, slot| {
+                let alive = slot.last_seen.elapsed() < timeout;
+                if !alive {
+                    info!("Client {} ({addr}) timed out", slot.player_id.0);
+                }
+                alive
+            }),
+            UdpMode::Client {
+                server_addr,
+                player_id,
+                connected,
+                last_sent,
+                ..
+            } => {
+                if last_sent.elapsed() >= heartbeat {
+                    let (kind, pid) = if *connected {
+                        (PacketKind::Heartbeat, player_id.map_or(0, |p| p.0))
+                    } else {
+                        (PacketKind::Connect, 0)
+                    };
+                    let seq = self.local_seq.next();
+                    send_packet(
+                        &self.socket,
+                        *server_addr,
+                        &Packet::new(kind, seq, 0, pid, Vec::new()),
+                    );
+                    *last_sent = Instant::now();
                 }
             }
         }
@@ -164,23 +212,27 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
                             ClientSlot {
                                 player_id: pid,
                                 addr,
-                                last_seen: std::time::Instant::now(),
+                                last_seen: Instant::now(),
                                 remote_seq: 0,
                             },
                         );
                         info!("Client connected from {} as player {}", addr, pid.0);
 
-                        // Send accept
                         let seq = self.local_seq.next();
                         let accept = Packet::new(PacketKind::Accept, seq, 0, pid.0, Vec::new());
-                        if let Some(data) = accept.encode() {
-                            let _ = self.socket.send_to(&data, addr);
-                        }
+                        send_packet(&self.socket, addr, &accept);
+                    } else if let Some(client) = clients.get_mut(&addr) {
+                        // A retry whose Accept was lost: answer again.
+                        client.last_seen = Instant::now();
+                        let seq = self.local_seq.next();
+                        let accept =
+                            Packet::new(PacketKind::Accept, seq, 0, client.player_id.0, Vec::new());
+                        send_packet(&self.socket, addr, &accept);
                     }
                 }
                 PacketKind::Commands => {
                     if let Some(client) = clients.get_mut(&addr) {
-                        client.last_seen = std::time::Instant::now();
+                        client.last_seen = Instant::now();
                         client.remote_seq = packet.header.sequence;
                         inbound.push((client.player_id, packet.payload));
                     }
@@ -192,24 +244,30 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
                 }
                 PacketKind::Heartbeat => {
                     if let Some(client) = clients.get_mut(&addr) {
-                        client.last_seen = std::time::Instant::now();
+                        client.last_seen = Instant::now();
                     }
                 }
                 _ => {}
             },
             UdpMode::Client {
+                server_addr,
                 player_id,
                 connected,
                 inbound,
                 ..
             } => match packet.header.kind {
+                // Only the server speaks to a client; anyone else could
+                // forge an Accept or inject commands.
+                _ if addr != *server_addr => {
+                    tracing::debug!("Client: dropping a packet from {addr}, not the server");
+                }
                 PacketKind::Accept => {
                     *player_id = Some(PlayerId(packet.header.player_id));
                     *connected = true;
                     info!("Connected as player {}", packet.header.player_id);
                 }
                 PacketKind::Broadcast => {
-                    inbound.push(packet.payload);
+                    inbound.push((PlayerId(packet.header.player_id), packet.payload));
                 }
                 PacketKind::Disconnect => {
                     *connected = false;
@@ -224,16 +282,14 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> UdpTransport<C> {
     pub fn disconnect(&mut self) {
         let seq = self.local_seq.next();
         let pkt = Packet::new(PacketKind::Disconnect, seq, 0, 0, Vec::new());
-        if let Some(data) = pkt.encode() {
-            match &self.mode {
-                UdpMode::Server { clients, .. } => {
-                    for client in clients.values() {
-                        let _ = self.socket.send_to(&data, client.addr);
-                    }
+        match &self.mode {
+            UdpMode::Server { clients, .. } => {
+                for client in clients.values() {
+                    send_packet(&self.socket, client.addr, &pkt);
                 }
-                UdpMode::Client { server_addr, .. } => {
-                    let _ = self.socket.send_to(&data, *server_addr);
-                }
+            }
+            UdpMode::Client { server_addr, .. } => {
+                send_packet(&self.socket, *server_addr, &pkt);
             }
         }
     }
@@ -279,25 +335,24 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> Transport<C> for UdpTrans
         };
 
         let seq = self.local_seq.next();
-        match &self.mode {
+        match &mut self.mode {
             UdpMode::Server { clients, .. } => {
                 // Broadcast to all clients
                 let pkt = Packet::new(PacketKind::Broadcast, seq, 0, 0, payload);
-                if let Some(data) = pkt.encode() {
-                    for client in clients.values() {
-                        let _ = self.socket.send_to(&data, client.addr);
-                    }
+                for client in clients.values() {
+                    send_packet(&self.socket, client.addr, &pkt);
                 }
             }
             UdpMode::Client {
                 server_addr,
                 player_id,
+                last_sent,
                 ..
             } => {
                 let pid = player_id.map_or(0, |p| p.0);
                 let pkt = Packet::new(PacketKind::Commands, seq, 0, pid, payload);
-                if let Some(data) = pkt.encode() {
-                    let _ = self.socket.send_to(&data, *server_addr);
+                if send_packet(&self.socket, *server_addr, &pkt) {
+                    *last_sent = Instant::now();
                 }
             }
         }
@@ -317,10 +372,9 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de>> Transport<C> for UdpTrans
                 }
             }
             UdpMode::Client { inbound, .. } => {
-                for data in inbound.drain(..) {
+                for (pid, data) in inbound.drain(..) {
                     if let Ok(cmds) = serde_json::from_slice::<Vec<C>>(&data) {
-                        // Server broadcasts come as player 0
-                        result.push((PlayerId(0), cmds));
+                        result.push((pid, cmds));
                     }
                 }
             }
@@ -377,11 +431,12 @@ mod tests {
 
         let attacker = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let payloads: &[&[u8]] = &[
-            b"",                                 // empty datagram
-            b"\x00\x01\x02\x03",                 // binary garbage
-            b"{\"header\"",                      // truncated JSON
-            b"{\"header\":{},\"payload\":null}", // wrong schema
-            &[0xffu8; MAX_PACKET_SIZE],          // max-size garbage
+            b"",                                             // empty datagram
+            b"\x00\x01\x02\x03",                             // binary garbage
+            b"{\"header\"",                                  // truncated JSON
+            b"{\"header\":{},\"payload\":null}",             // wrong schema
+            &[0xffu8; crate::protocol::MAX_PACKET_SIZE],     // max-size garbage
+            &[0xffu8; 3 * crate::protocol::MAX_PACKET_SIZE], // oversized
         ];
         for payload in payloads {
             attacker.send_to(payload, server_addr).unwrap();
@@ -419,5 +474,84 @@ mod tests {
 
         let commands: Vec<(PlayerId, Vec<String>)> = server.receive();
         assert!(commands.is_empty(), "malformed payloads must be dropped");
+    }
+
+    fn wait() {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    fn loopback(addr: SocketAddr) -> SocketAddr {
+        SocketAddr::from(([127, 0, 0, 1], addr.port()))
+    }
+
+    fn server(timeout: f64) -> UdpTransport<String> {
+        UdpTransport::bind_server(UdpConfig {
+            bind_addr: "127.0.0.1:0".into(),
+            timeout,
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_client_only_listens_to_its_server() {
+        let fake_server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut client: UdpTransport<String> =
+            UdpTransport::connect_client(&fake_server.local_addr().unwrap().to_string()).unwrap();
+        let client_addr = loopback(client.local_addr().unwrap());
+        let accept = Packet::new(PacketKind::Accept, 0, 0, 5, Vec::new())
+            .encode()
+            .unwrap();
+
+        let stranger = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        stranger.send_to(&accept, client_addr).unwrap();
+        wait();
+        client.poll();
+        assert!(
+            !client.is_connected(),
+            "an Accept from a stranger was taken"
+        );
+
+        fake_server.send_to(&accept, client_addr).unwrap();
+        wait();
+        client.poll();
+        assert_eq!(client.local_player_id(), Some(PlayerId(5)));
+    }
+
+    #[test]
+    fn silent_clients_lose_their_slot() {
+        let mut server = server(0.05);
+        let peer = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let connect = Packet::new(PacketKind::Connect, 0, 0, 0, Vec::new());
+        peer.send_to(&connect.encode().unwrap(), server.local_addr().unwrap())
+            .unwrap();
+        wait();
+        server.poll();
+        assert_eq!(server.client_count(), 1);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        server.poll();
+        assert_eq!(server.client_count(), 0);
+    }
+
+    #[test]
+    fn command_batches_of_a_kilobyte_arrive() {
+        // Around 300 bytes used to be the limit, silently.
+        let mut server = server(10.0);
+        let mut client: UdpTransport<String> =
+            UdpTransport::connect_client(&loopback(server.local_addr().unwrap()).to_string())
+                .unwrap();
+        wait();
+        server.poll();
+        wait();
+        client.poll();
+        assert!(client.is_connected());
+
+        let commands: Vec<String> = (0..50).map(|i| format!("move_unit_{i:02}_to_x")).collect();
+        assert!(serde_json::to_vec(&commands).unwrap().len() > 900);
+        client.send(&commands);
+        wait();
+        let received = server.receive();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].1, commands);
     }
 }
