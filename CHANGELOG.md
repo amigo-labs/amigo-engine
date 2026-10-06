@@ -40,6 +40,8 @@ Notable changes per release. Format loosely follows
   - Inputs that contradict a confirmed one, or come from unknown players, are
     rejected.
   - Checksums are refreshed after a rollback and readable via `checksum(tick)`.
+  - Prediction uses each player's latest confirmed input at or before the
+    predicted tick; an early or late packet no longer skews it.
 
 ### Breaking — networking
 

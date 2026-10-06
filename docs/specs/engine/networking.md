@@ -83,14 +83,18 @@ pub fn loopback_pair(conditions: LinkConditions) -> (LoopbackEnd, LoopbackEnd);
 ### Lockstep
 
 - **Input delay.** The input sampled before tick `t` runs at `t + input_delay`
-  (default 3 ticks, 50 ms). The first `input_delay` ticks run on empty input on
+  (default 3 ticks, 50 ms; at most `MAX_INPUT_DELAY`, 60). A host with more is
+  refused when it starts, since its guest would refuse the session. The first `input_delay` ticks run on empty input on
   both sides.
 - **Redundancy.** Every message repeats all local inputs the peer has not
   acknowledged, up to `redundancy` (default 16, at most 24). A lost packet
   costs nothing as long as a later one arrives. Each message also carries:
   - an ack: every input of the peer below this tick has arrived;
   - a ping and the echo of the peer's last ping, for the round trip;
-  - the sender's latest 16 state hashes.
+  - the sender's state hashes from the oldest one the peer has not
+    acknowledged (up to 16 per message), with an ack for the peer's hashes.
+    A hash is resent until it arrives, so no tick goes unchecked, however
+    long a one-way loss lasts.
 - **Stall.** `inputs_for(t)` returns `None` while either input for `t` is
   missing, and the caller does not run the tick. Nothing is predicted, so
   nothing is ever rolled back.
@@ -137,6 +141,8 @@ in the engine.
 - Inputs that contradict a confirmed one, or come from unknown players, are
   rejected.
 - Checksums are refreshed by a rollback and readable via `checksum(tick)`.
+- Prediction uses the player's latest confirmed input at or before the
+  predicted tick, so an early or late packet does not skew it.
 
 ## Limits
 
@@ -161,7 +167,8 @@ in the engine.
 - **`lockstep` over `loopback_pair`:**
   - 1000 ticks in sync on a perfect link, and with 20 % loss, 10 % duplicates
     and 0–6 steps of latency;
-  - a divergence is reported at its exact tick;
+  - a divergence is reported at its exact tick, also after a long one-way loss
+    with a 30-tick input delay;
   - a silent peer stalls the game, it resumes afterwards, and the timeout
     fires;
   - malformed messages are refused.

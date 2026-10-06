@@ -132,7 +132,8 @@ pub struct RollbackSession<S: RollbackState> {
     /// Predicted inputs per player per tick.
     predicted_inputs: FxHashMap<PlayerId, FxHashMap<u64, S::Input>>,
     /// Last known input for each remote player (used for prediction).
-    last_known_input: FxHashMap<PlayerId, S::Input>,
+    /// Each player's input with the highest tick seen so far.
+    last_known_input: FxHashMap<PlayerId, (u64, S::Input)>,
     /// Per-tick checksums for desync detection.
     checksums: FxHashMap<u64, u32>,
     /// Runtime statistics.
@@ -152,7 +153,7 @@ impl<S: RollbackState> RollbackSession<S> {
         for &pid in &players {
             confirmed_inputs.insert(pid, FxHashMap::default());
             predicted_inputs.insert(pid, FxHashMap::default());
-            last_known_input.insert(pid, S::Input::default());
+            last_known_input.insert(pid, (0, S::Input::default()));
         }
 
         Self {
@@ -192,7 +193,7 @@ impl<S: RollbackState> RollbackSession<S> {
             .entry(self.local_player)
             .or_default()
             .insert(tick, local_input.clone());
-        self.last_known_input.insert(self.local_player, local_input);
+        self.remember_input(self.local_player, tick, &local_input);
 
         // 2. Validate and store remote inputs.
         let mut accepted = Vec::with_capacity(remote_inputs.len());
@@ -215,7 +216,7 @@ impl<S: RollbackState> RollbackSession<S> {
                 Some(_) => self.stats.rejected_inputs += 1,
                 None => {
                     confirmed.insert(remote_tick, input.clone());
-                    self.last_known_input.insert(pid, input.clone());
+                    self.remember_input(pid, remote_tick, &input);
                     accepted.push((pid, remote_tick, input));
                 }
             }
@@ -338,7 +339,7 @@ impl<S: RollbackState> RollbackSession<S> {
     pub fn predict_input(&self, player: PlayerId) -> S::Input {
         self.last_known_input
             .get(&player)
-            .cloned()
+            .map(|(_, input)| input.clone())
             .unwrap_or_default()
     }
 
@@ -381,11 +382,46 @@ impl<S: RollbackState> RollbackSession<S> {
 
     // ── Internal helpers ────────────────────────────────────────
 
+    /// Keep `input` as `player`'s latest unless a later tick is known: an
+    /// old packet arriving late must not become the prediction.
+    fn remember_input(&mut self, player: PlayerId, tick: u64, input: &S::Input) {
+        let entry = self
+            .last_known_input
+            .entry(player)
+            .or_insert((0, S::Input::default()));
+        if tick >= entry.0 {
+            *entry = (tick, input.clone());
+        }
+    }
+
+    /// The prediction for `player` at `tick`: their latest confirmed input
+    /// at or before it. An input from a later tick says nothing about this
+    /// one.
+    fn predict_at(&self, player: PlayerId, tick: u64) -> S::Input {
+        let confirmed = self.confirmed_inputs.get(&player).and_then(|m| {
+            m.iter()
+                .filter(|(t, _)| **t <= tick)
+                .max_by_key(|(t, _)| **t)
+                .map(|(_, input)| input.clone())
+        });
+        confirmed
+            .or_else(|| {
+                self.last_known_input
+                    .get(&player)
+                    .filter(|(t, _)| *t <= tick)
+                    .map(|(_, input)| input.clone())
+            })
+            .unwrap_or_default()
+    }
+
     /// Advance `last_confirmed_tick` past every tick for which every player
     /// has a confirmed input.
     fn update_confirmed_tick(&mut self) {
         let mut confirmed = self.last_confirmed_tick;
-        'outer: loop {
+        // Never past the tick being run: an input from the future does not
+        // make a tick confirmed before it happens (and with no players at
+        // all the scan would never stop).
+        'outer: while confirmed <= self.current_tick {
             for pid in &self.players {
                 let has_input = self
                     .confirmed_inputs
@@ -428,7 +464,7 @@ impl<S: RollbackState> RollbackSession<S> {
             if let Some(input) = self.confirmed_inputs.get(&pid).and_then(|m| m.get(&tick)) {
                 result.push((pid, input.clone()));
             } else {
-                let predicted = self.predict_input(pid);
+                let predicted = self.predict_at(pid, tick);
                 self.predicted_inputs
                     .entry(pid)
                     .or_default()
@@ -768,5 +804,44 @@ mod tests {
         MockState { value: 3 + 6 }.checksum(&mut expected);
         assert_eq!(session.checksum(1), Some(expected.finish_crc()));
         assert_ne!(session.checksum(1), Some(predicted));
+    }
+
+    #[test]
+    fn no_players_do_not_hang_the_session() {
+        let mut session =
+            RollbackSession::<MockState>::new(RollbackConfig::default(), p(1), vec![]);
+        let mut state = MockState::default();
+        for _ in 0..3 {
+            session.advance_tick(&mut state, 1, vec![]).unwrap();
+        }
+        assert_eq!(session.current_tick(), 3);
+    }
+
+    #[test]
+    fn a_late_old_input_does_not_become_the_prediction() {
+        let config = RollbackConfig {
+            max_rollback_frames: 8,
+            snapshot_buffer_size: 16,
+        };
+        let mut session = RollbackSession::<MockState>::new(config, p(1), vec![p(1), p(2)]);
+        let mut state = MockState::default();
+        session
+            .advance_tick(&mut state, 1, vec![(p(2), 0, 2)])
+            .unwrap();
+        // Tick 1's input and, early, tick 3's arrive together.
+        session
+            .advance_tick(&mut state, 1, vec![(p(2), 1, 2), (p(2), 3, 9)])
+            .unwrap();
+        // Tick 2 is missing: predicted from tick 1 (2), not from tick 3 (9).
+        session.advance_tick(&mut state, 1, vec![]).unwrap();
+        session.advance_tick(&mut state, 1, vec![]).unwrap();
+        assert_eq!(state.value, 3 + 3 + 3 + 10);
+        // Tick 2's input arrives last; it matches the prediction, and it
+        // does not replace tick 3's as the newest.
+        session
+            .advance_tick(&mut state, 1, vec![(p(2), 2, 2)])
+            .unwrap();
+        assert_eq!(session.predict_input(p(2)), 9);
+        assert_eq!(session.stats().rollbacks_this_second, 0);
     }
 }

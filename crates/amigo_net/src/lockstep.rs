@@ -24,8 +24,12 @@ use std::collections::BTreeMap;
 /// checksums stay under [`MAX_PAYLOAD_SIZE`](crate::protocol::MAX_PAYLOAD_SIZE).
 pub const MAX_REDUNDANCY: usize = 24;
 
-/// How many of its latest state hashes a message carries.
+/// The most state hashes one message carries. Hashes are sent from the
+/// oldest one the peer has not acknowledged, so none is ever skipped.
 const CHECKSUM_WINDOW: usize = 16;
+
+/// The largest input delay a session accepts: one second.
+pub const MAX_INPUT_DELAY: u32 = 60;
 
 /// Inputs further ahead of what we have than this are refused: no honest
 /// peer runs that far ahead, and storing them would let one fill memory.
@@ -85,7 +89,8 @@ pub struct LockstepConfig {
     /// This side's player: 0 (the host) or 1.
     pub local: PlayerId,
     /// Ticks between sampling an input and running it. More hides more
-    /// latency; 3 ticks (50 ms) suits a LAN or a good connection.
+    /// latency; 3 ticks (50 ms) suits a LAN or a good connection. At most
+    /// [`MAX_INPUT_DELAY`].
     pub input_delay: u32,
     /// Unacknowledged inputs each message repeats, up to
     /// [`MAX_REDUNDANCY`].
@@ -139,6 +144,10 @@ pub struct LockstepSession {
     remote_next: u64,
     /// The peer has every local input below this.
     peer_ack: u64,
+    /// The peer has every one of our state hashes below this.
+    peer_hash_ack: u64,
+    /// We have every one of the peer's state hashes below this.
+    hash_next: u64,
     /// Every tick below this has been simulated here.
     simulated: u64,
     checksums: BTreeMap<u64, u64>,
@@ -157,6 +166,7 @@ impl LockstepSession {
     /// the same tick with the same `input_delay`.
     pub fn new(mut config: LockstepConfig, start_tick: u64) -> Self {
         config.redundancy = config.redundancy.clamp(1, MAX_REDUNDANCY);
+        config.input_delay = config.input_delay.min(MAX_INPUT_DELAY);
         let first_input_tick = start_tick + u64::from(config.input_delay);
         Self {
             config,
@@ -166,6 +176,8 @@ impl LockstepSession {
             remote_inputs: BTreeMap::new(),
             remote_next: first_input_tick,
             peer_ack: first_input_tick,
+            peer_hash_ack: start_tick,
+            hash_next: start_tick,
             simulated: start_tick,
             checksums: BTreeMap::new(),
             peer_checksums: BTreeMap::new(),
@@ -256,14 +268,18 @@ impl LockstepSession {
         let keep_local = self.peer_ack.min(self.simulated);
         self.local_inputs = self.local_inputs.split_off(&keep_local);
         self.remote_inputs = self.remote_inputs.split_off(&self.simulated);
+        // Our hashes stay until the peer has them, however long that takes.
         let keep_hashes = self.simulated.saturating_sub(CHECKSUM_HISTORY);
-        self.checksums = self.checksums.split_off(&keep_hashes);
+        self.checksums = self
+            .checksums
+            .split_off(&keep_hashes.min(self.peer_hash_ack));
         self.peer_checksums = self.peer_checksums.split_off(&keep_hashes);
+        self.hash_next = self.hash_next.max(keep_hashes);
     }
 
     /// The message to send now: every local input the peer has not
     /// acknowledged (up to `redundancy`), what we have of theirs, a ping,
-    /// and our latest state hashes.
+    /// and the state hashes the peer has not acknowledged, oldest first.
     pub fn outgoing(&mut self, now_ms: u64) -> Vec<u8> {
         self.started_ms.get_or_insert(now_ms);
         let first = self.peer_ack.max(self.first_input_tick);
@@ -275,8 +291,7 @@ impl LockstepSession {
             .collect();
         let hashes: Vec<(u64, u64)> = self
             .checksums
-            .iter()
-            .rev()
+            .range(self.peer_hash_ack..)
             .take(CHECKSUM_WINDOW)
             .map(|(&t, &h)| (t, h))
             .collect();
@@ -286,7 +301,9 @@ impl LockstepSession {
         for input in &inputs {
             input.write(&mut w);
         }
-        w.u32(self.remote_next as u32).u32(now_ms as u32);
+        w.u32(self.remote_next as u32)
+            .u32(self.hash_next as u32)
+            .u32(now_ms as u32);
         match self.last_ping {
             Some(ping) => w.u8(1).u32(ping),
             None => w.u8(0),
@@ -315,6 +332,7 @@ impl LockstepSession {
             inputs.push(NetInput::read(&mut r)?);
         }
         let ack = u64::from(r.u32()?);
+        let hash_ack = u64::from(r.u32()?);
         let ping = r.u32()?;
         let pong = match r.u8()? {
             0 => None,
@@ -330,7 +348,7 @@ impl LockstepSession {
             hashes.push((u64::from(r.u32()?), r.u64()?));
         }
         r.finish()?;
-        if ack > self.local_next {
+        if ack > self.local_next || hash_ack > self.simulated {
             return Err(WireError::Invalid("ack"));
         }
 
@@ -346,6 +364,7 @@ impl LockstepSession {
             self.remote_next += 1;
         }
         self.peer_ack = self.peer_ack.max(ack);
+        self.peer_hash_ack = self.peer_hash_ack.max(hash_ack);
         self.last_ping = Some(ping);
         if let Some(pong) = pong {
             self.rtt_ms = Some((now_ms as u32).wrapping_sub(pong));
@@ -356,6 +375,9 @@ impl LockstepSession {
                 self.peer_checksums.insert(tick, hash);
                 self.compare(tick);
             }
+        }
+        while self.peer_checksums.contains_key(&self.hash_next) {
+            self.hash_next += 1;
         }
         self.prune();
         Ok(())
@@ -461,8 +483,13 @@ mod tests {
 
     impl Side {
         fn new(player: u32, link: LoopbackEnd) -> Self {
+            Self::with_delay(player, link, 3)
+        }
+
+        fn with_delay(player: u32, link: LoopbackEnd, input_delay: u32) -> Self {
             let config = LockstepConfig {
                 local: PlayerId(player),
+                input_delay,
                 ..Default::default()
             };
             Self {
@@ -570,6 +597,46 @@ mod tests {
     }
 
     #[test]
+    fn hashes_lost_in_one_direction_are_resent_until_acknowledged() {
+        // With a long input delay one side can run far ahead while its
+        // messages are lost. Sending only the latest hashes then skipped
+        // the tick where the two sides parted, and the desync was reported
+        // later than it happened, or not at all.
+        let (ea, eb) = loopback_pair(LinkConditions::default());
+        let mut a = Side::with_delay(0, ea, 30);
+        let mut b = Side::with_delay(1, eb, 30);
+        b.diverge_at = Some(100);
+        let mut now = 0;
+        run(&mut a, &mut b, 95, &mut now);
+
+        b.link.set_send_loss_percent(Some(100));
+        for _ in 0..150 {
+            a.frame(now, 1000);
+            b.frame(now, 1000);
+            a.link.step();
+            now += 16;
+        }
+        assert!(b.tick > 100 + 16 + 1, "b only reached {}", b.tick);
+
+        b.link.set_send_loss_percent(None);
+        run(&mut a, &mut b, 400, &mut now);
+        assert_eq!(a.session.desync_tick(), Some(100));
+        assert_eq!(b.session.desync_tick(), Some(100));
+    }
+
+    #[test]
+    fn the_input_delay_is_capped() {
+        let s = LockstepSession::new(
+            LockstepConfig {
+                input_delay: 1000,
+                ..Default::default()
+            },
+            0,
+        );
+        assert_eq!(s.config().input_delay, MAX_INPUT_DELAY);
+    }
+
+    #[test]
     fn a_silent_peer_stalls_then_times_out() {
         let (mut a, mut b) = sides(LinkConditions::default());
         let mut now = 0;
@@ -633,7 +700,7 @@ mod tests {
         assert_eq!(s.status(0).remote_tick, 3);
 
         let mut far = ByteWriter::new();
-        far.u32(1_000_000).u8(0).u32(0).u32(0).u8(0).u8(0);
+        far.u32(1_000_000).u8(0).u32(0).u32(0).u32(0).u8(0).u8(0);
         assert_eq!(
             s.receive(&far.finish(), 0),
             Err(WireError::Invalid("input tick"))

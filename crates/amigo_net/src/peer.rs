@@ -4,6 +4,7 @@
 //! [`LockstepSession`]: crate::lockstep::LockstepSession
 
 use crate::PlayerId;
+use crate::lockstep::MAX_INPUT_DELAY;
 use crate::protocol::{
     Packet, PacketKind, RECV_BUFFER_SIZE, SeqNum, is_ignorable_recv_error, send_packet,
 };
@@ -44,6 +45,8 @@ struct Shared {
     order: u64,
     rng: SimRng,
     conditions: LinkConditions,
+    /// Loss for messages sent by side 0 / side 1, overriding `conditions`.
+    send_loss: [Option<u32>; 2],
     /// Messages on their way to side 0 and side 1:
     /// `(deliver_at, order, payload)`.
     queues: [Vec<(u64, u64, Vec<u8>)>; 2],
@@ -64,6 +67,7 @@ pub fn loopback_pair(conditions: LinkConditions) -> (LoopbackEnd, LoopbackEnd) {
         order: 0,
         rng: SimRng::new(conditions.seed),
         conditions,
+        send_loss: [None, None],
         queues: [Vec::new(), Vec::new()],
     }));
     (
@@ -85,13 +89,20 @@ impl LoopbackEnd {
     pub fn set_loss_percent(&self, percent: u32) {
         self.shared.borrow_mut().conditions.loss_percent = percent;
     }
+
+    /// Lose this end's outgoing messages at `percent` (`None`: as the
+    /// conditions say), to cut the link in one direction only.
+    pub fn set_send_loss_percent(&self, percent: Option<u32>) {
+        self.shared.borrow_mut().send_loss[self.side] = percent;
+    }
 }
 
 impl Link for LoopbackEnd {
     fn send(&mut self, payload: &[u8]) {
         let mut s = self.shared.borrow_mut();
         let c = s.conditions;
-        if s.rng.below(100) < c.loss_percent {
+        let loss = s.send_loss[self.side].unwrap_or(c.loss_percent);
+        if s.rng.below(100) < loss {
             return;
         }
         let copies = if s.rng.below(100) < c.duplicate_percent {
@@ -187,7 +198,18 @@ pub struct UdpPeer {
 impl UdpPeer {
     /// Host a session on `bind_addr` (e.g. `"0.0.0.0:7777"`) with
     /// `settings`.
+    /// `settings.input_delay` above [`MAX_INPUT_DELAY`] is refused here:
+    /// a guest would refuse the session.
     pub fn host(bind_addr: &str, settings: SessionSettings) -> std::io::Result<Self> {
+        if settings.input_delay > MAX_INPUT_DELAY {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "input delay {} exceeds the maximum of {MAX_INPUT_DELAY} ticks",
+                    settings.input_delay
+                ),
+            ));
+        }
         let socket = UdpSocket::bind(bind_addr)?;
         socket.set_nonblocking(true)?;
         info!("Hosting a session on {}", socket.local_addr()?);
@@ -388,7 +410,7 @@ impl UdpPeer {
         if nonce != self.nonce || self.state != PeerState::Waiting {
             return Ok(());
         }
-        if input_delay > 60 {
+        if input_delay > MAX_INPUT_DELAY {
             return Err(WireError::Invalid("input delay"));
         }
         info!("Joined the session, input delay {input_delay} ticks");
@@ -462,6 +484,16 @@ mod tests {
             host.state(),
             guest.state()
         );
+    }
+
+    #[test]
+    fn a_host_refuses_an_input_delay_a_guest_would_refuse() {
+        let settings = SessionSettings {
+            input_delay: MAX_INPUT_DELAY + 1,
+            ..SETTINGS
+        };
+        let err = UdpPeer::host("127.0.0.1:0", settings).err().unwrap();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
     #[test]
