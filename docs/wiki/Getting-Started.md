@@ -92,7 +92,21 @@ Or press `Ctrl+Shift+B` in VS Code if you have the Amigo task configured.
 
 A window opens at the virtual resolution your template chose (480x270 unless you
 set another, which is also the engine's default). The engine runs a fixed-timestep
-game loop at 60 ticks/second with interpolated rendering.
+game loop at 60 ticks/second with interpolated rendering. Inside `update`,
+`ctx.time.dt` is always one tick (1/60 s).
+
+### Record and replay a session
+
+```sh
+amigo run --record replays/bug.json   # play; the file is written on exit
+amigo run --replay replays/bug.json   # the same session again, tick for tick
+```
+
+A replay stores the input of every tick and the random seed. Draw random numbers
+from `ctx.rng`, not from an RNG of your own, so a replay draws the same ones.
+Implement `Game::state_hash` and a replay also reports the first tick where the
+game went another way. The `engine/replays` spec, linked from
+[Specifications](Specifications), has the details.
 
 ## Draw a Sprite
 

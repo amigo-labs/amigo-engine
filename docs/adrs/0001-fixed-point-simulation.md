@@ -62,3 +62,9 @@ safe for lockstep or cross-platform replays yet: `combat`, `ai` (steering),
 `td_systems`, `platformer`, `idle` (f64 economy), the rest of `shmup`
 (rank, scoring, player config) and `metroidvania` room bounds (`Rect`).
 `tween::Tween` counts time in `f32` seconds and is presentation-only by design.
+
+The engine around the simulation: every tick sees the same `ctx.time.dt`
+(one tick), and `GameContext::rng` (`SimRng`, SplitMix64) is the seeded source
+of random numbers. Replays (`docs/specs/engine/replays.md`) store its state
+and each tick's input, and compare a state hash per tick, which turns any
+leftover nondeterminism into a reported desync tick.

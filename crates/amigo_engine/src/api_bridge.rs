@@ -161,6 +161,40 @@ pub fn drain_api_commands(
                     Err(e) => warn!("dev.restore_snapshot with an unreadable payload: {e}"),
                 }
             }
+            "replay.record_start" => {
+                if let Err(e) = crate::replay::start_recording(ctx, stack, false, None) {
+                    warn!("replay.record_start refused: {e}");
+                }
+            }
+            "replay.record_stop" => {
+                let Some(path) = cmd.params.get("path").and_then(|v| v.as_str()) else {
+                    warn!("replay.record_stop without a path");
+                    continue;
+                };
+                match crate::replay::stop_recording(ctx)
+                    .and_then(|replay| replay.save(Path::new(path)))
+                {
+                    Ok(()) => info!("Replay written to {path}"),
+                    Err(e) => warn!("replay.record_stop: {e}"),
+                }
+            }
+            "replay.play" => {
+                let Some(path) = cmd.params.get("path").and_then(|v| v.as_str()) else {
+                    warn!("replay.play without a path");
+                    continue;
+                };
+                let result = crate::replay::Replay::load(Path::new(path)).and_then(|replay| {
+                    crate::replay::play(ctx, stack, replay, path.to_string(), false)
+                });
+                if let Err(e) = result {
+                    warn!("replay.play: {e}");
+                }
+            }
+            "replay.stop" => {
+                if let Err(e) = crate::replay::stop_playback(ctx) {
+                    warn!("replay.stop: {e}");
+                }
+            }
             // With the editor built in, `editor.*` edits the engine's level.
             // Without it there is no level to edit, and they go to the inbox
             // like any other command a game may want to handle.
@@ -341,6 +375,10 @@ pub fn publish_snapshot(shared: &SharedState, ctx: &GameContext, control: &ApiCo
         "camera".to_string(),
         serde_json::json!({ "x": pos.x, "y": pos.y, "zoom": ctx.camera.zoom }),
     );
+    // Replays are fire-and-forget too: `engine.get_property {"key": "replay"}`.
+    if let Ok(status) = serde_json::to_value(ctx.replay_status()) {
+        s.snapshot.custom.insert("replay".to_string(), status);
+    }
     // What the `editor.*` commands did, since they are fire-and-forget:
     // `engine.get_property {"key": "editor"}`.
     #[cfg(feature = "editor")]

@@ -336,12 +336,13 @@ pub fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "amigo_replay_record_start",
-            "Start recording a replay.",
+            "Start recording the input of every tick, with a state hash per tick. \
+             Progress is under engine.get_property {\"key\": \"replay\"}.",
             json!({"type": "object", "properties": {}}),
         ),
         tool(
             "amigo_replay_record_stop",
-            "Stop recording and save the replay.",
+            "Stop recording and save the replay (JSON).",
             json!({
                 "type": "object",
                 "properties": {
@@ -352,15 +353,21 @@ pub fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "amigo_replay_play",
-            "Play back a recorded replay.",
+            "Play back a recorded replay in place of live input. The first tick \
+             whose state differs from the recording is reported as desync_tick \
+             under engine.get_property {\"key\": \"replay\"}.",
             json!({
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string"},
-                    "from_tick": {"type": "integer"}
+                    "path": {"type": "string"}
                 },
                 "required": ["path"]
             }),
+        ),
+        tool(
+            "amigo_replay_stop",
+            "Stop a playing replay and hand input back to the player.",
+            json!({"type": "object", "properties": {}}),
         ),
         // ── Debug ──
         tool(

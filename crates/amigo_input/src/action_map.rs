@@ -152,48 +152,120 @@ pub fn key_from_name(name: &str) -> Option<KeyCode> {
         return n.checked_sub(1).and_then(|i| FUNCTION_KEYS.get(i)).copied();
     }
 
+    if let Some(&(_, key)) = NAMED_KEYS.iter().find(|(n, _)| *n == name) {
+        return Some(key);
+    }
     Some(match name {
-        "Space" => KeyCode::Space,
-        "Enter" | "Return" => KeyCode::Enter,
-        "Escape" | "Esc" => KeyCode::Escape,
-        "Tab" => KeyCode::Tab,
-        "Backspace" => KeyCode::Backspace,
-        "Delete" => KeyCode::Delete,
-        "Insert" => KeyCode::Insert,
-        "Home" => KeyCode::Home,
-        "End" => KeyCode::End,
-        "PageUp" => KeyCode::PageUp,
-        "PageDown" => KeyCode::PageDown,
-        "CapsLock" => KeyCode::CapsLock,
-        "ShiftLeft" | "Shift" => KeyCode::ShiftLeft,
-        "ShiftRight" => KeyCode::ShiftRight,
-        "ControlLeft" | "Ctrl" | "Control" => KeyCode::ControlLeft,
-        "ControlRight" => KeyCode::ControlRight,
-        "AltLeft" | "Alt" => KeyCode::AltLeft,
-        "AltRight" => KeyCode::AltRight,
-        "ArrowUp" | "Up" => KeyCode::ArrowUp,
-        "ArrowDown" | "Down" => KeyCode::ArrowDown,
-        "ArrowLeft" | "Left" => KeyCode::ArrowLeft,
-        "ArrowRight" | "Right" => KeyCode::ArrowRight,
-        "Minus" => KeyCode::Minus,
-        "Equal" => KeyCode::Equal,
-        "Comma" => KeyCode::Comma,
-        "Period" => KeyCode::Period,
-        "Slash" => KeyCode::Slash,
-        "Backslash" => KeyCode::Backslash,
-        "Semicolon" => KeyCode::Semicolon,
-        "Quote" => KeyCode::Quote,
-        "Backquote" => KeyCode::Backquote,
-        "BracketLeft" => KeyCode::BracketLeft,
-        "BracketRight" => KeyCode::BracketRight,
-        "NumpadAdd" => KeyCode::NumpadAdd,
-        "NumpadSubtract" => KeyCode::NumpadSubtract,
-        "NumpadMultiply" => KeyCode::NumpadMultiply,
-        "NumpadDivide" => KeyCode::NumpadDivide,
-        "NumpadEnter" => KeyCode::NumpadEnter,
-        "NumpadDecimal" => KeyCode::NumpadDecimal,
+        "Return" => KeyCode::Enter,
+        "Esc" => KeyCode::Escape,
+        "Shift" => KeyCode::ShiftLeft,
+        "Ctrl" | "Control" => KeyCode::ControlLeft,
+        "Alt" => KeyCode::AltLeft,
+        "Up" => KeyCode::ArrowUp,
+        "Down" => KeyCode::ArrowDown,
+        "Left" => KeyCode::ArrowLeft,
+        "Right" => KeyCode::ArrowRight,
         _ => return None,
     })
+}
+
+/// Keys with a fixed winit name, beyond the letter, digit, numpad-digit and
+/// function-key ranges. The first column is both what [`key_from_name`]
+/// accepts and what [`key_name`] returns.
+const NAMED_KEYS: [(&str, KeyCode); 39] = [
+    ("Space", KeyCode::Space),
+    ("Enter", KeyCode::Enter),
+    ("Escape", KeyCode::Escape),
+    ("Tab", KeyCode::Tab),
+    ("Backspace", KeyCode::Backspace),
+    ("Delete", KeyCode::Delete),
+    ("Insert", KeyCode::Insert),
+    ("Home", KeyCode::Home),
+    ("End", KeyCode::End),
+    ("PageUp", KeyCode::PageUp),
+    ("PageDown", KeyCode::PageDown),
+    ("CapsLock", KeyCode::CapsLock),
+    ("ShiftLeft", KeyCode::ShiftLeft),
+    ("ShiftRight", KeyCode::ShiftRight),
+    ("ControlLeft", KeyCode::ControlLeft),
+    ("ControlRight", KeyCode::ControlRight),
+    ("AltLeft", KeyCode::AltLeft),
+    ("AltRight", KeyCode::AltRight),
+    ("ArrowUp", KeyCode::ArrowUp),
+    ("ArrowDown", KeyCode::ArrowDown),
+    ("ArrowLeft", KeyCode::ArrowLeft),
+    ("ArrowRight", KeyCode::ArrowRight),
+    ("Minus", KeyCode::Minus),
+    ("Equal", KeyCode::Equal),
+    ("Comma", KeyCode::Comma),
+    ("Period", KeyCode::Period),
+    ("Slash", KeyCode::Slash),
+    ("Backslash", KeyCode::Backslash),
+    ("Semicolon", KeyCode::Semicolon),
+    ("Quote", KeyCode::Quote),
+    ("Backquote", KeyCode::Backquote),
+    ("BracketLeft", KeyCode::BracketLeft),
+    ("BracketRight", KeyCode::BracketRight),
+    ("NumpadAdd", KeyCode::NumpadAdd),
+    ("NumpadSubtract", KeyCode::NumpadSubtract),
+    ("NumpadMultiply", KeyCode::NumpadMultiply),
+    ("NumpadDivide", KeyCode::NumpadDivide),
+    ("NumpadEnter", KeyCode::NumpadEnter),
+    ("NumpadDecimal", KeyCode::NumpadDecimal),
+];
+
+const LETTER_NAMES: [&str; 26] = [
+    "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI", "KeyJ", "KeyK", "KeyL",
+    "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR", "KeyS", "KeyT", "KeyU", "KeyV", "KeyW", "KeyX",
+    "KeyY", "KeyZ",
+];
+
+const DIGIT_NAMES: [&str; 10] = [
+    "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8",
+    "Digit9",
+];
+
+const NUMPAD_DIGIT_NAMES: [&str; 10] = [
+    "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7",
+    "Numpad8", "Numpad9",
+];
+
+const FUNCTION_KEY_NAMES: [&str; 12] = [
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+];
+
+/// The winit name of `key`, the inverse of [`key_from_name`]: `KeyW`,
+/// `Digit1`, `ArrowUp`, `F5`.
+///
+/// `None` for keys [`key_from_name`] does not know (media keys, `F13`
+/// and up, and so on); a binding to one of those could not be loaded
+/// either, and a replay leaves them out.
+pub fn key_name(key: KeyCode) -> Option<&'static str> {
+    let ranges: [(&[KeyCode], &[&'static str]); 4] = [
+        (&LETTERS, &LETTER_NAMES),
+        (&DIGITS, &DIGIT_NAMES),
+        (&NUMPAD_DIGITS, &NUMPAD_DIGIT_NAMES),
+        (&FUNCTION_KEYS, &FUNCTION_KEY_NAMES),
+    ];
+    for (keys, names) in ranges {
+        if let Some(i) = keys.iter().position(|&k| k == key) {
+            return Some(names[i]);
+        }
+    }
+    NAMED_KEYS
+        .iter()
+        .find(|&&(_, k)| k == key)
+        .map(|&(name, _)| name)
+}
+
+/// Every key [`key_name`] can name, in a fixed order.
+pub fn named_keys() -> impl Iterator<Item = KeyCode> {
+    LETTERS
+        .into_iter()
+        .chain(DIGITS)
+        .chain(NUMPAD_DIGITS)
+        .chain(FUNCTION_KEYS)
+        .chain(NAMED_KEYS.iter().map(|&(_, k)| k))
 }
 
 /// A complete set of action bindings, serializable for save/load.
@@ -444,6 +516,44 @@ impl ActionState {
     pub fn released(&self, action: &str) -> bool {
         self.released.contains(action)
     }
+
+    /// The current state as data, for a replay.
+    pub fn snapshot(&self) -> ActionSnapshot {
+        ActionSnapshot {
+            pressed: sorted(&self.pressed),
+            held: sorted(&self.held),
+            released: sorted(&self.released),
+        }
+    }
+
+    /// Replace the current state with `snapshot`, as if the inputs that
+    /// produced it had just been read. Replays use this for gamepad-driven
+    /// actions, which cannot be fed back through a [`GamepadState`].
+    ///
+    /// [`GamepadState`]: super::gamepad::GamepadState
+    pub fn restore(&mut self, snapshot: &ActionSnapshot) {
+        self.pressed = snapshot.pressed.iter().cloned().collect();
+        self.held = snapshot.held.iter().cloned().collect();
+        self.released = snapshot.released.iter().cloned().collect();
+    }
+}
+
+fn sorted(set: &FxHashSet<String>) -> Vec<String> {
+    let mut names: Vec<String> = set.iter().cloned().collect();
+    names.sort_unstable();
+    names
+}
+
+/// An [`ActionState`] as data: the actions pressed, held and released in one
+/// tick, each list sorted by name.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionSnapshot {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pressed: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub released: Vec<String>,
 }
 
 impl Default for ActionState {
@@ -559,6 +669,47 @@ mod tests {
         input.handle_key_event(PhysicalKey::Code(KeyCode::KeyW), ElementState::Released);
         actions.update(&input, &bindings, Some(&gamepad));
         assert!(actions.released("jump") && !actions.held("jump"));
+    }
+
+    #[test]
+    fn every_named_key_round_trips_through_its_name() {
+        let mut seen = FxHashSet::default();
+        for key in named_keys() {
+            let name = key_name(key).expect("named_keys yields only named keys");
+            assert_eq!(key_from_name(name), Some(key), "{name}");
+            assert!(seen.insert(name), "{name} names two keys");
+        }
+        assert_eq!(seen.len(), 26 + 10 + 10 + 12 + NAMED_KEYS.len());
+        assert_eq!(key_name(KeyCode::KeyW), Some("KeyW"));
+        assert_eq!(key_name(KeyCode::F13), None);
+        // Short forms resolve to a key whose canonical name is the long one.
+        assert_eq!(key_from_name("Up").and_then(key_name), Some("ArrowUp"));
+    }
+
+    #[test]
+    fn action_snapshot_round_trips() {
+        let mut bindings = ActionBindings::new();
+        bindings.bind_key("jump", "Space");
+        bindings.bind_key("left", "A");
+        let mut input = super::super::InputState::new();
+        input.handle_key_event(
+            winit::keyboard::PhysicalKey::Code(KeyCode::Space),
+            winit::event::ElementState::Pressed,
+        );
+        input.handle_key_event(
+            winit::keyboard::PhysicalKey::Code(KeyCode::KeyA),
+            winit::event::ElementState::Pressed,
+        );
+        let mut actions = ActionState::new();
+        actions.update(&input, &bindings, None);
+
+        let snapshot = actions.snapshot();
+        assert_eq!(snapshot.held, ["jump", "left"]);
+        let mut restored = ActionState::new();
+        restored.restore(&snapshot);
+        assert!(restored.pressed("jump") && restored.held("left"));
+        assert!(!restored.released("jump"));
+        assert_eq!(restored.snapshot(), snapshot);
     }
 
     #[test]

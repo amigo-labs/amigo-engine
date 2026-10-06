@@ -96,6 +96,7 @@ fn handle_tools_call(
         "amigo_replay_record_start" => "replay.record_start",
         "amigo_replay_record_stop" => "replay.record_stop",
         "amigo_replay_play" => "replay.play",
+        "amigo_replay_stop" => "replay.stop",
         "amigo_debug_dump_state" => "debug.dump_state",
         "amigo_debug_tile_collision" => "debug.tile_collision",
         "amigo_debug_step" => "debug.step",

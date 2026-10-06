@@ -9,10 +9,17 @@ pub struct TimeInfo {
     pub tick: u64,
     /// Interpolation alpha for rendering between ticks (0.0 - 1.0).
     pub alpha: f32,
-    /// Real elapsed time since engine start, in seconds.
+    /// Real elapsed time since engine start, in seconds. Wall-clock time:
+    /// simulation code that must replay identically counts [`tick`](Self::tick)
+    /// instead.
     pub elapsed: f64,
-    /// Delta time for the current frame (for rendering/UI, NOT simulation).
+    /// Seconds of simulation per tick: always [`TICK_DURATION`](Self::TICK_DURATION)
+    /// inside `Game::update`, however many ticks a frame runs. Scale movement
+    /// by this.
     pub dt: f32,
+    /// Real seconds since the previous rendered frame, for effects that
+    /// follow the display rather than the simulation.
+    pub frame_dt: f32,
 }
 
 impl TimeInfo {
@@ -26,7 +33,8 @@ impl TimeInfo {
             tick: 0,
             alpha: 0.0,
             elapsed: 0.0,
-            dt: 0.0,
+            dt: Self::TICK_DURATION as f32,
+            frame_dt: 0.0,
         }
     }
 }

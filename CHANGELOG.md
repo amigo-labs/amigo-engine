@@ -6,6 +6,43 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Added — replays
+
+- **Record and replay sessions.** `amigo run --record <file>` records every
+  tick's input, plus a state hash per tick, and writes the file on exit.
+  `amigo run --replay <file>` plays it back in place of live input and logs
+  the first tick whose state differs from the recording. The same works
+  through `AMIGO_RECORD`/`AMIGO_REPLAY`,
+  `EngineBuilder::record_replay`/`play_replay`, and over the API:
+  `replay.record_start`, `replay.record_stop`, `replay.play` and the new
+  `replay.stop`. Before this, those commands landed in the game's
+  `ApiInbox` and nothing recorded anything.
+  `engine.get_property {"key": "replay"}` reports progress and `desync_tick`.
+  `replay.play` rejects `from_tick`, because a replay holds input, not state.
+  See `docs/specs/engine/replays.md`.
+- **`GameContext::rng`** (`amigo_core::SimRng`, in the prelude): a seeded
+  SplitMix64 generator with `range`, `below`, `fix_unit`, `fix_range`,
+  `chance`, `pick` and `shuffle`. The seed comes from `[dev] seed`,
+  `AMIGO_SEED`, `amigo run --seed` or `EngineBuilder::seed`; otherwise it is
+  taken from the clock and logged. `GameContext::seed()` and `reseed()`.
+- **`Game::state_hash`** (default `None`): a hash of the game's state after a
+  tick, which replays compare.
+- **`amigo_input`**:
+  - `InputSnapshot` with `InputState::snapshot`/`restore`, and `ActionSnapshot`
+    with `ActionState::snapshot`/`restore`.
+  - `key_name` (the inverse of `key_from_name`), `named_keys`,
+    `mouse_button_code`/`mouse_button_from_code`.
+
+### Fixed — one tick loop
+
+- **`ctx.time.dt` is the tick length inside `update`.** The windowed loop set it
+  to the frame time, so on a frame that ran two or more ticks (30/50 Hz
+  displays, a hitch) every tick moved by the whole frame's time and objects
+  went too fast. The new `time.frame_dt` holds the frame time.
+- **Headless runs plugins and clears the UI.** The windowed and headless loops
+  each had their own copy of the tick, and headless never called
+  `Plugin::update` or `ui.begin()`. Both now run one shared tick.
+
 ### Breaking — physics, collision and bullet patterns in fixed point
 
 These changes break the public API, so the next release has to be **0.2.0**.
@@ -58,6 +95,9 @@ Migration:
 - **`shmup`**: `ShmupHitbox` takes `Fix` radii and a `SimVec2` offset, and
   `hit_test`/`graze_test` take `(owner, point)` as `SimVec2`.
   `GrazingSystem::tick(player: SimVec2, …)`.
+- **`TimeInfo`** has a new field, `frame_dt`, so building it from a struct
+  literal no longer compiles; use `TimeInfo::new()`. `dt` now means "one
+  tick" (see above).
 
 ### Fixed — deterministic math
 
