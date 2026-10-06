@@ -170,6 +170,8 @@ graph TD
     agents[engine/agents]
     simulation[engine/simulation]
     saveload[engine/save-load]
+    renderext[engine/rendering-extensions]
+    audioplay[engine/audio-playback]
     fmt[assets/format]
     pipeline[assets/pipeline]
     atlas[assets/atlas]
@@ -215,6 +217,11 @@ graph TD
     simulation --> core
     saveload --> core
     saveload --> chunks
+    renderext --> rendering
+    renderext --> camera
+    renderext --> particles
+    renderext --> atlas
+    audioplay --> audio
     pipeline --> fmt
     atlas --> fmt
     cli --> core
@@ -300,6 +307,8 @@ engine ever called them.
 | [engine/gpu-instancing](engine/gpu-instancing.md)         | partial | amigo_render     | engine/rendering              |
 | [engine/modding](engine/modding.md)                       | done   | amigo_assets      | assets/format                 |
 | [engine/accessibility](engine/accessibility.md)           | done   | amigo_render      | engine/rendering, engine/input, engine/ui |
+| [engine/rendering-extensions](engine/rendering-extensions.md) | spec | amigo_render, amigo_engine, amigo_assets | engine/rendering, engine/camera, engine/font-rendering, engine/particles, assets/atlas |
+| [engine/audio-playback](engine/audio-playback.md)         | spec   | amigo_audio, amigo_engine | engine/audio            |
 | [gametypes/platformer](gametypes/platformer.md)           | done   | amigo_core        | engine/physics, engine/tween  |
 | [gametypes/roguelike](gametypes/roguelike.md)             | done   | amigo_core        | engine/procedural, engine/save-load |
 | [gametypes/shmup](gametypes/shmup.md)                     | done   | amigo_core        | engine/bullet-patterns        |

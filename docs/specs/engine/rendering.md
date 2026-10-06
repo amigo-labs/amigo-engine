@@ -2,7 +2,7 @@
 status: done
 crate: amigo_render
 depends_on: ["engine/core"]
-last_updated: 2026-03-18
+last_updated: 2026-10-05
 ---
 
 # Rendering Pipeline
@@ -10,6 +10,8 @@ last_updated: 2026-03-18
 ## Purpose
 
 Provides the GPU rendering pipeline for pixel art games: sprite batching, virtual resolution scaling, layered rendering with parallax, tilemap chunk caching, and optional modern effects (lighting, particles, post-processing). All rendering goes through wgpu for cross-platform GPU support.
+
+Sprite rotation and pivots, blend modes, screen-space drawing from `Game::draw`, Unicode text, shapes, custom post-processing shaders, atlas frames with origins, and parallax are specified in [engine/rendering-extensions](rendering-extensions.md) (not implemented yet).
 
 ## Public API
 
