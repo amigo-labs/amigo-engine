@@ -1,9 +1,11 @@
 use crate::Game;
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
+use crate::net::{self, LaunchNet};
 use crate::replay::{self, LaunchReplay};
 use crate::splash::{self, SplashState};
 use crate::stack::GameStack;
+use crate::tick::TickOutcome;
 use amigo_assets::{AssetManager, HotReloader};
 use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
@@ -77,6 +79,7 @@ pub struct EngineBuilder {
     restore_snapshot: Option<std::path::PathBuf>,
     input_bindings: Option<ActionBindings>,
     launch_replay: LaunchReplay,
+    launch_net: LaunchNet,
 }
 
 impl EngineBuilder {
@@ -96,6 +99,8 @@ impl EngineBuilder {
             input_bindings: None,
             // `amigo run --record` / `--replay`, likewise.
             launch_replay: LaunchReplay::from_env(),
+            // `amigo run --host` / `--join`, likewise.
+            launch_net: LaunchNet::from_env(),
         }
     }
 
@@ -200,6 +205,21 @@ impl EngineBuilder {
         self
     }
 
+    /// Host a two-player network game on `addr` (`"7777"` for every
+    /// interface, or `"192.168.1.5:7777"`). The game starts when the other
+    /// player joins. `amigo run --host <port>` sets this.
+    pub fn host(mut self, addr: &str) -> Self {
+        self.launch_net.host = Some(addr.to_string());
+        self
+    }
+
+    /// Join the network game hosted at `addr` (`"192.168.1.5:7777"`).
+    /// `amigo run --join <addr>` sets this.
+    pub fn join(mut self, addr: &str) -> Self {
+        self.launch_net.join = Some(addr.to_string());
+        self
+    }
+
     /// Add a plugin to the engine.
     pub fn add_plugin(mut self, plugin: impl Plugin) -> Self {
         plugin.build(&mut self.plugin_ctx);
@@ -216,6 +236,7 @@ impl EngineBuilder {
             restore_snapshot: self.restore_snapshot,
             input_bindings: self.input_bindings,
             launch_replay: self.launch_replay,
+            launch_net: self.launch_net,
         }
     }
 }
@@ -235,6 +256,7 @@ pub struct Engine {
     restore_snapshot: Option<std::path::PathBuf>,
     input_bindings: Option<ActionBindings>,
     launch_replay: LaunchReplay,
+    launch_net: LaunchNet,
 }
 
 impl Engine {
@@ -289,6 +311,7 @@ impl Engine {
             restore_snapshot: self.restore_snapshot,
             input_bindings: Some(bindings),
             launch_replay: self.launch_replay,
+            launch_net: self.launch_net,
         };
 
         event_loop.run_app(&mut app).expect("Event loop failed");
@@ -335,17 +358,27 @@ impl Engine {
         #[cfg(feature = "editor")]
         open_editor_session(&mut game_ctx);
 
-        // Initialize the game (there is no splash in headless mode)
+        // Initialize the game (there is no splash in headless mode). A
+        // network game starts once the other player is there.
         let mut stack = GameStack::new(Box::new(game));
-        replay::enter_root(
-            &mut game_ctx,
-            &mut stack,
-            &self.launch_replay,
-            self.restore_snapshot.is_some(),
-        );
-
         let mut control = crate::api_bridge::ApiControl::default();
-        if let Some(path) = &self.restore_snapshot {
+        let networked = self.launch_net.requested();
+        if networked {
+            net::launch(&mut game_ctx, &self.launch_net, self.config.net.input_delay);
+            if self.restore_snapshot.is_some() {
+                warn!("Not restoring the dev snapshot: a network game starts fresh on both sides");
+            }
+        }
+        let mut root_pending = networked && !net::poll_connect(&mut game_ctx);
+        if !root_pending {
+            replay::enter_root(
+                &mut game_ctx,
+                &mut stack,
+                &self.launch_replay,
+                !networked && self.restore_snapshot.is_some(),
+            );
+        }
+        if let Some(path) = self.restore_snapshot.as_ref().filter(|_| !networked) {
             match crate::api_bridge::load_dev_snapshot(path) {
                 Ok(snapshot) => crate::api_bridge::apply_dev_snapshot(
                     &snapshot,
@@ -402,6 +435,20 @@ impl Engine {
                 break;
             }
 
+            // Waiting for the other player: nothing runs yet, but the API
+            // answers (status, quit).
+            if root_pending {
+                if net::poll_connect(&mut game_ctx) {
+                    replay::enter_root(&mut game_ctx, &mut stack, &self.launch_replay, false);
+                    root_pending = false;
+                } else {
+                    crate::api_bridge::publish_snapshot(&shared_state, &game_ctx, &control);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    continue;
+                }
+            }
+            net::frame(&mut game_ctx);
+
             // Headless only advances when asked to; `paused` additionally
             // suppresses those requests so a client can freeze the simulation
             // without racing its own pending ticks.
@@ -413,23 +460,37 @@ impl Engine {
             let mut quit = false;
 
             // Execute requested ticks at max CPU speed
+            let mut ran = 0u64;
             if ticks_requested > 0 {
                 let start = Instant::now();
-                for _ in 0..ticks_requested {
-                    game_ctx.time.frame_dt = tick_duration as f32;
-                    game_ctx.time.elapsed += tick_duration;
-                    if !crate::tick::run_tick(&mut game_ctx, &mut stack, &mut self.plugins) {
-                        quit = true;
-                        break;
+                game_ctx.time.frame_dt = tick_duration as f32;
+                for done in 0..ticks_requested {
+                    match crate::tick::run_tick(&mut game_ctx, &mut stack, &mut self.plugins) {
+                        TickOutcome::Ran => {
+                            game_ctx.time.elapsed += tick_duration;
+                            ran += 1;
+                        }
+                        // Waiting for the other player's input: keep the
+                        // rest of the request for the next round.
+                        TickOutcome::Stalled => {
+                            control.pending_ticks += ticks_requested - done;
+                            break;
+                        }
+                        TickOutcome::Quit => {
+                            quit = true;
+                            break;
+                        }
                     }
                 }
-                let elapsed = start.elapsed();
-                info!(
-                    "Headless: executed {} ticks in {:.1}ms ({:.0} ticks/sec)",
-                    ticks_requested,
-                    elapsed.as_secs_f64() * 1000.0,
-                    ticks_requested as f64 / elapsed.as_secs_f64().max(0.000001),
-                );
+                if ran > 0 {
+                    let elapsed = start.elapsed();
+                    info!(
+                        "Headless: executed {} ticks in {:.1}ms ({:.0} ticks/sec)",
+                        ran,
+                        elapsed.as_secs_f64() * 1000.0,
+                        ran as f64 / elapsed.as_secs_f64().max(0.000001),
+                    );
+                }
 
                 if quit {
                     break;
@@ -457,13 +518,16 @@ impl Engine {
             }
             crate::api_bridge::publish_snapshot(&shared_state, &game_ctx, &control);
 
-            // If no ticks were requested, sleep briefly to avoid busy-waiting
-            if ticks_requested == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(5));
+            // If nothing ran, sleep briefly to avoid busy-waiting (a stalled
+            // network tick retries in a millisecond).
+            if ran == 0 {
+                let ms = if ticks_requested > 0 { 1 } else { 5 };
+                std::thread::sleep(std::time::Duration::from_millis(ms));
             }
         }
 
         replay::save_on_exit(&mut game_ctx);
+        net::shutdown(&mut game_ctx);
         info!("Headless engine shutting down");
     }
 }
@@ -660,6 +724,65 @@ fn recover_from_surface_error(renderer: &mut Renderer, err: SurfaceError) {
     }
 }
 
+/// The F8 overlay's lines for a network game.
+fn net_overlay_lines(status: &net::NetStatus) -> Vec<String> {
+    if status.mode == net::NetMode::Off {
+        return vec!["net: single player".into()];
+    }
+    let mut lines = vec![format!(
+        "net: {:?} as {} (player {})",
+        status.mode,
+        status.role.as_deref().unwrap_or("?"),
+        status.local_player
+    )];
+    if let Some(peer) = &status.peer {
+        lines.push(format!("peer {peer}"));
+    }
+    lines.push(format!(
+        "rtt {} ms  delay {}  stalls {}",
+        status.rtt_ms.map_or("-".into(), |r| r.to_string()),
+        status.input_delay,
+        status.stalled_ticks
+    ));
+    if let Some(tick) = status.desync_tick {
+        lines.push(format!("DESYNC at tick {tick}"));
+    }
+    if let Some(reason) = &status.reason {
+        lines.push(reason.clone());
+    }
+    lines
+}
+
+/// "Waiting for player 2", drawn while a network game has not started.
+fn render_waiting_screen(state: &mut EngineState, message: &str) {
+    state.sprite_draw_list.clear();
+    let camera = &state.renderer.camera;
+    let view = camera.view_rect();
+    let mut draw = DrawContext::new(
+        &mut state.sprite_draw_list,
+        &state.game_ctx,
+        camera.effective_position(),
+        camera.virtual_width,
+        camera.virtual_height,
+        1.0,
+        state.renderer.white_texture_id,
+    )
+    .with_view(view);
+    let (w, _) = draw.measure_text(message);
+    draw.draw_text(
+        message,
+        view.x + (view.w - w) / 2.0,
+        view.y + view.h / 2.0,
+        Color::WHITE,
+    );
+    for sprite in &state.sprite_draw_list {
+        state.renderer.batcher.push(sprite.clone());
+    }
+    if let Err(e) = state.renderer.render() {
+        recover_from_surface_error(&mut state.renderer, e);
+    }
+}
+
 struct EngineState {
     window: Arc<Window>,
     renderer: Renderer,
@@ -685,6 +808,8 @@ struct EngineState {
     editor_pointer: amigo_editor::PointerState,
     #[cfg(feature = "editor")]
     modifiers: winit::keyboard::ModifiersState,
+    /// The root game's `init` waits for the other player of a network game.
+    root_pending: bool,
 }
 
 #[cfg(feature = "api")]
@@ -707,6 +832,8 @@ struct EngineApp {
     input_bindings: Option<ActionBindings>,
     /// Replay to record or play from launch.
     launch_replay: LaunchReplay,
+    /// Network game to host or join from launch.
+    launch_net: LaunchNet,
 }
 
 impl ApplicationHandler for EngineApp {
@@ -765,6 +892,13 @@ impl ApplicationHandler for EngineApp {
         game_ctx.save = amigo_core::save::SaveManager::new(self.config.save_config());
         game_ctx.reseed(self.config.dev.resolve_seed());
         info!("Simulation seed {}", game_ctx.seed());
+        let networked = self.launch_net.requested();
+        if networked {
+            net::launch(&mut game_ctx, &self.launch_net, self.config.net.input_delay);
+            if self.restore_snapshot.take().is_some() {
+                warn!("Not restoring the dev snapshot: a network game starts fresh on both sides");
+            }
+        }
 
         let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
 
@@ -821,8 +955,13 @@ impl ApplicationHandler for EngineApp {
         // process on every source change, and sitting through the logo each time
         // is the opposite of what the dev loop is for.
         let skip_splash = self.restore_snapshot.is_some();
+        let mut root_pending = false;
         let splash = if self.config.splash.enabled && !skip_splash {
             Some(SplashState::new())
+        } else if networked {
+            // Starts in the first frame the other player is there.
+            root_pending = true;
+            None
         } else {
             // No splash — init game immediately. Snapshots are restored
             // only with the `api` feature.
@@ -891,6 +1030,7 @@ impl ApplicationHandler for EngineApp {
             editor_pointer: Default::default(),
             #[cfg(feature = "editor")]
             modifiers: Default::default(),
+            root_pending,
         });
 
         // Restore a dev snapshot, now that the game has been initialized (the
@@ -1105,15 +1245,41 @@ impl ApplicationHandler for EngineApp {
 
                     if finished {
                         state.splash = None;
-                        // A restored snapshot skips the splash, so none follows.
+                        if self.launch_net.requested() {
+                            state.root_pending = true;
+                        } else {
+                            // A restored snapshot skips the splash, so none
+                            // follows.
+                            replay::enter_root(
+                                &mut state.game_ctx,
+                                &mut self.stack,
+                                &self.launch_replay,
+                                false,
+                            );
+                        }
+                    }
+                    return;
+                }
+
+                // ── Waiting for the other player ─────────────────────
+                if state.root_pending {
+                    if net::poll_connect(&mut state.game_ctx) {
+                        state.root_pending = false;
                         replay::enter_root(
                             &mut state.game_ctx,
                             &mut self.stack,
                             &self.launch_replay,
                             false,
                         );
+                    } else {
+                        let message = state
+                            .game_ctx
+                            .net
+                            .waiting_message()
+                            .unwrap_or_else(|| "Connecting...".into());
+                        render_waiting_screen(state, &message);
+                        return;
                     }
-                    return;
                 }
 
                 // ── Normal game loop ─────────────────────────────────
@@ -1167,6 +1333,9 @@ impl ApplicationHandler for EngineApp {
                 // presses they stay visible until a tick consumes them.
                 state.game_ctx.gamepad.update();
 
+                // Network game: read and send even if no tick runs.
+                net::frame(&mut state.game_ctx);
+
                 // Hot reload: re-upload changed sprite textures.
                 if let Some(reloader) = &state.hot_reloader {
                     let mut levels = Vec::new();
@@ -1195,14 +1364,30 @@ impl ApplicationHandler for EngineApp {
                 // Fixed timestep simulation. `tick_budget` above already decided
                 // how many ticks this frame gets, from elapsed time plus any API
                 // step request.
-                for _ in 0..budget.total() {
-                    if !crate::tick::run_tick(
+                let total = budget.total();
+                for done in 0..total {
+                    match crate::tick::run_tick(
                         &mut state.game_ctx,
                         &mut self.stack,
                         &mut self.plugins,
                     ) {
-                        event_loop.exit();
-                        return;
+                        TickOutcome::Ran => {}
+                        // Waiting for the other player: try again next
+                        // frame. Ticks asked for over the API are kept.
+                        TickOutcome::Stalled => {
+                            #[cfg(feature = "api")]
+                            {
+                                let left = (total - done).min(budget.forced);
+                                state.api_control.pending_ticks += u64::from(left);
+                            }
+                            #[cfg(not(feature = "api"))]
+                            let _ = done;
+                            break;
+                        }
+                        TickOutcome::Quit => {
+                            event_loop.exit();
+                            return;
+                        }
                     }
                 }
 
@@ -1322,7 +1507,15 @@ impl ApplicationHandler for EngineApp {
                     state.game_ctx.world.entity_count(),
                     state.renderer.draw_call_count(),
                 );
-                let overlay_lines = state.debug.overlay_lines();
+                let mut overlay_lines = state.debug.overlay_lines();
+                // F8: the network session, which the debug crate cannot see.
+                if state.debug.visible && state.debug.show_network_debug {
+                    overlay_lines.extend(
+                        net_overlay_lines(&state.game_ctx.net_status())
+                            .into_iter()
+                            .map(|line| (line, Color::new(0.6, 0.9, 1.0, 1.0))),
+                    );
+                }
                 let show_entity_ids = state.debug.visible && state.debug.show_entity_ids;
                 if !overlay_lines.is_empty() || show_entity_ids {
                     let view = state.renderer.camera.view_rect();
@@ -1507,6 +1700,7 @@ impl ApplicationHandler for EngineApp {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(state) = &mut self.state {
             replay::save_on_exit(&mut state.game_ctx);
+            net::shutdown(&mut state.game_ctx);
         }
     }
 

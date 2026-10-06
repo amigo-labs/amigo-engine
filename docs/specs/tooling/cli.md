@@ -27,6 +27,7 @@ COMMANDS:
     run [--headless] [--api]             Run the game (cargo run)
         [--record F | --replay F]        ... recording or playing a replay
         [--seed N]                       ... with a fixed random seed
+        [--host PORT | --join ADDR:PORT] ... as a two-player network game
     dev [--port <PORT>]                  Run with watch mode + snapshot restore
     pack                                 Pack assets into atlas (release build)
     release [--target <TARGET>]          Build optimized release binary
@@ -229,7 +230,7 @@ Validates the project *and* type-checks it:
 1. Verifies `amigo.toml` exists in the current directory.
 2. `--headless` sets `AMIGO_HEADLESS=1` environment variable.
 3. `--api` (or implied by `--headless`) enables the `amigo_engine/api` Cargo feature and sets `AMIGO_API=1`.
-4. `--record <file>` sets `AMIGO_RECORD`, `--replay <file>` sets `AMIGO_REPLAY` (the file must exist), and `--seed <n>` sets `AMIGO_SEED` (see [engine/replays](../engine/replays.md)).
+4. `--record <file>` sets `AMIGO_RECORD`, `--replay <file>` sets `AMIGO_REPLAY` (the file must exist), and `--seed <n>` sets `AMIGO_SEED` (see [engine/replays](../engine/replays.md)). `--host <port>` sets `AMIGO_NET_HOST` and `--join <addr:port>` sets `AMIGO_NET_JOIN` (see [engine/networking](../engine/networking.md)).
 5. Runs `cargo run` with the appropriate features and environment variables, passing `--` to separate cargo args from game args.
 
 ### `amigo pack`

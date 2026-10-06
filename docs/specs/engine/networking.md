@@ -1,6 +1,6 @@
 ---
-status: partial
-crate: amigo_net
+status: done
+crate: amigo_net, amigo_engine
 depends_on: ["engine/core", "engine/replays"]
 last_updated: 2026-10-06
 ---
@@ -15,10 +15,57 @@ seeded RNG), so the two machines only need to agree on each tick's input; then
 both compute the same states. That is **lockstep**, and it is the supported
 model.
 
-`partial`: the protocol, the transports and the lockstep session work and are
-tested over real UDP. The engine does not drive them yet: there is no
-`--host`/`--join`, and `GameContext` has no per-player input. That is phase 9b
-of the production-readiness plan.
+`done` for two-player lockstep, which the engine drives end to end:
+- `amigo run --host` / `--join` starts a network game;
+- `GameContext` hands each player's input to the game;
+- desyncs are reported.
+
+The client/server relay and rollback (below) are not wired into the engine.
+
+## In a game (`amigo_engine::net`)
+
+```sh
+amigo run --host 7777                 # player 1 (the host), waits for player 2
+amigo run --join 192.168.1.5:7777     # player 2
+```
+
+The same is possible through `AMIGO_NET_HOST` / `AMIGO_NET_JOIN`,
+`EngineBuilder::host` / `join`, and `[net] input_delay` in `amigo.toml`
+(default 3 ticks; the host's value counts).
+
+```rust
+impl GameContext {
+    pub fn players(&self) -> impl Iterator<Item = PlayerId>;  // [0] alone, [0, 1] online
+    pub fn local_player(&self) -> PlayerId;                   // 0 alone or host, 1 guest
+    pub fn player_actions(&self, p: PlayerId) -> &ActionState;
+    pub fn player_cursor(&self, p: PlayerId) -> Option<SimVec2>;
+    pub fn net_status(&self) -> NetStatus;
+}
+pub enum NetEvent { Connected { local }, Disconnected { reason }, Desync { tick } }
+```
+
+- **Start.** The root game's `init` waits until both players are connected; the
+  window shows "Waiting for player 2". The guest takes over the host's seed.
+- **Input.** Only bound actions and the world cursor travel; raw `ctx.input`
+  stays local. `ctx.actions` is the local player's input, delayed exactly like
+  the other player's, so single-player code keeps working.
+- **Stall.** A tick whose remote input is missing does not run: no `update`,
+  no UI rebuild, and the press stays pending until the retry. Ticks requested
+  over the API are kept for later.
+- **Desync.** After every tick the engine's state hash (tick, `ctx.rng`, entity
+  count, `Game::state_hash`) is exchanged. The first difference raises a
+  `NetEvent::Desync`.
+- **End.** The session ends when the other player closes the game (they send
+  a goodbye on shutdown), stays silent for 5 s, or the host refuses the join
+  (bindings differ, session full). Then `NetEvent::Disconnected` arrives and
+  the game continues with the local player alone.
+- **Status.** `engine.get_property {"key": "net"}` reports mode, role, peer,
+  RTT, input delay, `remote_tick`, `stalled_ticks`, `desync_tick` and
+  `reason`. The F8 debug overlay shows the same.
+- **Not during network play:** replay recording and playback, and restoring a
+  dev snapshot (both are refused with a warning).
+
+`examples/lockstep_demo` is a minimal two-player game.
 
 ## Public API
 
@@ -179,3 +226,16 @@ in the engine.
   - the in-memory link is lossy and repeatable.
 - **`rollback`:** stalls at the window, rejects contradicting and foreign
   inputs, and refreshes checksums.
+- **`amigo_engine::net`:**
+  - two engines over a link with 15 % loss stay in lockstep for 1000 ticks
+    (same hash, no desync);
+  - different seeds desync at tick 0;
+  - a silent peer stalls the host until the timeout, after which it plays
+    alone and gets `Disconnected`;
+  - alone, there is exactly player 0;
+  - actions survive the wire;
+  - over UDP, different bindings are refused and the handshake hands over the
+    host's seed and input delay.
+- **Headless end to end:** two processes of `lockstep_demo` (`--host` and
+  `--join`) each run 600 ticks over JSON-RPC and report the same tick,
+  `desync_tick: null`.

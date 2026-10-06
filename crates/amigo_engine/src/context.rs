@@ -130,12 +130,14 @@ pub struct GameContext {
     sprite_textures: Vec<(String, TextureId, u32, u32)>,
     seed: u64,
     pub(crate) replay: crate::replay::ReplayDriver,
+    pub(crate) net: crate::net::NetDriver,
 }
 
 impl GameContext {
     pub fn new(virtual_width: f32, virtual_height: f32, assets_path: &str) -> Self {
         let mut events = EventHub::new();
         events.register::<LevelReloaded>();
+        events.register::<crate::net::NetEvent>();
         Self {
             world: World::new(),
             input: InputState::new(),
@@ -167,6 +169,7 @@ impl GameContext {
             sprite_textures: Vec::new(),
             seed: 0,
             replay: Default::default(),
+            net: Default::default(),
         }
     }
 
@@ -187,6 +190,64 @@ impl GameContext {
     /// Whether a replay is being recorded or played, and how far it got.
     pub fn replay_status(&self) -> crate::replay::ReplayStatus {
         self.replay.status()
+    }
+
+    /// The players in this game: player 0 alone, or players 0 and 1 in a
+    /// network game (`amigo run --host` / `--join`). Write gameplay against
+    /// these and the same code runs alone and with two.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext, pos: &mut [SimVec2; 2]) {
+    /// for p in ctx.players() {
+    ///     if ctx.player_actions(p).held("right") {
+    ///         pos[p.0 as usize].x += Fix::ONE;
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn players(&self) -> impl Iterator<Item = amigo_net::PlayerId> + use<> {
+        let count = if self.net.is_playing() { 2 } else { 1 };
+        (0..count).map(amigo_net::PlayerId)
+    }
+
+    /// The player at this machine: 0 alone or as host, 1 as guest.
+    pub fn local_player(&self) -> amigo_net::PlayerId {
+        self.net.local_player()
+    }
+
+    /// `player`'s bound actions this tick. In a network game they arrive
+    /// `input_delay` ticks after they were pressed, the local player's too,
+    /// so both machines see the same thing; alone they are
+    /// [`actions`](Self::actions). A player not in the game holds nothing.
+    pub fn player_actions(&self, player: amigo_net::PlayerId) -> &ActionState {
+        static NOBODY: std::sync::OnceLock<ActionState> = std::sync::OnceLock::new();
+        match self.net.player_actions(player) {
+            Some(actions) => actions,
+            None if player.0 == 0 => &self.actions,
+            None => NOBODY.get_or_init(ActionState::new),
+        }
+    }
+
+    /// `player`'s cursor in world coordinates this tick, in fixed point.
+    /// Alone it is the mouse's world position.
+    pub fn player_cursor(&self, player: amigo_net::PlayerId) -> Option<amigo_core::SimVec2> {
+        if self.net.is_playing() {
+            return self.net.player_cursor(player);
+        }
+        (player.0 == 0).then(|| {
+            let m = self.input.mouse_world_pos();
+            amigo_core::SimVec2::new(
+                amigo_core::Fix::saturating_from_num(m.x),
+                amigo_core::Fix::saturating_from_num(m.y),
+            )
+        })
+    }
+
+    /// Whether a network game is connecting, running or over, and how it
+    /// goes.
+    pub fn net_status(&self) -> crate::net::NetStatus {
+        self.net.status()
     }
 
     /// Refresh [`actions`](Self::actions) from the current input. The engine

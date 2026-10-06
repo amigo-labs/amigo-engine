@@ -108,6 +108,18 @@ Implement `Game::state_hash` and a replay also reports the first tick where the
 game went another way. The `engine/replays` spec, linked from
 [Specifications](Specifications), has the details.
 
+### Play with two
+
+```sh
+amigo run --host 7777                  # on the first machine
+amigo run --join 192.168.1.5:7777      # on the second
+```
+
+Both machines run the same game in lockstep: each tick runs once both
+players' input is there. Write the gameplay against `ctx.players()` and
+`ctx.player_actions(p)` instead of `ctx.input`, and the same code runs alone
+(one player) and with two. See `examples/lockstep_demo`.
+
 ## Draw a Sprite
 
 ```rust

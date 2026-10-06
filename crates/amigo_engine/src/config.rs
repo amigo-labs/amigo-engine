@@ -22,6 +22,8 @@ pub struct EngineConfig {
     pub splash: SplashConfig,
     #[serde(default)]
     pub input: InputConfig,
+    #[serde(default)]
+    pub net: NetConfig,
     /// Art generation defaults (parsed by amigo_artgen, ignored by engine).
     #[serde(default, skip_serializing)]
     pub art: Option<toml::Value>,
@@ -102,6 +104,28 @@ pub struct InputConfig {
     pub bindings: String,
 }
 
+/// `[net]`: two-player network games (`amigo run --host` / `--join`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NetConfig {
+    /// Ticks between pressing a key and its effect, on both machines
+    /// alike. It hides the network's latency: 3 ticks (50 ms) suits a LAN,
+    /// 6-8 an internet connection. The host's value is used.
+    #[serde(default = "default_input_delay")]
+    pub input_delay: u32,
+}
+
+fn default_input_delay() -> u32 {
+    3
+}
+
+impl Default for NetConfig {
+    fn default() -> Self {
+        Self {
+            input_delay: default_input_delay(),
+        }
+    }
+}
+
 fn default_bindings_path() -> String {
     "input.ron".to_string()
 }
@@ -152,6 +176,7 @@ impl Default for EngineConfig {
             },
             splash: SplashConfig::default(),
             input: InputConfig::default(),
+            net: NetConfig::default(),
             art: None,
         }
     }

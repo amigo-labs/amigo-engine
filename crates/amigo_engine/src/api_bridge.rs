@@ -375,6 +375,10 @@ pub fn publish_snapshot(shared: &SharedState, ctx: &GameContext, control: &ApiCo
         "camera".to_string(),
         serde_json::json!({ "x": pos.x, "y": pos.y, "zoom": ctx.camera.zoom }),
     );
+    // The network game: `engine.get_property {"key": "net"}`.
+    if let Ok(status) = serde_json::to_value(ctx.net_status()) {
+        s.snapshot.custom.insert("net".to_string(), status);
+    }
     // Replays are fire-and-forget too: `engine.get_property {"key": "replay"}`.
     if let Ok(status) = serde_json::to_value(ctx.replay_status()) {
         s.snapshot.custom.insert("replay".to_string(), status);

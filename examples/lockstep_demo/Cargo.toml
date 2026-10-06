@@ -1,0 +1,17 @@
+[package]
+name = "amigo_lockstep_demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "amigo_lockstep_demo"
+path = "src/main.rs"
+
+[dependencies]
+amigo_engine = { workspace = true }
+
+[lints]
+workspace = true

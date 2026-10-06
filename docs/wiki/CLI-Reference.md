@@ -23,6 +23,8 @@
 | `amigo run --record <FILE>` | ... recording the input to a replay, written on exit |
 | `amigo run --replay <FILE>` | ... playing a replay instead of live input |
 | `amigo run --seed <N>` | ... with a fixed seed for `ctx.rng` |
+| `amigo run --host <PORT>` | ... hosting a two-player network game |
+| `amigo run --join <ADDR:PORT>` | ... joining one |
 | `amigo dev [--port PORT]` | Watch mode: rebuild + restart on changes |
 | `amigo editor` | Run the game with the level editor built in; F9 opens it over the game |
 | `amigo pack` | Pack assets into atlas |

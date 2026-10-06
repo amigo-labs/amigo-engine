@@ -7,33 +7,51 @@
 
 use crate::engine::Plugin;
 use crate::stack::GameStack;
-use crate::{GameContext, replay};
+use crate::{GameContext, net, replay};
 use amigo_core::TimeInfo;
 use tracing::info_span;
 
-/// Run one tick: input (live or replayed), `Game::update`, the stack's
-/// scene change, plugins, ECS and event flush, particles, replay
-/// bookkeeping, and the end of the tick's one-shot input.
-///
-/// Returns `false` when the engine should shut down: the game quit, or the
-/// stack ran empty.
+/// What [`run_tick`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TickOutcome {
+    Ran,
+    /// A network game is waiting for the other player's input; nothing ran.
+    /// Try again next frame.
+    Stalled,
+    /// The game quit, or the stack ran empty: shut down.
+    Quit,
+}
+
+/// Run one tick: input (live, replayed or from the network), `Game::update`,
+/// the stack's scene change, plugins, ECS and event flush, particles, replay
+/// and network bookkeeping, and the end of the tick's one-shot input.
 pub(crate) fn run_tick(
     ctx: &mut GameContext,
     stack: &mut GameStack,
     plugins: &mut [Box<dyn Plugin>],
-) -> bool {
+) -> TickOutcome {
     let _tick_span = info_span!("tick").entered();
     let tick_duration = TimeInfo::TICK_DURATION;
     ctx.time.dt = tick_duration as f32;
 
     let Some(active) = stack.top_mut() else {
-        return false;
+        return TickOutcome::Quit;
     };
+    if ctx.net.is_playing() {
+        // Decided before anything of the tick happens, so a stalled tick
+        // leaves no trace (the UI of the last tick stays on screen, and
+        // this tick's presses stay pending for the retry).
+        ctx.update_actions();
+        if net::before_update(ctx) == net::Prepared::Stall {
+            return TickOutcome::Stalled;
+        }
+    } else {
+        replay::before_update(ctx);
+    }
     // Immediate-mode UI: clear last tick's commands so a game can just build
     // widgets in `update` without bookkeeping. Calling `ui.begin()` again in
     // game code is harmless.
     ctx.ui.begin();
-    replay::before_update(ctx);
     let action = {
         let _update_span = info_span!("game_update").entered();
         active.update(ctx)
@@ -58,6 +76,7 @@ pub(crate) fn run_tick(
         ctx.particles.update(tick_duration as f32);
     }
     replay::after_tick(ctx, stack);
+    net::after_tick(ctx, stack);
 
     // Clear edge-detected input (just pressed/released) at the END of every
     // tick, so each press is seen by exactly one tick. Clearing once per
@@ -68,5 +87,9 @@ pub(crate) fn run_tick(
     // zero-tick frames keep their presses for the next tick. Clearing before
     // `update` would hide input injected by tests or the API.
     ctx.end_tick_input();
-    running
+    if running {
+        TickOutcome::Ran
+    } else {
+        TickOutcome::Quit
+    }
 }
