@@ -5,7 +5,7 @@ use amigo_core::level_loader::LoadedLevel;
 use amigo_core::resources::Resources;
 use amigo_core::save::{SaveConfig, SaveManager};
 use amigo_core::scheduler::TickScheduler;
-use amigo_core::{Color, Rect, RenderVec2, TimeInfo, World};
+use amigo_core::{Color, Rect, RenderVec2, SimRng, TimeInfo, World};
 use amigo_input::{ActionBindings, ActionState, GamepadState, InputState};
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontId, FontManager};
@@ -62,6 +62,18 @@ pub struct GameContext {
     /// ```
     pub actions: ActionState,
     pub time: TimeInfo,
+    /// Random numbers for gameplay. Draw from this rather than an RNG of
+    /// your own: the engine seeds it (`[dev] seed` in `amigo.toml`,
+    /// `AMIGO_SEED`, or the clock; see [`seed`](Self::seed)) and replays
+    /// restore it, so a recorded session draws the same numbers again.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext) {
+    /// let damage = ctx.rng.range(3, 7);
+    /// # }
+    /// ```
+    pub rng: SimRng,
     pub camera: Camera,
     pub save: SaveManager,
     pub scheduler: TickScheduler,
@@ -116,6 +128,8 @@ pub struct GameContext {
     pub tasks: amigo_core::tasks::TaskPool,
     // Texture mapping for sprites (name -> TextureId + dimensions)
     sprite_textures: Vec<(String, TextureId, u32, u32)>,
+    seed: u64,
+    pub(crate) replay: crate::replay::ReplayDriver,
 }
 
 impl GameContext {
@@ -129,6 +143,7 @@ impl GameContext {
             bindings: ActionBindings::new(),
             actions: ActionState::new(),
             time: TimeInfo::new(),
+            rng: SimRng::new(0),
             camera: Camera::new(virtual_width, virtual_height),
             save: SaveManager::new(SaveConfig {
                 max_slots: 10,
@@ -150,12 +165,34 @@ impl GameContext {
             #[cfg(feature = "async_tasks")]
             tasks: amigo_core::tasks::TaskPool::new(),
             sprite_textures: Vec::new(),
+            seed: 0,
+            replay: Default::default(),
         }
     }
 
+    /// The seed [`rng`](Self::rng) started from: `[dev] seed` in
+    /// `amigo.toml`, `AMIGO_SEED`, or one taken from the clock. The engine
+    /// logs it at startup, so a session can be rerun with the same numbers.
+    /// A context built directly starts from seed 0.
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// Restart [`rng`](Self::rng) from `seed`.
+    pub fn reseed(&mut self, seed: u64) {
+        self.seed = seed;
+        self.rng = SimRng::new(seed);
+    }
+
+    /// Whether a replay is being recorded or played, and how far it got.
+    pub fn replay_status(&self) -> crate::replay::ReplayStatus {
+        self.replay.status()
+    }
+
     /// Refresh [`actions`](Self::actions) from the current input. The engine
-    /// calls this before every tick; call it after injecting input yourself,
-    /// e.g. in a test.
+    /// calls this before every tick (a playing replay sets the recorded
+    /// actions instead); call it after injecting input yourself, e.g. in a
+    /// test.
     pub fn update_actions(&mut self) {
         self.actions
             .update(&self.input, &self.bindings, Some(&self.gamepad));

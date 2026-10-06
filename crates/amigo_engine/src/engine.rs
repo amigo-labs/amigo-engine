@@ -1,6 +1,7 @@
 use crate::Game;
 use crate::config::EngineConfig;
 use crate::context::{DrawContext, GameContext};
+use crate::replay::{self, LaunchReplay};
 use crate::splash::{self, SplashState};
 use crate::stack::GameStack;
 use amigo_assets::{AssetManager, HotReloader};
@@ -75,6 +76,7 @@ pub struct EngineBuilder {
     plugin_ctx: PluginContext,
     restore_snapshot: Option<std::path::PathBuf>,
     input_bindings: Option<ActionBindings>,
+    launch_replay: LaunchReplay,
 }
 
 impl EngineBuilder {
@@ -92,6 +94,8 @@ impl EngineBuilder {
                 .filter(|p| !p.is_empty())
                 .map(std::path::PathBuf::from),
             input_bindings: None,
+            // `amigo run --record` / `--replay`, likewise.
+            launch_replay: LaunchReplay::from_env(),
         }
     }
 
@@ -174,6 +178,28 @@ impl EngineBuilder {
         self
     }
 
+    /// Seed for `GameContext::rng`, overriding `[dev] seed` in `amigo.toml`
+    /// and `AMIGO_SEED`.
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.config.dev.seed = Some(seed);
+        self
+    }
+
+    /// Record the session's input from launch and write the replay to `path`
+    /// on shutdown. `amigo run --record <path>` sets this.
+    pub fn record_replay(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.launch_replay.record = Some(path.into());
+        self
+    }
+
+    /// Play the replay at `path` from launch, in place of live input, and
+    /// report the first tick whose state differs from the recording.
+    /// `amigo run --replay <path>` sets this.
+    pub fn play_replay(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.launch_replay.play = Some(path.into());
+        self
+    }
+
     /// Add a plugin to the engine.
     pub fn add_plugin(mut self, plugin: impl Plugin) -> Self {
         plugin.build(&mut self.plugin_ctx);
@@ -189,6 +215,7 @@ impl EngineBuilder {
             plugin_ctx: self.plugin_ctx,
             restore_snapshot: self.restore_snapshot,
             input_bindings: self.input_bindings,
+            launch_replay: self.launch_replay,
         }
     }
 }
@@ -207,6 +234,7 @@ pub struct Engine {
     plugin_ctx: PluginContext,
     restore_snapshot: Option<std::path::PathBuf>,
     input_bindings: Option<ActionBindings>,
+    launch_replay: LaunchReplay,
 }
 
 impl Engine {
@@ -260,6 +288,7 @@ impl Engine {
             state: None,
             restore_snapshot: self.restore_snapshot,
             input_bindings: Some(bindings),
+            launch_replay: self.launch_replay,
         };
 
         event_loop.run_app(&mut app).expect("Event loop failed");
@@ -268,7 +297,7 @@ impl Engine {
     /// Run the engine in headless mode: simulation only, no window or renderer.
     /// Controlled entirely via the JSON-RPC API server.
     #[cfg(feature = "api")]
-    fn run_headless<G: Game>(self, game: G, bindings: ActionBindings) {
+    fn run_headless<G: Game>(mut self, game: G, bindings: ActionBindings) {
         use amigo_api::handler::new_shared_state;
         use amigo_api::server::ApiServer;
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -285,6 +314,8 @@ impl Engine {
         // and agents drive input over the API.
         game_ctx.bindings = bindings;
         game_ctx.save = amigo_core::save::SaveManager::new(self.config.save_config());
+        game_ctx.reseed(self.config.dev.resolve_seed());
+        info!("Simulation seed {}", game_ctx.seed());
 
         // Apply plugin registrations
         let plugin_ctx = self.plugin_ctx;
@@ -306,7 +337,12 @@ impl Engine {
 
         // Initialize the game (there is no splash in headless mode)
         let mut stack = GameStack::new(Box::new(game));
-        stack.enter_root(&mut game_ctx);
+        replay::enter_root(
+            &mut game_ctx,
+            &mut stack,
+            &self.launch_replay,
+            self.restore_snapshot.is_some(),
+        );
 
         let mut control = crate::api_bridge::ApiControl::default();
         if let Some(path) = &self.restore_snapshot {
@@ -322,6 +358,7 @@ impl Engine {
                     path.display()
                 ),
             }
+            replay::after_restore(&mut game_ctx, &stack, &self.launch_replay);
         }
 
         // Start the API server
@@ -379,29 +416,12 @@ impl Engine {
             if ticks_requested > 0 {
                 let start = Instant::now();
                 for _ in 0..ticks_requested {
-                    game_ctx.time.dt = tick_duration as f32;
+                    game_ctx.time.frame_dt = tick_duration as f32;
                     game_ctx.time.elapsed += tick_duration;
-
-                    let Some(active) = stack.top_mut() else {
-                        quit = true;
-                        break;
-                    };
-                    game_ctx.update_actions();
-                    let action = active.update(&mut game_ctx);
-                    game_ctx.time.tick += 1;
-
-                    if !stack.apply(action, &mut game_ctx) {
+                    if !crate::tick::run_tick(&mut game_ctx, &mut stack, &mut self.plugins) {
                         quit = true;
                         break;
                     }
-
-                    game_ctx.world.flush();
-                    game_ctx.events.flush();
-                    game_ctx.particles.update(tick_duration as f32);
-                    // Clear edge-detected input AFTER the update consumed
-                    // it (clearing before update would hide injected
-                    // just-pressed state from the game).
-                    game_ctx.end_tick_input();
                 }
                 let elapsed = start.elapsed();
                 info!(
@@ -443,6 +463,7 @@ impl Engine {
             }
         }
 
+        replay::save_on_exit(&mut game_ctx);
         info!("Headless engine shutting down");
     }
 }
@@ -684,6 +705,8 @@ struct EngineApp {
     restore_snapshot: Option<std::path::PathBuf>,
     /// Resolved action bindings, moved into the context on startup.
     input_bindings: Option<ActionBindings>,
+    /// Replay to record or play from launch.
+    launch_replay: LaunchReplay,
 }
 
 impl ApplicationHandler for EngineApp {
@@ -740,6 +763,8 @@ impl ApplicationHandler for EngineApp {
         game_ctx.gamepad = GamepadState::new();
         game_ctx.bindings = self.input_bindings.take().unwrap_or_default();
         game_ctx.save = amigo_core::save::SaveManager::new(self.config.save_config());
+        game_ctx.reseed(self.config.dev.resolve_seed());
+        info!("Simulation seed {}", game_ctx.seed());
 
         let packed = load_assets(&mut game_ctx.assets, &self.assets_path);
 
@@ -799,8 +824,14 @@ impl ApplicationHandler for EngineApp {
         let splash = if self.config.splash.enabled && !skip_splash {
             Some(SplashState::new())
         } else {
-            // No splash — init game immediately
-            self.stack.enter_root(&mut game_ctx);
+            // No splash — init game immediately. Snapshots are restored
+            // only with the `api` feature.
+            replay::enter_root(
+                &mut game_ctx,
+                &mut self.stack,
+                &self.launch_replay,
+                cfg!(feature = "api") && self.restore_snapshot.is_some(),
+            );
             None
         };
 
@@ -879,6 +910,7 @@ impl ApplicationHandler for EngineApp {
                     path.display()
                 ),
             }
+            replay::after_restore(&mut state.game_ctx, &self.stack, &self.launch_replay);
         }
     }
 
@@ -1073,7 +1105,13 @@ impl ApplicationHandler for EngineApp {
 
                     if finished {
                         state.splash = None;
-                        self.stack.enter_root(&mut state.game_ctx);
+                        // A restored snapshot skips the splash, so none follows.
+                        replay::enter_root(
+                            &mut state.game_ctx,
+                            &mut self.stack,
+                            &self.launch_replay,
+                            false,
+                        );
                     }
                     return;
                 }
@@ -1122,7 +1160,7 @@ impl ApplicationHandler for EngineApp {
                 );
                 state.accumulator = budget.accumulator;
 
-                state.game_ctx.time.dt = dt as f32;
+                state.game_ctx.time.frame_dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
 
                 // Gamepads: drain this frame's events once. Like keyboard
@@ -1158,56 +1196,14 @@ impl ApplicationHandler for EngineApp {
                 // how many ticks this frame gets, from elapsed time plus any API
                 // step request.
                 for _ in 0..budget.total() {
-                    let _tick_span = info_span!("tick").entered();
-
-                    let Some(active) = self.stack.top_mut() else {
-                        event_loop.exit();
-                        return;
-                    };
-                    // Immediate-mode UI: clear last tick's commands so a game can
-                    // just build widgets in `update` without bookkeeping. Calling
-                    // `ui.begin()` again in game code is harmless.
-                    state.game_ctx.ui.begin();
-                    state.game_ctx.update_actions();
-                    let action = {
-                        let _update_span = info_span!("game_update").entered();
-                        active.update(&mut state.game_ctx)
-                    };
-                    state.game_ctx.time.tick += 1;
-
-                    // Push/Pop/Replace run the stack's lifecycle hooks; a
-                    // `false` return means Quit, or the last game popped
-                    // itself off and there is nothing left to run.
-                    if !self.stack.apply(action, &mut state.game_ctx) {
+                    if !crate::tick::run_tick(
+                        &mut state.game_ctx,
+                        &mut self.stack,
+                        &mut self.plugins,
+                    ) {
                         event_loop.exit();
                         return;
                     }
-
-                    // Plugin per-frame update (after game systems, before render)
-                    {
-                        let _plugin_span = info_span!("plugin_update").entered();
-                        for plugin in &mut self.plugins {
-                            plugin.update(&mut state.game_ctx);
-                        }
-                    }
-
-                    {
-                        let _flush_span = info_span!("ecs_flush").entered();
-                        state.game_ctx.world.flush();
-                        state.game_ctx.events.flush();
-                    }
-                    state.game_ctx.particles.update(tick_duration as f32);
-
-                    // Clear edge-detected input (just pressed/released) at
-                    // the END of every tick, so each press is seen by exactly
-                    // one tick. Clearing once after the loop let every tick
-                    // of a 2+-tick frame (30/50 Hz displays, a hitch, an API
-                    // `tick N`) see the same press: Esc opened a pause menu
-                    // and the menu saw it again and closed itself. Clearing at
-                    // tick START would instead wipe the events winit delivered
-                    // before this redraw, and zero-tick frames keep their
-                    // presses for the next tick. Headless does the same.
-                    state.game_ctx.end_tick_input();
                 }
 
                 state.game_ctx.time.alpha = budget.alpha;
@@ -1505,6 +1501,12 @@ impl ApplicationHandler for EngineApp {
             }
 
             _ => {}
+        }
+    }
+
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(state) = &mut self.state {
+            replay::save_on_exit(&mut state.game_ctx);
         }
     }
 

@@ -353,6 +353,7 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         "replay.record_start" => queue_cmd(req, state, "replay.record_start", Value::Null),
         "replay.record_stop" => handle_replay_record_stop(req, state),
         "replay.play" => handle_replay_play(req, state),
+        "replay.stop" => queue_cmd(req, state, "replay.stop", Value::Null),
 
         // ── Debug ──
         "debug.dump_state" => handle_debug_dump_state(req, state),
@@ -871,16 +872,17 @@ fn handle_replay_record_stop(req: &RpcRequest, state: &SharedState) -> RpcRespon
 }
 
 fn handle_replay_play(req: &RpcRequest, state: &SharedState) -> RpcResponse {
+    // A replay holds input, not state, so it can only start where it was
+    // recorded; seeking would need the game state at that tick.
+    if req.params.get("from_tick").is_some_and(|v| !v.is_null()) {
+        return RpcResponse::error(
+            req.id,
+            INVALID_PARAMS,
+            "from_tick is not supported: a replay plays from the tick it was recorded at",
+        );
+    }
     match require_path(&req.params, "path") {
-        Ok(path) => {
-            let from_tick = req.params.get("from_tick").and_then(|v| v.as_u64());
-            queue_cmd(
-                req,
-                state,
-                "replay.play",
-                json!({"path": path, "from_tick": from_tick}),
-            )
-        }
+        Ok(path) => queue_cmd(req, state, "replay.play", json!({"path": path})),
         Err(e) => RpcResponse::error(req.id, INVALID_PARAMS, e),
     }
 }
@@ -1680,11 +1682,21 @@ mod tests {
         }
         assert!(crate::lock_or_recover(&state).pending_commands.is_empty());
 
+        let resp = handle_request(
+            &make_request(
+                "replay.play",
+                json!({"path": "replays/run.json", "from_tick": 5}),
+            ),
+            &state,
+        );
+        assert_eq!(resp.error.map(|e| e.code), Some(INVALID_PARAMS));
+
         for (method, params) in [
             ("save", json!({})),
             ("load", json!({"slot": "1"})),
             ("debug.dump_state", json!({})),
-            ("replay.record_stop", json!({"path": "replays/run.ron"})),
+            ("replay.record_stop", json!({"path": "replays/run.json"})),
+            ("replay.play", json!({"path": "replays/run.json"})),
         ] {
             let resp = handle_request(&make_request(method, params.clone()), &state);
             assert!(resp.error.is_none(), "{method} {params}: {:?}", resp.error);

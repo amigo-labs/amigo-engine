@@ -66,6 +66,25 @@ pub struct DevConfig {
     /// Run in headless mode (no window/renderer). Simulation only, controlled via API.
     #[serde(default)]
     pub headless: bool,
+    /// Seed for `GameContext::rng`. Without one, each run takes a seed from
+    /// the clock and logs it.
+    #[serde(default)]
+    pub seed: Option<u64>,
+}
+
+impl DevConfig {
+    /// The seed to start this run with: [`seed`](Self::seed), or one taken
+    /// from the clock.
+    pub fn resolve_seed(&self) -> u64 {
+        self.seed.unwrap_or_else(|| {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0);
+            // Spread consecutive clock values over the whole range.
+            amigo_core::SimRng::new(nanos).next_u64()
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -129,6 +148,7 @@ impl Default for EngineConfig {
                 api_server: false,
                 api_port: 9999,
                 headless: false,
+                seed: None,
             },
             splash: SplashConfig::default(),
             input: InputConfig::default(),
@@ -160,7 +180,7 @@ impl EngineConfig {
     /// defaults.
     ///
     /// Environment overrides, applied after the file: `AMIGO_HEADLESS=1`,
-    /// `AMIGO_API=1`, and `AMIGO_API_PORT=<port>`.
+    /// `AMIGO_API=1`, `AMIGO_API_PORT=<port>`, and `AMIGO_SEED=<seed>`.
     pub fn load() -> Self {
         Self::load_from(std::path::Path::new("amigo.toml"), |key| {
             std::env::var(key).ok()
@@ -210,6 +230,12 @@ impl EngineConfig {
                 Ok(0) => warn!("AMIGO_API_PORT=0 is not a usable port, ignoring"),
                 Ok(port) => config.dev.api_port = port,
                 Err(e) => warn!("Ignoring AMIGO_API_PORT='{raw}': {e}"),
+            }
+        }
+        if let Some(raw) = env("AMIGO_SEED") {
+            match raw.parse::<u64>() {
+                Ok(seed) => config.dev.seed = Some(seed),
+                Err(e) => warn!("Ignoring AMIGO_SEED='{raw}': {e}"),
             }
         }
 
@@ -278,6 +304,46 @@ mod tests {
         // Without a name, the title; never the shared "amigo_game".
         config.name = None;
         assert_eq!(config.save_config().app_name, "Space Race!");
+    }
+
+    #[test]
+    fn seed_comes_from_the_file_or_the_environment() {
+        let path = write_temp(
+            "seed",
+            r#"
+            [window]
+            title = "Seeded"
+            width = 800
+            height = 600
+            fullscreen = false
+            vsync = true
+
+            [render]
+            virtual_width = 320
+            virtual_height = 180
+            scale_mode = "pixel_perfect"
+
+            [audio]
+            master_volume = 1.0
+            sfx_volume = 1.0
+            music_volume = 1.0
+
+            [dev]
+            hot_reload = false
+            debug_overlay = false
+            api_server = false
+            api_port = 9999
+            seed = 7
+            "#,
+        );
+        let config = EngineConfig::load_from(&path, env_of(&[]));
+        assert_eq!(config.dev.seed, Some(7));
+        assert_eq!(config.dev.resolve_seed(), 7);
+        let config = EngineConfig::load_from(&path, env_of(&[("AMIGO_SEED", "99")]));
+        assert_eq!(config.dev.seed, Some(99));
+        let config = EngineConfig::load_from(&path, env_of(&[("AMIGO_SEED", "x")]));
+        assert_eq!(config.dev.seed, Some(7));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

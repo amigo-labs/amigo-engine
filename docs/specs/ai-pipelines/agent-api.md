@@ -152,7 +152,7 @@ Claude Code sees these as native tools it can call directly:
 **Save/Load/Replay:**
 - `amigo_save(slot)` / `amigo_load(slot)`
 - `amigo_replay_record_start()` / `amigo_replay_record_stop(path)`
-- `amigo_replay_play(path, from_tick?)`
+- `amigo_replay_play(path)` / `amigo_replay_stop()`
 
 **Debug:**
 - `amigo_debug_dump_state(path)`
@@ -343,18 +343,24 @@ Request/response pattern with optional event streaming.
 // Load game state
 {"method": "load", "params": {"path": "saves/my_save.ron"}}
 
-// Start recording replay
+// Start recording a replay (input + a state hash per tick)
 {"method": "replay.record_start"}
 
-// Stop recording and save
-{"method": "replay.record_stop", "params": {"path": "replays/test_run.ron"}}
+// Stop recording and save it (JSON)
+{"method": "replay.record_stop", "params": {"path": "replays/test_run.json"}}
 
-// Play replay
-{"method": "replay.play", "params": {"path": "replays/test_run.ron"}}
+// Play a replay in place of live input; stop it early
+{"method": "replay.play", "params": {"path": "replays/test_run.json"}}
+{"method": "replay.stop"}
 
-// Play replay from specific tick
-{"method": "replay.play", "params": {"path": "replays/test_run.ron", "from_tick": 500}}
+// Progress, and the first tick that differed from the recording
+{"method": "engine.get_property", "params": {"key": "replay"}}
+// -> {"result": {"key": "replay", "value": {"mode": "finished", "ticks": 600,
+//     "total_ticks": 600, "desync_tick": null, ...}}}
 ```
+
+A replay plays from the tick it was recorded at; `from_tick` is rejected. See
+[engine/replays](../engine/replays.md).
 
 ### Tilemap Query
 

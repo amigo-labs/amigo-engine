@@ -28,6 +28,9 @@ COMMANDS:
     run [--headless] [--api]             Run the game (cargo run)
         [--port PORT]                    ... with the API server on PORT
         [--restore-snapshot <PATH>]      ... resuming a dev snapshot
+        [--record <FILE>]                ... recording the input to a replay
+        [--replay <FILE>]                ... playing a replay instead of input
+        [--seed <N>]                     ... with a fixed random seed
     dev [--port PORT]                    Watch mode: rebuild + restart on source
                                          changes, live-reload on asset changes
     pack                                 Pack assets into atlas (release build)
@@ -1382,6 +1385,23 @@ fn cmd_run(args: &[String]) {
     }
     if let Some(port) = find_flag(args, "--port") {
         cmd.env("AMIGO_API_PORT", port);
+    }
+    if let Some(path) = find_flag(args, "--record") {
+        cmd.env("AMIGO_RECORD", path);
+    }
+    if let Some(path) = find_flag(args, "--replay") {
+        if !std::path::Path::new(&path).exists() {
+            eprintln!("--replay: '{path}' does not exist.");
+            process::exit(1);
+        }
+        cmd.env("AMIGO_REPLAY", path);
+    }
+    if let Some(seed) = find_flag(args, "--seed") {
+        if seed.parse::<u64>().is_err() {
+            eprintln!("--seed: '{seed}' is not a number from 0 to {}.", u64::MAX);
+            process::exit(1);
+        }
+        cmd.env("AMIGO_SEED", seed);
     }
 
     let status = cmd.status().unwrap_or_else(|e| {

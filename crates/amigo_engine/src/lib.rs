@@ -75,8 +75,10 @@ pub mod api_bridge;
 pub mod config;
 pub mod context;
 pub mod engine;
+pub mod replay;
 pub mod splash;
 pub mod stack;
+mod tick;
 pub mod timestep;
 pub mod ui_bridge;
 
@@ -166,7 +168,34 @@ pub trait Game: 'static {
 
     /// Called by `amigo dev` after recompile to restore game-specific state.
     /// The `state` parameter is whatever `on_dev_snapshot` returned previously.
+    /// A replay recorded mid-session restores its starting state this way too.
     fn on_dev_restore(&mut self, _ctx: &mut GameContext, _state: &serde_json::Value) {}
+
+    /// A hash of the simulation state after a tick, for replays.
+    ///
+    /// A recording stores one per tick, and playback compares them to find
+    /// the first tick where the replayed game went a different way. The
+    /// engine always mixes in the tick, `ctx.rng` and the entity count, so
+    /// the default `None` still catches many desyncs; hashing positions,
+    /// health and the like catches them on the tick they happen.
+    ///
+    /// ```rust
+    /// use amigo_engine::prelude::*;
+    /// # struct Player { pos: SimVec2, hp: i32 }
+    /// # struct MyGame { player: Player }
+    /// # impl MyGame {
+    /// fn state_hash(&self, _ctx: &GameContext) -> Option<u64> {
+    ///     let mut h = StateHasher::new();
+    ///     h.write_i32(self.player.pos.x.to_bits());
+    ///     h.write_i32(self.player.pos.y.to_bits());
+    ///     h.write_i32(self.player.hp);
+    ///     Some(h.finish_crc64())
+    /// }
+    /// # }
+    /// ```
+    fn state_hash(&self, _ctx: &GameContext) -> Option<u64> {
+        None
+    }
 }
 
 /// Prelude with commonly used types.
@@ -190,7 +219,7 @@ pub mod prelude {
         Walkable, WaypointPath, find_path,
     };
     pub use amigo_core::{
-        Color, EntityId, Fix, Rect, RenderVec2, SimRect, SimVec2, TimeInfo, World,
+        Color, EntityId, Fix, Rect, RenderVec2, SimRect, SimRng, SimVec2, TimeInfo, World,
     };
     pub use amigo_debug::DebugOverlay;
     pub use amigo_input::{
