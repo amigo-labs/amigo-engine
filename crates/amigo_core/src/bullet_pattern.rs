@@ -145,7 +145,9 @@ impl BulletPool {
     /// Indices of active bullets overlapping the circle at `center`.
     pub fn check_circle_hits(&self, center: SimVec2, radius: Fix) -> Vec<usize> {
         self.active_iter()
-            .filter(|(_, b)| (b.pos - center).length() < b.radius + radius)
+            .filter(|(_, b)| {
+                b.pos.compare_distance(center, b.radius + radius) == std::cmp::Ordering::Less
+            })
             .map(|(i, _)| i)
             .collect()
     }

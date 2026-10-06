@@ -103,19 +103,20 @@ impl ShmupHitbox {
         Self::player(radius, Fix::ZERO)
     }
 
-    fn distance(&self, owner: SimVec2, point: SimVec2) -> Fix {
-        (point - (owner + self.offset)).length()
+    /// Compared in squared space (no square root): this runs per bullet.
+    fn compare(&self, owner: SimVec2, point: SimVec2, radius: Fix) -> std::cmp::Ordering {
+        point.compare_distance(owner + self.offset, radius)
     }
 
     /// Check if a point (bullet position) is within the collision circle.
     pub fn hit_test(&self, owner: SimVec2, point: SimVec2) -> bool {
-        self.distance(owner, point) <= self.collision_radius
+        self.compare(owner, point, self.collision_radius) != std::cmp::Ordering::Greater
     }
 
     /// Check if a point is within the graze circle but outside collision.
     pub fn graze_test(&self, owner: SimVec2, point: SimVec2) -> bool {
-        let d = self.distance(owner, point);
-        d > self.collision_radius && d <= self.graze_radius
+        self.compare(owner, point, self.collision_radius) == std::cmp::Ordering::Greater
+            && self.compare(owner, point, self.graze_radius) != std::cmp::Ordering::Greater
     }
 }
 
