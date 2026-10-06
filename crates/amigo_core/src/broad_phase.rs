@@ -11,9 +11,16 @@
 //!
 //! Install a custom broad phase on a physics world via
 //! `PhysicsWorld::set_broad_phase`.
+//!
+//! Bounds are in simulation space ([`Fix`]); `PhysicsWorld` sorts whatever
+//! pairs a broad phase returns, so the order an implementation produces them
+//! in does not affect the simulation. An implementation that computes in
+//! `f32` (the GPU one) must return a superset of the overlapping pairs; the
+//! narrow phase then decides in fixed point.
 
 use crate::ecs::EntityId;
-use crate::rect::Rect;
+use crate::math::Fix;
+use crate::rect::SimRect;
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -21,18 +28,18 @@ use crate::rect::Rect;
 
 /// Axis-aligned bounding box used by the broad phase.
 ///
-/// Unlike [`Rect`], this stores min/max coordinates directly which is the
+/// Unlike [`SimRect`], this stores min/max coordinates directly which is the
 /// natural representation for sort-and-sweep algorithms.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Aabb {
-    pub min_x: f32,
-    pub min_y: f32,
-    pub max_x: f32,
-    pub max_y: f32,
+    pub min_x: Fix,
+    pub min_y: Fix,
+    pub max_x: Fix,
+    pub max_y: Fix,
 }
 
 impl Aabb {
-    pub fn new(min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> Self {
+    pub fn new(min_x: Fix, min_y: Fix, max_x: Fix, max_y: Fix) -> Self {
         Self {
             min_x,
             min_y,
@@ -41,13 +48,13 @@ impl Aabb {
         }
     }
 
-    /// Convert from an engine [`Rect`] (x, y, w, h) to an [`Aabb`].
-    pub fn from_rect(r: &Rect) -> Self {
+    /// Convert from a [`SimRect`] (x, y, w, h) to an [`Aabb`].
+    pub fn from_rect(r: &SimRect) -> Self {
         Self {
             min_x: r.x,
             min_y: r.y,
-            max_x: r.x + r.w,
-            max_y: r.y + r.h,
+            max_x: r.right(),
+            max_y: r.bottom(),
         }
     }
 
@@ -87,12 +94,12 @@ impl CollisionPair {
 
 /// Broad-phase collision detection strategy.
 ///
-/// Given a list of `(EntityId, Rect)` bodies, returns all pairs whose AABBs
-/// overlap. The returned pairs are canonically ordered (smaller id first) and
-/// deduplicated.
+/// Given a list of `(EntityId, SimRect)` bodies, returns all pairs whose AABBs
+/// overlap (a superset is allowed). The returned pairs are canonically ordered
+/// (smaller id first) and deduplicated.
 pub trait BroadPhase: Send {
     /// Compute candidate collision pairs from the given body AABBs.
-    fn find_candidates(&mut self, bodies: &[(EntityId, Rect)]) -> Vec<CollisionPair>;
+    fn find_candidates(&mut self, bodies: &[(EntityId, SimRect)]) -> Vec<CollisionPair>;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +130,7 @@ impl Default for CpuBroadPhase {
 }
 
 impl BroadPhase for CpuBroadPhase {
-    fn find_candidates(&mut self, bodies: &[(EntityId, Rect)]) -> Vec<CollisionPair> {
+    fn find_candidates(&mut self, bodies: &[(EntityId, SimRect)]) -> Vec<CollisionPair> {
         // 1. Convert to Aabb and collect into scratch buffer.
         self.sorted.clear();
         self.sorted.reserve(bodies.len());
@@ -131,9 +138,10 @@ impl BroadPhase for CpuBroadPhase {
             self.sorted.push((id, Aabb::from_rect(rect)));
         }
 
-        // 2. Sort by min_x (sweep axis).
+        // 2. Sort by min_x (sweep axis), ties by id: an unstable sort on
+        //    min_x alone ordered equal keys differently between runs.
         self.sorted
-            .sort_unstable_by(|a, b| a.1.min_x.total_cmp(&b.1.min_x));
+            .sort_unstable_by_key(|&(id, aabb)| (aabb.min_x, id));
 
         // 3. Sweep: for each body, walk forward while the next body's min_x is
         //    less than this body's max_x.  Check Y overlap for each candidate.
@@ -154,6 +162,7 @@ impl BroadPhase for CpuBroadPhase {
             }
         }
 
+        pairs.sort_unstable_by_key(|p| (p.a, p.b));
         pairs
     }
 }
@@ -190,7 +199,7 @@ impl Default for GpuBroadPhase {
 }
 
 impl BroadPhase for GpuBroadPhase {
-    fn find_candidates(&mut self, bodies: &[(EntityId, Rect)]) -> Vec<CollisionPair> {
+    fn find_candidates(&mut self, bodies: &[(EntityId, SimRect)]) -> Vec<CollisionPair> {
         self.fallback.find_candidates(bodies)
     }
 }
@@ -208,37 +217,65 @@ mod tests {
         EntityId::from_raw(n, 0)
     }
 
+    fn rect(x: i32, y: i32, w: i32, h: i32) -> SimRect {
+        SimRect::from_num(x, y, w, h)
+    }
+
+    fn aabb(a: i32, b: i32, c: i32, d: i32) -> Aabb {
+        Aabb::new(
+            Fix::from_num(a),
+            Fix::from_num(b),
+            Fix::from_num(c),
+            Fix::from_num(d),
+        )
+    }
+
     // -- Aabb -----------------------------------------------------------------
 
     #[test]
     fn aabb_overlaps() {
-        let a = Aabb::new(0.0, 0.0, 10.0, 10.0);
-        let b = Aabb::new(5.0, 5.0, 15.0, 15.0);
+        let a = aabb(0, 0, 10, 10);
+        let b = aabb(5, 5, 15, 15);
         assert!(a.overlaps(&b));
         assert!(b.overlaps(&a));
 
-        let c = Aabb::new(20.0, 20.0, 30.0, 30.0);
+        let c = aabb(20, 20, 30, 30);
         assert!(!a.overlaps(&c));
     }
 
     #[test]
     fn aabb_touching_edges_do_not_overlap() {
-        let a = Aabb::new(0.0, 0.0, 10.0, 10.0);
-        let b = Aabb::new(10.0, 0.0, 20.0, 10.0);
+        let a = aabb(0, 0, 10, 10);
+        let b = aabb(10, 0, 20, 10);
         assert!(!a.overlaps(&b));
     }
 
     // -- CollisionPair --------------------------------------------------------
+
+    /// Bodies sharing a min_x come out in the same order whatever order they
+    /// went in, and the pair list is sorted.
+    #[test]
+    fn cpu_output_does_not_depend_on_input_order() {
+        let mut bodies: Vec<_> = (0..12)
+            .map(|i| (id(i), rect(0, i as i32 * 3, 10, 10)))
+            .collect();
+        let forward = CpuBroadPhase::new().find_candidates(&bodies);
+        bodies.reverse();
+        let backward = CpuBroadPhase::new().find_candidates(&bodies);
+        assert_eq!(forward, backward);
+        assert!(
+            forward
+                .windows(2)
+                .all(|w| (w[0].a, w[0].b) < (w[1].a, w[1].b))
+        );
+    }
 
     // -- CpuBroadPhase --------------------------------------------------------
 
     #[test]
     fn cpu_finds_overlapping_pair() {
         let mut bp = CpuBroadPhase::new();
-        let bodies = vec![
-            (id(1), Rect::new(0.0, 0.0, 10.0, 10.0)),
-            (id(2), Rect::new(5.0, 5.0, 10.0, 10.0)),
-        ];
+        let bodies = vec![(id(1), rect(0, 0, 10, 10)), (id(2), rect(5, 5, 10, 10))];
         let pairs = bp.find_candidates(&bodies);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0], CollisionPair::new(id(1), id(2)));
@@ -247,10 +284,7 @@ mod tests {
     #[test]
     fn cpu_no_overlap() {
         let mut bp = CpuBroadPhase::new();
-        let bodies = vec![
-            (id(1), Rect::new(0.0, 0.0, 10.0, 10.0)),
-            (id(2), Rect::new(100.0, 100.0, 10.0, 10.0)),
-        ];
+        let bodies = vec![(id(1), rect(0, 0, 10, 10)), (id(2), rect(100, 100, 10, 10))];
         let pairs = bp.find_candidates(&bodies);
         assert!(pairs.is_empty());
     }
@@ -258,10 +292,7 @@ mod tests {
     #[test]
     fn cpu_x_overlap_but_not_y() {
         let mut bp = CpuBroadPhase::new();
-        let bodies = vec![
-            (id(1), Rect::new(0.0, 0.0, 10.0, 10.0)),
-            (id(2), Rect::new(5.0, 50.0, 10.0, 10.0)),
-        ];
+        let bodies = vec![(id(1), rect(0, 0, 10, 10)), (id(2), rect(5, 50, 10, 10))];
         let pairs = bp.find_candidates(&bodies);
         assert!(pairs.is_empty());
     }
@@ -270,10 +301,10 @@ mod tests {
     fn cpu_multiple_bodies() {
         let mut bp = CpuBroadPhase::new();
         let bodies = vec![
-            (id(1), Rect::new(0.0, 0.0, 20.0, 20.0)),
-            (id(2), Rect::new(10.0, 10.0, 20.0, 20.0)),
-            (id(3), Rect::new(15.0, 15.0, 20.0, 20.0)),
-            (id(4), Rect::new(100.0, 100.0, 10.0, 10.0)),
+            (id(1), rect(0, 0, 20, 20)),
+            (id(2), rect(10, 10, 20, 20)),
+            (id(3), rect(15, 15, 20, 20)),
+            (id(4), rect(100, 100, 10, 10)),
         ];
         let pairs = bp.find_candidates(&bodies);
         // 1-2 overlap, 1-3 overlap, 2-3 overlap.  4 is isolated.
@@ -295,10 +326,10 @@ mod tests {
         //   B overlaps C as well
         //   D (100,100)-(110,110) is isolated
         let bodies = vec![
-            (id(1), Rect::new(0.0, 0.0, 20.0, 20.0)),     // A
-            (id(2), Rect::new(10.0, 10.0, 20.0, 20.0)),   // B
-            (id(3), Rect::new(15.0, 0.0, 10.0, 15.0)),    // C
-            (id(4), Rect::new(100.0, 100.0, 10.0, 10.0)), // D (isolated)
+            (id(1), rect(0, 0, 20, 20)),     // A
+            (id(2), rect(10, 10, 20, 20)),   // B
+            (id(3), rect(15, 0, 10, 15)),    // C
+            (id(4), rect(100, 100, 10, 10)), // D (isolated)
         ];
 
         let mut cpu_pairs = cpu.find_candidates(&bodies);

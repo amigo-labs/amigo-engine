@@ -189,7 +189,9 @@ pub mod prelude {
         CollisionShape, CollisionWorld, FlowField, PathFollower, PathRequest, SpatialHash,
         Walkable, WaypointPath, find_path,
     };
-    pub use amigo_core::{Color, EntityId, Fix, Rect, RenderVec2, SimVec2, TimeInfo, World};
+    pub use amigo_core::{
+        Color, EntityId, Fix, Rect, RenderVec2, SimRect, SimVec2, TimeInfo, World,
+    };
     pub use amigo_debug::DebugOverlay;
     pub use amigo_input::{
         ActionBindings, ActionState, GamepadAxis, GamepadButton, GamepadId, GamepadState,

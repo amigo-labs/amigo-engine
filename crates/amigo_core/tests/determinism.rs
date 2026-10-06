@@ -131,6 +131,129 @@ fn easing_golden_hash() {
     assert_eq!(h.0, EASING, "easing changed: {:#018x}", h.0);
 }
 
+#[test]
+fn physics_golden_hash() {
+    use amigo_core::collision::CollisionShape;
+    use amigo_core::ecs::EntityId;
+    use amigo_core::physics::{PhysicsWorld, RigidBody};
+    use amigo_core::rect::SimRect;
+
+    let mut world = PhysicsWorld::new(SimVec2::from_num(0, 0.25), Fix::from_num(32));
+    world.add_body(
+        EntityId::from_raw(1000, 0),
+        RigidBody::static_body(
+            SimVec2::from_num(0, 300),
+            CollisionShape::Aabb(SimRect::from_num(-400, 0, 800, 40)),
+        ),
+    );
+    // 100 bodies, boxes and balls, dropped onto the floor and each other.
+    for i in 0..100u32 {
+        let pos = SimVec2::from_num((i % 10) as i32 * 13 - 60, (i / 10) as i32 * 17);
+        let shape = if i % 3 == 0 {
+            CollisionShape::Circle {
+                center: SimVec2::ZERO,
+                radius: Fix::from_num(5),
+            }
+        } else {
+            CollisionShape::Aabb(SimRect::from_num(-5, -5, 10, 10))
+        };
+        let mut body = RigidBody::dynamic(pos, shape, Fix::from_num(1 + i % 4));
+        body.restitution = Fix::from_num(i % 5) / 10;
+        body.velocity = SimVec2::from_num((i % 7) as i32 - 3, 0);
+        world.add_body(EntityId::from_raw(i, 0), body);
+    }
+
+    let mut h = Hash::new();
+    for _ in 0..600 {
+        let contacts = world.step();
+        h.i32(contacts.len() as i32);
+    }
+    for (id, body) in world.iter_bodies() {
+        h.i32(id.index() as i32);
+        h.fix(body.position.x);
+        h.fix(body.position.y);
+        h.fix(body.velocity.x);
+        h.fix(body.velocity.y);
+    }
+    assert_eq!(h.0, PHYSICS, "physics changed: {:#018x}", h.0);
+}
+
+#[test]
+fn bullet_patterns_golden_hash() {
+    use amigo_core::bullet_pattern::{BulletEmitter, BulletPool, PatternShape};
+    use amigo_core::rect::SimRect;
+
+    let mut pool = BulletPool::new(4000).with_bounds(SimRect::from_num(-500, -500, 1000, 1000));
+    let f = |v: f64| Fix::from_num(v);
+    let mut emitters = [
+        BulletEmitter::new(
+            SimVec2::ZERO,
+            PatternShape::Spiral {
+                count: 5,
+                speed: f(1.5),
+                rotation_speed: f(0.17),
+            },
+            3,
+        ),
+        BulletEmitter::new(
+            SimVec2::from_num(100, -50),
+            PatternShape::Radial {
+                count: 24,
+                speed: f(0.8),
+            },
+            40,
+        ),
+        BulletEmitter::new(
+            SimVec2::from_num(-120, 30),
+            PatternShape::Wave {
+                count: 12,
+                speed: f(1.1),
+                amplitude: f(0.4),
+                frequency: f(2.5),
+            },
+            25,
+        ),
+        BulletEmitter::new(
+            SimVec2::from_num(0, -200),
+            PatternShape::Random {
+                count: 6,
+                min_speed: f(0.5),
+                max_speed: f(2.5),
+            },
+            7,
+        )
+        .with_seed(0xDEAD_BEEF),
+    ];
+    let mut aimed = BulletEmitter::new(
+        SimVec2::from_num(200, 200),
+        PatternShape::Aimed {
+            count: 5,
+            speed: f(2.0),
+            spread_angle: f(0.8),
+        },
+        11,
+    );
+
+    let mut h = Hash::new();
+    for tick in 0..600 {
+        aimed.set_target(SimVec2::from_num((tick % 100) - 50, 0));
+        for emitter in emitters.iter_mut().chain(std::iter::once(&mut aimed)) {
+            h.i32(emitter.tick(&mut pool) as i32);
+        }
+        h.i32(pool.tick().len() as i32);
+    }
+    for (i, b) in pool.active_iter() {
+        h.i32(i as i32);
+        h.fix(b.pos.x);
+        h.fix(b.pos.y);
+        h.fix(b.vel.x);
+        h.fix(b.vel.y);
+    }
+    assert_eq!(h.0, BULLETS, "bullet patterns changed: {:#018x}", h.0);
+}
+
+const PHYSICS: u64 = 0x2913_1352_278d_b714;
+const BULLETS: u64 = 0x8051_a61a_1849_d7d4;
 const TRIG: u64 = 0x9ff8_15dc_2a8e_fc84;
 const FORMATIONS: u64 = 0xb8f7_30c6_a982_a81e;
 const EASING: u64 = 0xfab6_9897_d126_5980;

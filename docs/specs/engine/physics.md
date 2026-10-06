@@ -2,10 +2,18 @@
 status: done
 crate: amigo_core
 depends_on: ["engine/core"]
-last_updated: 2026-03-18
+last_updated: 2026-10-05
 ---
 
 # Physics (Rigid Body)
+
+> **Fixed point since 0.2.0.** Positions, velocities, shapes and contacts are
+> `Fix`/`SimVec2`/`SimRect` (ADR-0001); they were `f32` before. Bodies are
+> iterated in `EntityId` order, spatial-hash queries return sorted ids, and
+> contact pairs are resolved in sorted order whichever broad phase found them,
+> so a step gives the same bits on every machine.
+> `crates/amigo_core/tests/determinism.rs` pins a 100-body, 600-tick golden
+> hash on Linux, Windows and macOS.
 
 ## Purpose
 
@@ -24,20 +32,20 @@ Kernphysik ist bereits implementiert (RigidBody, PhysicsWorld, SpatialHash, Coll
 ```rust
 #[derive(Clone, Copy, Debug)]
 pub enum CollisionShape {
-    Aabb(Rect),
-    Circle { cx: f32, cy: f32, radius: f32 },
+    Aabb(SimRect),
+    Circle { center: SimVec2, radius: Fix },
 }
 ```
 
-Shapes are defined relative to the body's position. `Aabb` uses `Rect` (x, y, w, h) as offset from position. `Circle` uses (cx, cy) as center offset and `radius`.
+Shapes are defined relative to the body's position. `Aabb` uses a `SimRect` (x, y, w, h) as offset from position. `Circle` uses `center` as offset and `radius`.
 
 ### ContactInfo
 
 ```rust
 #[derive(Clone, Copy, Debug)]
 pub struct ContactInfo {
-    pub penetration: f32,
-    pub normal: RenderVec2,
+    pub penetration: Fix,
+    pub normal: SimVec2,
 }
 ```
 
@@ -57,21 +65,21 @@ pub enum BodyType {
 ```rust
 pub struct RigidBody {
     pub body_type: BodyType,
-    pub position: RenderVec2,
-    pub velocity: RenderVec2,
+    pub position: SimVec2,
+    pub velocity: SimVec2,
     pub shape: CollisionShape,
-    pub mass: f32,
-    pub restitution: f32,   // 0.0 = no bounce, 1.0 = perfectly elastic
-    pub friction: f32,       // Tangential velocity damping
-    pub gravity_scale: f32,  // Per-body gravity multiplier (0.0 = no gravity)
+    pub mass: Fix,
+    pub restitution: Fix,   // 0.0 = no bounce, 1.0 = perfectly elastic
+    pub friction: Fix,       // Tangential velocity damping
+    pub gravity_scale: Fix,  // Per-body gravity multiplier (0.0 = no gravity)
 }
 
 impl RigidBody {
-    pub fn dynamic(position: RenderVec2, shape: CollisionShape, mass: f32) -> Self;
-    pub fn static_body(position: RenderVec2, shape: CollisionShape) -> Self;
-    pub fn kinematic(position: RenderVec2, shape: CollisionShape) -> Self;
-    pub fn inverse_mass(&self) -> f32;
-    pub fn set_mass(&mut self, mass: f32);
+    pub fn dynamic(position: SimVec2, shape: CollisionShape, mass: Fix) -> Self;
+    pub fn static_body(position: SimVec2, shape: CollisionShape) -> Self;
+    pub fn kinematic(position: SimVec2, shape: CollisionShape) -> Self;
+    pub fn inverse_mass(&self) -> Fix;
+    pub fn set_mass(&mut self, mass: Fix);
 }
 ```
 
@@ -89,12 +97,12 @@ pub struct PhysicsContact {
 
 ```rust
 pub struct PhysicsWorld {
-    pub gravity: RenderVec2,
+    pub gravity: SimVec2,
     pub solver_iterations: u32,  // default: 4
 }
 
 impl PhysicsWorld {
-    pub fn new(gravity: RenderVec2, cell_size: f32) -> Self;
+    pub fn new(gravity: SimVec2, cell_size: Fix) -> Self;
     pub fn add_body(&mut self, entity: EntityId, body: RigidBody);
     pub fn remove_body(&mut self, entity: EntityId);
     pub fn get_body(&self, entity: EntityId) -> Option<&RigidBody>;
@@ -110,13 +118,13 @@ impl PhysicsWorld {
 pub struct SpatialHash { /* cell_size, inv_cell_size, cells, entity_cells */ }
 
 impl SpatialHash {
-    pub fn new(cell_size: f32) -> Self;
-    pub fn insert(&mut self, id: EntityId, aabb: &Rect);
+    pub fn new(cell_size: Fix) -> Self;
+    pub fn insert(&mut self, id: EntityId, aabb: &SimRect);
     pub fn remove(&mut self, id: EntityId);
     pub fn clear(&mut self);
-    pub fn query_aabb(&self, aabb: &Rect) -> Vec<EntityId>;
-    pub fn query_point(&self, x: f32, y: f32) -> Vec<EntityId>;
-    pub fn query_circle(&self, cx: f32, cy: f32, radius: f32) -> Vec<EntityId>;
+    pub fn query_aabb(&self, aabb: &SimRect) -> Vec<EntityId>;
+    pub fn query_point(&self, p: SimVec2) -> Vec<EntityId>;
+    pub fn query_circle(&self, center: SimVec2, radius: Fix) -> Vec<EntityId>;
     pub fn cell_count(&self) -> usize;
     pub fn entity_count(&self) -> usize;
 }
@@ -128,12 +136,12 @@ impl SpatialHash {
 pub struct CollisionWorld { /* spatial_hash, shapes, triggers */ }
 
 impl CollisionWorld {
-    pub fn new(cell_size: f32) -> Self;
-    pub fn update_entity(&mut self, id: EntityId, pos: RenderVec2, shape: CollisionShape);
+    pub fn new(cell_size: Fix) -> Self;
+    pub fn update_entity(&mut self, id: EntityId, pos: SimVec2, shape: CollisionShape);
     pub fn remove_entity(&mut self, id: EntityId);
-    pub fn query_aabb(&self, rect: &Rect) -> Vec<EntityId>;
-    pub fn query_point(&self, x: f32, y: f32) -> Vec<EntityId>;
-    pub fn query_circle(&self, cx: f32, cy: f32, radius: f32) -> Vec<EntityId>;
+    pub fn query_aabb(&self, rect: &SimRect) -> Vec<EntityId>;
+    pub fn query_point(&self, p: SimVec2) -> Vec<EntityId>;
+    pub fn query_circle(&self, center: SimVec2, radius: Fix) -> Vec<EntityId>;
     pub fn check_pair(&self, a: EntityId, b: EntityId) -> Option<ContactInfo>;
     pub fn check_triggers(&mut self, entity: EntityId) -> Vec<TriggerEvent>;
     pub fn clear(&mut self);
@@ -145,7 +153,7 @@ impl CollisionWorld {
 ```rust
 pub struct TriggerZone {
     pub id: u32,
-    pub rect: Rect,
+    pub rect: SimRect,
     pub active: bool,
 }
 
@@ -155,8 +163,8 @@ pub enum TriggerEvent {
 }
 
 impl TriggerZone {
-    pub fn new(id: u32, rect: Rect) -> Self;
-    pub fn check(&mut self, entity: EntityId, entity_rect: &Rect) -> Option<TriggerEvent>;
+    pub fn new(id: u32, rect: SimRect) -> Self;
+    pub fn check(&mut self, entity: EntityId, entity_rect: &SimRect) -> Option<TriggerEvent>;
     pub fn remove_entity(&mut self, entity: EntityId);
 }
 ```
@@ -164,11 +172,11 @@ impl TriggerZone {
 ### Narrow-Phase Functions
 
 ```rust
-pub fn aabb_vs_aabb(a: &Rect, b: &Rect) -> Option<ContactInfo>;
-pub fn circle_vs_circle(ax: f32, ay: f32, ar: f32, bx: f32, by: f32, br: f32) -> Option<ContactInfo>;
-pub fn circle_vs_aabb(cx: f32, cy: f32, radius: f32, rect: &Rect) -> Option<ContactInfo>;
-pub fn check_shapes(pos_a: RenderVec2, shape_a: &CollisionShape, pos_b: RenderVec2, shape_b: &CollisionShape) -> Option<ContactInfo>;
-pub fn shape_to_aabb(pos: RenderVec2, shape: &CollisionShape) -> Rect;
+pub fn aabb_vs_aabb(a: &SimRect, b: &SimRect) -> Option<ContactInfo>;
+pub fn circle_vs_circle(a: SimVec2, ar: Fix, b: SimVec2, br: Fix) -> Option<ContactInfo>;
+pub fn circle_vs_aabb(center: SimVec2, radius: Fix, rect: &SimRect) -> Option<ContactInfo>;
+pub fn check_shapes(pos_a: SimVec2, shape_a: &CollisionShape, pos_b: SimVec2, shape_b: &CollisionShape) -> Option<ContactInfo>;
+pub fn shape_to_aabb(pos: SimVec2, shape: &CollisionShape) -> SimRect;
 ```
 
 ### Raycast API
@@ -180,11 +188,11 @@ Raycasts are required by platformer controllers (ground/wall detection), shmup l
 #[derive(Clone, Copy, Debug)]
 pub struct RayHit {
     /// World position where the ray hit.
-    pub point: RenderVec2,
+    pub point: SimVec2,
     /// Surface normal at the hit point.
-    pub normal: RenderVec2,
+    pub normal: SimVec2,
     /// Distance from ray origin to hit point.
-    pub distance: f32,
+    pub distance: Fix,
     /// Entity that was hit (None for tilemap hits).
     pub entity: Option<EntityId>,
 }
@@ -193,30 +201,30 @@ pub struct RayHit {
 /// Returns the first solid tile hit. `max_distance` limits the ray length.
 /// Uses DDA (Digital Differential Analyzer) for tile traversal — O(tiles traversed).
 pub fn raycast_tiles(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    max_distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    max_distance: Fix,
     collision_layer: &CollisionLayer,
-    tile_size: f32,
+    tile_size: Fix,
 ) -> Option<RayHit>;
 
 /// Cast a ray against all bodies in the CollisionWorld.
 /// Returns the closest hit. Uses SpatialHash for broad-phase acceleration.
 pub fn raycast_bodies(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    max_distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    max_distance: Fix,
     world: &CollisionWorld,
     exclude: Option<EntityId>,
 ) -> Option<RayHit>;
 
 /// Cast a ray against both tilemap and bodies, returning the closest overall hit.
 pub fn raycast(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    max_distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    max_distance: Fix,
     collision_layer: &CollisionLayer,
-    tile_size: f32,
+    tile_size: Fix,
     world: &CollisionWorld,
     exclude: Option<EntityId>,
 ) -> Option<RayHit>;
@@ -224,11 +232,11 @@ pub fn raycast(
 /// Short-range directional sensor (convenience for platformer controllers).
 /// Equivalent to `raycast_tiles(origin, dir, distance, ...)`.
 pub fn sensor(
-    origin: RenderVec2,
-    direction: RenderVec2,
-    distance: f32,
+    origin: SimVec2,
+    direction: SimVec2,
+    distance: Fix,
     collision_layer: &CollisionLayer,
-    tile_size: f32,
+    tile_size: Fix,
 ) -> bool;
 ```
 
@@ -271,24 +279,24 @@ impl CollisionLayer {
 #[derive(Clone, Copy, Debug)]
 pub struct CapsuleShape {
     /// Halbe Länge des Liniensegments (Gesamtlänge = 2 * half_length).
-    pub half_length: f32,
+    pub half_length: Fix,
     /// Radius an beiden Enden.
-    pub radius: f32,
+    pub radius: Fix,
     /// Rotation in Radians (0 = horizontal).
-    pub angle: f32,
+    pub angle: Fix,
 }
 
 // CollisionShape erweitert um:
 pub enum CollisionShape {
-    Aabb(Rect),
-    Circle { cx: f32, cy: f32, radius: f32 },
+    Aabb(SimRect),
+    Circle { center: SimVec2, radius: Fix },
     Capsule(CapsuleShape),  // NEU
 }
 
 // Neue Narrow-Phase Funktionen:
-pub fn capsule_vs_aabb(capsule_pos: RenderVec2, capsule: &CapsuleShape, rect: &Rect) -> Option<ContactInfo>;
-pub fn capsule_vs_circle(capsule_pos: RenderVec2, capsule: &CapsuleShape, cx: f32, cy: f32, r: f32) -> Option<ContactInfo>;
-pub fn capsule_vs_capsule(pos_a: RenderVec2, a: &CapsuleShape, pos_b: RenderVec2, b: &CapsuleShape) -> Option<ContactInfo>;
+pub fn capsule_vs_aabb(capsule_pos: SimVec2, capsule: &CapsuleShape, rect: &SimRect) -> Option<ContactInfo>;
+pub fn capsule_vs_circle(capsule_pos: SimVec2, capsule: &CapsuleShape, center: SimVec2, r: Fix) -> Option<ContactInfo>;
+pub fn capsule_vs_capsule(pos_a: SimVec2, a: &CapsuleShape, pos_b: SimVec2, b: &CapsuleShape) -> Option<ContactInfo>;
 ```
 
 Implementierung: Punkt-zu-Liniensegment Distanz, dann wie Circle-Kollision behandeln. ~100 Zeilen.
@@ -299,20 +307,20 @@ Implementierung: Punkt-zu-Liniensegment Distanz, dann wie Circle-Kollision behan
 /// Joint-Typen für Verbindungen zwischen zwei Bodies.
 pub enum JointType {
     /// Drehgelenk: Bodies verbunden an einem Punkt, frei rotierbar.
-    Revolute { anchor_a: RenderVec2, anchor_b: RenderVec2 },
+    Revolute { anchor_a: SimVec2, anchor_b: SimVec2 },
     /// Schiene: Body B kann nur entlang einer Achse relativ zu A gleiten.
-    Prismatic { axis: RenderVec2, anchor_a: RenderVec2, anchor_b: RenderVec2 },
+    Prismatic { axis: SimVec2, anchor_a: SimVec2, anchor_b: SimVec2 },
     /// Fest verbunden: Bodies bewegen sich als Einheit.
-    Fixed { anchor_a: RenderVec2, anchor_b: RenderVec2 },
+    Fixed { anchor_a: SimVec2, anchor_b: SimVec2 },
     /// Distanz-Joint: hält Bodies in festem Abstand.
-    Distance { anchor_a: RenderVec2, anchor_b: RenderVec2, length: f32 },
+    Distance { anchor_a: SimVec2, anchor_b: SimVec2, length: Fix },
 }
 
 pub struct Joint {
     pub joint_type: JointType,
     pub entity_a: EntityId,
     pub entity_b: EntityId,
-    pub stiffness: f32,  // 0.0 = weich, 1.0 = starr
+    pub stiffness: Fix,  // 0.0 = weich, 1.0 = starr
 }
 
 impl PhysicsWorld {
@@ -329,21 +337,21 @@ Implementierung: Positional Correction pro Constraint-Typ im Solver-Loop. ~200-3
 /// Swept collision test für schnelle Objekte.
 /// Verhindert Tunneling durch dünne Wände.
 pub fn swept_aabb(
-    pos: RenderVec2,
-    velocity: RenderVec2,
+    pos: SimVec2,
+    velocity: SimVec2,
     shape: &CollisionShape,
-    obstacle: &Rect,
+    obstacle: &SimRect,
 ) -> Option<SweptContact>;
 
 pub struct SweptContact {
-    pub time: f32,       // 0.0..1.0, wann im Tick die Kollision auftritt
-    pub normal: RenderVec2,
+    pub time: Fix,       // 0.0..1.0, wann im Tick die Kollision auftritt
+    pub normal: SimVec2,
     pub contact: ContactInfo,
 }
 
 impl PhysicsWorld {
     /// Aktiviert CCD für Bodies mit Geschwindigkeit > threshold.
-    pub fn set_ccd_threshold(&mut self, threshold: f32);
+    pub fn set_ccd_threshold(&mut self, threshold: Fix);
 }
 ```
 
@@ -370,17 +378,11 @@ pub fn sync_ecs_to_physics(positions: &SparseSet<Position>, world: &mut PhysicsW
 
 ## Internal Design
 
-- **f32 vs Fixed-Point (bewusste Entscheidung):** Physics nutzt `f32` (RenderVec2), nicht Fixed-Point. Das ist kein Widerspruch zum Fixed-Point-Prinzip der Engine — es gibt zwei Kollisions-Ebenen:
-  1. **Simulation (deterministisch):** Tile-basierte Kollision in `SimVec2` (Fixed-Point). Für Gameplay-Logik: Enemies bewegen sich auf Tile-Grid, Tower-Ranges, Pathfinding. Identisch auf allen Plattformen.
-  2. **Physik (visuell):** RigidBody-Physik in `RenderVec2` (f32). Für visuelle Effekte: Bouncing, Ragdolls, Partikel-Interaktion. Nicht multiplayer-relevant, daher kein Determinismus nötig.
-- **SimVec2 ↔ RenderVec2 Konvertierungsprotokoll:** Game-Systeme, die beide Welten berühren (z.B. Platformer Controller, Shmup Hitbox), konvertieren an klar definierten Grenzen:
-  - **Simulation → Render:** `SimVec2::to_f32() -> RenderVec2` — verlustfrei bei typischen Spielwelt-Koordinaten (±32768 range).
-  - **Render → Simulation:** `RenderVec2::to_fixed() -> SimVec2` — rundet auf nächsten Fixed-Point-Wert. Nur an Systemgrenzen verwenden, nie pro Frame hin-und-her konvertieren.
-  - **Platformer:** Controller rechnet in SimVec2. Ergebnis-Velocity wird in RenderVec2 umgewandelt und auf RigidBody.velocity geschrieben. Collision-Response (Tilemap-basiert) läuft in SimVec2 über `sensor()` und `raycast_tiles()`.
-  - **Shmup:** Player-Position in SimVec2, Bullet-Positionen in f32. Konvertierung geschieht einmal pro Frame für `hit_test()` und `graze_test()`. Präzisionsverlust ist bei Spielfeld-Größen (<1000px) irrelevant.
-- **Multiplayer-Relevanz:** Physics (`PhysicsWorld::step()`) wird NICHT über das Netzwerk synchronisiert. Nur Tile-basierte Simulation ist deterministisch und replizierbar. Visuelle Physik (Ragdolls, Partikel-Bouncing) darf sich zwischen Clients unterscheiden.
-- `FxHashMap<EntityId, RigidBody>` for O(1) body lookup.
-- `FxHashSet` for duplicate pair elimination during broad phase.
+- **Fixed point (since 0.2.0):** Physics, collision, raycasts and broad phase compute in `Fix`/`SimVec2`/`SimRect`, like the rest of the simulation (ADR-0001). The earlier decision to keep rigid-body physics in `f32` as "visual only" is withdrawn: games used it for gameplay, and `f32` results (and libm calls) are not guaranteed identical across platforms, which breaks replays and lockstep.
+- **Simulation → Render:** `SimVec2::to_render()`, `SimRect::to_render()` at draw time. **Render → Simulation:** `SimVec2::from_num(..)` only at system boundaries (input, editor), never per frame back and forth.
+- **Order:** bodies live in a `BTreeMap<EntityId, RigidBody>`, so every pass visits them in id order. Spatial-hash queries return ids sorted and deduplicated; pairs from a pluggable broad phase are sorted before resolution. Each pair is checked once, from its smaller id.
+- **Overflow:** squared distances and segment projections are computed on widened raw bits (`i128`) or via the exact `SimVec2::length`, since `x * x` leaves the Q16.16 range above ~181 units. Divisions that can blow up (swept AABB, ray slabs) saturate.
+- **Multiplayer:** `PhysicsWorld::step()` gives bit-identical results everywhere; `crates/amigo_core/tests/determinism.rs` pins a 100-body, 600-tick golden hash on all CI platforms. Gameplay that depends on physics can therefore run in lockstep or be replayed.
 - Spatial hash cell size should match typical entity size (64px recommended for most games).
 
 ## Non-Goals

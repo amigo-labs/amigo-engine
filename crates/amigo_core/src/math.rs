@@ -24,6 +24,14 @@ impl SimVec2 {
         Self { x, y }
     }
 
+    /// From any numbers `Fix::from_num` accepts, e.g. `SimVec2::from_num(3, 4)`.
+    pub fn from_num(x: impl fixed::traits::ToFixed, y: impl fixed::traits::ToFixed) -> Self {
+        Self {
+            x: Fix::from_num(x),
+            y: Fix::from_num(y),
+        }
+    }
+
     pub fn from_f32(x: f32, y: f32) -> Self {
         Self {
             x: Fix::from_num(x),
@@ -122,6 +130,16 @@ impl SimVec2 {
         let y = i64::from(self.y.to_bits());
         let squared = (x * x) as u64 + (y * y) as u64;
         Fix::from_bits(i32::try_from(squared.isqrt()).unwrap_or(i32::MAX))
+    }
+
+    /// How the distance to `other` compares with `radius`, without a square
+    /// root: both sides are squared on widened integers, so this is exact,
+    /// cannot overflow, and is cheap enough for per-bullet hit tests.
+    pub fn compare_distance(self, other: Self, radius: Fix) -> std::cmp::Ordering {
+        let raw = |v: Fix| i128::from(v.to_bits());
+        let (dx, dy) = (raw(self.x) - raw(other.x), raw(self.y) - raw(other.y));
+        let r = raw(radius.max(Fix::ZERO));
+        (dx * dx + dy * dy).cmp(&(r * r))
     }
 
     /// Unit vector. Returns ZERO if length is zero (no panic).
@@ -339,6 +357,29 @@ mod tests {
         let expected = Fix::from_num(178); // floor(sqrt(32000)) ≈ 178.88
         let diff = (s - expected).abs();
         assert!(diff < Fix::from_num(1), "sqrt(32000) ≈ 178.88, got {s}");
+    }
+
+    #[test]
+    fn compare_distance_is_exact_and_does_not_overflow() {
+        use std::cmp::Ordering::*;
+        let a = SimVec2::from_num(0, 0);
+        assert_eq!(
+            a.compare_distance(SimVec2::from_num(3, 4), Fix::from_num(5)),
+            Equal
+        );
+        assert_eq!(
+            a.compare_distance(SimVec2::from_num(3, 4), Fix::from_num(6)),
+            Less
+        );
+        assert_eq!(
+            a.compare_distance(SimVec2::from_num(3, 4), Fix::from_num(4.99)),
+            Greater
+        );
+        let far = SimVec2::from_num(-30000, -30000);
+        assert_eq!(
+            far.compare_distance(SimVec2::from_num(30000, 30000), Fix::MAX),
+            Greater
+        );
     }
 
     #[test]
