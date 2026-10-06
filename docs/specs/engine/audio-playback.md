@@ -2,7 +2,7 @@
 status: spec
 crate: amigo_audio, amigo_engine
 depends_on: ["engine/audio"]
-last_updated: 2026-10-05
+last_updated: 2026-10-06
 ---
 
 # Audio Playback Control
@@ -374,6 +374,14 @@ kira main track          <- master volume
   and the sound then continues to the end of the range and stops. Without a
   `loop_region` the whole played range repeats `n` times, so the sound is heard `n`
   times back to back with no gap.
+  - The finite repetition is rendered into its own sample buffer when `play` is
+    called: the lead-in `start..region_start`, `n` copies of the region, then the tail
+    `region_end..end`. The result is gapless and sample-exact, and the tail always
+    plays.
+  - Rendered buffers are cached per name, variant, resolved range and `n`.
+  - A rendered buffer longer than 120 s of audio is not built. Such a `play` returns a
+    `Stopped` handle and logs one `warn!` per name. For long repeats, use `Forever` and
+    `stop`.
 - **`LoopMode::Forever`.** Repeats the region until the sound is stopped.
 - **Other settings.** `fade_in` ramps from silence to the sound's volume after the
   delay. `playback_rate` scales speed and pitch together.
@@ -442,10 +450,16 @@ These are suggestions, not part of the contract.
 - **Handle slots.** Each slot holds `Option<StaticSoundHandle>`, the sound's name, and
   its own volume. kira handles are not `Clone`, which is why the manager owns them and
   games get indices.
-- **Count loops.** `LoopMode::Count(n)` sets kira's `loop_region` and schedules the
-  stop with a delayed `Tween { start_time: StartTime::Delayed(t_end), duration: 0 }`,
-  where `t_end` is the time the `n`-th repetition ends plus the tail. This needs no
-  frame-loop polling.
+- **Count loops.** A delayed `stop` cannot implement `Count(n)`: while kira's
+  `loop_region` is set, the sound keeps repeating the region and never reaches the
+  tail. kira's `set_loop_region` takes effect at once and cannot be scheduled for the
+  final traversal either.
+  - Instead, a pure function `render_finite_loop(frames: &[Frame], range: ResolvedRange,
+    n: u32) -> Arc<[Frame]>` concatenates the lead-in, `n` copies of the region and the
+    tail from the decoded frames.
+  - kira's `StaticSoundData` exposes `frames: Arc<[Frame]>` and `sample_rate`, so the
+    result plays as an ordinary one-shot.
+  - `Forever` keeps using kira's `loop_region`.
 - **Region resolution.** Resolving and clamping regions is a pure function
   `resolve_range(&PlaySettings, sample_rate, frames) -> Option<ResolvedRange>`. All of
   A2's clamping rules are tested there without a device.
@@ -503,7 +517,10 @@ Audio output cannot be heard in CI. Criteria are checked against `new_silent`
 - [ ] Test: `maintain` frees slots of stopped sounds and bumps their generation
 - [ ] Test: `set_name_volume("x", 0.5, ..)` then `play("x", ..)` starts the instance at 0.5 × its own volume; `name_volume` survives `unload` + reload
 - [ ] Test (`resolve_range`): `Samples` and `Seconds` resolve with the variant's sample rate; `start` past the end yields `None`; `length` past the end is clamped; an empty `loop_region` resolves to "no loop"
-- [ ] Test (`resolve_range`): `Count(0)` and `Count(1)` resolve like `Once`; `Count(3)` without a region computes `t_end` as three times the range length
+- [ ] Test (`resolve_range`): `Count(0)` and `Count(1)` resolve like `Once`
+- [ ] Test (`render_finite_loop`): played range 0–6 s, region 2–4 s, `Count(2)` yields an 8 s buffer equal, frame for frame, to source 0–4 s, then 2–4 s, then 4–6 s (the tail is present)
+- [ ] Test (`render_finite_loop`): `Count(3)` without a region yields three back-to-back copies of the played range
+- [ ] Test: a `Count(n)` whose rendered length exceeds 120 s returns a `Stopped` handle and warns once per name
 - [ ] Test: bus and master getters return set values without an audio device; setters clamp to `0.0..=4.0` and ignore non-finite input
 - [ ] Test: `set_bus_muted(Sfx, true)` leaves `bus_volume(Sfx)` unchanged; unmuting restores it
 - [ ] Test: writing `audio.volumes.sfx` directly is applied by the next `maintain`

@@ -2,7 +2,7 @@
 status: spec
 crate: amigo_render, amigo_engine, amigo_assets
 depends_on: ["engine/rendering", "engine/camera", "engine/font-rendering", "engine/particles", "assets/atlas"]
-last_updated: 2026-10-05
+last_updated: 2026-10-06
 ---
 
 # Rendering Extensions
@@ -281,6 +281,45 @@ impl FontManager {
     pub fn default_font_id(&self) -> Option<FontId>;
 }
 
+/// Side length of a font atlas page, in pixels.
+pub const FONT_PAGE_SIZE: u32 = 1024;
+
+/// One fixed-size page of a font atlas. It replaces `FontAtlas`'s `atlas_data`,
+/// `atlas_width`, `atlas_height` and `texture_id` fields.
+pub struct FontPage {
+    /// Assigned when the page is created and never changed.
+    pub texture_id: TextureId,
+    /// RGBA, `FONT_PAGE_SIZE`², premultiplied (see R2).
+    pub data: Vec<u8>,
+    /// Glyphs were added since the last upload.
+    pub dirty: bool,
+}
+
+impl FontAtlas {
+    pub fn pages(&self) -> &[FontPage];
+}
+
+// amigo_render::texture
+
+/// Hands out `TextureId`s. The renderer and the font manager share one, so a
+/// font page created while `Game::draw` runs already has its final id. Ids
+/// are never reused.
+#[derive(Clone, Debug)]
+pub struct TextureIdAllocator { /* Arc<AtomicU32> */ }
+
+impl TextureIdAllocator {
+    pub fn allocate(&self) -> TextureId;
+}
+
+impl Renderer {
+    /// The allocator `load_texture` and font pages draw their ids from.
+    pub fn texture_ids(&self) -> TextureIdAllocator;
+
+    /// Create the texture under `id`, or replace it. A same-size replacement
+    /// writes into the existing GPU texture, so its bind group stays valid.
+    pub fn upload_texture(&mut self, id: TextureId, image: &image::RgbaImage, mode: SamplerMode);
+}
+
 // amigo_engine
 impl DrawContext<'_> {
     /// Draw one line of text. `pos.y` is the top of the line box; the
@@ -421,6 +460,12 @@ pub struct AtlasManifest {
     /// Sprites on the sheet, by name. Names are global like other sprite
     /// names; a clash with another sprite is an error.
     pub sprites: BTreeMap<String, AtlasSprite>,
+    /// Mip levels below the full-size image (R10). 0, the default, means none.
+    /// With `k > 0` the loader requires every frame to be aligned to `2^k`
+    /// pixels and separated from every other frame by at least `2^k` pixels
+    /// of fully transparent gutter.
+    #[serde(default)]
+    pub mip_levels: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -431,6 +476,7 @@ pub struct AtlasSprite {
     #[serde(default)]
     pub origin: (f32, f32),
     /// When set, the sprite also registers an `Animation` of the same name.
+    /// Must be finite and in `(0, TICKS_PER_SECOND]`.
     #[serde(default)]
     pub fps: Option<f32>,
     #[serde(default)]
@@ -460,6 +506,10 @@ pub enum AtlasError {
     NoFrames { path: PathBuf, sprite: String },
     #[error("{path}: sprite name '{sprite}' is already used by {other}")]
     DuplicateName { path: PathBuf, sprite: String, other: String },
+    #[error("{path}: sprite '{sprite}' fps {fps} is not in (0, {max}]")]
+    InvalidFps { path: PathBuf, sprite: String, fps: f32, max: u32 },
+    #[error("{path}: sprite '{sprite}' frame {frame} is not aligned to or isolated by {gutter} px for mip_levels {mip_levels}")]
+    MipPadding { path: PathBuf, sprite: String, frame: usize, mip_levels: u32, gutter: u32 },
 }
 
 // `AssetError` gains `Atlas(#[from] AtlasError)`.
@@ -560,6 +610,16 @@ impl DrawContext<'_> {
   (`rgb * a, a`) before it multiplies the sample. This removes the dark fringes that
   linear filtering of straight alpha produces, and it is what makes `Additive` and
   `Multiply` composable with `Normal` in one pass.
+- **Premultiplication happens in linear light.** Textures are `Rgba8UnormSrgb`
+  (`texture.rs:62`), so the sampler decodes sRGB before blending.
+  - Each texel's RGB is sRGB-decoded, multiplied by alpha, and sRGB-encoded again
+    before upload. Opaque texels (alpha 255) are stored unchanged.
+  - Coverage textures (font pages, the white texture) store `srgb_encode(a)` in RGB
+    and `a` in alpha, so a sample decodes to `(a, a, a, a)`.
+  - Storing coverage directly would sample 0.5 as about 0.214 and darken every glyph
+    edge under the `One` blend factor.
+  - This is required for R2 on its own; the wider colour-space fix (backlog render-8)
+    stays a non-goal.
 - **Blend states.**
   - `Normal`: colour `(One, OneMinusSrcAlpha)`, alpha `(One, OneMinusSrcAlpha)`.
   - `Additive`: colour `(One, One)`, alpha `(Zero, One)`.
@@ -632,6 +692,20 @@ impl DrawContext<'_> {
   - Under `pixel_art`, `render_scale` is 1 and text renders as today.
 - **Atlases.** One atlas is kept per (font, rasterised pixel size). Measuring uses font
   metrics and needs no atlas.
+- **Stable pages.** An atlas is a list of `FONT_PAGE_SIZE`² pages.
+  - A page is never resized or repacked, so once a glyph has a page and a UV
+    rectangle, neither changes. Today's `grow_atlas`, which rescales cached UVs
+    (`font.rs:232-235`), goes away.
+  - A glyph that fits no existing page opens a new page, which takes its
+    `TextureId` from the shared `TextureIdAllocator` on the spot, even during
+    `Game::draw`.
+- **Upload before batching.** After `Game::draw` returns and before the batch is
+  built, the engine uploads every new or dirty page with `upload_texture` under the
+  page's own id.
+  - Every glyph quad submitted this frame, before or after a page was added,
+    therefore points at a texture that exists and contains it.
+  - Today's helper allocates a new id on every upload (`engine.rs:582-588`), and that
+    is what this replaces.
 - **Default font.** The engine still loads AmigoPixel first, and it stays the default
   until `set_default_font` is called. After the call, `amigo_ui` widget text uses the
   new default too.
@@ -701,6 +775,11 @@ impl DrawContext<'_> {
   which is where Flash's `ox`/`oy` placed the art.
 - **Animations.** With `fps` set, the sprite also registers an `Animation` named like
   the sprite.
+  - `fps` must be finite and in `(0, TICKS_PER_SECOND]`. Zero, negative, non-finite
+    and higher rates are rejected with `AtlasError::InvalidFps`.
+    `AnimPlayer::step_one_tick` (`amigo_animation/src/lib.rs:177-196`) advances at most
+    one frame per tick, so a higher rate could not be met, and the limit keeps every
+    frame at least one tick long.
   - Frame durations are converted to ticks so that frame `k` starts at tick
     `round(k · TICKS_PER_SECOND / fps)`. The clip's total length is right to within
     one tick even when the frame rate does not divide the tick rate (19 fps at 60 Hz
@@ -709,7 +788,8 @@ impl DrawContext<'_> {
     `draw_frame`, origins included.
 - **Errors.** Each `AtlasError` variant is reported for its file. Like other sprite
   load errors it is logged, and that manifest's sprites are skipped; the remaining
-  assets still load.
+  assets still load. `MipPadding` is the exception: the sheet still loads, without
+  mipmaps (R10).
 - **Hot reload.** A change to the manifest or its image reloads all of that manifest's
   sprites.
 - **Packing.** `amigo pack` copies atlas sheets into the pak unchanged instead of
@@ -729,9 +809,22 @@ impl DrawContext<'_> {
 
 ### R10: Raster-art quality and window shape
 
-- **Mipmaps.** Textures sampled with `SamplerMode::Linear` get a full mip chain at
-  upload, and their sampler filters between levels linearly. Art drawn smaller than
-  authored then stops shimmering. `Nearest` textures keep a single level.
+- **Mipmaps.** Only where neighbouring frames cannot bleed into each other.
+  - **Single images.** A `Linear` texture holding exactly one frame (a PNG, a
+    one-frame Aseprite file) gets a full mip chain, filtered linearly between levels.
+    Art drawn smaller than authored then stops shimmering.
+  - **Several frames.** A texture holding several frames (an Aseprite strip, an R8
+    sheet) gets no mipmaps. A full chain would average neighbouring frames together:
+    a red and a blue frame meet in a purple level that both sample when drawn small.
+  - **Opt-in for sheets.** An R8 sheet may opt in with `mip_levels: k`. The loader
+    then checks that every frame is aligned to `2^k` px and separated from every
+    other frame by at least `2^k` px of fully transparent gutter. Otherwise it reports
+    `AtlasError::MipPadding` and loads the sheet without mipmaps. With that gutter,
+    levels 1..=k of one frame never contain texels of another.
+  - **Font pages** never get mipmaps; R5 rasterises text at its output size.
+  - **`Nearest` textures** keep a single level.
+  - **Colour space.** Mip levels are computed from linear, premultiplied texels (R2),
+    then sRGB-encoded.
 - **`ScaleMode::Expand`.** The virtual height stays as configured and the virtual
   width becomes `round(virtual_height · window_w / window_h)`, recomputed on every
   resize.
@@ -753,9 +846,11 @@ These are suggestions, not part of the contract.
 - **R2.** `SpriteBatch` gains a `blend: BlendMode` field. The renderer keeps
   `[wgpu::RenderPipeline; 3]` per pass and switches pipeline when consecutive batches
   differ.
-  - Premultiplication runs once in `Texture::from_image_with_mode`.
-  - Font atlases store coverage in alpha with white RGB, so premultiplied texels are
-    `(a, a, a, a)`.
+  - Premultiplication (decode, multiply, encode) runs once in
+    `Texture::from_image_with_mode`, skipping opaque texels; a 256-entry decode table
+    keeps it cheap.
+  - Font pages are written premultiplied directly: `(e, e, e, a)` with
+    `e = srgb_encode(a)`.
 - **R3/R4.** `DrawContext` gets a second `Option<&mut Vec<SpriteInstance>>` and a
   small `FrameOverrides` struct (camera position, offset). The engine reads it back
   through a crate-private accessor after `draw`. `engine.rs` already holds a
@@ -764,8 +859,11 @@ These are suggestions, not part of the contract.
   - Glyph caching from `&self` needs interior mutability in `FontAtlas`: a `RefCell`
     around the glyph map and atlas pixels, or a `Mutex` if `GameContext` must stay
     `Sync`.
-  - `upload_font_atlases` (`engine.rs:582`) moves to after `Game::draw`, so glyphs
-    added during `draw` upload before the frame renders.
+  - `FontManager` holds a clone of the renderer's `TextureIdAllocator`. The engine
+    hands it over at startup.
+  - `upload_font_atlases` (`engine.rs:582`) becomes a loop over new and dirty pages
+    calling `upload_texture`, run after `Game::draw`. A dirty page can upload just its
+    dirty rows.
   - `.notdef` comes from `fontdue::Font::lookup_glyph_index` returning 0 and
     `rasterize_indexed(0, px)`.
   - Atlases for sizes not used for 600 frames can be dropped once textures can be
@@ -786,9 +884,10 @@ These are suggestions, not part of the contract.
   becomes `name → SpriteEntry { texture, size, frames: Vec<FrameEntry { uv: Rect,
   size, origin }> }`. Plain sprites hold one frame covering the texture, so
   `find_sprite_texture` keeps its signature.
-- **R10.** Generate mip levels on the CPU with `image::imageops::resize` (Triangle
-  filter) at load. That is simple and fast enough for load-time use; a GPU blit chain
-  is an option if load times matter.
+- **R10.** Generate mip levels on the CPU at load, as 2×2 box averages in linear,
+  premultiplied space. That is simple and fast enough for load-time use; a GPU blit
+  chain is an option if load times matter. The `MipPadding` check is a pass over
+  frame rectangles plus a scan of each gutter for non-zero alpha.
 
 ## Breaking changes
 
@@ -802,6 +901,7 @@ These are suggestions, not part of the contract.
 | `PostEffect` gains variants and `#[non_exhaustive]` | exhaustive `match`es on `PostEffect` | add a `_ => {}` arm |
 | `particles::BlendMode` becomes a re-export of `BlendMode` with a third variant | exhaustive `match`es on it | add the `Multiply` arm |
 | `ScaleMode` gains `Expand` | exhaustive `match`es on `ScaleMode` | add the arm |
+| `FontAtlas` loses `atlas_data`, `atlas_width`, `atlas_height`, `texture_id` in favour of `pages()` | code reading the atlas pixels or texture directly | iterate `pages()` |
 
 Rendering output changes only where a game opts into the new fields. The one global
 change is premultiplied alpha (R2), which gives identical results for opaque sprites
@@ -860,7 +960,8 @@ layout functions. The example at the end only has to compile.
 - [ ] `amigo_render::particles::BlendMode` is the same type (a re-export); an existing RON emitter config with `blend_mode: Normal` still deserialises
 - [ ] Test: batches break on a blend change between same-texture sprites, and z-order with submission order is preserved
 - [ ] `SpriteBatch` carries its blend mode; the renderer creates one pipeline per mode for the world and the UI pass with the blend states listed in Behavior
-- [ ] Test: texture upload premultiplies RGB by alpha (CPU helper, e.g. `premultiply(&mut RgbaImage)`)
+- [ ] Test: texture upload premultiplies in linear light (CPU helper, e.g. `premultiply_srgb(&mut RgbaImage)`): sRGB white with alpha 128 stores RGB 188, and an opaque texel is unchanged
+- [ ] Test: a font page texel with coverage 128 stores `(188, 188, 188, 128)`, which decodes to ≈ 0.5 in every channel
 - [ ] Test: `ParticleSystem::collect_sprites` sets `blend: Additive` for an emitter configured additive
 
 ### R3: Screen space
@@ -888,7 +989,11 @@ layout functions. The example at the end only has to compile.
 - [ ] Test: `letter_spacing` adds `n · spacing` to the width of an `n`-character line
 - [ ] Test: with `render_scale = 2.0`, a 10 px style rasterises a 20 px atlas and draws 10 px quads
 - [ ] Test: after `set_default_font`, `amigo_ui` text uses the new font's texture
-- [ ] `upload_font_atlases` runs after `Game::draw`
+- [ ] `FONT_PAGE_SIZE`, `FontPage`, `FontAtlas::pages`, `TextureIdAllocator::allocate`, `Renderer::texture_ids` and `Renderer::upload_texture` exist
+- [ ] Test: the allocator never returns the same id twice, including across clones
+- [ ] Test: a glyph first used during `draw` produces a quad whose `texture_id` is its page's id, and that page is in the engine's upload list before the batch is built
+- [ ] Test: filling a page after earlier text was submitted in the same frame opens a new page; the earlier quads' `texture_id` and UVs are unchanged, and both pages are uploaded
+- [ ] No code path rescales the UVs of cached glyphs
 
 ### R6: Shapes
 - [ ] `DrawContext::{draw_quad, draw_quad_colors, draw_gradient_rect, draw_line, draw_rect_outline, draw_circle, draw_rounded_rect, draw_convex_polygon}` exist with the signatures above
@@ -914,6 +1019,8 @@ layout functions. The example at the end only has to compile.
 - [ ] `DrawContext::{draw_frame, draw_frame_ex, frame_count}` exist
 - [ ] Test: `draw_frame` sets size, UVs and origin from the frame; a frame index past the end draws the last frame; a plain PNG sprite reports `frame_count == 1`
 - [ ] Test: a 19 fps sprite yields frame durations whose running sum stays within one tick of `k · 60 / 19`
+- [ ] Test: 60 fps yields durations of exactly 1 tick; `fps` of 0, −1, NaN, infinity and 120 each yield `AtlasError::InvalidFps`
+- [ ] Test: a sheet with `mip_levels: 2` and a 3 px gutter (less than 4) yields `AtlasError::MipPadding`
 - [ ] Test: `draw_animated` on an atlas sprite draws the player's current frame with its origin
 - [ ] `amigo pack` keeps atlas sheets intact (test on the pack output)
 
@@ -927,7 +1034,10 @@ layout functions. The example at the end only has to compile.
 - [ ] `ScaleMode::Expand` exists and parses from `"expand"`
 - [ ] Test: `Viewport::compute(Expand, (640, 360), (1000, 500))` covers the window, and the expanded virtual width is 720
 - [ ] `ViewportInfo` exists; `GameContext::viewport_info()` and `DrawContext::viewport_info()` return it
-- [ ] Test: mip chain generation for a 64×32 `Linear` texture yields 7 levels (64×32 down to 1×1); a `Nearest` texture yields 1
+- [ ] Test: mip chain generation for a one-frame 64×32 `Linear` texture yields 7 levels (64×32 down to 1×1); a `Nearest` texture yields 1
+- [ ] Test: a two-frame Aseprite strip and an R8 sheet without `mip_levels` yield 1 level
+- [ ] Test: an R8 sheet with a red and a blue frame, `mip_levels: 2` and a 4 px aligned gutter yields 3 levels, and no texel inside the red frame's rectangle at any level contains blue
+- [ ] Test: font pages yield 1 level
 
 ### Wiring
 - [ ] A new example `examples/raster_art` (workspace member) uses `art_style = "raster_art"` with `scale_mode = "expand"`. It draws a rotated sprite from an atlas, additive particles, screen-space text with umlauts in an embedded TTF, rounded rects and a `Custom` post shader. It compiles in `cargo check --workspace`.
