@@ -282,6 +282,7 @@ engine ever called them.
 | [tooling/debug](tooling/debug.md)                         | done   | amigo_debug       | engine/core                   |
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | partial | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | partial | amigo_audiogen    | engine/audio                  |
+| [artgen-backend-abstraction](artgen-backend-abstraction.md) | done | amigo_artgen, amigo_comfyui | ai-pipelines/artgen     |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
 | [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | done  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
@@ -308,7 +309,7 @@ engine ever called them.
 | [engine/gpu-instancing](engine/gpu-instancing.md)         | partial | amigo_render     | engine/rendering              |
 | [engine/modding](engine/modding.md)                       | done   | amigo_assets      | assets/format                 |
 | [engine/accessibility](engine/accessibility.md)           | done   | amigo_render      | engine/rendering, engine/input, engine/ui |
-| [engine/rendering-extensions](engine/rendering-extensions.md) | spec | amigo_render, amigo_engine, amigo_assets | engine/rendering, engine/camera, engine/font-rendering, engine/particles, assets/atlas |
+| [engine/rendering-extensions](engine/rendering-extensions.md) | done | amigo_render, amigo_engine, amigo_assets | engine/rendering, engine/camera, engine/font-rendering, engine/particles, assets/atlas |
 | [engine/audio-playback](engine/audio-playback.md)         | spec   | amigo_audio, amigo_engine | engine/audio            |
 | [gametypes/platformer](gametypes/platformer.md)           | done   | amigo_core        | engine/physics, engine/tween  |
 | [gametypes/roguelike](gametypes/roguelike.md)             | done   | amigo_core        | engine/procedural, engine/save-load |

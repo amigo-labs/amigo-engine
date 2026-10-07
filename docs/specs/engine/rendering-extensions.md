@@ -1,8 +1,8 @@
 ---
-status: spec
+status: done
 crate: amigo_render, amigo_engine, amigo_assets
 depends_on: ["engine/rendering", "engine/camera", "engine/font-rendering", "engine/particles", "assets/atlas"]
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Rendering Extensions
@@ -944,112 +944,112 @@ CPU: vertex and batch output, draw lists, tessellation, shader validation, and p
 layout functions. The example at the end only has to compile.
 
 ### R1: Sprite transform
-- [ ] `SpriteInstance` has the fields `origin: [f32; 2]`, `rotation: f32`, `blend: BlendMode`, `geometry: Option<QuadGeometry>`
-- [ ] `QuadGeometry { corners: [[f32; 2]; 4], colors: [Color; 4] }` exists and derives `Clone, Copy, Debug, PartialEq`
-- [ ] `SpriteInstance::new(texture_id, x, y, width, height) -> Self` yields white tint, z 0, no flip, origin `[0, 0]`, rotation 0, `BlendMode::Normal`, `geometry: None`, full UV rect
-- [ ] Test: a sprite with default origin and rotation produces the same four vertices as before the change
-- [ ] Test: `rotation = π/2`, origin at the centre of a 2×4 quad at (10, 10) yields corners rotated clockwise about (10, 10)
-- [ ] Test: `scale(2.0, 2.0)` doubles `width`, `height` and `origin`; `scale(-1.0, 1.0)` toggles `flip_x` and sets `origin[0] = width - origin[0]`
-- [ ] Test: `set_origin_normalized(0.5, 1.0)` sets `origin = [width / 2, height]`
-- [ ] Test: `corners()` and `bounds()` agree with the vertices the batcher writes
-- [ ] Test: non-finite `rotation` or `origin` renders as 0 instead of being dropped
-- [ ] Every `SpriteInstance { .. }` literal in the workspace uses `SpriteInstance::new` or struct update syntax
+- [x] `SpriteInstance` has the fields `origin: [f32; 2]`, `rotation: f32`, `blend: BlendMode`, `geometry: Option<QuadGeometry>`
+- [x] `QuadGeometry { corners: [[f32; 2]; 4], colors: [Color; 4] }` exists and derives `Clone, Copy, Debug, PartialEq`
+- [x] `SpriteInstance::new(texture_id, x, y, width, height) -> Self` yields white tint, z 0, no flip, origin `[0, 0]`, rotation 0, `BlendMode::Normal`, `geometry: None`, full UV rect
+- [x] Test: a sprite with default origin and rotation produces the same four vertices as before the change
+- [x] Test: `rotation = π/2`, origin at the centre of a 2×4 quad at (10, 10) yields corners rotated clockwise about (10, 10)
+- [x] Test: `scale(2.0, 2.0)` doubles `width`, `height` and `origin`; `scale(-1.0, 1.0)` toggles `flip_x` and sets `origin[0] = width - origin[0]`
+- [x] Test: `set_origin_normalized(0.5, 1.0)` sets `origin = [width / 2, height]`
+- [x] Test: `corners()` and `bounds()` agree with the vertices the batcher writes
+- [x] Test: non-finite `rotation` or `origin` renders as 0 instead of being dropped
+- [x] Every `SpriteInstance { .. }` literal in the workspace uses `SpriteInstance::new` or struct update syntax
 
 ### R2: Blend modes
-- [ ] `amigo_render::BlendMode { Normal, Additive, Multiply }` exists, derives `Serialize, Deserialize, Default` (`Normal`), and is in the prelude
-- [ ] `amigo_render::particles::BlendMode` is the same type (a re-export); an existing RON emitter config with `blend_mode: Normal` still deserialises
-- [ ] Test: batches break on a blend change between same-texture sprites, and z-order with submission order is preserved
-- [ ] `SpriteBatch` carries its blend mode; the renderer creates one pipeline per mode for the world and the UI pass with the blend states listed in Behavior
-- [ ] Test: texture upload premultiplies in linear light (CPU helper, e.g. `premultiply_srgb(&mut RgbaImage)`): sRGB white with alpha 128 stores RGB 188, and an opaque texel is unchanged
-- [ ] Test: a font page texel with coverage 128 stores `(188, 188, 188, 128)`, which decodes to ≈ 0.5 in every channel
-- [ ] Test: `ParticleSystem::collect_sprites` sets `blend: Additive` for an emitter configured additive
+- [x] `amigo_render::BlendMode { Normal, Additive, Multiply }` exists, derives `Serialize, Deserialize, Default` (`Normal`), and is in the prelude
+- [x] `amigo_render::particles::BlendMode` is the same type (a re-export); an existing RON emitter config with `blend_mode: Normal` still deserialises
+- [x] Test: batches break on a blend change between same-texture sprites, and z-order with submission order is preserved
+- [x] `SpriteBatch` carries its blend mode; the renderer creates one pipeline per mode for the world and the UI pass with the blend states listed in Behavior
+- [x] Test: texture upload premultiplies in linear light (CPU helper, e.g. `premultiply_srgb(&mut RgbaImage)`): sRGB white with alpha 128 stores RGB 188, and an opaque texel is unchanged
+- [x] Test: a font page texel with coverage 128 stores `(188, 188, 188, 128)`, which decodes to ≈ 0.5 in every channel
+- [x] Test: `ParticleSystem::collect_sprites` sets `blend: Additive` for an emitter configured additive
 
 ### R3: Screen space
-- [ ] `DrawSpace { World, Screen }` exists (default `World`) and is in the prelude
-- [ ] `DrawContext::{with_screen_list, set_space, space, in_space, set_z}` exist with the signatures above
-- [ ] Test: draws after `set_space(Screen)` land in the screen list, draws after `set_space(World)` in the world list
-- [ ] Test: `in_space` restores the previous space after the closure returns
-- [ ] Test: a context without a screen list drops screen draws without panicking
-- [ ] Test: `set_z(5)` sets `z_order` 5 on `draw_sprite`, `draw_rect` and shapes, and not on `draw_text_ex` (which uses the style's z)
-- [ ] `engine.rs` pushes the screen list into `ui_batcher` before the `ctx.ui` widgets
+- [x] `DrawSpace { World, Screen }` exists (default `World`) and is in the prelude
+- [x] `DrawContext::{with_screen_list, set_space, space, in_space, set_z}` exist with the signatures above
+- [x] Test: draws after `set_space(Screen)` land in the screen list, draws after `set_space(World)` in the world list
+- [x] Test: `in_space` restores the previous space after the closure returns
+- [x] Test: a context without a screen list drops screen draws without panicking
+- [x] Test: `set_z(5)` sets `z_order` 5 on `draw_sprite`, `draw_rect` and shapes, and not on `draw_text_ex` (which uses the style's z)
+- [x] `engine.rs` pushes the screen list into `ui_batcher` before the `ctx.ui` widgets
 
 ### R4: Camera from draw
-- [ ] `DrawContext::{set_camera_position, set_camera_offset, camera_position}` exist
-- [ ] Test: after `set_camera_position(p)`, `camera_position()` and `view_rect()` are centred on `p` (plus offset)
-- [ ] The engine applies the override to the renderer camera after `Game::draw`, and `GameContext::camera.position` is unchanged afterwards
-- [ ] `Camera::set_shake_decay(f32)` and `Camera::world_to_screen(RenderVec2) -> RenderVec2` exist
-- [ ] Test: `world_to_screen(screen_to_world(p)) == p` within 1e-3 for points in view, with zoom ≠ 1
+- [x] `DrawContext::{set_camera_position, set_camera_offset, camera_position}` exist
+- [x] Test: after `set_camera_position(p)`, `camera_position()` and `view_rect()` are centred on `p` (plus offset)
+- [x] The engine applies the override to the renderer camera after `Game::draw`, and `GameContext::camera.position` is unchanged afterwards
+- [x] `Camera::set_shake_decay(f32)` and `Camera::world_to_screen(RenderVec2) -> RenderVec2` exist
+- [x] Test: `world_to_screen(screen_to_world(p)) == p` within 1e-3 for points in view, with zoom ≠ 1
 
 ### R5: Text
-- [ ] `TextStyle`, `TextAlign`, `TextMetrics`, `FontError` exist with the fields above; `TextStyle::default()` matches the documented defaults
-- [ ] `FontManager::set_default_font(FontId) -> Result<(), FontError>` and `default_font_id() -> Option<FontId>` exist; an unknown id returns `FontError::UnknownFont`
-- [ ] Test: `draw_text("Grüße", ..)` with a TTF containing those glyphs pushes 5 glyph quads (it pushes 3 today)
-- [ ] Test: a character missing from the font draws the `.notdef` glyph and advances the pen
-- [ ] Test: `measure_text_ex(t, s).width` equals the width of the `Rect` from `draw_text_ex(t, pos, s)` for left, centre and right alignment
-- [ ] Test: `letter_spacing` adds `n · spacing` to the width of an `n`-character line
-- [ ] Test: with `render_scale = 2.0`, a 10 px style rasterises a 20 px atlas and draws 10 px quads
-- [ ] Test: after `set_default_font`, `amigo_ui` text uses the new font's texture
-- [ ] `FONT_PAGE_SIZE`, `FontPage`, `FontAtlas::pages`, `TextureIdAllocator::allocate`, `Renderer::texture_ids` and `Renderer::upload_texture` exist
-- [ ] Test: the allocator never returns the same id twice, including across clones
-- [ ] Test: a glyph first used during `draw` produces a quad whose `texture_id` is its page's id, and that page is in the engine's upload list before the batch is built
-- [ ] Test: filling a page after earlier text was submitted in the same frame opens a new page; the earlier quads' `texture_id` and UVs are unchanged, and both pages are uploaded
-- [ ] No code path rescales the UVs of cached glyphs
+- [x] `TextStyle`, `TextAlign`, `TextMetrics`, `FontError` exist with the fields above; `TextStyle::default()` matches the documented defaults
+- [x] `FontManager::set_default_font(FontId) -> Result<(), FontError>` and `default_font_id() -> Option<FontId>` exist; an unknown id returns `FontError::UnknownFont`
+- [x] Test: `draw_text("Grüße", ..)` with a TTF containing those glyphs pushes 5 glyph quads (it pushes 3 today)
+- [x] Test: a character missing from the font draws the `.notdef` glyph and advances the pen
+- [x] Test: `measure_text_ex(t, s).width` equals the width of the `Rect` from `draw_text_ex(t, pos, s)` for left, centre and right alignment
+- [x] Test: `letter_spacing` adds `n · spacing` to the width of an `n`-character line
+- [x] Test: with `render_scale = 2.0`, a 10 px style rasterises a 20 px atlas and draws 10 px quads
+- [x] Test: after `set_default_font`, `amigo_ui` text uses the new font's texture
+- [x] `FONT_PAGE_SIZE`, `FontPage`, `FontAtlas::pages`, `TextureIdAllocator::allocate`, `Renderer::texture_ids` and `Renderer::upload_texture` exist
+- [x] Test: the allocator never returns the same id twice, including across clones
+- [x] Test: a glyph first used during `draw` produces a quad whose `texture_id` is its page's id, and that page is in the engine's upload list before the batch is built
+- [x] Test: filling a page after earlier text was submitted in the same frame opens a new page; the earlier quads' `texture_id` and UVs are unchanged, and both pages are uploaded
+- [x] No code path rescales the UVs of cached glyphs
 
 ### R6: Shapes
-- [ ] `DrawContext::{draw_quad, draw_quad_colors, draw_gradient_rect, draw_line, draw_rect_outline, draw_circle, draw_rounded_rect, draw_convex_polygon}` exist with the signatures above
-- [ ] Test: each shape's tessellation covers the expected area (sum of triangle areas within 1 % of the analytic area for circle and rounded rect at radius 50)
-- [ ] Test: segment count follows `clamp(ceil(2π · r · render_scale / 4), 12, 128)`
-- [ ] Test: in `raster_art` the outer feather quads have alpha 0 at their outer corners; in `pixel_art` there are none
-- [ ] Test: each degenerate input listed in Behavior draws nothing and does not panic
+- [x] `DrawContext::{draw_quad, draw_quad_colors, draw_gradient_rect, draw_line, draw_rect_outline, draw_circle, draw_rounded_rect, draw_convex_polygon}` exist with the signatures above
+- [x] Test: each shape's tessellation covers the expected area (sum of triangle areas within 1 % of the analytic area for circle and rounded rect at radius 50)
+- [x] Test: segment count follows `clamp(ceil(2π · r · render_scale / 4), 12, 128)`
+- [x] Test: in `raster_art` the outer feather quads have alpha 0 at their outer corners; in `pixel_art` there are none
+- [x] Test: each degenerate input listed in Behavior draws nothing and does not panic
 
 ### R7: Post effects
-- [ ] `PostEffect::{Shockwave, DirectionalBlur, Custom}` exist; `PostEffect` is `#[non_exhaustive]` and still round-trips through RON
-- [ ] `ShaderError` exists with `Parse`, `Validation` and `MissingEntryPoint`
-- [ ] `GameContext::register_post_shader(&str, &str) -> Result<(), ShaderError>` exists
-- [ ] Test: a valid shader registers; a syntax error returns `Parse`; a type error returns `Validation`; a source without `fs_main` returns `MissingEntryPoint`
-- [ ] Test: the built-in Shockwave and DirectionalBlur sources validate against the prelude with naga
-- [ ] Test: the pass plan for `[Vignette, Custom("a"), Bloom]` runs in that order (CPU function returning the pass list)
-- [ ] Test: unregistered `Custom` names and disabled built-ins are dropped from the pass plan; an all-skipped stack produces no passes
-- [ ] The prelude WGSL in this spec matches the source the engine prepends (one test reads both)
+- [x] `PostEffect::{Shockwave, DirectionalBlur, Custom}` exist; `PostEffect` is `#[non_exhaustive]` and still round-trips through RON
+- [x] `ShaderError` exists with `Parse`, `Validation` and `MissingEntryPoint`
+- [x] `GameContext::register_post_shader(&str, &str) -> Result<(), ShaderError>` exists
+- [x] Test: a valid shader registers; a syntax error returns `Parse`; a type error returns `Validation`; a source without `fs_main` returns `MissingEntryPoint`
+- [x] Test: the built-in Shockwave and DirectionalBlur sources validate against the prelude with naga
+- [x] Test: the pass plan for `[Vignette, Custom("a"), Bloom]` runs in that order (CPU function returning the pass list)
+- [x] Test: unregistered `Custom` names and disabled built-ins are dropped from the pass plan; an all-skipped stack produces no passes
+- [x] The prelude WGSL in this spec matches the source the engine prepends (one test reads both)
 
 ### R8: Atlas
-- [ ] `AtlasManifest`, `AtlasSprite`, `AtlasFrame`, `AtlasError` exist with the fields and variants above; `AssetError::Atlas` wraps `AtlasError`
-- [ ] Test: a manifest with two sprites loads one texture and registers both names
-- [ ] Test: each `AtlasError` variant is produced by a matching malformed manifest, and the other assets still load
-- [ ] `DrawContext::{draw_frame, draw_frame_ex, frame_count}` exist
-- [ ] Test: `draw_frame` sets size, UVs and origin from the frame; a frame index past the end draws the last frame; a plain PNG sprite reports `frame_count == 1`
-- [ ] Test: a 19 fps sprite yields frame durations whose running sum stays within one tick of `k · 60 / 19`
-- [ ] Test: 60 fps yields durations of exactly 1 tick; `fps` of 0, −1, NaN, infinity and 120 each yield `AtlasError::InvalidFps`
-- [ ] Test: a sheet with `mip_levels: 2` and a 3 px gutter (less than 4) yields `AtlasError::MipPadding`
-- [ ] Test: `draw_animated` on an atlas sprite draws the player's current frame with its origin
-- [ ] `amigo pack` keeps atlas sheets intact (test on the pack output)
+- [x] `AtlasManifest`, `AtlasSprite`, `AtlasFrame`, `AtlasError` exist with the fields and variants above; `AssetError::Atlas` wraps `AtlasError`
+- [x] Test: a manifest with two sprites loads one texture and registers both names
+- [x] Test: each `AtlasError` variant is produced by a matching malformed manifest, and the other assets still load
+- [x] `DrawContext::{draw_frame, draw_frame_ex, frame_count}` exist
+- [x] Test: `draw_frame` sets size, UVs and origin from the frame; a frame index past the end draws the last frame; a plain PNG sprite reports `frame_count == 1`
+- [x] Test: a 19 fps sprite yields frame durations whose running sum stays within one tick of `k · 60 / 19`
+- [x] Test: 60 fps yields durations of exactly 1 tick; `fps` of 0, −1, NaN, infinity and 120 each yield `AtlasError::InvalidFps`
+- [x] Test: a sheet with `mip_levels: 2` and a 3 px gutter (less than 4) yields `AtlasError::MipPadding`
+- [x] Test: `draw_animated` on an atlas sprite draws the player's current frame with its origin
+- [x] `amigo pack` keeps atlas sheets intact (test on the pack output)
 
 ### R9: Parallax
-- [ ] `DrawContext::{set_parallax, parallax}` exist
-- [ ] Test: with camera at (100, 50) and parallax (0.5, 0.0), a sprite drawn at (0, 0) is pushed at (50, 50)
-- [ ] Test: `draw_tilemap_*` uses the layer's `scroll_factor_x/y`
-- [ ] Test: screen-space draws ignore parallax; the factor resets each frame
+- [x] `DrawContext::{set_parallax, parallax}` exist
+- [x] Test: with camera at (100, 50) and parallax (0.5, 0.0), a sprite drawn at (0, 0) is pushed at (50, 50)
+- [x] Test: `draw_tilemap_*` uses the layer's `scroll_factor_x/y`
+- [x] Test: screen-space draws ignore parallax; the factor resets each frame
 
 ### R10: Quality and window shape
-- [ ] `ScaleMode::Expand` exists and parses from `"expand"`
-- [ ] Test: `Viewport::compute(Expand, (640, 360), (1000, 500))` covers the window, and the expanded virtual width is 720
-- [ ] `ViewportInfo` exists; `GameContext::viewport_info()` and `DrawContext::viewport_info()` return it
-- [ ] Test: mip chain generation for a one-frame 64×32 `Linear` texture yields 7 levels (64×32 down to 1×1); a `Nearest` texture yields 1
-- [ ] Test: a two-frame Aseprite strip and an R8 sheet without `mip_levels` yield 1 level
-- [ ] Test: an R8 sheet with a red and a blue frame, `mip_levels: 2` and a 4 px aligned gutter yields 3 levels, and no texel inside the red frame's rectangle at any level contains blue
-- [ ] Test: font pages yield 1 level
+- [x] `ScaleMode::Expand` exists and parses from `"expand"`
+- [x] Test: `Viewport::compute(Expand, (640, 360), (1000, 500))` covers the window, and the expanded virtual width is 720
+- [x] `ViewportInfo` exists; `GameContext::viewport_info()` and `DrawContext::viewport_info()` return it
+- [x] Test: mip chain generation for a one-frame 64×32 `Linear` texture yields 7 levels (64×32 down to 1×1); a `Nearest` texture yields 1
+- [x] Test: a two-frame Aseprite strip and an R8 sheet without `mip_levels` yield 1 level
+- [x] Test: an R8 sheet with a red and a blue frame, `mip_levels: 2` and a 4 px aligned gutter yields 3 levels, and no texel inside the red frame's rectangle at any level contains blue
+- [x] Test: font pages yield 1 level
 
 ### Wiring
-- [ ] A new example `examples/raster_art` (workspace member) uses `art_style = "raster_art"` with `scale_mode = "expand"`. It draws a rotated sprite from an atlas, additive particles, screen-space text with umlauts in an embedded TTF, rounded rects and a `Custom` post shader. It compiles in `cargo check --workspace`.
+- [x] A new example `examples/raster_art` (workspace member) uses `art_style = "raster_art"` with `scale_mode = "expand"`. It draws a rotated sprite from an atlas, additive particles, screen-space text with umlauts in an embedded TTF, rounded rects and a `Custom` post shader. It compiles in `cargo check --workspace`.
 
 ### Quality gates
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
-- [ ] `cargo test --workspace`, and the rest of `just ci` (feature matrix, doc tests, rustdoc)
-- [ ] No `unwrap()` in library code on the frame path; a bad input degrades as described in Behavior
+- [x] `cargo fmt --all -- --check`
+- [x] `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `cargo test --workspace`, and the rest of `just ci` (feature matrix, doc tests, rustdoc)
+- [x] No `unwrap()` in library code on the frame path; a bad input degrades as described in Behavior
 
 ### Conventions
-- [ ] Nothing in this spec reaches simulation state: every new value is `f32` presentation data (ADR-0001)
-- [ ] Screen-space draws and UI stay after post-processing (conventions A.6)
-- [ ] `CHANGELOG.md` `[Unreleased]` lists each breaking change from the table above
-- [ ] The spec's `status:` moves to `done` only when every section is reachable from a game, per `docs/specs/index.md`
+- [x] Nothing in this spec reaches simulation state: every new value is `f32` presentation data (ADR-0001)
+- [x] Screen-space draws and UI stay after post-processing (conventions A.6)
+- [x] `CHANGELOG.md` `[Unreleased]` lists each breaking change from the table above
+- [x] The spec's `status:` moves to `done` only when every section is reachable from a game, per `docs/specs/index.md`

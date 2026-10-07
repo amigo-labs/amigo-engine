@@ -1,0 +1,20 @@
+[package]
+name = "amigo_raster_art"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "amigo_raster_art"
+path = "src/main.rs"
+
+[dependencies]
+amigo_engine = { workspace = true }
+# A TTF with umlauts, embedded in the binary.
+epaint_default_fonts = { workspace = true }
+image = { workspace = true }
+
+[lints]
+workspace = true

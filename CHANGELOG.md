@@ -6,6 +6,65 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Added — rendering extensions (docs/specs/engine/rendering-extensions.md)
+
+- **Sprite transform:** `SpriteInstance` has a pivot (`origin`), a
+  `rotation` about it, a `blend` mode and optional explicit corner
+  `geometry`. `SpriteInstance::new`, `scale` (negative factors mirror about
+  the pivot), `set_origin_normalized`, `corners` and `bounds`.
+- **Blend modes:** `BlendMode::{Normal, Additive, Multiply}`, one pipeline
+  each. Additive particle emitters now render additively.
+- **Screen-space drawing from `draw()`:** `DrawSpace`, `set_space`,
+  `in_space`, `set_z`. Screen draws land in the UI pass after
+  post-processing, under the `ctx.ui` widgets.
+- **Camera from `draw()`:** `set_camera_position`, `set_camera_offset`,
+  `camera_position`, for interpolated or game-specific cameras. Also
+  `Camera::set_shake_decay` and `Camera::world_to_screen`.
+- **Text:**
+  - Any Unicode character can be drawn. A character the font lacks draws its
+    `.notdef` glyph instead of vanishing.
+  - `draw_text_ex` / `measure_text_ex` with `TextStyle` (font, size, letter
+    spacing, alignment, z, blend) and kerning, rasterised at the output
+    resolution.
+  - `FontManager::set_default_font`, which `amigo_ui` widgets follow.
+- **Shapes:** `draw_quad`, `draw_quad_colors`, `draw_gradient_rect`,
+  `draw_line`, `draw_rect_outline`, `draw_circle`, `draw_rounded_rect`,
+  `draw_convex_polygon`, with anti-aliased edges under raster art.
+- **Post effects:** `PostEffect::{Shockwave, DirectionalBlur, Custom}`,
+  effects run in `Vec` order, and `GameContext::register_post_shader` for
+  your own WGSL on a documented prelude (validated with naga).
+- **Atlas manifests:** `sprites/**/*.atlas.ron` describes many sprites on one
+  sheet, each with frames and pivots and optionally an animation (`fps`).
+  `draw_frame`, `draw_frame_ex`, `frame_count`. `amigo pack` keeps sheets
+  intact.
+- **Parallax:** `set_parallax`; tilemaps use their layer's
+  `scroll_factor_x/y`.
+- **Raster-art quality and window shape:**
+  - Mipmaps for single raster-art images and for sheets that opt in with
+    `mip_levels`.
+  - `scale_mode = "expand"` keeps the virtual height and fits the width to
+    the window.
+  - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
+- **`examples/raster_art`** shows all of the above.
+
+### Changed — rendering extensions (breaking)
+
+| Change | Who breaks | Migration |
+|---|---|---|
+| `SpriteInstance` gains `origin`, `rotation`, `blend`, `geometry` | struct literals outside the engine | `SpriteInstance::new(..)` plus field assignment, or `..SpriteInstance::new(..)` |
+| `PostEffect` gains variants and `#[non_exhaustive]` | exhaustive `match`es on `PostEffect` | add a `_ => {}` arm |
+| `particles::BlendMode` is now a re-export of `BlendMode`, with a third variant | exhaustive `match`es on it | add the `Multiply` arm |
+| `ScaleMode` gains `Expand` | exhaustive `match`es on `ScaleMode` | add the arm |
+| `FontAtlas` loses `atlas_data`, `atlas_width`, `atlas_height`, `texture_id` and `to_rgba_image` in favour of `pages()`; `GlyphInfo` gains `texture_id` | code reading the atlas pixels or texture directly | iterate `pages()`; take a glyph's texture from `GlyphInfo::texture_id` |
+| `SpriteData` gains `frames` and `sheet` | struct literals | add the fields |
+
+- **Premultiplied alpha everywhere.** Textures are premultiplied in linear
+  light on upload and the shader premultiplies the tint. Opaque sprites
+  render exactly as before; translucent edges lose their dark fringes under
+  linear filtering.
+- The F1 debug overlay's text is drawn in screen space, so post-processing
+  no longer distorts it.
+
 ### Added — two-player network games
 
 - **`amigo run --host <port>` / `--join <addr:port>`** starts a two-player

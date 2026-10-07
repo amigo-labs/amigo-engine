@@ -370,6 +370,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "amigo_raster_art"
+version = "0.1.0"
+dependencies = [
+ "amigo_engine",
+ "epaint_default_fonts",
+ "image 0.25.10",
+]
+
+[[package]]
 name = "amigo_reflect"
 version = "0.1.0"
 dependencies = [
