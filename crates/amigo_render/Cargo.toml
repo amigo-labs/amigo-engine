@@ -22,11 +22,13 @@ image = { workspace = true }
 rustc-hash = { workspace = true }
 fontdue = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 egui = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }
 egui-winit = { workspace = true, optional = true }
 
 [dev-dependencies]
+epaint_default_fonts = { workspace = true }
 ron = { workspace = true }
 pollster = { workspace = true }
 naga = { workspace = true }

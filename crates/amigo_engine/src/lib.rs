@@ -239,7 +239,8 @@ pub mod prelude {
     // in scope to write a closure against it.
     pub use amigo_render::sprite_batcher::{QuadGeometry, SpriteInstance};
     pub use amigo_render::{
-        ArtStyle, BlendMode, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
+        ArtStyle, BlendMode, Camera, CameraMode, Easing, FontError, FontId, FontManager,
+        SamplerMode, TextAlign, TextMetrics, TextStyle,
     };
     pub use amigo_scene::SceneFactory;
     pub use amigo_tilemap::*;

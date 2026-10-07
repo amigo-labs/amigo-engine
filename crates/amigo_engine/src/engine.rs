@@ -664,13 +664,38 @@ pub(crate) fn run_editor_action(ctx: &mut GameContext, action: amigo_editor::Edi
     }
 }
 
-fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
-    for font_atlas in game_ctx.fonts.iter_mut() {
-        if font_atlas.dirty || font_atlas.texture_id.is_none() {
-            let image = font_atlas.to_rgba_image();
-            let tex_id = renderer.load_texture(&image, &format!("font_{}", font_atlas.id.0));
-            font_atlas.texture_id = Some(tex_id);
-            font_atlas.dirty = false;
+/// Whether the GPU lacks some of `page`: it is new, or gained glyphs since its
+/// last upload.
+fn page_needs_upload(page: &amigo_render::FontPage) -> bool {
+    page.dirty || !page.is_uploaded()
+}
+
+/// The texture ids of the font pages [`upload_font_pages`] would upload now.
+#[cfg(test)]
+pub(crate) fn pending_font_pages(
+    fonts: &amigo_render::FontManager,
+) -> Vec<amigo_render::TextureId> {
+    let mut pending = Vec::new();
+    for atlas in fonts.all_atlases() {
+        for page in atlas.pages().iter() {
+            if page_needs_upload(page) {
+                pending.push(page.texture_id);
+            }
+        }
+    }
+    pending
+}
+
+/// Upload every new or changed font page under its own id. Runs after all of
+/// a frame's drawing and before the batch is built, so every glyph quad of
+/// the frame points at a texture that exists and contains it.
+fn upload_font_pages(fonts: &amigo_render::FontManager, renderer: &mut Renderer) {
+    for atlas in fonts.all_atlases() {
+        let mut pages = atlas.pages();
+        for page in pages.iter_mut() {
+            if page_needs_upload(page) {
+                renderer.upload_font_page(page);
+            }
         }
     }
 }
@@ -775,6 +800,7 @@ fn render_waiting_screen(state: &mut EngineState, message: &str) {
         view.y + view.h / 2.0,
         Color::WHITE,
     );
+    upload_font_pages(&state.game_ctx.fonts, &mut state.renderer);
     for sprite in &state.sprite_draw_list {
         state.renderer.batcher.push(sprite.clone());
     }
@@ -916,6 +942,9 @@ impl ApplicationHandler for EngineApp {
             None
         };
 
+        // Font pages take their texture ids from the renderer, so a page made
+        // during `Game::draw` already has its final id.
+        game_ctx.fonts.set_texture_ids(renderer.texture_ids());
         // Load built-in pixel font at 7px (native size)
         if let Err(e) = game_ctx.fonts.load_builtin(7.0) {
             error!("Failed to load built-in font: {}", e);
@@ -952,7 +981,7 @@ impl ApplicationHandler for EngineApp {
         }
 
         // Upload font atlas textures to GPU
-        upload_font_atlases(&mut game_ctx, &mut renderer);
+        upload_font_pages(&game_ctx.fonts, &mut renderer);
 
         // A restored dev session skips the splash: `amigo dev` restarts the
         // process on every source change, and sitting through the logo each time
@@ -1397,9 +1426,6 @@ impl ApplicationHandler for EngineApp {
 
                 state.game_ctx.time.alpha = budget.alpha;
 
-                // Re-upload dirty font atlases
-                upload_font_atlases(&mut state.game_ctx, &mut state.renderer);
-
                 // Camera: game code sets target/shake/zoom on GameContext.camera.
                 // Swap it into the renderer for update + render, then swap back.
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
@@ -1476,7 +1502,8 @@ impl ApplicationHandler for EngineApp {
                         white_tex,
                     )
                     .with_camera(&state.renderer.camera)
-                    .with_screen_list(&mut state.screen_draw_list);
+                    .with_screen_list(&mut state.screen_draw_list)
+                    .with_render_scale(state.renderer.render_scale());
                     if let Some(active) = self.stack.top() {
                         active.draw(&mut draw_ctx);
                     }
@@ -1592,6 +1619,10 @@ impl ApplicationHandler for EngineApp {
                 for sprite in state.screen_draw_list.iter().chain(&state.ui_draw_list) {
                     state.renderer.ui_batcher.push(sprite.clone());
                 }
+
+                // Glyphs first used this frame, by the game, the overlay or
+                // the UI, go up before the batch is built.
+                upload_font_pages(&state.game_ctx.fonts, &mut state.renderer);
 
                 // Process screenshot requests from API (before render clears batcher)
                 #[cfg(feature = "api")]
@@ -1727,7 +1758,80 @@ impl ApplicationHandler for EngineApp {
 
 #[cfg(test)]
 mod tests {
-    use super::load_input_bindings;
+    use super::{load_input_bindings, pending_font_pages};
+    use crate::context::{DrawContext, GameContext};
+    use amigo_core::RenderVec2;
+    use amigo_render::TextureId;
+
+    fn mark_all_uploaded(ctx: &GameContext) {
+        for atlas in ctx.fonts.all_atlases() {
+            for page in atlas.pages().iter_mut() {
+                page.mark_uploaded();
+            }
+        }
+    }
+
+    fn draw_text(ctx: &GameContext, text: &str, px: f32) -> Vec<amigo_render::SpriteInstance> {
+        let mut sprites = Vec::new();
+        let mut draw = DrawContext::new(
+            &mut sprites,
+            ctx,
+            RenderVec2::ZERO,
+            320.0,
+            180.0,
+            0.0,
+            TextureId(0),
+        );
+        let style = amigo_render::TextStyle {
+            size_px: Some(px),
+            ..Default::default()
+        };
+        draw.draw_text_ex(text, RenderVec2::ZERO, &style);
+        sprites
+    }
+
+    #[test]
+    fn a_glyph_first_used_in_draw_is_queued_for_upload() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.fonts
+            .load_font(epaint_default_fonts::HACK_REGULAR, 12.0)
+            .expect("font");
+        mark_all_uploaded(&ctx);
+        assert!(pending_font_pages(&ctx.fonts).is_empty());
+
+        let sprites = draw_text(&ctx, "ß", 12.0);
+        assert_eq!(sprites.len(), 1);
+        let pending = pending_font_pages(&ctx.fonts);
+        assert_eq!(pending, vec![sprites[0].texture_id]);
+    }
+
+    #[test]
+    fn a_page_filled_mid_frame_keeps_earlier_quads_valid() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.fonts
+            .load_font(epaint_default_fonts::HACK_REGULAR, 12.0)
+            .expect("font");
+        mark_all_uploaded(&ctx);
+
+        let early = draw_text(&ctx, "Ab", 150.0);
+        let alphabet: String = ('a'..='z').chain('À'..='ÿ').collect();
+        let late = draw_text(&ctx, &alphabet, 150.0);
+        let again = draw_text(&ctx, "Ab", 150.0);
+        for (a, b) in early.iter().zip(&again) {
+            assert_eq!(a.texture_id, b.texture_id);
+            assert_eq!(
+                (a.uv_x, a.uv_y, a.uv_w, a.uv_h),
+                (b.uv_x, b.uv_y, b.uv_w, b.uv_h)
+            );
+        }
+        let pending = pending_font_pages(&ctx.fonts);
+        let mut pages: Vec<TextureId> = early.iter().chain(&late).map(|s| s.texture_id).collect();
+        pages.dedup();
+        assert!(pages.len() >= 2, "the alphabet needed a second page");
+        for page in pages {
+            assert!(pending.contains(&page), "{page:?} not queued");
+        }
+    }
     use amigo_input::{ActionBindings, InputBinding};
 
     fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {

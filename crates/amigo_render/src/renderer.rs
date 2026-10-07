@@ -1,11 +1,12 @@
 use crate::blend::BlendMode;
 use crate::blit::BlitPipeline;
 use crate::camera::Camera;
+use crate::font::{FONT_PAGE_SIZE, FontPage};
 use crate::lighting::LightingState;
 use crate::lighting_pipeline::LightingPipeline;
 use crate::post_process::PostProcessPipeline;
 use crate::sprite_batcher::SpriteBatcher;
-use crate::texture::{Texture, TextureId};
+use crate::texture::{Texture, TextureId, TextureIdAllocator};
 use crate::vertex::Vertex;
 use crate::viewport::{ScaleMode, Viewport};
 use crate::{ArtStyle, SamplerMode};
@@ -101,7 +102,7 @@ pub struct Renderer {
     blit: BlitPipeline,
     scale_mode: ScaleMode,
     viewport: Viewport,
-    next_texture_id: u32,
+    texture_ids: TextureIdAllocator,
     draw_call_count: u32,
 }
 
@@ -401,7 +402,7 @@ impl Renderer {
             blit,
             scale_mode,
             viewport,
-            next_texture_id: 1,
+            texture_ids: TextureIdAllocator::new(white_id.0 + 1),
             draw_call_count: 0,
         }
     }
@@ -483,8 +484,7 @@ impl Renderer {
         label: &str,
         mode: SamplerMode,
     ) -> TextureId {
-        let id = TextureId(self.next_texture_id);
-        self.next_texture_id += 1;
+        let id = self.texture_ids.allocate();
         let texture = Texture::from_image_with_mode(
             &self.device,
             &self.queue,
@@ -496,6 +496,71 @@ impl Renderer {
         );
         self.textures.insert(id, texture);
         id
+    }
+
+    /// The allocator `load_texture` and font pages draw their ids from.
+    pub fn texture_ids(&self) -> TextureIdAllocator {
+        self.texture_ids.clone()
+    }
+
+    /// Create the texture under `id`, or replace it. A same-size replacement
+    /// writes into the existing GPU texture, so its bind group stays valid.
+    /// `image` has straight alpha, like `load_texture`'s.
+    pub fn upload_texture(&mut self, id: TextureId, image: &image::RgbaImage, mode: SamplerMode) {
+        if let Some(existing) = self.textures.get_mut(&id)
+            && (existing.width, existing.height) == image.dimensions()
+            && existing.sampler_mode == mode
+        {
+            let mut premultiplied = image.clone();
+            crate::blend::premultiply_srgb(&mut premultiplied);
+            existing.write_rows(&self.queue, premultiplied.as_raw(), 0, image.height());
+            return;
+        }
+        let texture = Texture::from_image_with_mode(
+            &self.device,
+            &self.queue,
+            &self.texture_bind_group_layout,
+            image,
+            id,
+            &format!("texture_{}", id.0),
+            mode,
+        );
+        self.textures.insert(id, texture);
+    }
+
+    /// Upload a font page under its own id: the whole page the first time,
+    /// only its changed rows afterwards.
+    pub fn upload_font_page(&mut self, page: &mut FontPage) {
+        let size = (FONT_PAGE_SIZE, FONT_PAGE_SIZE);
+        let mode = self.art_style.default_sampler_mode();
+        match (self.textures.get_mut(&page.texture_id), page.dirty_rows()) {
+            (Some(texture), Some((start, end))) if page.is_uploaded() => {
+                texture.write_rows(&self.queue, &page.data, start, end);
+            }
+            (Some(_), None) if page.is_uploaded() => {}
+            _ => {
+                if let Some(texture) = Texture::from_premultiplied(
+                    &self.device,
+                    &self.queue,
+                    &self.texture_bind_group_layout,
+                    &page.data,
+                    size,
+                    page.texture_id,
+                    &format!("font_page_{}", page.texture_id.0),
+                    mode,
+                ) {
+                    self.textures.insert(page.texture_id, texture);
+                }
+            }
+        }
+        page.mark_uploaded();
+    }
+
+    /// Scene-target pixels per virtual pixel: 1.0 for pixel art, the viewport
+    /// scale for raster art.
+    pub fn render_scale(&self) -> f32 {
+        let (w, _) = self.scene_size();
+        w as f32 / self.camera.virtual_width.max(1.0)
     }
 
     /// Set the global art style. Affects default sampler mode for newly loaded textures.

@@ -97,9 +97,7 @@ fn a_context_without_a_screen_list_drops_screen_draws() {
 fn set_z_applies_to_sprites_rects_and_tiles_but_not_text() {
     let mut ctx = ctx();
     ctx.fonts.load_builtin(7.0).expect("builtin font");
-    for atlas in ctx.fonts.iter_mut() {
-        atlas.texture_id = Some(TextureId(9));
-    }
+    let page = ctx.fonts.default_font().expect("font").pages()[0].texture_id;
     let mut layer = TileLayer::new("ground", 2, 2);
     layer.fill_rect(0, 0, 2, 2, TileId(1));
     let lists = draw(&ctx, &camera_at(160.0, 90.0), |d| {
@@ -110,10 +108,7 @@ fn set_z_applies_to_sprites_rects_and_tiles_but_not_text() {
         d.draw_tilemap_sprite(&layer, 16.0, 16.0, "tiles", 4);
         d.draw_text("A", 0.0, 0.0, Color::WHITE);
     });
-    let (text, rest): (Vec<_>, Vec<_>) = lists
-        .world
-        .iter()
-        .partition(|s| s.texture_id == TextureId(9));
+    let (text, rest): (Vec<_>, Vec<_>) = lists.world.iter().partition(|s| s.texture_id == page);
     assert!(!text.is_empty());
     assert!(text.iter().all(|s| s.z_order == 100));
     assert_eq!(rest.len(), 3 + 4);

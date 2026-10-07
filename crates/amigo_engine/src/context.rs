@@ -8,7 +8,7 @@ use amigo_core::scheduler::TickScheduler;
 use amigo_core::{Color, Rect, RenderVec2, SimRng, TimeInfo, World};
 use amigo_input::{ActionBindings, ActionState, GamepadState, InputState};
 use amigo_render::camera::Camera;
-use amigo_render::font::{FontId, FontManager};
+use amigo_render::font::{FontAtlas, FontId, FontManager, TextMetrics, TextStyle};
 use amigo_render::lighting::LightingState;
 use amigo_render::particles::ParticleSystem;
 use amigo_render::post_process::PostEffect;
@@ -396,6 +396,7 @@ pub struct DrawContext<'a> {
     /// The camera's built-in shake this frame.
     camera_shake: RenderVec2,
     overrides: FrameOverrides,
+    render_scale: f32,
 }
 
 impl<'a> DrawContext<'a> {
@@ -431,6 +432,7 @@ impl<'a> DrawContext<'a> {
             camera_base: camera_pos,
             camera_shake: RenderVec2::ZERO,
             overrides: FrameOverrides::default(),
+            render_scale: 1.0,
         }
     }
 
@@ -693,41 +695,15 @@ impl<'a> DrawContext<'a> {
     // Text rendering (TTF via fontdue)
     // -----------------------------------------------------------------------
 
-    /// Draw text using the default loaded font.
-    ///
-    /// The font must have been loaded via `GameContext::load_font()` before
-    /// calling this. If no font is loaded, this is a no-op.
+    /// Draw text using the default font (AmigoPixel unless
+    /// `FontManager::set_default_font` chose another), at the font's load
+    /// size, with `y` the top of the line. Any `char` can be drawn; one the
+    /// font lacks draws its `.notdef` glyph. No kerning, so pixel-font output
+    /// is unchanged. If no font is loaded, this is a no-op.
     pub fn draw_text(&mut self, text: &str, x: f32, y: f32, color: Color) {
-        let Some(font) = self.game_ctx.fonts.default_font() else {
-            return;
-        };
-        let Some(tex_id) = font.texture_id else {
-            return;
-        };
-        let px = font.px;
-
-        let mut cx = x;
-        for ch in text.chars() {
-            if let Some(glyph) = font.glyph_cached(ch) {
-                if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.push(SpriteInstance {
-                        uv_x: glyph.uv_x,
-                        uv_y: glyph.uv_y,
-                        uv_w: glyph.uv_w,
-                        uv_h: glyph.uv_h,
-                        tint: color,
-                        z_order: 100,
-                        ..SpriteInstance::new(
-                            tex_id,
-                            cx + glyph.offset_x,
-                            y + px - glyph.height - glyph.offset_y,
-                            glyph.width,
-                            glyph.height,
-                        )
-                    });
-                }
-                cx += glyph.advance;
-            }
+        let game_ctx = self.game_ctx;
+        if let Some(font) = game_ctx.fonts.default_font() {
+            self.draw_text_legacy(font, text, x, y, color, 1.0);
         }
     }
 
@@ -737,76 +713,60 @@ impl<'a> DrawContext<'a> {
     /// scaled, so large factors get blocky — which is what pixel-art UI wants.
     /// `scale` of 1.0 is identical to [`DrawContext::draw_text`].
     pub fn draw_text_scaled(&mut self, text: &str, x: f32, y: f32, color: Color, scale: f32) {
-        let Some(font) = self.game_ctx.fonts.default_font() else {
-            return;
-        };
-        let Some(tex_id) = font.texture_id else {
-            return;
-        };
-        let px = font.px;
         let scale = if scale.is_finite() && scale > 0.0 {
             scale
         } else {
             1.0
         };
-
-        let mut cx = x;
-        for ch in text.chars() {
-            if let Some(glyph) = font.glyph_cached(ch) {
-                if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.push(SpriteInstance {
-                        uv_x: glyph.uv_x,
-                        uv_y: glyph.uv_y,
-                        uv_w: glyph.uv_w,
-                        uv_h: glyph.uv_h,
-                        tint: color,
-                        z_order: 100,
-                        ..SpriteInstance::new(
-                            tex_id,
-                            cx + glyph.offset_x * scale,
-                            y + (px - glyph.height - glyph.offset_y) * scale,
-                            glyph.width * scale,
-                            glyph.height * scale,
-                        )
-                    });
-                }
-                cx += glyph.advance * scale;
-            }
+        let game_ctx = self.game_ctx;
+        if let Some(font) = game_ctx.fonts.default_font() {
+            self.draw_text_legacy(font, text, x, y, color, scale);
         }
     }
 
     /// Draw text using a specific font by FontId.
     pub fn draw_text_font(&mut self, font_id: FontId, text: &str, x: f32, y: f32, color: Color) {
-        let Some(font) = self.game_ctx.fonts.get(font_id) else {
-            return;
-        };
-        let Some(tex_id) = font.texture_id else {
-            return;
-        };
-        let px = font.px;
+        let game_ctx = self.game_ctx;
+        if let Some(font) = game_ctx.fonts.get(font_id) {
+            self.draw_text_legacy(font, text, x, y, color, 1.0);
+        }
+    }
 
+    /// The layout `draw_text` has always had: advances only, the line's top
+    /// at `y` and its baseline at `y + px`, z 100.
+    fn draw_text_legacy(
+        &mut self,
+        font: &FontAtlas,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: Color,
+        scale: f32,
+    ) {
+        let px = font.px;
         let mut cx = x;
         for ch in text.chars() {
-            if let Some(glyph) = font.glyph_cached(ch) {
-                if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.push(SpriteInstance {
-                        uv_x: glyph.uv_x,
-                        uv_y: glyph.uv_y,
-                        uv_w: glyph.uv_w,
-                        uv_h: glyph.uv_h,
-                        tint: color,
-                        z_order: 100,
-                        ..SpriteInstance::new(
-                            tex_id,
-                            cx + glyph.offset_x,
-                            y + px - glyph.height - glyph.offset_y,
-                            glyph.width,
-                            glyph.height,
-                        )
-                    });
-                }
-                cx += glyph.advance;
+            let Some(glyph) = font.glyph(ch) else {
+                continue;
+            };
+            if glyph.width > 0.0 && glyph.height > 0.0 {
+                self.push(SpriteInstance {
+                    uv_x: glyph.uv_x,
+                    uv_y: glyph.uv_y,
+                    uv_w: glyph.uv_w,
+                    uv_h: glyph.uv_h,
+                    tint: color,
+                    z_order: 100,
+                    ..SpriteInstance::new(
+                        glyph.texture_id,
+                        cx + glyph.offset_x * scale,
+                        y + (px - glyph.height - glyph.offset_y) * scale,
+                        glyph.width * scale,
+                        glyph.height * scale,
+                    )
+                });
             }
+            cx += glyph.advance * scale;
         }
     }
 
@@ -827,6 +787,60 @@ impl<'a> DrawContext<'a> {
         } else {
             (0.0, 0.0)
         }
+    }
+
+    /// Draw one line of text. `pos.y` is the top of the line box; the
+    /// baseline sits at `pos.y + ascent`. Kerning and `letter_spacing` apply,
+    /// and the line is anchored per `style.align`. Glyphs are rasterised at the
+    /// output resolution (`size_px * render_scale`), so raster-art text stays
+    /// crisp. Returns the drawn line's bounds.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(draw: &mut DrawContext) {
+    /// let style = TextStyle { size_px: Some(14.0), align: TextAlign::Center, ..Default::default() };
+    /// draw.draw_text_ex("Grüße!", RenderVec2::new(160.0, 20.0), &style);
+    /// # }
+    /// ```
+    pub fn draw_text_ex(&mut self, text: &str, pos: RenderVec2, style: &TextStyle) -> Rect {
+        let line = self
+            .game_ctx
+            .fonts
+            .layout_line(text, pos, style, self.render_scale);
+        for quad in &line.quads {
+            self.push(SpriteInstance {
+                uv_x: quad.uv[0],
+                uv_y: quad.uv[1],
+                uv_w: quad.uv[2],
+                uv_h: quad.uv[3],
+                tint: style.color,
+                z_order: style.z_order,
+                blend: style.blend,
+                ..SpriteInstance::new(quad.texture_id, quad.x, quad.y, quad.width, quad.height)
+            });
+        }
+        line.bounds
+    }
+
+    /// Measure one line exactly as [`draw_text_ex`](Self::draw_text_ex) would
+    /// lay it out.
+    pub fn measure_text_ex(&self, text: &str, style: &TextStyle) -> TextMetrics {
+        self.game_ctx.fonts.measure_line(text, style)
+    }
+
+    /// Scene-target pixels per virtual pixel this frame: 1.0 for pixel art,
+    /// the viewport scale for raster art.
+    pub fn render_scale(&self) -> f32 {
+        self.render_scale
+    }
+
+    /// Set the render scale text and shapes are rasterised for. The engine
+    /// sets the renderer's.
+    pub fn with_render_scale(mut self, render_scale: f32) -> Self {
+        if render_scale.is_finite() && render_scale > 0.0 {
+            self.render_scale = render_scale;
+        }
+        self
     }
 
     // -----------------------------------------------------------------------

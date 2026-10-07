@@ -41,6 +41,7 @@ toml = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+epaint_default_fonts = { workspace = true }
 # Asset-loading tests build real PNGs and pak archives on disk.
 image = { workspace = true }
 # Level tests write `.amigo` files the way the editor does.

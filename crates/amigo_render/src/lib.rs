@@ -28,7 +28,10 @@ pub mod gpu_broad_phase;
 pub use atmosphere::{AtmosphereManager, AtmospherePreset};
 pub use blend::BlendMode;
 pub use camera::{Camera, CameraMode, Easing};
-pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};
+pub use font::{
+    FONT_PAGE_SIZE, FontAtlas, FontError, FontId, FontManager, FontPage, GlyphInfo, GlyphQuad,
+    TextAlign, TextLine, TextMetrics, TextStyle,
+};
 pub use instancing::{InstanceData, InstancedBatch};
 pub use lighting::{AmbientLight, LightingState, PointLight};
 pub use lighting_pipeline::LightingPipeline;
@@ -40,7 +43,7 @@ pub use particles::{EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem
 pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
 pub use renderer::{Renderer, SurfaceError};
 pub use sprite_batcher::{QuadGeometry, SpriteBatcher, SpriteInstance, SpriteShader};
-pub use texture::{Texture, TextureId};
+pub use texture::{Texture, TextureId, TextureIdAllocator};
 pub use vertex::Vertex;
 pub use viewport::{ScaleMode, Viewport};
 

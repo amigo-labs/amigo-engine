@@ -1,8 +1,40 @@
 use crate::SamplerMode;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+
 /// Unique ID for a loaded texture.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TextureId(pub u32);
+
+/// Hands out `TextureId`s. The renderer and the font manager share one, so a
+/// font page created while `Game::draw` runs already has its final id. Ids
+/// are never reused, across clones included.
+#[derive(Clone, Debug)]
+pub struct TextureIdAllocator {
+    next: Arc<AtomicU32>,
+}
+
+impl TextureIdAllocator {
+    /// An allocator whose first id is `first`.
+    pub fn new(first: u32) -> Self {
+        Self {
+            next: Arc::new(AtomicU32::new(first)),
+        }
+    }
+
+    /// A fresh id.
+    pub fn allocate(&self) -> TextureId {
+        TextureId(self.next.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl Default for TextureIdAllocator {
+    /// Starts at 1: id 0 is the renderer's white texture.
+    fn default() -> Self {
+        Self::new(1)
+    }
+}
 
 /// A GPU texture with its bind group.
 pub struct Texture {
@@ -56,9 +88,35 @@ impl Texture {
         } else {
             image
         };
+        Self::create(
+            device,
+            queue,
+            bind_group_layout,
+            image.as_raw(),
+            image.dimensions(),
+            id,
+            label,
+            mode,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the shared body of the public constructors"
+    )]
+    fn create(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
+        data: &[u8],
+        (width, height): (u32, u32),
+        id: TextureId,
+        label: &str,
+        mode: SamplerMode,
+    ) -> Self {
         let size = wgpu::Extent3d {
-            width: image.width(),
-            height: image.height(),
+            width,
+            height,
             depth_or_array_layers: 1,
         };
 
@@ -80,11 +138,11 @@ impl Texture {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            image.as_raw(),
+            data,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * image.width()),
-                rows_per_image: Some(image.height()),
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
             },
             size,
         );
@@ -122,10 +180,77 @@ impl Texture {
             view,
             sampler,
             bind_group,
-            width: image.width(),
-            height: image.height(),
+            width,
+            height,
             sampler_mode: mode,
         }
+    }
+
+    /// Create a texture from RGBA8 data that is already premultiplied (font
+    /// pages); unlike [`from_image_with_mode`](Self::from_image_with_mode) it
+    /// is uploaded as is.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors from_image_with_mode with the image split into data and size"
+    )]
+    pub fn from_premultiplied(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
+        data: &[u8],
+        (width, height): (u32, u32),
+        id: TextureId,
+        label: &str,
+        mode: SamplerMode,
+    ) -> Option<Self> {
+        if width == 0 || height == 0 || data.len() != (width * height * 4) as usize {
+            return None;
+        }
+        Some(Self::create(
+            device,
+            queue,
+            bind_group_layout,
+            data,
+            (width, height),
+            id,
+            label,
+            mode,
+        ))
+    }
+
+    /// Overwrite rows `start..end` with the same rows of `data`, a full
+    /// premultiplied RGBA8 image of this texture's size. Out-of-range rows are
+    /// clamped; a mismatched `data` length writes nothing.
+    pub fn write_rows(&mut self, queue: &wgpu::Queue, data: &[u8], start: u32, end: u32) {
+        let end = end.min(self.height);
+        let row_bytes = (4 * self.width) as usize;
+        if start >= end || data.len() != row_bytes * self.height as usize {
+            return;
+        }
+        let rows = &data[start as usize * row_bytes..end as usize * row_bytes];
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.gpu_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: start,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            rows,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * self.width),
+                rows_per_image: Some(end - start),
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: end - start,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// Create a 1x1 white fallback texture.
@@ -143,5 +268,26 @@ impl Texture {
             TextureId(0),
             "white_pixel",
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_allocator_never_repeats_an_id_across_clones() {
+        let a = TextureIdAllocator::default();
+        let b = a.clone();
+        let mut seen = std::collections::HashSet::new();
+        for i in 0..100 {
+            let id = if i % 2 == 0 {
+                a.allocate()
+            } else {
+                b.allocate()
+            };
+            assert!(seen.insert(id), "{id:?} handed out twice");
+        }
+        assert!(!seen.contains(&TextureId(0)));
     }
 }
