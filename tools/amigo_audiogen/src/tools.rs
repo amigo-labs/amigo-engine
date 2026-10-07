@@ -958,6 +958,32 @@ impl ToolError {
     }
 }
 
+/// `rel` inside the project `base`, which must be an existing file. Absolute
+/// paths, `..` and symlinks that lead out of the project are refused: the
+/// path comes from a model's tool call, and the file is read (or uploaded
+/// to ComfyUI) on its behalf.
+pub(crate) fn project_file(
+    base: &std::path::Path,
+    rel: &str,
+) -> Result<std::path::PathBuf, ToolError> {
+    let resolved = base.join(rel);
+    let missing = || ToolError::BadInput(format!("{} does not exist", resolved.display()));
+    let root = base
+        .canonicalize()
+        .map_err(|e| ToolError::BadInput(format!("project directory {}: {e}", base.display())))?;
+    let file = resolved.canonicalize().map_err(|_| missing())?;
+    if !file.starts_with(&root) {
+        return Err(ToolError::BadInput(format!(
+            "{rel} is outside the project ({})",
+            root.display()
+        )));
+    }
+    if !file.is_file() {
+        return Err(missing());
+    }
+    Ok(file)
+}
+
 /// The processing tools, which work on local files only: inputs are read
 /// relative to `base`, outputs go to `assets/generated/audio/processed/`
 /// (`converted/` for `convert`) under it.
@@ -974,22 +1000,16 @@ fn run_edit_tool(
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
-    let input = base.join(&input_param);
+    let input = || project_file(base, &input_param);
     let stem = sanitize(
-        &input
+        &std::path::Path::new(&input_param)
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default(),
     );
     let out_rel = |suffix: &str| format!("assets/generated/audio/processed/{stem}_{suffix}.wav");
     let load = || {
-        if !input.is_file() {
-            return Err(ToolError::BadInput(format!(
-                "{} does not exist",
-                input.display()
-            )));
-        }
-        wav::read_wav(&input).map_err(|e| {
+        wav::read_wav(&input()?).map_err(|e| {
             ToolError::BadInput(format!(
                 "{e}; convert it to WAV first with amigo_audiogen_convert"
             ))
@@ -1090,12 +1110,7 @@ fn run_edit_tool(
                     audio_edit::FORMATS.join(", ")
                 )));
             }
-            if !input.is_file() {
-                return Err(ToolError::BadInput(format!(
-                    "{} does not exist",
-                    input.display()
-                )));
-            }
+            let input = input()?;
             let rel = format!("assets/generated/audio/converted/{stem}.{format}");
             let ffmpeg = std::env::var_os("AMIGO_FFMPEG").unwrap_or_else(|| "ffmpeg".into());
             audio_edit::convert(std::path::Path::new(&ffmpeg), &input, &base.join(&rel))
@@ -2344,6 +2359,56 @@ mod tests {
             assert!(matches!(err, ToolError::BadInput(_)), "{tool}: {err}");
             assert!(err.to_string().contains(what), "{tool}: {err}");
         }
+    }
+
+    #[test]
+    fn inputs_outside_the_project_are_refused() {
+        let dir = project_with_beat();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.wav");
+        std::fs::copy(dir.path().join("beat.wav"), &secret).unwrap();
+        let escape = format!(
+            "../{}/secret.wav",
+            outside.path().file_name().unwrap().to_string_lossy()
+        );
+        let mut attempts = vec![secret.to_string_lossy().into_owned(), escape];
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&secret, dir.path().join("link.wav")).unwrap();
+            attempts.push("link.wav".into());
+        }
+        for input in attempts {
+            let err = edit(
+                &dir,
+                "amigo_audiogen_normalize",
+                serde_json::json!({ "input": input }),
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("outside the project"),
+                "{input}: {err}"
+            );
+            let err = dispatch_tool_with_defaults(
+                "amigo_audiogen_generate_variation",
+                serde_json::json!({ "input": input }),
+                Some(dir.path()),
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("outside the project"),
+                "{input}: {err}"
+            );
+        }
+        // A path that stays inside after `..` is fine.
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        assert!(
+            edit(
+                &dir,
+                "amigo_audiogen_normalize",
+                serde_json::json!({ "input": "sub/../beat.wav" }),
+            )
+            .is_ok()
+        );
     }
 
     #[test]

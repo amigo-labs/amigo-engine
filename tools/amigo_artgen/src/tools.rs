@@ -413,16 +413,29 @@ impl ArtgenServer {
 
     /// Resolve a tool's file argument against the project directory and
     /// check it exists.
+    /// Absolute paths, `..` and symlinks that lead out of the project are
+    /// refused: the path comes from a model's tool call, and the file is
+    /// read (or uploaded to ComfyUI) on its behalf.
     fn input_file(&self, path: &str) -> Result<PathBuf, ToolError> {
         let resolved = self.project_dir.join(path);
-        if resolved.is_file() {
-            Ok(resolved)
-        } else {
-            Err(ToolError::BadInput(format!(
-                "{} does not exist",
-                resolved.display()
-            )))
+        let missing = || ToolError::BadInput(format!("{} does not exist", resolved.display()));
+        let root = self.project_dir.canonicalize().map_err(|e| {
+            ToolError::BadInput(format!(
+                "project directory {}: {e}",
+                self.project_dir.display()
+            ))
+        })?;
+        let file = resolved.canonicalize().map_err(|_| missing())?;
+        if !file.starts_with(&root) {
+            return Err(ToolError::BadInput(format!(
+                "{path} is outside the project ({})",
+                root.display()
+            )));
         }
+        if !file.is_file() {
+            return Err(missing());
+        }
+        Ok(file)
     }
 
     /// Run `prompt`, write its images into `assets/generated/<kind>/`, and
@@ -1293,6 +1306,39 @@ mod tests {
             assert!(err.to_string().contains(what), "{err}");
         }
         assert!(fake.prompts().is_empty(), "no AI involved");
+    }
+
+    #[test]
+    fn inputs_outside_the_project_are_refused() {
+        let fake = FakeComfyUi::start();
+        let project = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        png(outside.path(), "secret.png", 1, 1, |_, _| [1, 2, 3, 255]);
+        let secret = outside.path().join("secret.png");
+        let escape = format!(
+            "../{}/secret.png",
+            outside.path().file_name().unwrap().to_string_lossy()
+        );
+        let mut server = server_for(project.path(), &fake);
+        for input in [secret.to_string_lossy().into_owned(), escape] {
+            for (tool, args) in [
+                (
+                    "amigo_artgen_palette_swap",
+                    serde_json::json!({ "input": input, "palette": "pico8" }),
+                ),
+                (
+                    "amigo_artgen_upscale",
+                    serde_json::json!({ "input": input, "factor": 2 }),
+                ),
+            ] {
+                let err = server.call(tool, args).unwrap_err();
+                assert!(
+                    err.to_string().contains("outside the project"),
+                    "{tool} {input}: {err}"
+                );
+            }
+        }
+        assert!(fake.uploads().is_empty());
     }
 
     #[test]

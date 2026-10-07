@@ -7,7 +7,8 @@
 use crate::audio_edit;
 use crate::tools::{
     ExtendTrackParams, GenerateAmbientParams, GenerateCoreMelodyParams, GenerateStemParams,
-    GenerateVariationParams, RemixParams, ToolError, run_comfyui_audio_workflow, sanitize,
+    GenerateVariationParams, RemixParams, ToolError, project_file, run_comfyui_audio_workflow,
+    sanitize,
 };
 use crate::wav;
 use crate::workflows::music::{build_audio_conditioned_workflow, build_music_workflow};
@@ -30,17 +31,9 @@ pub struct Generator<'a> {
 }
 
 impl Generator<'_> {
-    /// An input file, which must exist.
+    /// An input file, which must exist inside the project.
     fn input(&self, path: &str) -> Result<PathBuf, ToolError> {
-        let resolved = self.base.join(path);
-        if resolved.is_file() {
-            Ok(resolved)
-        } else {
-            Err(ToolError::BadInput(format!(
-                "{} does not exist",
-                resolved.display()
-            )))
-        }
+        project_file(self.base, path)
     }
 
     /// Run `workflow` and download its audio to `rel`; returns `rel`.

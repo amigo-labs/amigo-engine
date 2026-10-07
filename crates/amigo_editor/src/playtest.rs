@@ -107,7 +107,7 @@ impl PlaytestMetrics {
         if self.wave_times.is_empty() {
             return 0.0;
         }
-        let total: u64 = self.wave_times.iter().sum();
+        let total: f64 = self.wave_times.iter().map(|&t| t as f64).sum();
         (total as f32 / self.wave_times.len() as f32) / 60.0
     }
 }
@@ -241,7 +241,9 @@ pub fn analyze_waves(results: &PlaytestResults) -> Vec<BalanceSuggestion> {
         if times.is_empty() {
             break;
         }
-        averages.push(times.iter().sum::<u64>() as f32 / times.len() as f32);
+        // In f64: tick counts come from API clients and may be huge.
+        let total: f64 = times.iter().map(|&t| t as f64).sum();
+        averages.push((total / times.len() as f64) as f32);
     }
     let mut out = Vec::new();
     for (i, pair) in averages.windows(2).enumerate() {
@@ -499,6 +501,23 @@ mod tests {
         assert!(flat.iter().any(|s| s.description.contains("never harder")));
         assert!(analyze_waves(&waves(&[&[100, 150, 200]])).is_empty());
         assert!(analyze_waves(&waves(&[])).is_empty());
+    }
+
+    #[test]
+    fn huge_wave_times_do_not_overflow() {
+        let out = analyze_waves(&waves(&[
+            &[u64::MAX, u64::MAX, 1],
+            &[u64::MAX, u64::MAX, 1],
+        ]));
+        assert!(
+            out.iter().any(|s| s.description.contains("never harder")),
+            "{out:?}"
+        );
+        let m = PlaytestMetrics {
+            wave_times: vec![u64::MAX, u64::MAX],
+            ..Default::default()
+        };
+        assert!(m.avg_wave_time_secs().is_finite());
     }
 
     #[test]
