@@ -702,7 +702,7 @@ mod tests {
                     play(&mut s.ctx, i as u64, t);
                     sampled[i] = t;
                 }
-                match run_tick(&mut s.ctx, &mut s.stack, &mut []) {
+                match run_tick(&mut s.ctx, &mut s.stack, &mut Default::default()) {
                     TickOutcome::Ran => {}
                     TickOutcome::Stalled => {}
                     TickOutcome::Quit => panic!("quit"),
@@ -781,7 +781,7 @@ mod tests {
         link.set_loss_percent(100);
         let tick = a.ctx.time.tick;
         for _ in 0..20 {
-            let _ = run_tick(&mut a.ctx, &mut a.stack, &mut []);
+            let _ = run_tick(&mut a.ctx, &mut a.stack, &mut Default::default());
             a.clock.set(a.clock.get() + 16);
         }
         assert!(a.ctx.time.tick <= tick + 4, "ran without the guest's input");
@@ -789,7 +789,7 @@ mod tests {
 
         // ...until the timeout, then plays alone.
         a.clock.set(a.clock.get() + 10_000);
-        let outcome = run_tick(&mut a.ctx, &mut a.stack, &mut []);
+        let outcome = run_tick(&mut a.ctx, &mut a.stack, &mut Default::default());
         assert_eq!(outcome, TickOutcome::Ran);
         let status = a.ctx.net_status();
         assert_eq!(status.mode, NetMode::Ended);

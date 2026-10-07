@@ -36,7 +36,8 @@ allow = [
     "MPL-2.0",
     # Mozilla's CA certificate data in webpki-roots (ureq's TLS).
     "CDLA-Permissive-2.0",
-    # egui's bundled default fonts (epaint_default_fonts), editor only.
+    # egui's bundled default fonts (epaint_default_fonts): the editor, text
+    # tests and examples/raster_art.
     "OFL-1.1",
     "Ubuntu-font-1.0",
 ]

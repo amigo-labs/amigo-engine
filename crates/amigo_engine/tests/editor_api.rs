@@ -174,3 +174,52 @@ fn a_refused_command_changes_nothing() {
     assert!(!h.session().dirty);
     assert!(h.session().state.undo_stack.is_empty());
 }
+
+#[test]
+fn zones_entities_decoration_and_playtests_over_the_api() {
+    let dir = temp_dir("zones");
+    let mut h = Harness::new(&dir);
+    h.send(
+        "editor.fill_rect",
+        json!({"layer": "ground", "x": 0, "y": 0, "w": 10, "h": 2, "tile": 1}),
+    );
+    h.send(
+        "editor.add_zone",
+        json!({"name": "spawn", "x": 0, "y": 0, "w": 32, "h": 32}),
+    );
+    h.send(
+        "editor.place_entity",
+        json!({"type": "slime", "x": 0, "y": 0}),
+    );
+    h.send(
+        "editor.set_entity",
+        json!({"index": 0, "x": 48, "properties": {"hp": "3"}}),
+    );
+    h.send(
+        "editor.auto_decorate",
+        json!({"tiles": [9], "density": 1.0, "seed": 3}),
+    );
+    h.send(
+        "editor.playtest_report",
+        json!({"metrics": {"victory": true, "wave_times": [60, 70]}}),
+    );
+
+    let session = h.session();
+    let level = &session.level;
+    assert_eq!(level.zones[0].name, "spawn");
+    assert_eq!((level.entities[0].x, level.entities[0].y), (48.0, 0.0));
+    let decor = level.layer_index("decoration").expect("layer created");
+    // Ground in rows 0-1, minus the 2x2 zone and the entity's tile.
+    let placed = level.layers[decor]
+        .tiles
+        .iter()
+        .filter(|&&t| t == 9)
+        .count();
+    assert_eq!(placed, 20 - 4 - 1);
+    assert_eq!(session.playtest.runs.len(), 1);
+
+    h.send("editor.remove_zone", json!({"index": 0}));
+    h.send("editor.remove_entity", json!({"index": 0}));
+    assert!(h.session().level.zones.is_empty());
+    assert!(h.session().level.entities.is_empty());
+}

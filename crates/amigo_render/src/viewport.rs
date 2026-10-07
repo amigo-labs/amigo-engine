@@ -23,6 +23,10 @@ pub enum ScaleMode {
     Fit,
     /// Fill the whole window, distorting the aspect ratio when it differs.
     Stretch,
+    /// Keep the configured virtual height and widen or narrow the virtual
+    /// width to the window's aspect ratio. No bars, no distortion.
+    /// Config value `"expand"`.
+    Expand,
 }
 
 impl ScaleMode {
@@ -33,7 +37,72 @@ impl ScaleMode {
             "pixel_perfect" | "integer" => Some(Self::PixelPerfect),
             "fit" | "letterbox" => Some(Self::Fit),
             "stretch" => Some(Self::Stretch),
+            "expand" => Some(Self::Expand),
             _ => None,
+        }
+    }
+
+    /// The virtual resolution for a window: the configured one, except under
+    /// [`ScaleMode::Expand`], where the width becomes
+    /// `round(virtual_height · window_w / window_h)`. Never zero.
+    pub fn virtual_size_for(self, configured: (u32, u32), window: (u32, u32)) -> (u32, u32) {
+        let (vw, vh) = (configured.0.max(1), configured.1.max(1));
+        match self {
+            ScaleMode::Expand => {
+                let (ww, wh) = (window.0.max(1) as f64, window.1.max(1) as f64);
+                (((vh as f64 * ww / wh).round() as u32).max(1), vh)
+            }
+            _ => (vw, vh),
+        }
+    }
+}
+
+/// What the game needs to lay out for the window it is in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewportInfo {
+    /// Window size in physical pixels.
+    pub window_size: (u32, u32),
+    /// Where the scene lands in the window.
+    pub viewport: Viewport,
+    /// Current virtual resolution (changes under [`ScaleMode::Expand`]).
+    pub virtual_size: (f32, f32),
+    /// Scene-target pixels per virtual pixel: 1.0 for pixel art, the
+    /// viewport scale for raster art.
+    pub render_scale: f32,
+    /// The OS scale factor (DPI) of the window's monitor.
+    pub scale_factor: f64,
+}
+
+impl ViewportInfo {
+    /// The layout of a `window`-sized window showing a game configured for
+    /// `configured` virtual pixels. Zero sizes count as 1, so no field is ever
+    /// zero.
+    pub fn compute(
+        mode: ScaleMode,
+        art_style: crate::ArtStyle,
+        configured: (u32, u32),
+        window: (u32, u32),
+        scale_factor: f64,
+    ) -> Self {
+        let window = (window.0.max(1), window.1.max(1));
+        let virtual_size = mode.virtual_size_for(configured, window);
+        let viewport = Viewport::compute(mode, virtual_size, window);
+        let render_scale = match art_style {
+            crate::ArtStyle::RasterArt => {
+                (viewport.width / virtual_size.0 as f32).max(f32::MIN_POSITIVE)
+            }
+            crate::ArtStyle::PixelArt | crate::ArtStyle::Hybrid => 1.0,
+        };
+        Self {
+            window_size: window,
+            viewport,
+            virtual_size: (virtual_size.0 as f32, virtual_size.1 as f32),
+            render_scale,
+            scale_factor: if scale_factor.is_finite() && scale_factor > 0.0 {
+                scale_factor
+            } else {
+                1.0
+            },
         }
     }
 }
@@ -57,7 +126,9 @@ impl Viewport {
 
         let fit_scale = (ww / vw).min(wh / vh);
         let (width, height) = match mode {
-            ScaleMode::Stretch => (ww, wh),
+            // Expand changes the virtual width to the window's shape, so the
+            // image always covers the window.
+            ScaleMode::Stretch | ScaleMode::Expand => (ww, wh),
             ScaleMode::PixelPerfect if fit_scale >= 1.0 => {
                 let s = fit_scale.floor();
                 (vw * s, vh * s)
@@ -101,6 +172,72 @@ impl Viewport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expand_covers_the_window_and_widens_the_virtual_resolution() {
+        assert_eq!(
+            ScaleMode::from_str_config("expand"),
+            Some(ScaleMode::Expand)
+        );
+        assert_eq!(
+            vp(ScaleMode::Expand, (640, 360), (1000, 500)),
+            Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 500.0
+            }
+        );
+        assert_eq!(
+            ScaleMode::Expand.virtual_size_for((640, 360), (1000, 500)),
+            (720, 360)
+        );
+        // A portrait window narrows it.
+        assert_eq!(
+            ScaleMode::Expand.virtual_size_for((640, 360), (500, 1000)),
+            (180, 360)
+        );
+        assert_eq!(
+            ScaleMode::Fit.virtual_size_for((640, 360), (1000, 500)),
+            (640, 360)
+        );
+    }
+
+    #[test]
+    fn viewport_info_never_reports_zero_sizes() {
+        let info = ViewportInfo::compute(
+            ScaleMode::Expand,
+            crate::ArtStyle::RasterArt,
+            (640, 360),
+            (0, 0),
+            f64::NAN,
+        );
+        assert!(info.window_size.0 > 0 && info.window_size.1 > 0);
+        assert!(info.virtual_size.0 > 0.0 && info.virtual_size.1 > 0.0);
+        assert!(info.render_scale > 0.0);
+        assert_eq!(info.scale_factor, 1.0);
+    }
+
+    #[test]
+    fn raster_art_reports_the_viewport_scale() {
+        let raster = ViewportInfo::compute(
+            ScaleMode::Expand,
+            crate::ArtStyle::RasterArt,
+            (640, 360),
+            (1920, 1080),
+            2.0,
+        );
+        assert_eq!(raster.virtual_size, (640.0, 360.0));
+        assert_eq!(raster.render_scale, 3.0);
+        let pixel = ViewportInfo::compute(
+            ScaleMode::PixelPerfect,
+            crate::ArtStyle::PixelArt,
+            (640, 360),
+            (1920, 1080),
+            2.0,
+        );
+        assert_eq!(pixel.render_scale, 1.0);
+    }
 
     fn vp(mode: ScaleMode, virt: (u32, u32), win: (u32, u32)) -> Viewport {
         Viewport::compute(mode, virt, win)

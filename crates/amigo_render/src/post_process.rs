@@ -1,4 +1,8 @@
+use crate::post_shader::{
+    DIRECTIONAL_BLUR_WGSL, PostInput, PostShaderRegistry, SHOCKWAVE_WGSL, full_source,
+};
 use amigo_core::ColorBlindMode;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use wgpu;
 use wgpu::util::DeviceExt;
@@ -261,6 +265,7 @@ fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 /// Effects are serialisable with `serde` so they can be loaded from RON
 /// config files on a per-scene or per-world basis.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[non_exhaustive]
 pub enum PostEffect {
     Bloom {
         threshold: f32,
@@ -289,6 +294,144 @@ pub enum PostEffect {
         mode: ColorBlindMode,
         strength: f32,
     },
+    /// A ring that displaces the image radially, as from an impact.
+    /// Coordinates are virtual-resolution screen units (origin top-left).
+    /// `thickness <= 0` or `strength == 0` turns it off.
+    Shockwave {
+        center: [f32; 2],
+        /// Distance of the ring's middle from `center`.
+        radius: f32,
+        /// Width of the ring. The displacement fades to zero at both edges.
+        thickness: f32,
+        /// Peak displacement in virtual pixels; negative pulls inwards.
+        strength: f32,
+    },
+    /// Blur along one direction, as from fast motion. A zero `direction` or
+    /// `length <= 0` turns it off.
+    DirectionalBlur {
+        /// Need not be normalised.
+        direction: [f32; 2],
+        /// Length of the blur in virtual pixels.
+        length: f32,
+    },
+    /// A shader registered with `GameContext::register_post_shader`.
+    Custom {
+        shader: String,
+        /// Read by the shader as `post.params[0..4]` (four `vec4<f32>`).
+        params: [f32; 16],
+    },
+}
+
+impl PostEffect {
+    /// Rank in the classic uber-shader's fixed order, for the six classic
+    /// effects; `None` for the rest.
+    fn classic_rank(&self) -> Option<u8> {
+        match self {
+            PostEffect::ChromaticAberration { .. } => Some(0),
+            PostEffect::Bloom { .. } => Some(1),
+            PostEffect::Vignette { .. } => Some(2),
+            PostEffect::ColorGrading { .. } => Some(3),
+            PostEffect::ColorblindFilter { .. } => Some(4),
+            PostEffect::CrtFilter { .. } => Some(5),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pass plan
+// ---------------------------------------------------------------------------
+
+/// One fullscreen pass of the post-processing chain.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PostPass {
+    /// The classic uber-shader with these effects. Adjacent classic effects
+    /// share a pass when they appear in the shader's own order.
+    Classic(Vec<PostEffect>),
+    /// A shader on the prelude contract (built-in or registered), with its
+    /// `post.params`.
+    Prelude { shader: String, params: [f32; 16] },
+}
+
+/// Name of the built-in shockwave shader.
+pub const SHOCKWAVE_SHADER: &str = "amigo/shockwave";
+/// Name of the built-in directional blur shader.
+pub const DIRECTIONAL_BLUR_SHADER: &str = "amigo/directional_blur";
+
+/// The passes `effects` run as, in order. Effects in their "off" state are
+/// dropped, and so are `Custom` effects whose shader `is_registered` does not
+/// know; their names are returned second so the caller can warn once.
+pub fn plan_passes(
+    effects: &[PostEffect],
+    is_registered: impl Fn(&str) -> bool,
+) -> (Vec<PostPass>, Vec<String>) {
+    let mut passes: Vec<PostPass> = Vec::new();
+    let mut unknown = Vec::new();
+    let mut last_rank: Option<u8> = None;
+    for effect in effects {
+        if let Some(rank) = effect.classic_rank() {
+            match passes.last_mut() {
+                Some(PostPass::Classic(run)) if last_rank.is_some_and(|r| r < rank) => {
+                    run.push(effect.clone());
+                }
+                _ => passes.push(PostPass::Classic(vec![effect.clone()])),
+            }
+            last_rank = Some(rank);
+            continue;
+        }
+        last_rank = None;
+        let mut params = [0.0f32; 16];
+        match effect {
+            PostEffect::Shockwave {
+                center,
+                radius,
+                thickness,
+                strength,
+            } => {
+                if thickness.is_nan()
+                    || *thickness <= 0.0
+                    || *strength == 0.0
+                    || !strength.is_finite()
+                {
+                    continue;
+                }
+                params[..5]
+                    .copy_from_slice(&[center[0], center[1], *radius, *thickness, *strength]);
+                passes.push(PostPass::Prelude {
+                    shader: SHOCKWAVE_SHADER.into(),
+                    params,
+                });
+            }
+            PostEffect::DirectionalBlur { direction, length } => {
+                let len = (direction[0] * direction[0] + direction[1] * direction[1]).sqrt();
+                if len.is_nan()
+                    || len <= 0.0
+                    || length.is_nan()
+                    || *length <= 0.0
+                    || !length.is_finite()
+                {
+                    continue;
+                }
+                params[..3].copy_from_slice(&[direction[0] / len, direction[1] / len, *length]);
+                passes.push(PostPass::Prelude {
+                    shader: DIRECTIONAL_BLUR_SHADER.into(),
+                    params,
+                });
+            }
+            PostEffect::Custom { shader, params } => {
+                if is_registered(shader) {
+                    passes.push(PostPass::Prelude {
+                        shader: shader.clone(),
+                        params: *params,
+                    });
+                } else {
+                    unknown.push(shader.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    (passes, unknown)
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +543,10 @@ impl PostProcessUniforms {
                     };
                     u.colorblind_strength = strength.clamp(0.0, 1.0);
                 }
+                // Not part of the uber-shader: their own passes.
+                PostEffect::Shockwave { .. }
+                | PostEffect::DirectionalBlur { .. }
+                | PostEffect::Custom { .. } => {}
             }
         }
 
@@ -411,28 +558,43 @@ impl PostProcessUniforms {
 // PostProcessPipeline
 // ---------------------------------------------------------------------------
 
-/// Manages an offscreen render target and a configurable chain of
-/// post-processing effects applied as a single fullscreen pass.
+/// A compiled prelude shader and the generation it was compiled from.
+struct PreludePipeline {
+    pipeline: wgpu::RenderPipeline,
+    generation: u64,
+}
+
+/// Runs the effect stack as a chain of fullscreen passes, in `Vec` order,
+/// ping-ponging between two scene-sized targets. The last pass writes the
+/// target the UI pass draws over.
 pub struct PostProcessPipeline {
-    /// Offscreen texture that sprites are rendered into.
-    offscreen_texture: wgpu::Texture,
-    /// View of the offscreen texture (used as render target by the sprite pass).
-    offscreen_view: wgpu::TextureView,
+    /// The two ping-pong targets; the scene renders into `targets[0]`.
+    targets: [(wgpu::Texture, wgpu::TextureView); 2],
     /// The texture format used for the offscreen and output targets.
     format: wgpu::TextureFormat,
-    /// Dimensions of the current offscreen texture.
+    /// Dimensions of the current offscreen textures.
     width: u32,
     height: u32,
+    /// Virtual resolution, the unit of screen-space effect parameters.
+    virtual_size: [f32; 2],
+    /// Seconds for `post.time`.
+    time: f32,
     /// The active effect stack, applied in order.
     effects: Vec<PostEffect>,
-    /// The fullscreen-quad render pipeline.
+    /// The passes `effects` currently run as.
+    passes: Vec<PostPass>,
+    /// The classic uber-shader.
     pipeline: wgpu::RenderPipeline,
-    /// Bind group layout shared between frames.
+    /// Built-in and registered prelude shaders, by name.
+    prelude_pipelines: FxHashMap<String, PreludePipeline>,
+    /// Custom names already warned about as unregistered.
+    warned: FxHashSet<String>,
+    /// Bind group layout shared by every pass.
     bind_group_layout: wgpu::BindGroupLayout,
+    pipeline_layout: wgpu::PipelineLayout,
+    vertex_module: wgpu::ShaderModule,
     /// Sampler for the offscreen texture.
     sampler: wgpu::Sampler,
-    /// Uniform buffer written every frame.
-    uniform_buffer: wgpu::Buffer,
 }
 
 impl PostProcessPipeline {
@@ -448,8 +610,10 @@ impl PostProcessPipeline {
         height: u32,
         format: wgpu::TextureFormat,
     ) -> Self {
-        let (offscreen_texture, offscreen_view) =
-            Self::create_offscreen_target(device, width, height, format);
+        let targets = [
+            Self::create_offscreen_target(device, width, height, format),
+            Self::create_offscreen_target(device, width, height, format),
+        ];
 
         // Shader modules --------------------------------------------------------
         let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -461,11 +625,11 @@ impl PostProcessPipeline {
             source: wgpu::ShaderSource::Wgsl(POST_PROCESS_FRAGMENT_SHADER.into()),
         });
 
-        // Bind group layout -----------------------------------------------------
+        // Bind group layout: scene texture, sampler, uniforms. The classic
+        // shader and the prelude contract share it.
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("post_process_bind_group_layout"),
             entries: &[
-                // Scene texture
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -476,14 +640,12 @@ impl PostProcessPipeline {
                     },
                     count: None,
                 },
-                // Sampler
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                // Uniforms
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -503,18 +665,70 @@ impl PostProcessPipeline {
             immediate_size: 0,
         });
 
-        // Render pipeline -------------------------------------------------------
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("post_process_pipeline"),
-            layout: Some(&pipeline_layout),
+        let pipeline = Self::fullscreen_pipeline(
+            device,
+            &pipeline_layout,
+            &vertex_module,
+            &fragment_module,
+            format,
+            "post_process_pipeline",
+        );
+
+        // Sampler ---------------------------------------------------------------
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("post_process_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest, // default pixel-art friendly
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let mut this = Self {
+            targets,
+            format,
+            width,
+            height,
+            virtual_size: [width as f32, height as f32],
+            time: 0.0,
+            effects: Vec::new(),
+            passes: Vec::new(),
+            pipeline,
+            prelude_pipelines: FxHashMap::default(),
+            warned: FxHashSet::default(),
+            bind_group_layout,
+            pipeline_layout,
+            vertex_module,
+            sampler,
+        };
+        for (name, source) in [
+            (SHOCKWAVE_SHADER, SHOCKWAVE_WGSL),
+            (DIRECTIONAL_BLUR_SHADER, DIRECTIONAL_BLUR_WGSL),
+        ] {
+            this.compile_prelude_shader(device, name, source, 0);
+        }
+        this
+    }
+
+    fn fullscreen_pipeline(
+        device: &wgpu::Device,
+        layout: &wgpu::PipelineLayout,
+        vertex: &wgpu::ShaderModule,
+        fragment: &wgpu::ShaderModule,
+        format: wgpu::TextureFormat,
+        label: &str,
+    ) -> wgpu::RenderPipeline {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(layout),
             vertex: wgpu::VertexState {
-                module: &vertex_module,
+                module: vertex,
                 entry_point: Some("vs_main"),
                 buffers: &[], // fullscreen triangle - no vertex buffers
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &fragment_module,
+                module: fragment,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
@@ -536,36 +750,64 @@ impl PostProcessPipeline {
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,
-        });
+        })
+    }
 
-        // Sampler ---------------------------------------------------------------
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("post_process_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest, // default pixel-art friendly
-            min_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
+    /// Build the GPU pipeline for a prelude shader. A failure the CPU-side
+    /// validation did not catch is logged and the shader is skipped; it never
+    /// panics.
+    fn compile_prelude_shader(
+        &mut self,
+        device: &wgpu::Device,
+        name: &str,
+        source: &str,
+        generation: u64,
+    ) {
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(name),
+            source: wgpu::ShaderSource::Wgsl(full_source(source).into()),
         });
+        let pipeline = Self::fullscreen_pipeline(
+            device,
+            &self.pipeline_layout,
+            &self.vertex_module,
+            &module,
+            self.format,
+            name,
+        );
+        if let Some(error) = pollster::block_on(scope.pop()) {
+            tracing::error!("Post shader '{name}' failed to build on the GPU, skipped: {error}");
+            self.prelude_pipelines.remove(name);
+            return;
+        }
+        self.prelude_pipelines.insert(
+            name.to_string(),
+            PreludePipeline {
+                pipeline,
+                generation,
+            },
+        );
+    }
 
-        // Uniform buffer --------------------------------------------------------
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("post_process_uniforms"),
-            contents: bytemuck::bytes_of(&PostProcessUniforms::from_effects(&[], width, height)),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        Self {
-            offscreen_texture,
-            offscreen_view,
-            format,
-            width,
-            height,
-            effects: Vec::new(),
-            pipeline,
-            bind_group_layout,
-            sampler,
-            uniform_buffer,
+    /// Build the pipelines of shaders that are new or were replaced since the
+    /// last call, and drop the ones no longer registered. Cheap when nothing
+    /// changed.
+    pub fn sync_shaders(&mut self, device: &wgpu::Device, registry: &PostShaderRegistry) {
+        let mut changed = false;
+        for (name, source, generation) in registry.iter() {
+            let current = self.prelude_pipelines.get(name).map(|p| p.generation);
+            if current != Some(generation) {
+                self.compile_prelude_shader(device, name, source, generation);
+                self.warned.remove(name);
+                changed = true;
+            }
+        }
+        let before = self.prelude_pipelines.len();
+        self.prelude_pipelines
+            .retain(|name, p| p.generation == 0 || registry.contains(name));
+        if changed || before != self.prelude_pipelines.len() {
+            self.replan();
         }
     }
 
@@ -573,7 +815,7 @@ impl PostProcessPipeline {
 
     /// Returns the texture view that the sprite renderer should draw into.
     pub fn render_target_view(&self) -> &wgpu::TextureView {
-        &self.offscreen_view
+        &self.targets[0].1
     }
 
     /// Recreate the offscreen render targets after a window resize.
@@ -583,24 +825,56 @@ impl PostProcessPipeline {
         }
         self.width = width;
         self.height = height;
-        let (tex, view) = Self::create_offscreen_target(device, width, height, self.format);
-        self.offscreen_texture = tex;
-        self.offscreen_view = view;
+        self.targets = [
+            Self::create_offscreen_target(device, width, height, self.format),
+            Self::create_offscreen_target(device, width, height, self.format),
+        ];
     }
 
-    /// Replace the entire effect stack.
+    /// The virtual resolution screen-space parameters are given in.
+    pub fn set_virtual_size(&mut self, width: f32, height: f32) {
+        self.virtual_size = [width.max(1.0), height.max(1.0)];
+    }
+
+    /// Seconds for `post.time` (presentation time, never simulation).
+    pub fn set_time(&mut self, seconds: f32) {
+        self.time = seconds;
+    }
+
     /// The active effect stack, in application order.
     pub fn effects(&self) -> &[PostEffect] {
         &self.effects
     }
 
+    /// Replace the entire effect stack.
     pub fn set_effects(&mut self, effects: Vec<PostEffect>) {
         self.effects = effects;
+        self.replan();
     }
 
     /// Remove all effects.
     pub fn clear_effects(&mut self) {
         self.effects.clear();
+        self.passes.clear();
+    }
+
+    /// The passes the current stack runs as.
+    pub fn passes(&self) -> &[PostPass] {
+        &self.passes
+    }
+
+    fn replan(&mut self) {
+        let (passes, unknown) = plan_passes(&self.effects, |name| {
+            self.prelude_pipelines.contains_key(name)
+        });
+        for name in unknown {
+            if self.warned.insert(name.clone()) {
+                tracing::warn!(
+                    "Post effect uses shader '{name}', which is not registered; skipped"
+                );
+            }
+        }
+        self.passes = passes;
     }
 
     /// Recreate the sampler with a different filter mode (e.g. for raster-art).
@@ -616,9 +890,10 @@ impl PostProcessPipeline {
         });
     }
 
-    /// Returns `true` when at least one effect is active.
+    /// Returns `true` when at least one pass will run. When every effect is
+    /// skipped, the scene is not copied through an extra pass.
     pub fn enabled(&self) -> bool {
-        !self.effects.is_empty()
+        !self.passes.is_empty()
     }
 
     /// Run the post-processing chain and output the result to `output_view`.
@@ -629,39 +904,70 @@ impl PostProcessPipeline {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
         output_view: &wgpu::TextureView,
     ) {
-        // Upload uniforms for this frame.
-        let uniforms = PostProcessUniforms::from_effects(&self.effects, self.width, self.height);
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        let last = self.passes.len().saturating_sub(1);
+        for (i, pass) in self.passes.iter().enumerate() {
+            // Each pass reads the previous one's target; uniforms differ per
+            // pass, so each gets its own small buffer.
+            let input = &self.targets[i % 2].1;
+            let output = if i == last {
+                output_view
+            } else {
+                &self.targets[(i + 1) % 2].1
+            };
+            let (pipeline, uniforms): (&wgpu::RenderPipeline, Vec<u8>) = match pass {
+                PostPass::Classic(effects) => (
+                    &self.pipeline,
+                    bytemuck::bytes_of(&PostProcessUniforms::from_effects(
+                        effects,
+                        self.width,
+                        self.height,
+                    ))
+                    .to_vec(),
+                ),
+                PostPass::Prelude { shader, params } => {
+                    let Some(compiled) = self.prelude_pipelines.get(shader) else {
+                        continue;
+                    };
+                    let input = PostInput::new(
+                        [self.width as f32, self.height as f32],
+                        self.virtual_size,
+                        self.time,
+                        *params,
+                    );
+                    (&compiled.pipeline, bytemuck::bytes_of(&input).to_vec())
+                }
+            };
+            let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("post_process_uniforms"),
+                contents: &uniforms,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post_process_bind_group"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(input),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
-        // Build a transient bind group (texture view may change on resize).
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("post_process_bind_group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.offscreen_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        // Fullscreen pass -------------------------------------------------------
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("post_process_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_view,
+                    view: output,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -674,10 +980,9 @@ impl PostProcessPipeline {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.draw(0..3, 0..1); // fullscreen triangle
+            render_pass.set_pipeline(pipeline);
+            render_pass.set_bind_group(0, &bind_group, &[]);
+            render_pass.draw(0..3, 0..1); // fullscreen triangle
         }
     }
 
@@ -705,5 +1010,132 @@ impl PostProcessPipeline {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         (texture, view)
+    }
+}
+
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+
+    fn custom(name: &str) -> PostEffect {
+        PostEffect::Custom {
+            shader: name.into(),
+            params: [0.0; 16],
+        }
+    }
+
+    fn vignette() -> PostEffect {
+        PostEffect::Vignette {
+            intensity: 0.4,
+            smoothness: 0.5,
+        }
+    }
+
+    fn bloom() -> PostEffect {
+        PostEffect::Bloom {
+            threshold: 0.8,
+            intensity: 1.0,
+        }
+    }
+
+    #[test]
+    fn passes_run_in_vec_order() {
+        let (passes, unknown) = plan_passes(&[vignette(), custom("a"), bloom()], |n| n == "a");
+        assert!(unknown.is_empty());
+        assert_eq!(
+            passes,
+            vec![
+                PostPass::Classic(vec![vignette()]),
+                PostPass::Prelude {
+                    shader: "a".into(),
+                    params: [0.0; 16]
+                },
+                PostPass::Classic(vec![bloom()]),
+            ]
+        );
+    }
+
+    #[test]
+    fn adjacent_classic_effects_fuse_only_in_canonical_order() {
+        let (passes, _) = plan_passes(&[bloom(), vignette()], |_| false);
+        assert_eq!(passes, vec![PostPass::Classic(vec![bloom(), vignette()])]);
+        let (passes, _) = plan_passes(&[vignette(), bloom()], |_| false);
+        assert_eq!(passes.len(), 2);
+    }
+
+    #[test]
+    fn unregistered_and_disabled_effects_are_dropped() {
+        let effects = [
+            custom("missing"),
+            PostEffect::Shockwave {
+                center: [0.0, 0.0],
+                radius: 10.0,
+                thickness: 0.0,
+                strength: 3.0,
+            },
+            PostEffect::Shockwave {
+                center: [0.0, 0.0],
+                radius: 10.0,
+                thickness: 4.0,
+                strength: 0.0,
+            },
+            PostEffect::DirectionalBlur {
+                direction: [0.0, 0.0],
+                length: 5.0,
+            },
+            PostEffect::DirectionalBlur {
+                direction: [1.0, 0.0],
+                length: 0.0,
+            },
+        ];
+        let (passes, unknown) = plan_passes(&effects, |_| false);
+        assert!(passes.is_empty(), "an all-skipped stack runs no pass");
+        assert_eq!(unknown, vec!["missing".to_string()]);
+    }
+
+    #[test]
+    fn built_ins_pass_their_parameters() {
+        let (passes, _) = plan_passes(
+            &[
+                PostEffect::Shockwave {
+                    center: [10.0, 20.0],
+                    radius: 30.0,
+                    thickness: 8.0,
+                    strength: -2.0,
+                },
+                PostEffect::DirectionalBlur {
+                    direction: [3.0, 4.0],
+                    length: 6.0,
+                },
+            ],
+            |_| false,
+        );
+        let PostPass::Prelude { shader, params } = &passes[0] else {
+            panic!("shockwave is a prelude pass");
+        };
+        assert_eq!(shader, SHOCKWAVE_SHADER);
+        assert_eq!(&params[..5], &[10.0, 20.0, 30.0, 8.0, -2.0]);
+        let PostPass::Prelude { shader, params } = &passes[1] else {
+            panic!("blur is a prelude pass");
+        };
+        assert_eq!(shader, DIRECTIONAL_BLUR_SHADER);
+        assert_eq!(&params[..3], &[0.6, 0.8, 6.0]);
+    }
+
+    #[test]
+    fn effects_round_trip_through_ron() {
+        let effects = vec![
+            vignette(),
+            custom("glow"),
+            PostEffect::Shockwave {
+                center: [1.0, 2.0],
+                radius: 3.0,
+                thickness: 4.0,
+                strength: 5.0,
+            },
+        ];
+        let text = ron::to_string(&effects).expect("serialises");
+        let back: Vec<PostEffect> = ron::from_str(&text).expect("parses");
+        assert_eq!(back, effects);
     }
 }

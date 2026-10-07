@@ -25,6 +25,8 @@ struct State {
     uploads: Vec<String>,
     fail_with: Option<String>,
     outputs: usize,
+    image: Option<Vec<u8>>,
+    audio: Option<Vec<u8>>,
 }
 
 /// A running fake server; stops when dropped.
@@ -90,6 +92,18 @@ impl FakeComfyUi {
     /// Make every following prompt fail with `message`.
     pub fn fail_prompts_with(&self, message: &str) {
         self.state.lock().unwrap().fail_with = Some(message.to_string());
+    }
+
+    /// Serve `bytes` for every output image instead of [`FAKE_IMAGE`], for
+    /// tests that decode what ComfyUI returned.
+    pub fn set_output_image(&self, bytes: Vec<u8>) {
+        self.state.lock().unwrap().image = Some(bytes);
+    }
+
+    /// Make every prompt also output one audio file (`<id>_<i>.wav`, under
+    /// the `audio` key like ComfyUI's `SaveAudio`), served as `bytes`.
+    pub fn set_output_audio(&self, bytes: Vec<u8>) {
+        self.state.lock().unwrap().audio = Some(bytes);
     }
 
     /// How many images each prompt outputs (0 is a run with no output).
@@ -162,12 +176,31 @@ fn handle(stream: TcpStream, state: &Mutex<State>) -> std::io::Result<()> {
                             json!({ "filename": format!("{id}_{i}.png"), "subfolder": "", "type": "output" })
                         })
                         .collect();
-                    json!({ "outputs": { "9": { "images": images } } })
+                    let mut outputs = json!({ "9": { "images": images } });
+                    if s.audio.is_some() {
+                        let audio: Vec<Value> = (0..s.outputs)
+                            .map(|i| {
+                                json!({ "filename": format!("{id}_{i}.wav"), "subfolder": "", "type": "output" })
+                            })
+                            .collect();
+                        outputs["10"] = json!({ "audio": audio });
+                    }
+                    json!({ "outputs": outputs })
                 }
             };
             json_response(json!({ id: entry }))
         }
-        ("GET", "/view") => (200, "image/png", FAKE_IMAGE.to_vec()),
+        ("GET", "/view") => {
+            let s = state.lock().unwrap();
+            match &s.audio {
+                Some(audio) if target.contains(".wav") => (200, "audio/wav", audio.clone()),
+                _ => (
+                    200,
+                    "image/png",
+                    s.image.clone().unwrap_or_else(|| FAKE_IMAGE.to_vec()),
+                ),
+            }
+        }
         ("POST", "/upload/image") => {
             let text = String::from_utf8_lossy(&body);
             let name = text

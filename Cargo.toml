@@ -35,6 +35,7 @@ members = [
     "examples/animation_demo",
     "examples/pathfinding_demo",
     "examples/lockstep_demo",
+    "examples/raster_art",
 ]
 
 [workspace.package]
@@ -94,6 +95,9 @@ bytemuck = { version = "1", features = ["derive"] }
 bitflags = "2"
 pollster = "1"
 fontdue = "0.9"
+# TTFs with Latin-1 coverage (Hack, Ubuntu Light) for text tests and examples.
+# Already in the tree through egui; licenses are allowed in deny.toml.
+epaint_default_fonts = "0.36"
 asefile = "0.3"
 egui = "0.36"
 egui-wgpu = "0.36"

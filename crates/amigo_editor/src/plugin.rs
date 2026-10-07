@@ -46,8 +46,39 @@ pub struct EditorRuntime {
     pub state: EditorState,
     pub play_mode: PlayModeManager,
     pub level: AmigoLevel,
-    /// Whether the editor overlay is visible (F5 toggles).
+    /// Whether the editor overlay is visible ([`EditorRuntimeKeys::overlay`]
+    /// toggles).
     pub overlay_visible: bool,
+    /// The keys this runtime reacts to.
+    pub keys: EditorRuntimeKeys,
+}
+
+/// Keys of [`EditorRuntime`]. The defaults are F10–F12, because the engine's
+/// debug overlay owns F1–F8 and its built-in editor F9.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EditorRuntimeKeys {
+    /// Start playing from the edited level, or stop and restore it.
+    pub play: winit::keyboard::KeyCode,
+    /// Pause or resume while playing.
+    pub pause: winit::keyboard::KeyCode,
+    /// Show or hide the overlay.
+    pub overlay: winit::keyboard::KeyCode,
+}
+
+impl Default for EditorRuntimeKeys {
+    fn default() -> Self {
+        use winit::keyboard::KeyCode;
+        Self {
+            play: KeyCode::F10,
+            pause: KeyCode::F11,
+            overlay: KeyCode::F12,
+        }
+    }
+}
+
+/// "F10" for `KeyCode::F10`.
+fn key_label(key: winit::keyboard::KeyCode) -> String {
+    format!("{key:?}")
 }
 
 impl EditorRuntime {
@@ -59,6 +90,7 @@ impl EditorRuntime {
             play_mode: PlayModeManager::new(),
             level,
             overlay_visible: true,
+            keys: EditorRuntimeKeys::default(),
         }
     }
 
@@ -72,10 +104,10 @@ impl EditorRuntime {
     /// Returns any editor command that was produced (e.g. from undo/redo
     /// shortcuts) so the game can apply it to the tilemap.
     pub fn update(&mut self, input: &InputState) -> Option<EditorCommand> {
-        use winit::keyboard::KeyCode;
+        let keys = self.keys;
 
-        // F5: toggle play mode
-        if input.pressed(KeyCode::F5) {
+        // Play / stop.
+        if input.pressed(keys.play) {
             let old = self.play_mode.state().clone();
             match old {
                 PlayState::Editing => {
@@ -99,8 +131,8 @@ impl EditorRuntime {
             }
         }
 
-        // F6: pause/resume during play
-        if input.pressed(KeyCode::F6) {
+        // Pause / resume during play.
+        if input.pressed(keys.pause) {
             if self.play_mode.is_playing() {
                 self.play_mode.pause();
             } else if self.play_mode.is_paused() {
@@ -108,8 +140,8 @@ impl EditorRuntime {
             }
         }
 
-        // F7: toggle editor overlay visibility
-        if input.pressed(KeyCode::F7) {
+        // Overlay visibility.
+        if input.pressed(keys.overlay) {
             self.overlay_visible = !self.overlay_visible;
         }
 
@@ -184,12 +216,17 @@ impl EditorRuntime {
         // Hotkey hints at bottom
         let hint_y = screen_h - 14.0;
         let hint_color = Color::new(0.6, 0.6, 0.6, 0.8);
+        let (play, pause, overlay) = (
+            key_label(self.keys.play),
+            key_label(self.keys.pause),
+            key_label(self.keys.overlay),
+        );
         let hint = if self.play_mode.is_editing() {
-            "F5:Play  F7:Overlay"
+            format!("{play}:Play  {overlay}:Overlay")
         } else {
-            "F5:Stop  F6:Pause  F7:Overlay"
+            format!("{play}:Stop  {pause}:Pause  {overlay}:Overlay")
         };
-        ui.pixel_text(hint, 4.0, hint_y, hint_color);
+        ui.pixel_text(&hint, 4.0, hint_y, hint_color);
     }
 }
 
@@ -211,6 +248,48 @@ mod tests {
         assert!(rt.state.active);
         assert!(rt.play_mode.is_editing());
         assert!(rt.overlay_visible);
+    }
+
+    fn press(key: winit::keyboard::KeyCode) -> InputState {
+        use winit::event::ElementState;
+        use winit::keyboard::PhysicalKey;
+        let mut input = InputState::new();
+        input.handle_key_event(PhysicalKey::Code(key), ElementState::Pressed);
+        input
+    }
+
+    #[test]
+    fn the_keys_stay_clear_of_the_debug_overlay() {
+        use winit::keyboard::KeyCode;
+        let mut rt = EditorRuntime::new(test_level());
+        // F5-F7 belong to the debug overlay: nothing happens.
+        for key in [KeyCode::F5, KeyCode::F6, KeyCode::F7] {
+            rt.update(&press(key));
+        }
+        assert!(rt.play_mode.is_editing());
+        assert!(rt.overlay_visible);
+
+        rt.update(&press(KeyCode::F10));
+        assert!(rt.play_mode.is_playing());
+        rt.update(&press(KeyCode::F11));
+        assert!(rt.play_mode.is_paused());
+        rt.update(&press(KeyCode::F12));
+        assert!(!rt.overlay_visible);
+        rt.update(&press(KeyCode::F10));
+        assert!(rt.play_mode.is_editing());
+        assert!(rt.state.active);
+    }
+
+    #[test]
+    fn keys_can_be_rebound() {
+        use winit::keyboard::KeyCode;
+        let mut rt = EditorRuntime::new(test_level());
+        rt.keys.play = KeyCode::KeyP;
+        rt.update(&press(KeyCode::F10));
+        assert!(rt.play_mode.is_editing());
+        rt.update(&press(KeyCode::KeyP));
+        assert!(rt.play_mode.is_playing());
+        assert_eq!(key_label(KeyCode::F10), "F10");
     }
 
     #[test]

@@ -1,5 +1,6 @@
 pub mod atlas;
 pub mod atmosphere;
+pub mod blend;
 pub mod blit;
 pub mod camera;
 pub mod font;
@@ -7,9 +8,12 @@ pub mod instancing;
 pub mod lighting;
 pub mod lighting_pipeline;
 pub mod minimap;
+pub mod mipmap;
 pub mod particles;
 pub mod post_process;
+pub mod post_shader;
 pub mod renderer;
+pub mod shapes;
 pub mod sprite_batcher;
 pub mod texture;
 pub mod vertex;
@@ -25,22 +29,27 @@ pub mod dynamic_atlas;
 pub mod gpu_broad_phase;
 
 pub use atmosphere::{AtmosphereManager, AtmospherePreset};
+pub use blend::BlendMode;
 pub use camera::{Camera, CameraMode, Easing};
-pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};
-pub use instancing::{InstanceData, InstancedBatch};
+pub use font::{
+    FONT_PAGE_SIZE, FontAtlas, FontError, FontId, FontManager, FontPage, GlyphInfo, GlyphQuad,
+    TextAlign, TextLine, TextMetrics, TextStyle,
+};
+pub use instancing::{InstanceBuffer, InstanceData, InstancedBatch};
 pub use lighting::{AmbientLight, LightingState, PointLight};
 pub use lighting_pipeline::LightingPipeline;
 pub use minimap::{
     IconRegistry, Minimap, MinimapConfig, MinimapPin, MinimapPing, MinimapPixel, MinimapStyle,
     PinType, SpriteIcon, TEAM_COLORS,
 };
-pub use particles::{BlendMode, EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
-pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
+pub use particles::{EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
+pub use post_process::{PostEffect, PostPass, PostProcessPipeline, PostProcessUniforms};
+pub use post_shader::{PostShaderRegistry, ShaderError};
 pub use renderer::{Renderer, SurfaceError};
-pub use sprite_batcher::{SpriteBatcher, SpriteInstance, SpriteShader};
-pub use texture::{Texture, TextureId};
+pub use sprite_batcher::{DrawBatch, QuadGeometry, SpriteBatcher, SpriteInstance, SpriteShader};
+pub use texture::{DynamicTextures, Texture, TextureId, TextureIdAllocator};
 pub use vertex::Vertex;
-pub use viewport::{ScaleMode, Viewport};
+pub use viewport::{ScaleMode, Viewport, ViewportInfo};
 
 // ---------------------------------------------------------------------------
 // Art style configuration

@@ -142,6 +142,20 @@ impl Camera {
         self.shake_intensity = intensity.max(self.shake_intensity);
     }
 
+    /// How fast `shake` intensity decays, in intensity units per second.
+    /// Default 8.0. A negative or non-finite value is ignored.
+    pub fn set_shake_decay(&mut self, per_second: f32) {
+        if per_second.is_finite() && per_second >= 0.0 {
+            self.shake_decay = per_second;
+        }
+    }
+
+    /// The current shake offset: [`effective_position`](Self::effective_position)
+    /// minus `position`.
+    pub fn shake_offset(&self) -> RenderVec2 {
+        self.shake_offset
+    }
+
     /// Set zoom with smooth transition.
     pub fn set_zoom(&mut self, zoom: f32) {
         self.target_zoom = zoom.max(0.1);
@@ -489,6 +503,17 @@ impl Camera {
         )
     }
 
+    /// Map a world position to virtual-resolution screen coordinates (origin
+    /// top-left), using the effective position and zoom. The inverse of
+    /// [`screen_to_world`](Self::screen_to_world) over the virtual size.
+    pub fn world_to_screen(&self, world: RenderVec2) -> RenderVec2 {
+        let eff = self.effective_position();
+        RenderVec2::new(
+            (world.x - eff.x) * self.zoom + self.virtual_width * 0.5,
+            (world.y - eff.y) * self.zoom + self.virtual_height * 0.5,
+        )
+    }
+
     /// Build the orthographic projection matrix.
     pub fn projection_matrix(&self) -> [[f32; 4]; 4] {
         let mut eff = self.effective_position();
@@ -559,6 +584,30 @@ mod tests {
         camera.set_bounds(Rect::new(0.0, 0.0, 200.0, 150.0));
         camera.update(1.0 / 60.0);
         assert_eq!(camera.position, RenderVec2::new(100.0, 75.0));
+    }
+
+    #[test]
+    fn world_to_screen_inverts_screen_to_world() {
+        let mut camera = Camera::new(320.0, 180.0);
+        camera.position = RenderVec2::new(57.5, -12.25);
+        camera.set_zoom_immediate(2.5);
+        for (x, y) in [(0.0, 0.0), (160.0, 90.0), (319.0, 1.0), (12.5, 170.25)] {
+            let world = camera.screen_to_world(x, y, 320.0, 180.0);
+            let back = camera.world_to_screen(world);
+            assert!((back.x - x).abs() < 1e-3 && (back.y - y).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn shake_decay_is_configurable() {
+        let mut camera = Camera::new(320.0, 180.0);
+        camera.set_shake_decay(f32::NAN);
+        camera.set_shake_decay(60.0);
+        camera.shake(1.0);
+        camera.update(1.0 / 60.0);
+        // 1.0 - 60 * (1/60) = 0: gone after one frame instead of eight.
+        camera.update(1.0 / 60.0);
+        assert_eq!(camera.shake_offset(), RenderVec2::ZERO);
     }
 
     #[test]

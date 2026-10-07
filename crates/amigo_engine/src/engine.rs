@@ -1,6 +1,6 @@
 use crate::Game;
 use crate::config::EngineConfig;
-use crate::context::{DrawContext, GameContext};
+use crate::context::{DrawContext, DrawSpace, GameContext};
 use crate::net::{self, LaunchNet};
 use crate::replay::{self, LaunchReplay};
 use crate::splash::{self, SplashState};
@@ -10,6 +10,7 @@ use amigo_assets::{AssetManager, HotReloader};
 use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
 use amigo_input::{ActionBindings, GamepadState};
+use amigo_render::mipmap::MipSource;
 use amigo_render::renderer::{Renderer, SurfaceError};
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::{ArtStyle, ScaleMode};
@@ -22,15 +23,104 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::KeyCode;
 use winit::window::{Window, WindowId};
 
-/// A plugin that can register systems, events, and resources with the engine.
+/// A plugin: a reusable piece of engine behaviour a game adds with
+/// [`EngineBuilder::add_plugin`]. It registers events, resources and systems
+/// in [`build`](Plugin::build), and gets hooks before and after every tick's
+/// `Game::update` and after every frame's `Game::draw`.
+///
+/// ```no_run
+/// # use amigo_engine::prelude::*;
+/// struct Score(u32);
+/// struct ScorePlugin;
+///
+/// impl Plugin for ScorePlugin {
+///     fn build(&self, ctx: &mut PluginContext) {
+///         ctx.insert_resource(Score(0));
+///         // A system: runs every tick, after the game's update.
+///         ctx.add_system(SystemStage::PostUpdate, |ctx: &mut GameContext| {
+///             if ctx.actions.pressed("coin") {
+///                 if let Some(score) = ctx.resources.get_mut::<Score>() {
+///                     score.0 += 1;
+///                 }
+///             }
+///         });
+///     }
+///
+///     // A draw pass: the score, over the game, in screen space.
+///     fn draw(&self, draw: &mut DrawContext) {
+///         draw.in_space(DrawSpace::Screen, |d| d.draw_text("score", 4.0, 4.0, Color::WHITE));
+///     }
+/// }
+///
+/// Engine::build().add_plugin(ScorePlugin);
+/// ```
 pub trait Plugin: 'static {
-    /// Called once during engine build to register events, resources, etc.
+    /// Called once during engine build to register events, resources and
+    /// systems.
     fn build(&self, ctx: &mut PluginContext);
     /// Called once after the window and renderer are initialized.
     fn init(&self, _ctx: &mut GameContext) {}
-    /// Called every tick after engine systems but before rendering.
-    /// Default implementation is a no-op, so existing plugins are unaffected.
+    /// Called every tick after input is read and before `Game::update`: the
+    /// place to handle or consume input before the game sees it.
+    fn pre_update(&mut self, _ctx: &mut GameContext) {}
+    /// Called every tick after `Game::update` (and the scene change it asked
+    /// for), before the ECS and event flush.
     fn update(&mut self, _ctx: &mut GameContext) {}
+    /// Called every frame after `Game::draw`, with the same draw context: a
+    /// plugin's own draw pass, in world or (with `DrawSpace::Screen`) screen
+    /// space. Not called in headless mode, which draws nothing.
+    fn draw(&self, _ctx: &mut DrawContext) {}
+}
+
+/// When a system registered with [`PluginContext::add_system`] runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SystemStage {
+    /// Every tick, after input is read, before `Game::update`.
+    PreUpdate,
+    /// Every tick, after `Game::update`, before the ECS and event flush.
+    PostUpdate,
+}
+
+/// A system: a function the engine runs every tick.
+pub(crate) type System = Box<dyn FnMut(&mut GameContext)>;
+
+/// Plugins and the systems they registered, as the tick runs them. Within a
+/// stage, the plugins' hooks run first, then the systems, each in the order
+/// they were added.
+#[derive(Default)]
+pub(crate) struct Plugins {
+    pub(crate) plugins: Vec<Box<dyn Plugin>>,
+    pub(crate) pre_update: Vec<System>,
+    pub(crate) post_update: Vec<System>,
+}
+
+impl Plugins {
+    pub(crate) fn run(&mut self, stage: SystemStage, ctx: &mut GameContext) {
+        match stage {
+            SystemStage::PreUpdate => {
+                for plugin in &mut self.plugins {
+                    plugin.pre_update(ctx);
+                }
+                for system in &mut self.pre_update {
+                    system(ctx);
+                }
+            }
+            SystemStage::PostUpdate => {
+                for plugin in &mut self.plugins {
+                    plugin.update(ctx);
+                }
+                for system in &mut self.post_update {
+                    system(ctx);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn draw(&self, ctx: &mut DrawContext) {
+        for plugin in &self.plugins {
+            plugin.draw(ctx);
+        }
+    }
 }
 
 /// Context passed to Plugin::build() for registration.
@@ -42,14 +132,25 @@ pub struct PluginContext {
     pub(crate) event_registrations: Vec<EventRegistration>,
     /// Resource insertions to apply when GameContext is created.
     pub(crate) resource_insertions: Vec<ResourceInsertion>,
+    pub(crate) systems: Vec<(SystemStage, System)>,
 }
 
 impl PluginContext {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             event_registrations: Vec::new(),
             resource_insertions: Vec::new(),
+            systems: Vec::new(),
         }
+    }
+
+    /// Run `system` every tick at `stage`.
+    pub fn add_system(
+        &mut self,
+        stage: SystemStage,
+        system: impl FnMut(&mut GameContext) + 'static,
+    ) {
+        self.systems.push((stage, Box::new(system)));
     }
 
     /// Register an event type so it can be emitted and read.
@@ -220,18 +321,28 @@ impl EngineBuilder {
         self
     }
 
-    /// Add a plugin to the engine.
+    /// Add a plugin to the engine. Its `build` runs now.
     pub fn add_plugin(mut self, plugin: impl Plugin) -> Self {
         plugin.build(&mut self.plugin_ctx);
         self.plugins.push(Box::new(plugin));
         self
     }
 
-    pub fn build(self) -> Engine {
+    pub fn build(mut self) -> Engine {
+        let mut plugins = Plugins {
+            plugins: self.plugins,
+            ..Default::default()
+        };
+        for (stage, system) in std::mem::take(&mut self.plugin_ctx.systems) {
+            match stage {
+                SystemStage::PreUpdate => plugins.pre_update.push(system),
+                SystemStage::PostUpdate => plugins.post_update.push(system),
+            }
+        }
         Engine {
             config: self.config,
             assets_path: self.assets_path,
-            plugins: self.plugins,
+            plugins,
             plugin_ctx: self.plugin_ctx,
             restore_snapshot: self.restore_snapshot,
             input_bindings: self.input_bindings,
@@ -251,7 +362,7 @@ impl Default for EngineBuilder {
 pub struct Engine {
     config: EngineConfig,
     assets_path: String,
-    plugins: Vec<Box<dyn Plugin>>,
+    plugins: Plugins,
     plugin_ctx: PluginContext,
     restore_snapshot: Option<std::path::PathBuf>,
     input_bindings: Option<ActionBindings>,
@@ -262,6 +373,11 @@ pub struct Engine {
 impl Engine {
     pub fn build() -> EngineBuilder {
         EngineBuilder::new()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_plugins(self) -> Plugins {
+        self.plugins
     }
 
     pub fn run<G: Game>(mut self, game: G) {
@@ -331,8 +447,24 @@ impl Engine {
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        // No speakers at a headless machine: every audio call works, nothing
+        // is heard, and no output device is opened.
         #[cfg(feature = "audio")]
-        game_ctx.audio.open_device();
+        {
+            game_ctx.audio = amigo_audio::AudioManager::new_silent(&self.assets_path);
+            apply_audio_config(&mut game_ctx.audio, &self.config.audio);
+        }
+        // No window: the layout is that of the configured one.
+        game_ctx.set_viewport_info(amigo_render::ViewportInfo::compute(
+            ScaleMode::from_str_config(&self.config.render.scale_mode).unwrap_or_default(),
+            ArtStyle::from_str_config(&self.config.render.art_style),
+            (
+                self.config.render.virtual_width,
+                self.config.render.virtual_height,
+            ),
+            (self.config.window.width, self.config.window.height),
+            1.0,
+        ));
         // No gamepad backend headless: there is no player at the machine,
         // and agents drive input over the API.
         game_ctx.bindings = bindings;
@@ -350,7 +482,7 @@ impl Engine {
         }
 
         // Initialize plugins
-        for plugin in &self.plugins {
+        for plugin in &self.plugins.plugins {
             plugin.init(&mut game_ctx);
         }
 
@@ -497,6 +629,9 @@ impl Engine {
                 }
             }
 
+            #[cfg(feature = "audio")]
+            game_ctx.audio.maintain();
+
             // Handle screenshot requests (no GPU in headless — return error)
             {
                 let mut state = amigo_api::lock_or_recover(&shared_state);
@@ -571,30 +706,121 @@ pub fn load_assets(assets: &mut AssetManager, assets_path: &str) -> bool {
     false
 }
 
-/// Upload any dirty font atlas textures to the GPU.
-/// Handle one hot-reload file change: PNGs under `<assets>/sprites/` are
-/// re-read, re-uploaded to the GPU, and re-registered under their sprite
-/// name (the old texture stays resident until shutdown — acceptable for
-/// dev mode). Other asset types are not live-reloadable yet and get a
-/// visible warning instead of being silently ignored.
+/// Upload a sprite's or a sheet's image with the mip levels it may have, and
+/// return the entries to register.
+fn upload_sprite(
+    assets: &AssetManager,
+    renderer: &mut Renderer,
+    name: &str,
+) -> Option<crate::context::SpriteEntry> {
+    let sprite = assets.sprite(name)?;
+    if sprite.sheet.is_some() {
+        return None;
+    }
+    let source = if sprite.frames.len() == 1 {
+        MipSource::SingleImage
+    } else {
+        MipSource::MultiFrame
+    };
+    let texture = renderer.load_texture_mipped(&sprite.image, name, source);
+    Some(crate::context::SpriteEntry {
+        texture,
+        size: (sprite.width, sprite.height),
+        frames: sprite.frames.clone(),
+        atlas: false,
+    })
+}
+
+/// Upload an atlas sheet once and return an entry for every sprite on it.
+fn upload_sheet(
+    assets: &AssetManager,
+    renderer: &mut Renderer,
+    key: &str,
+) -> Vec<(String, crate::context::SpriteEntry)> {
+    let Some(sheet) = assets.sheet(key) else {
+        return Vec::new();
+    };
+    let source = if sheet.mip_levels > 0 {
+        MipSource::PaddedSheet {
+            levels: sheet.mip_levels,
+        }
+    } else {
+        MipSource::MultiFrame
+    };
+    let texture = renderer.load_texture_mipped(&sheet.image, key, source);
+    sheet
+        .sprites
+        .iter()
+        .filter_map(|name| {
+            let sprite = assets.sprite(name)?;
+            Some((
+                name.clone(),
+                crate::context::SpriteEntry {
+                    texture,
+                    size: sheet.image.dimensions(),
+                    frames: sprite.frames.clone(),
+                    atlas: true,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Upload every loaded sprite and sheet and register them so games can draw
+/// them by name.
+fn upload_all_sprites(game_ctx: &mut GameContext, renderer: &mut Renderer) {
+    let mut entries = Vec::new();
+    for key in game_ctx
+        .assets
+        .sheets()
+        .iter()
+        .map(|s| s.key.clone())
+        .collect::<Vec<_>>()
+    {
+        entries.extend(upload_sheet(&game_ctx.assets, renderer, &key));
+    }
+    for name in game_ctx.assets.sprite_names().to_vec() {
+        if let Some(entry) = upload_sprite(&game_ctx.assets, renderer, &name) {
+            entries.push((name, entry));
+        }
+    }
+    for (name, entry) in entries {
+        game_ctx.register_sprite(name, entry);
+    }
+}
+
+/// Handle one hot-reload file change: a PNG or Aseprite file under
+/// `<assets>/sprites/` is re-read, re-uploaded to the GPU, and re-registered
+/// under its sprite name; a change to an atlas manifest or its sheet image
+/// reloads all of that manifest's sprites. Old textures stay resident until
+/// shutdown — acceptable for dev mode. Other asset types are not
+/// live-reloadable yet and get a visible warning instead of being silently
+/// ignored.
 fn reload_changed_asset(
     path: &std::path::Path,
     renderer: &mut Renderer,
     game_ctx: &mut GameContext,
 ) {
-    // Reload first, then register: the borrow of `game_ctx.assets` has to end
-    // before `register_sprite_texture` takes `&mut game_ctx`.
-    let reloaded = game_ctx.assets.reload_sprite(path).map(|sprite| {
-        (
-            sprite.name.clone(),
-            sprite.image.clone(),
-            sprite.width,
-            sprite.height,
-        )
-    });
-    if let Some((name, image, width, height)) = reloaded {
-        let tex_id = renderer.load_texture(&image, &name);
-        game_ctx.register_sprite_texture(name.clone(), tex_id, width, height);
+    if let Some(manifest) = game_ctx.assets.atlas_for_path(path) {
+        match game_ctx.assets.load_atlas_file(&manifest) {
+            Ok(key) => {
+                for (name, entry) in upload_sheet(&game_ctx.assets, renderer, &key) {
+                    game_ctx.register_sprite(name, entry);
+                }
+                info!("Hot reload: atlas '{key}' reloaded");
+            }
+            Err(e) => warn!("Hot reload: {e}"),
+        }
+        return;
+    }
+    let reloaded = game_ctx
+        .assets
+        .reload_sprite(path)
+        .map(|sprite| sprite.name.clone());
+    if let Some(name) = reloaded {
+        if let Some(entry) = upload_sprite(&game_ctx.assets, renderer, &name) {
+            game_ctx.register_sprite(name.clone(), entry);
+        }
         info!("Hot reload: sprite '{}' reloaded", name);
     } else {
         warn!(
@@ -619,6 +845,56 @@ fn open_editor_session(ctx: &mut GameContext) {
         info!("Editor: {status}");
     }
     ctx.resources.insert(session);
+}
+
+/// The level being edited, over the game: its tiles drawn with the level's
+/// tileset when it names one the game has loaded (coloured squares
+/// otherwise), then the grid, zones, paths, entities, selection and cursor.
+#[cfg(feature = "editor")]
+fn draw_editor_overlay(
+    draw: &mut DrawContext,
+    session: &amigo_editor::EditorSession,
+    game_ctx: &GameContext,
+    view: amigo_core::Rect,
+) {
+    let level = &session.level;
+    let tileset = session
+        .tileset()
+        .filter(|name| game_ctx.find_sprite_texture(name).is_some());
+    if let Some(tileset) = tileset {
+        let ts = level.tile_size.max(1) as f32;
+        let columns = level
+            .metadata
+            .get("tileset_columns")
+            .and_then(|c| c.parse().ok())
+            .unwrap_or(0);
+        for layer in level.layers.iter().filter(|l| l.visible) {
+            let mut tiles =
+                amigo_tilemap::TileLayer::new(layer.name.clone(), level.width, level.height);
+            tiles.tiles = layer
+                .tiles
+                .iter()
+                .map(|&t| amigo_tilemap::TileId(u32::from(t)))
+                .collect();
+            draw.draw_tilemap_sprite(&tiles, ts, ts, tileset, columns);
+        }
+    }
+    for item in session.overlay_items(view, tileset.is_none()) {
+        match item {
+            amigo_editor::OverlayItem::Rect(rect, color) => draw.draw_rect(rect, color),
+            amigo_editor::OverlayItem::Line {
+                a,
+                b,
+                thickness,
+                color,
+            } => draw.draw_line(
+                RenderVec2::new(a.0, a.1),
+                RenderVec2::new(b.0, b.1),
+                thickness,
+                color,
+            ),
+        }
+    }
 }
 
 /// F9: open or close the editor. Opening releases everything the game held,
@@ -648,6 +924,14 @@ pub(crate) fn run_editor_action(ctx: &mut GameContext, action: amigo_editor::Edi
     let Some(session) = editor_session(ctx) else {
         return;
     };
+    if let amigo_editor::EditorAction::SaveEmitter(index) = action {
+        let result = crate::editor_preview::save_emitter(session, index);
+        session.status = Some(match result {
+            Ok(path) => format!("Saved {}", path.display()),
+            Err(e) => e,
+        });
+        return;
+    }
     let result = session.perform(action);
     let status = session.status.clone();
     match result {
@@ -664,13 +948,38 @@ pub(crate) fn run_editor_action(ctx: &mut GameContext, action: amigo_editor::Edi
     }
 }
 
-fn upload_font_atlases(game_ctx: &mut GameContext, renderer: &mut Renderer) {
-    for font_atlas in game_ctx.fonts.iter_mut() {
-        if font_atlas.dirty || font_atlas.texture_id.is_none() {
-            let image = font_atlas.to_rgba_image();
-            let tex_id = renderer.load_texture(&image, &format!("font_{}", font_atlas.id.0));
-            font_atlas.texture_id = Some(tex_id);
-            font_atlas.dirty = false;
+/// Whether the GPU lacks some of `page`: it is new, or gained glyphs since its
+/// last upload.
+fn page_needs_upload(page: &amigo_render::FontPage) -> bool {
+    page.dirty || !page.is_uploaded()
+}
+
+/// The texture ids of the font pages [`upload_font_pages`] would upload now.
+#[cfg(test)]
+pub(crate) fn pending_font_pages(
+    fonts: &amigo_render::FontManager,
+) -> Vec<amigo_render::TextureId> {
+    let mut pending = Vec::new();
+    for atlas in fonts.all_atlases() {
+        for page in atlas.pages().iter() {
+            if page_needs_upload(page) {
+                pending.push(page.texture_id);
+            }
+        }
+    }
+    pending
+}
+
+/// Upload every new or changed font page under its own id. Runs after all of
+/// a frame's drawing and before the batch is built, so every glyph quad of
+/// the frame points at a texture that exists and contains it.
+fn upload_font_pages(fonts: &amigo_render::FontManager, renderer: &mut Renderer) {
+    for atlas in fonts.all_atlases() {
+        let mut pages = atlas.pages();
+        for page in pages.iter_mut() {
+            if page_needs_upload(page) {
+                renderer.upload_font_page(page);
+            }
         }
     }
 }
@@ -724,6 +1033,53 @@ fn recover_from_surface_error(renderer: &mut Renderer, err: SurfaceError) {
     }
 }
 
+/// Apply `[audio]` from `amigo.toml`: master, music and sfx volumes. Ambient
+/// starts at 1.0.
+#[cfg(feature = "audio")]
+pub(crate) fn apply_audio_config(
+    audio: &mut amigo_audio::AudioManager,
+    config: &crate::config::AudioConfig,
+) {
+    use amigo_audio::{Bus, Fade};
+    audio.set_master_volume(config.master_volume, Fade::NONE);
+    audio.set_bus_volume(Bus::Music, config.music_volume, Fade::NONE);
+    audio.set_bus_volume(Bus::Sfx, config.sfx_volume, Fade::NONE);
+    audio.set_bus_volume(Bus::Ambient, 1.0, Fade::NONE);
+}
+
+/// Recompute the window layout for the game: under `ScaleMode::Expand` the
+/// virtual width follows the window's shape, which the camera takes on
+/// before the next `update`.
+fn refresh_viewport(
+    game_ctx: &mut GameContext,
+    renderer: &Renderer,
+    window: &Window,
+    configured: (u32, u32),
+) {
+    let mode = renderer.scale_mode();
+    let size = window.inner_size();
+    let base = if mode == ScaleMode::Expand {
+        configured
+    } else {
+        (
+            game_ctx.camera.virtual_width.round().max(1.0) as u32,
+            game_ctx.camera.virtual_height.round().max(1.0) as u32,
+        )
+    };
+    let info = amigo_render::ViewportInfo::compute(
+        mode,
+        renderer.art_style,
+        base,
+        (size.width, size.height),
+        window.scale_factor(),
+    );
+    if mode == ScaleMode::Expand {
+        game_ctx.camera.virtual_width = info.virtual_size.0;
+        game_ctx.camera.virtual_height = info.virtual_size.1;
+    }
+    game_ctx.set_viewport_info(info);
+}
+
 /// The F8 overlay's lines for a network game.
 fn net_overlay_lines(status: &net::NetStatus) -> Vec<String> {
     if status.mode == net::NetMode::Off {
@@ -775,6 +1131,7 @@ fn render_waiting_screen(state: &mut EngineState, message: &str) {
         view.y + view.h / 2.0,
         Color::WHITE,
     );
+    upload_font_pages(&state.game_ctx.fonts, &mut state.renderer);
     for sprite in &state.sprite_draw_list {
         state.renderer.batcher.push(sprite.clone());
     }
@@ -790,6 +1147,9 @@ struct EngineState {
     debug: DebugOverlay,
     hot_reloader: Option<HotReloader>,
     sprite_draw_list: Vec<SpriteInstance>,
+    /// The game's screen-space draws (`DrawSpace::Screen`), rebuilt each
+    /// frame and drawn in the UI pass before the widgets.
+    screen_draw_list: Vec<SpriteInstance>,
     /// Sprites for the screen-space UI pass, rebuilt each frame.
     ui_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
@@ -822,7 +1182,7 @@ struct EngineApp {
     config: EngineConfig,
     assets_path: String,
     stack: GameStack,
-    plugins: Vec<Box<dyn Plugin>>,
+    plugins: Plugins,
     plugin_ctx: Option<PluginContext>,
     state: Option<EngineState>,
     /// Dev snapshot to restore once the contexts exist, from
@@ -865,7 +1225,10 @@ impl ApplicationHandler for EngineApp {
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
         #[cfg(feature = "audio")]
-        game_ctx.audio.open_device();
+        {
+            game_ctx.audio.open_device();
+            apply_audio_config(&mut game_ctx.audio, &self.config.audio);
+        }
 
         // `[render] scale_mode` and `art_style` were parsed and never read:
         // every window stretched the virtual resolution, and the pixel snap
@@ -875,7 +1238,7 @@ impl ApplicationHandler for EngineApp {
             ScaleMode::from_str_config(&self.config.render.scale_mode).unwrap_or_else(|| {
                 warn!(
                     "Unknown render.scale_mode {:?}; using \"pixel_perfect\" \
-                     (expected \"pixel_perfect\", \"fit\" or \"stretch\")",
+                     (expected \"pixel_perfect\", \"fit\", \"stretch\" or \"expand\")",
                     self.config.render.scale_mode
                 );
                 ScaleMode::PixelPerfect
@@ -884,6 +1247,15 @@ impl ApplicationHandler for EngineApp {
         renderer.set_scale_mode(scale_mode);
         renderer.set_art_style(art_style);
         game_ctx.camera.pixel_snap = art_style.pixel_snap();
+        refresh_viewport(
+            &mut game_ctx,
+            &renderer,
+            &window,
+            (
+                self.config.render.virtual_width,
+                self.config.render.virtual_height,
+            ),
+        );
 
         // GameContext::new leaves gamepads disabled so tests touch no device
         // API; a windowed game has a player who may hold one.
@@ -913,25 +1285,20 @@ impl ApplicationHandler for EngineApp {
             None
         };
 
+        // Font pages take their texture ids from the renderer, so a page made
+        // during `Game::draw` already has its final id.
+        game_ctx.fonts.set_texture_ids(renderer.texture_ids());
+        game_ctx
+            .textures_mut()
+            .set_texture_ids(renderer.texture_ids());
         // Load built-in pixel font at 7px (native size)
         if let Err(e) = game_ctx.fonts.load_builtin(7.0) {
             error!("Failed to load built-in font: {}", e);
         }
 
-        // Upload loaded sprites to GPU and register them so games can draw
-        // them by name via DrawContext::draw_sprite.
-        for name in game_ctx.assets.sprite_names().to_vec() {
-            let uploaded = game_ctx.assets.sprite(&name).map(|sprite| {
-                (
-                    renderer.load_texture(&sprite.image, &name),
-                    sprite.width,
-                    sprite.height,
-                )
-            });
-            if let Some((tex_id, w, h)) = uploaded {
-                game_ctx.register_sprite_texture(name, tex_id, w, h);
-            }
-        }
+        // Upload loaded sprites and sheets to GPU and register them so games
+        // can draw them by name via DrawContext::draw_sprite.
+        upload_all_sprites(&mut game_ctx, &mut renderer);
 
         // Apply plugin registrations (events, resources)
         if let Some(plugin_ctx) = self.plugin_ctx.take() {
@@ -944,12 +1311,12 @@ impl ApplicationHandler for EngineApp {
         }
 
         // Initialize plugins
-        for plugin in &self.plugins {
+        for plugin in &self.plugins.plugins {
             plugin.init(&mut game_ctx);
         }
 
         // Upload font atlas textures to GPU
-        upload_font_atlases(&mut game_ctx, &mut renderer);
+        upload_font_pages(&game_ctx.fonts, &mut renderer);
 
         // A restored dev session skips the splash: `amigo dev` restarts the
         // process on every source change, and sitting through the logo each time
@@ -1016,6 +1383,7 @@ impl ApplicationHandler for EngineApp {
             debug: DebugOverlay::new(),
             hot_reloader,
             sprite_draw_list: Vec::new(),
+            screen_draw_list: Vec::new(),
             ui_draw_list: Vec::new(),
             last_frame: Instant::now(),
             accumulator: 0.0,
@@ -1078,6 +1446,15 @@ impl ApplicationHandler for EngineApp {
 
             WindowEvent::Resized(size) => {
                 state.renderer.resize(size.width, size.height);
+                refresh_viewport(
+                    &mut state.game_ctx,
+                    &state.renderer,
+                    &state.window,
+                    (
+                        self.config.render.virtual_width,
+                        self.config.render.virtual_height,
+                    ),
+                );
             }
 
             // Releases that happen while another window has focus never
@@ -1328,6 +1705,15 @@ impl ApplicationHandler for EngineApp {
 
                 state.game_ctx.time.frame_dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
+                refresh_viewport(
+                    &mut state.game_ctx,
+                    &state.renderer,
+                    &state.window,
+                    (
+                        self.config.render.virtual_width,
+                        self.config.render.virtual_height,
+                    ),
+                );
 
                 // Gamepads: drain this frame's events once. Like keyboard
                 // presses they stay visible until a tick consumes them.
@@ -1393,8 +1779,10 @@ impl ApplicationHandler for EngineApp {
 
                 state.game_ctx.time.alpha = budget.alpha;
 
-                // Re-upload dirty font atlases
-                upload_font_atlases(&mut state.game_ctx, &mut state.renderer);
+                // Free the slots of finished sounds; apply volumes the game
+                // wrote directly.
+                #[cfg(feature = "audio")]
+                state.game_ctx.audio.maintain();
 
                 // Camera: game code sets target/shake/zoom on GameContext.camera.
                 // Swap it into the renderer for update + render, then swap back.
@@ -1423,6 +1811,7 @@ impl ApplicationHandler for EngineApp {
                     let world = state.game_ctx.input.mouse_world_pos();
                     let pointer = amigo_editor::PointerState {
                         world: (world.x, world.y),
+                        shift: state.modifiers.shift_key(),
                         ..state.editor_pointer
                     };
                     state.editor_pointer.pressed = false;
@@ -1438,14 +1827,56 @@ impl ApplicationHandler for EngineApp {
                     }
                 }
 
+                // The editor's live preview of light and emitter entities.
+                #[cfg(feature = "editor")]
+                let game_light_count = {
+                    let session = state
+                        .game_ctx
+                        .resources
+                        .get::<amigo_editor::EditorSession>()
+                        .filter(|s| s.state.active);
+                    let count = state.game_ctx.lighting.lights.len();
+                    if let Some(session) = session {
+                        let ts = session.level.tile_size as f32;
+                        let lights: Vec<_> = session
+                            .level
+                            .entities
+                            .iter()
+                            .filter_map(|e| crate::editor_preview::light(e, ts))
+                            .collect();
+                        state.game_ctx.lighting.lights.extend(lights);
+                    }
+                    let session = state
+                        .game_ctx
+                        .resources
+                        .get::<amigo_editor::EditorSession>()
+                        .filter(|s| s.state.active);
+                    crate::editor_preview::sync_emitters(&mut state.game_ctx.particles, session);
+                    count
+                };
+
                 // Lighting: hand this frame's lights to the renderer. Swapped
                 // rather than cloned — a game with many lights should not pay for
                 // a per-frame Vec copy.
                 std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
 
-                // Post-processing: only re-upload when the game changed the
-                // stack, so an unchanged stack costs one comparison per frame
-                // instead of a Vec clone.
+                // Post-processing: shaders registered or replaced since the
+                // last frame are compiled now, and the stack is only copied
+                // when the game changed it, so an unchanged stack costs one
+                // comparison per frame instead of a Vec clone.
+                {
+                    let renderer = &mut state.renderer;
+                    renderer
+                        .post_process
+                        .sync_shaders(&renderer.device, state.game_ctx.post_shaders());
+                    renderer.post_process.set_virtual_size(
+                        renderer.camera.virtual_width,
+                        renderer.camera.virtual_height,
+                    );
+                    renderer
+                        .post_process
+                        .set_time(state.game_ctx.time.elapsed as f32);
+                }
                 if state.renderer.post_process.effects() != state.game_ctx.post_effects.as_slice() {
                     state
                         .renderer
@@ -1455,27 +1886,42 @@ impl ApplicationHandler for EngineApp {
 
                 // Render
                 state.sprite_draw_list.clear();
+                state.screen_draw_list.clear();
+                let restore_camera;
                 {
                     let _draw_span = info_span!("game_draw").entered();
-                    let camera_pos = state.renderer.camera.effective_position();
-                    let vw = state.renderer.camera.virtual_width;
-                    let vh = state.renderer.camera.virtual_height;
                     let alpha = state.game_ctx.time.alpha;
                     let white_tex = state.renderer.white_texture_id;
 
                     let mut draw_ctx = DrawContext::new(
                         &mut state.sprite_draw_list,
                         &state.game_ctx,
-                        camera_pos,
-                        vw,
-                        vh,
+                        state.renderer.camera.effective_position(),
+                        state.renderer.camera.virtual_width,
+                        state.renderer.camera.virtual_height,
                         alpha,
                         white_tex,
                     )
-                    .with_view(state.renderer.camera.view_rect());
+                    .with_camera(&state.renderer.camera)
+                    .with_screen_list(&mut state.screen_draw_list)
+                    .with_render_scale(state.renderer.render_scale())
+                    .with_art_style(state.renderer.art_style);
                     if let Some(active) = self.stack.top() {
                         active.draw(&mut draw_ctx);
                     }
+                    // Plugins draw over the game, each with a fresh space
+                    // and z.
+                    draw_ctx.set_space(DrawSpace::World);
+                    draw_ctx.set_parallax(1.0, 1.0);
+                    draw_ctx.set_z(0);
+                    self.plugins.draw(&mut draw_ctx);
+                    // A camera set from `draw` holds for this frame's
+                    // projection, and for everything drawn after the game.
+                    let overrides = draw_ctx.frame_overrides();
+                    draw_ctx.set_space(DrawSpace::World);
+                    draw_ctx.set_parallax(1.0, 1.0);
+                    draw_ctx.set_z(0);
+                    restore_camera = overrides.apply(&mut state.renderer.camera);
 
                     // The level being edited, over the game: tile preview,
                     // grid, entity markers and cursor.
@@ -1486,9 +1932,12 @@ impl ApplicationHandler for EngineApp {
                         .get::<amigo_editor::EditorSession>()
                         && session.state.active
                     {
-                        for (rect, color) in session.overlay(state.renderer.camera.view_rect()) {
-                            draw_ctx.draw_rect(rect, color);
-                        }
+                        draw_editor_overlay(
+                            &mut draw_ctx,
+                            session,
+                            &state.game_ctx,
+                            state.renderer.camera.view_rect(),
+                        );
                     }
                 }
 
@@ -1518,36 +1967,35 @@ impl ApplicationHandler for EngineApp {
                 }
                 let show_entity_ids = state.debug.visible && state.debug.show_entity_ids;
                 if !overlay_lines.is_empty() || show_entity_ids {
-                    let view = state.renderer.camera.view_rect();
-                    let camera_pos = state.renderer.camera.effective_position();
-                    let vw = state.renderer.camera.virtual_width;
-                    let vh = state.renderer.camera.virtual_height;
                     let mut draw_ctx = DrawContext::new(
                         &mut state.sprite_draw_list,
                         &state.game_ctx,
-                        camera_pos,
-                        vw,
-                        vh,
+                        state.renderer.camera.effective_position(),
+                        state.renderer.camera.virtual_width,
+                        state.renderer.camera.virtual_height,
                         state.game_ctx.time.alpha,
                         white_tex,
                     )
-                    .with_view(view);
+                    .with_camera(&state.renderer.camera)
+                    .with_screen_list(&mut state.screen_draw_list);
 
-                    // Everything draws in world space, so anchor to the visible
-                    // rect's top-left instead of (0,0) — otherwise the overlay
-                    // scrolls off with the camera.
-                    let (x, mut y) = (view.x + 4.0, view.y + 4.0);
-                    let line_height = 9.0;
-                    for (text, color) in &overlay_lines {
-                        draw_ctx.draw_text(text, x, y, *color);
-                        y += line_height;
-                    }
+                    // The text panel is screen space, so it neither scrolls
+                    // with the camera nor goes through post-processing.
+                    draw_ctx.in_space(DrawSpace::Screen, |draw| {
+                        let (x, mut y) = (4.0, 4.0);
+                        let line_height = 9.0;
+                        for (text, color) in &overlay_lines {
+                            draw.draw_text(text, x, y, *color);
+                            y += line_height;
+                        }
+                    });
 
                     // F5: entity ids at their positions. This is the one visual
                     // debug layer the engine can draw from its own data — grid,
                     // collision and paths all need tilemap/collision state that
                     // lives in game code, so those flags stay for games to read.
                     if show_entity_ids {
+                        let view = draw_ctx.view_rect();
                         for (id, pos) in state.game_ctx.world.positions.iter() {
                             let (px, py) = (pos.0.x.to_num::<f32>(), pos.0.y.to_num::<f32>());
                             if px < view.x
@@ -1568,8 +2016,10 @@ impl ApplicationHandler for EngineApp {
                 }
 
                 // UI goes into its own batch, drawn after post-processing in
-                // screen space (conventions A.6). `UiDrawCommand` had no consumer
-                // before this, so every widget a game built drew nothing.
+                // screen space (conventions A.6): the game's screen-space
+                // draws first, then the `ctx.ui` widgets, so at equal z the
+                // stable sort puts widgets on top. `UiDrawCommand` had no
+                // consumer before, so every widget a game built drew nothing.
                 state.ui_draw_list.clear();
                 crate::ui_bridge::emit_ui_sprites(
                     state.game_ctx.ui.draw_commands(),
@@ -1577,8 +2027,18 @@ impl ApplicationHandler for EngineApp {
                     &mut state.ui_draw_list,
                     white_tex,
                 );
-                for sprite in &state.ui_draw_list {
+                for sprite in state.screen_draw_list.iter().chain(&state.ui_draw_list) {
                     state.renderer.ui_batcher.push(sprite.clone());
+                }
+
+                // Glyphs first used this frame, by the game, the overlay or
+                // the UI, and textures made this frame go up before the batch
+                // is built.
+                upload_font_pages(&state.game_ctx.fonts, &mut state.renderer);
+                for (id, image) in state.game_ctx.textures().take_pending() {
+                    state
+                        .renderer
+                        .upload_texture(id, &image, amigo_render::SamplerMode::Nearest);
                 }
 
                 // Process screenshot requests from API (before render clears batcher)
@@ -1674,9 +2134,13 @@ impl ApplicationHandler for EngineApp {
                     s.snapshot.draw_calls = state.renderer.draw_call_count();
                 }
 
-                // Swap camera and lights back so game code sees them next tick.
+                // Swap camera and lights back so game code sees them next tick,
+                // without the position `draw` overrode for this frame.
+                state.renderer.camera.position = restore_camera;
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
+                #[cfg(feature = "editor")]
+                state.game_ctx.lighting.lights.truncate(game_light_count);
 
                 // Publish pause/speed/camera for `engine.status` and `camera.get`.
                 // After the swap-back, so the camera reported is the updated one.
@@ -1713,7 +2177,96 @@ impl ApplicationHandler for EngineApp {
 
 #[cfg(test)]
 mod tests {
-    use super::load_input_bindings;
+    use super::{load_input_bindings, pending_font_pages};
+
+    #[cfg(feature = "audio")]
+    #[test]
+    fn the_audio_config_sets_the_volumes() {
+        let mut audio = amigo_audio::AudioManager::new_silent("assets");
+        let config = crate::config::AudioConfig {
+            master_volume: 0.8,
+            sfx_volume: 0.3,
+            music_volume: 0.6,
+        };
+        super::apply_audio_config(&mut audio, &config);
+        assert_eq!(audio.bus_volume(amigo_audio::Bus::Sfx), 0.3);
+        assert_eq!(audio.bus_volume(amigo_audio::Bus::Music), 0.6);
+        assert_eq!(audio.bus_volume(amigo_audio::Bus::Ambient), 1.0);
+        assert_eq!(audio.master_volume(), 0.8);
+    }
+    use crate::context::{DrawContext, GameContext};
+    use amigo_core::RenderVec2;
+    use amigo_render::TextureId;
+
+    fn mark_all_uploaded(ctx: &GameContext) {
+        for atlas in ctx.fonts.all_atlases() {
+            for page in atlas.pages().iter_mut() {
+                page.mark_uploaded();
+            }
+        }
+    }
+
+    fn draw_text(ctx: &GameContext, text: &str, px: f32) -> Vec<amigo_render::SpriteInstance> {
+        let mut sprites = Vec::new();
+        let mut draw = DrawContext::new(
+            &mut sprites,
+            ctx,
+            RenderVec2::ZERO,
+            320.0,
+            180.0,
+            0.0,
+            TextureId(0),
+        );
+        let style = amigo_render::TextStyle {
+            size_px: Some(px),
+            ..Default::default()
+        };
+        draw.draw_text_ex(text, RenderVec2::ZERO, &style);
+        sprites
+    }
+
+    #[test]
+    fn a_glyph_first_used_in_draw_is_queued_for_upload() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.fonts
+            .load_font(epaint_default_fonts::HACK_REGULAR, 12.0)
+            .expect("font");
+        mark_all_uploaded(&ctx);
+        assert!(pending_font_pages(&ctx.fonts).is_empty());
+
+        let sprites = draw_text(&ctx, "ß", 12.0);
+        assert_eq!(sprites.len(), 1);
+        let pending = pending_font_pages(&ctx.fonts);
+        assert_eq!(pending, vec![sprites[0].texture_id]);
+    }
+
+    #[test]
+    fn a_page_filled_mid_frame_keeps_earlier_quads_valid() {
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        ctx.fonts
+            .load_font(epaint_default_fonts::HACK_REGULAR, 12.0)
+            .expect("font");
+        mark_all_uploaded(&ctx);
+
+        let early = draw_text(&ctx, "Ab", 150.0);
+        let alphabet: String = ('a'..='z').chain('À'..='ÿ').collect();
+        let late = draw_text(&ctx, &alphabet, 150.0);
+        let again = draw_text(&ctx, "Ab", 150.0);
+        for (a, b) in early.iter().zip(&again) {
+            assert_eq!(a.texture_id, b.texture_id);
+            assert_eq!(
+                (a.uv_x, a.uv_y, a.uv_w, a.uv_h),
+                (b.uv_x, b.uv_y, b.uv_w, b.uv_h)
+            );
+        }
+        let pending = pending_font_pages(&ctx.fonts);
+        let mut pages: Vec<TextureId> = early.iter().chain(&late).map(|s| s.texture_id).collect();
+        pages.dedup();
+        assert!(pages.len() >= 2, "the alphabet needed a second page");
+        for page in pages {
+            assert!(pending.contains(&page), "{page:?} not queued");
+        }
+    }
     use amigo_input::{ActionBindings, InputBinding};
 
     fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {

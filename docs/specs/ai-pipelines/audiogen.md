@@ -1,8 +1,8 @@
 ---
-status: partial
+status: done
 crate: amigo_audiogen
 depends_on: ["engine/audio"]
-last_updated: 2026-03-18
+last_updated: 2026-10-07
 ---
 
 # Audio Generation Pipeline (amigo_audiogen)
@@ -327,26 +327,28 @@ impl CleanModePipeline {
 
 ### MCP Tools (`tools.rs`)
 
-MCP tools exposed via `list_tools()` and dispatched via `dispatch_tool()`. A tool that fails or is not implemented returns an error (an MCP `isError` result); failures used to come back as successful results with an `"error"` field, and the unimplemented tools returned plausible paths to files that were never written. The MCP server starts ComfyUI before the tools that need it if nothing answers.
+MCP tools exposed via `list_tools()` and dispatched via `dispatch_tool()`. A tool that fails returns an error (an MCP `isError` result); failures used to come back as successful results with an `"error"` field, and the unimplemented tools returned plausible paths to files that were never written. The MCP server starts ComfyUI before the tools that need it if nothing answers.
+
+The processing tools (`process`, `loop_trim`, `normalize`, `convert`, `preview`) run locally without a model: they read WAV (8/16/24/32-bit PCM, 32/64-bit float, extensible) and write 16-bit PCM WAV (`wav.rs`, `audio_edit.rs`); other input formats are converted first. Inputs are paths relative to the project. The tools that start from a track (`generate_stem`, `generate_variation`, `extend_track`, `remix`) check the input exists before contacting ComfyUI and upload it for a `LoadAudio` node (`generation.rs`).
 
 | Tool | Description |
 |------|-------------|
 | `amigo_audiogen_generate_music` | Generate a music track using ACE-Step |
 | `amigo_audiogen_generate_sfx` | Generate sound effects using AudioGen |
 | `amigo_audiogen_split_stems` | Split audio into drums/bass/vocals/other via Demucs (`amigo setup --only audio`) |
-| `amigo_audiogen_process` | Post-process audio (trim, normalize, BPM, loop). **Not implemented:** returns an error. |
+| `amigo_audiogen_process` | Trim silence (below -50 dBFS), normalise to -1 dBFS, detect BPM, cut a seamless loop (whole bars when the tempo is known); writes `assets/generated/audio/processed/<name>_processed.wav` |
 | `amigo_audiogen_list_styles` | List available world audio styles |
 | `amigo_audiogen_server_status` | Check ACE-Step and AudioGen server status |
-| `amigo_audiogen_generate_core_melody` | Generate core melody for clean-mode workflow. **Not implemented:** returns an error. |
-| `amigo_audiogen_generate_stem` | Generate individual stem conditioned on melody. **Not implemented:** returns an error. |
-| `amigo_audiogen_generate_variation` | Generate a variation of an existing track. **Not implemented:** returns an error. |
-| `amigo_audiogen_extend_track` | Extend a track by generating a continuation. **Not implemented:** returns an error. |
-| `amigo_audiogen_remix` | Remix a track with different genre/BPM. **Not implemented:** returns an error. |
-| `amigo_audiogen_generate_ambient` | Generate ambient/atmosphere loop. **Not implemented:** returns an error. |
-| `amigo_audiogen_loop_trim` | Trim audio to optimal loop point. **Not implemented:** returns an error. |
-| `amigo_audiogen_normalize` | Normalize audio to target dB level. **Not implemented:** returns an error. |
-| `amigo_audiogen_convert` | Convert audio format (WAV, OGG, FLAC). **Not implemented:** returns an error. |
-| `amigo_audiogen_preview` | Generate short preview clip. **Not implemented:** returns an error. |
+| `amigo_audiogen_generate_core_melody` | One lead instrument, no drums, in the given key and tempo (ACE-Step) → `assets/generated/audio/melody/` |
+| `amigo_audiogen_generate_stem` | A stem (bass, drums, pads…) conditioned on the melody file through a `LoadAudio` reference (strength 0.8) → `stems/<melody>_<stem>.wav` |
+| `amigo_audiogen_generate_variation` | The input as reference with conditioning `1 - strength`, optional seed → `variations/` |
+| `amigo_audiogen_extend_track` | Generates `extend_secs` (+1 s) of continuation conditioned on the input and appends it with a 1 s equal-power crossfade (WAV input) → `extended/<name>_extended.wav` |
+| `amigo_audiogen_remix` | The input re-imagined in a genre and tempo (conditioning 0.5) → `remixes/` |
+| `amigo_audiogen_generate_ambient` | A soundscape (Stable Audio); with `looping` (default) its last second is crossfaded into its start → `ambient/` |
+| `amigo_audiogen_loop_trim` | Cut near the target length on a quiet frame, with a 20 ms crossfade of what followed into the start → `processed/<name>_loop.wav` |
+| `amigo_audiogen_normalize` | Peak-normalise all channels to `target_db` (-60..0); reports the peak before |
+| `amigo_audiogen_convert` | WAV → WAV here; OGG, FLAC and MP3 through `ffmpeg` (`AMIGO_FFMPEG` or `PATH`) → `assets/generated/audio/converted/` |
+| `amigo_audiogen_preview` | The loudest `preview_secs` window with 50 ms fades → `processed/<name>_preview.wav` |
 | `amigo_audiogen_list_models` | List available AI models |
 | `amigo_audiogen_queue_status` | Check generation queue status |
 

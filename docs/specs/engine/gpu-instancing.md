@@ -1,17 +1,23 @@
 ---
-status: partial
+status: done
 crate: amigo_render
 depends_on: ["engine/rendering"]
-last_updated: 2026-08-03
+last_updated: 2026-10-07
 ---
 
 # GPU Instancing
 
-> **Status: types only, not in the render path.** `InstanceData` and
-> `InstancedBatch` exist in `crates/amigo_render/src/instancing.rs` and are
-> re-exported, but nothing constructs them: the renderer has one non-instanced
-> sprite pass. Batching a scene through them still has to be written, so nothing
-> in the engine or a game currently benefits from this module.
+> **Status: done.** `SpriteBatcher::build_hybrid` splits each frame into
+> indexed and instanced draws in painter's order, and the renderer draws the
+> instanced ones with one call each, in the world pass and the UI pass, with one
+> instanced pipeline per blend mode. The sections below mark where the code
+> differs from the original proposal ("Actual").
+>
+> One proposal is not implemented: per-chunk cached instance data for
+> tilemaps. Tile layers are drawn immediate-mode every frame
+> (`DrawContext::draw_tilemap_sprite`). A visible layer is one long run of
+> same-texture tiles, so it takes the instanced path, but its instance data is
+> rebuilt every frame.
 
 ## Purpose
 
@@ -158,6 +164,42 @@ pub struct InstancedBatch {
 }
 ```
 
+### Actual
+
+```rust
+// amigo_render::sprite_batcher
+pub enum DrawBatch {
+    Indexed(SpriteBatch),
+    Instanced(InstancedBatch),
+}
+
+impl SpriteBatcher {
+    /// Sorted by z (stable). A run of sprites sharing texture and blend mode
+    /// is instanced when it has at least `threshold` sprites and every one
+    /// passes `InstanceData::from_sprite`; otherwise it is indexed.
+    pub fn build_hybrid(&mut self, threshold: u32) -> Vec<DrawBatch>;
+    pub fn instances(&self) -> &[InstanceData];
+}
+
+// amigo_render::instancing
+impl InstanceData {
+    /// `None` for a rotated sprite, explicit geometry or per-sprite shaders;
+    /// the pivot is folded into the position.
+    pub fn from_sprite(sprite: &SpriteInstance) -> Option<InstanceData>;
+    pub fn desc() -> wgpu::VertexBufferLayout<'static>;
+}
+pub struct InstancedBatch { pub texture_id, pub blend: BlendMode, pub instance_offset, pub instance_count }
+pub const INSTANCED_SPRITE_SHADER: &str;
+pub struct InstanceBuffer; // new, upload, buffer, count, flip, as proposed
+
+// amigo_render::Renderer
+pub instancing_threshold: u32; // default 64; u32::MAX turns instancing off
+```
+
+The instanced shader reads `flags` as a `u32` attribute and `z_order` as a
+separate `f32` one (the proposed `flags_z: vec2<f32>` would read the flag bits
+as a float). Flips swap UVs on the same quad, as the indexed path does.
+
 ## Behavior
 
 ### Instanced Rendering Path
@@ -278,14 +320,15 @@ data.  The GPU does more work per vertex but parallelizes trivially.
 
 ## Open Questions
 
-1. Should the instancing threshold be configurable at runtime, or determined
-   automatically by profiling?
-2. Should `InstanceData` include a rotation field, or is axis-aligned sufficient
-   for 2D pixel art?
-3. Should the instance buffer be per-texture (one buffer per atlas) or global
-   (one buffer with all instances, offset per batch)?
-4. Is double buffering sufficient, or should we use triple buffering for
-   pipelined frames?
+Settled by the implementation:
+
+1. The threshold is a runtime field, `Renderer::instancing_threshold`.
+2. `InstanceData` has no rotation. A run containing a rotated sprite (R1 of
+   rendering-extensions) takes the indexed path.
+3. The buffer is global per pass (world, UI), with an offset per batch.
+4. Double buffering. `queue.write_buffer` stages the copy anyway.
+
+Still open: per-chunk cached instance data for tilemaps (see the status note).
 
 ## Referenzen
 

@@ -1,8 +1,8 @@
 ---
-status: partial
+status: done
 crate: amigo_artgen
 depends_on: ["assets/format"]
-last_updated: 2026-03-18
+last_updated: 2026-10-07
 ---
 
 # Art Generation Pipeline (amigo_artgen)
@@ -227,18 +227,18 @@ pub fn build_upscale_workflow(input_path: &str, factor: u32) -> ComfyPrompt;
 
 MCP tools exposed via `list_tools()` and run by `ArtgenServer::call` (`dispatch_tool` is a shortcut with default settings). Generation tools queue a ComfyUI workflow, wait for it and write the images to `assets/generated/<kind>/` in the project; input images are uploaded to ComfyUI first (`ComfyUiClient::upload_image`), since `LoadImage` only reads ComfyUI's input folder. A tool that cannot do its work returns an error (an MCP `isError` result), never a made-up path. The MCP server starts ComfyUI on the first generation if nothing answers (`ComfyUiLifecycle`, looking for the `comfyui` launcher in `~/.amigo/venv` and on `PATH`, logging to `amigo-comfyui.log` in the temp dir).
 
-Generated images are the raw model output; the pixel-art post-processing below is not applied to them yet.
+Generated images are the raw model output; `amigo_artgen_post_process` applies a style's pixel-art clean-up to them (or to any image) as a separate step, so the raw output stays available. Tools that read images decode them with the `image` crate (`image_io.rs`) and write PNGs; their `output` paths must stay inside the project.
 
 | Tool | Description |
 |------|-------------|
 | `amigo_artgen_generate_sprite` | Generate a pixel art sprite from text prompt |
 | `amigo_artgen_generate_tileset` | Generate a tileset with named tiles |
-| `amigo_artgen_generate_spritesheet` | Generate animation frames from a base sprite. **Not implemented:** returns an error. |
+| `amigo_artgen_generate_spritesheet` | One img2img run per frame and direction (1, 4 or 8) from a base sprite; frames are scaled to the base size (nearest neighbour) and laid out one direction per row in `assets/generated/spritesheets/<base>_<animation>.png`, with an `.atlas.ron` manifest (one sprite per direction, `fps`, pivot at the feet, looping except death/attack) the engine loads directly |
 | `amigo_artgen_variation` | Create an img2img variation of an existing sprite |
 | `amigo_artgen_inpaint` | Inpaint a masked region of a sprite |
-| `amigo_artgen_palette_swap` | Swap palette (pure image processing, no AI). **Not implemented:** returns an error. |
+| `amigo_artgen_palette_swap` | Map every opaque pixel to the nearest colour of a palette (no AI): `pico8`, `gameboy`, a style name, inline `#rrggbb` colours, or a `.hex`, `.gpl` or image file |
 | `amigo_artgen_upscale` | Upscale by integer factor 2-8 (ComfyUI workflow) |
-| `amigo_artgen_post_process` | Apply a style's post-processing pipeline. **Not implemented:** returns an error. |
+| `amigo_artgen_post_process` | Apply a style's post-processing (palette clamp, AA removal, transparency cleanup, outline; raster mode only cleans transparency) to an image. Styles come from `assets/styles/<name>.style.ron` or the built-ins; tile-edge mismatches are reported when the style checks them |
 | `amigo_artgen_list_styles` | List available art styles |
 | `amigo_artgen_list_checkpoints` | List available ComfyUI checkpoints |
 | `amigo_artgen_list_loras` | List available LoRA models |

@@ -57,8 +57,7 @@ pub struct AmigoLevel {
     pub entities: Vec<EntityPlacement>,
     #[serde(default)]
     pub paths: Vec<PathData>,
-    /// Trigger and spawn areas. The editor has no zone tool yet, but keeps
-    /// zones written by hand when it saves.
+    /// Trigger and spawn areas, drawn with the editor's zone tool.
     #[serde(default)]
     pub zones: Vec<ZoneDef>,
     #[serde(default)]

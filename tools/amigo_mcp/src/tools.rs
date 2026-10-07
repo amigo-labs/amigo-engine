@@ -224,12 +224,115 @@ pub fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "amigo_editor_auto_decorate",
-            "Auto-decorate non-gameplay tiles with themed decoration.",
+            "Scatter decoration tiles over free ground cells (not under entities, path points or zones). One undo step; the same seed decorates the same way.",
             json!({
                 "type": "object",
                 "properties": {
-                    "world": {"type": "string"}
+                    "world": {"type": "string", "description": "Theme; picks metadata 'decor_tiles.<world>' when 'tiles' is not given"},
+                    "tiles": {"type": "array", "items": {"type": "integer"}, "description": "Decoration tile ids to pick from"},
+                    "layer": {"type": "string", "description": "Layer to decorate, created when missing (default 'decoration')"},
+                    "density": {"type": "number", "description": "Share of free cells to decorate, 0..1 (default 0.1)"},
+                    "seed": {"type": "integer"}
                 }
+            }),
+        ),
+        tool(
+            "amigo_editor_auto_path",
+            "Add a path between two world positions around the solid (non-zero) tiles of a layer, found with A*.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "from": {"type": "array", "items": {"type": "number"}, "description": "[x, y] in world units"},
+                    "to": {"type": "array", "items": {"type": "number"}, "description": "[x, y] in world units"},
+                    "layer": {"type": "string", "description": "Collision layer (default 'collision', else the first layer)"}
+                },
+                "required": ["from", "to"]
+            }),
+        ),
+        tool(
+            "amigo_editor_add_zone",
+            "Add a named rectangular zone (world units) with optional string properties.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "w": {"type": "number"},
+                    "h": {"type": "number"},
+                    "properties": {"type": "object"}
+                },
+                "required": ["x", "y", "w", "h"]
+            }),
+        ),
+        tool(
+            "amigo_editor_remove_zone",
+            "Remove the zone at an index.",
+            json!({
+                "type": "object",
+                "properties": {"index": {"type": "integer"}},
+                "required": ["index"]
+            }),
+        ),
+        tool(
+            "amigo_editor_set_entity",
+            "Change a placed entity's type, position or properties (properties replace the old ones).",
+            json!({
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "type": {"type": "string"},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "properties": {"type": "object"}
+                },
+                "required": ["index"]
+            }),
+        ),
+        tool(
+            "amigo_editor_remove_entity",
+            "Remove the placed entity at an index.",
+            json!({
+                "type": "object",
+                "properties": {"index": {"type": "integer"}},
+                "required": ["index"]
+            }),
+        ),
+        tool(
+            "amigo_editor_set_metadata",
+            "Set a level metadata value (e.g. 'tileset', 'decor_tiles'); no value removes the key.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "value": {"type": "string"}
+                },
+                "required": ["key"]
+            }),
+        ),
+        tool(
+            "amigo_editor_playtest_report",
+            "Report one playtest run's metrics; balance suggestions appear in the 'editor' property.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "metrics": {"type": "object", "description": "PlaytestMetrics fields, e.g. victory, enemies_killed, wave_times"}
+                },
+                "required": ["metrics"]
+            }),
+        ),
+        tool(
+            "amigo_editor_heat",
+            "Add heat at a world position to a named heatmap shown over the level.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "map": {"type": "string", "description": "Heatmap name (default 'deaths')"},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "value": {"type": "number", "description": "Default 1"}
+                },
+                "required": ["x", "y"]
             }),
         ),
         tool(

@@ -25,6 +25,7 @@ toml = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+amigo_comfyui = { workspace = true, features = ["fake-server"] }
 
 [lints]
 workspace = true

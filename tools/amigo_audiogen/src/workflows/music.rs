@@ -95,6 +95,30 @@ pub fn build_music_workflow(request: &MusicRequest) -> ComfyPrompt {
     }
 }
 
+/// [`build_music_workflow`] conditioned on an audio file in ComfyUI's input
+/// folder (`input_audio`, as returned by an upload): a `LoadAudio` node
+/// feeds `ACEStepGenerate`'s `reference_audio`, and `conditioning_strength`
+/// (0..1) sets how closely the result follows it.
+pub fn build_audio_conditioned_workflow(
+    request: &MusicRequest,
+    input_audio: &str,
+    conditioning_strength: f32,
+) -> ComfyPrompt {
+    let mut workflow = build_music_workflow(request);
+    workflow.prompt.insert(
+        "4".into(),
+        json!({
+            "class_type": "LoadAudio",
+            "inputs": { "audio": input_audio }
+        }),
+    );
+    if let Some(generate) = workflow.prompt.get_mut("2") {
+        generate["inputs"]["reference_audio"] = json!(["4", 0]);
+        generate["inputs"]["conditioning_strength"] = json!(conditioning_strength.clamp(0.0, 1.0));
+    }
+    workflow
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -103,6 +127,14 @@ pub fn build_music_workflow(request: &MusicRequest) -> ComfyPrompt {
 mod tests {
     use super::*;
     use crate::MusicRequest;
+
+    #[test]
+    fn audio_conditioning_feeds_the_generator() {
+        let wf = build_audio_conditioned_workflow(&MusicRequest::default(), "theme.wav", 1.5);
+        assert_eq!(wf.prompt["4"]["inputs"]["audio"], "theme.wav");
+        assert_eq!(wf.prompt["2"]["inputs"]["reference_audio"], json!(["4", 0]));
+        assert_eq!(wf.prompt["2"]["inputs"]["conditioning_strength"], 1.0);
+    }
 
     #[test]
     fn music_workflow_basic() {

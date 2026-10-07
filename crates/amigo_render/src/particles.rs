@@ -46,12 +46,8 @@ impl Rng {
 // BlendMode
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum BlendMode {
-    #[default]
-    Normal,
-    Additive,
-}
+/// The renderer's blend mode; emitters pick one per config.
+pub use crate::blend::BlendMode;
 
 // ---------------------------------------------------------------------------
 // EmitterShape
@@ -442,22 +438,17 @@ impl ParticleEmitter {
             if !p.alive {
                 continue;
             }
+            // Full UV rect - assumes a small white-pixel texture is used.
             sprites.push(SpriteInstance {
-                texture_id,
-                x: p.position_x - p.size * 0.5,
-                y: p.position_y - p.size * 0.5,
-                width: p.size,
-                height: p.size,
-                // Full UV rect - assumes a small white-pixel texture is used.
-                uv_x: 0.0,
-                uv_y: 0.0,
-                uv_w: 1.0,
-                uv_h: 1.0,
                 tint: p.color,
-                flip_x: false,
-                flip_y: false,
-                z_order: 0,
-                shaders: Vec::new(),
+                blend: self.config.blend_mode,
+                ..SpriteInstance::new(
+                    texture_id,
+                    p.position_x - p.size * 0.5,
+                    p.position_y - p.size * 0.5,
+                    p.size,
+                    p.size,
+                )
             });
         }
     }
@@ -658,6 +649,26 @@ impl ParticleSystem {
         self.emitters.clear();
     }
 
+    /// Whether an emitter named `name` exists.
+    pub fn contains(&self, name: &str) -> bool {
+        self.emitters.iter().any(|(n, _)| n == name)
+    }
+
+    /// Remove every emitter named `name`, with its particles.
+    pub fn remove(&mut self, name: &str) {
+        self.emitters.retain(|(n, _)| n != name);
+    }
+
+    /// Remove every emitter whose name `pred` accepts, with its particles.
+    pub fn remove_where(&mut self, mut pred: impl FnMut(&str) -> bool) {
+        self.emitters.retain(|(n, _)| !pred(n));
+    }
+
+    /// Names of the emitters, in spawn order.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.emitters.iter().map(|(n, _)| n.as_str())
+    }
+
     /// Number of active emitters.
     pub fn emitter_count(&self) -> usize {
         self.emitters.len()
@@ -721,5 +732,24 @@ mod tests {
             emitter.update(1.0 / 60.0);
             assert_eq!(emitter.alive_count, 100, "rate {rate}");
         }
+    }
+
+    #[test]
+    fn additive_emitters_collect_additive_sprites() {
+        let mut emitter =
+            ParticleEmitter::new(EmitterConfig::explosion(), EmitterShape::Point, 0.0, 0.0);
+        emitter.update(1.0 / 60.0);
+        let mut sprites = Vec::new();
+        emitter.collect_sprites(&mut sprites, TextureId(0));
+        assert!(!sprites.is_empty());
+        assert!(sprites.iter().all(|s| s.blend == BlendMode::Additive));
+    }
+
+    #[test]
+    fn existing_ron_blend_modes_still_parse() {
+        let mode: BlendMode = ron::from_str("Normal").expect("Normal parses");
+        assert_eq!(mode, BlendMode::Normal);
+        let mode: BlendMode = ron::from_str("Additive").expect("Additive parses");
+        assert_eq!(mode, BlendMode::Additive);
     }
 }

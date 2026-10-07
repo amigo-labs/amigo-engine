@@ -5,7 +5,7 @@
 //! the windowed loop handed every tick of a multi-tick frame the whole
 //! frame's `dt`.
 
-use crate::engine::Plugin;
+use crate::engine::{Plugins, SystemStage};
 use crate::stack::GameStack;
 use crate::{GameContext, net, replay};
 use amigo_core::TimeInfo;
@@ -28,7 +28,7 @@ pub(crate) enum TickOutcome {
 pub(crate) fn run_tick(
     ctx: &mut GameContext,
     stack: &mut GameStack,
-    plugins: &mut [Box<dyn Plugin>],
+    plugins: &mut Plugins,
 ) -> TickOutcome {
     let _tick_span = info_span!("tick").entered();
     let tick_duration = TimeInfo::TICK_DURATION;
@@ -52,6 +52,10 @@ pub(crate) fn run_tick(
     // widgets in `update` without bookkeeping. Calling `ui.begin()` again in
     // game code is harmless.
     ctx.ui.begin();
+    {
+        let _plugin_span = info_span!("plugin_pre_update").entered();
+        plugins.run(SystemStage::PreUpdate, ctx);
+    }
     let action = {
         let _update_span = info_span!("game_update").entered();
         active.update(ctx)
@@ -64,9 +68,7 @@ pub(crate) fn run_tick(
     if running {
         {
             let _plugin_span = info_span!("plugin_update").entered();
-            for plugin in plugins.iter_mut() {
-                plugin.update(ctx);
-            }
+            plugins.run(SystemStage::PostUpdate, ctx);
         }
         {
             let _flush_span = info_span!("ecs_flush").entered();
@@ -91,5 +93,101 @@ pub(crate) fn run_tick(
         TickOutcome::Ran
     } else {
         TickOutcome::Quit
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{Plugin, PluginContext};
+    use crate::{DrawContext, Game, SceneAction};
+    use std::sync::{Arc, Mutex};
+
+    type Log = Arc<Mutex<Vec<&'static str>>>;
+
+    fn push(log: &Log, entry: &'static str) {
+        log.lock().unwrap_or_else(|e| e.into_inner()).push(entry);
+    }
+
+    struct Recorder(Log);
+
+    impl Game for Recorder {
+        fn update(&mut self, _ctx: &mut GameContext) -> SceneAction {
+            push(&self.0, "game");
+            SceneAction::Continue
+        }
+        fn draw(&self, _ctx: &mut DrawContext) {}
+    }
+
+    struct Hooks(Log);
+
+    impl Plugin for Hooks {
+        fn build(&self, ctx: &mut PluginContext) {
+            let pre = self.0.clone();
+            ctx.add_system(SystemStage::PreUpdate, move |_| push(&pre, "pre system"));
+            let post = self.0.clone();
+            ctx.add_system(SystemStage::PostUpdate, move |_| push(&post, "post system"));
+        }
+        fn pre_update(&mut self, ctx: &mut GameContext) {
+            push(&self.0, "pre hook");
+            // An input handler: the game never sees this press.
+            ctx.input.release_all();
+        }
+        fn update(&mut self, _ctx: &mut GameContext) {
+            push(&self.0, "post hook");
+        }
+    }
+
+    struct Badge;
+
+    impl Plugin for Badge {
+        fn build(&self, _ctx: &mut PluginContext) {}
+        fn draw(&self, draw: &mut DrawContext) {
+            draw.draw_rect(
+                amigo_core::Rect::new(1.0, 2.0, 3.0, 4.0),
+                amigo_core::Color::RED,
+            );
+        }
+    }
+
+    #[test]
+    fn plugins_draw_into_the_frame() {
+        let engine = crate::Engine::build().add_plugin(Badge).build();
+        let plugins = engine.into_plugins();
+        let ctx = GameContext::new(320.0, 180.0, "assets");
+        let mut sprites = Vec::new();
+        let mut draw = DrawContext::new(
+            &mut sprites,
+            &ctx,
+            amigo_core::RenderVec2::ZERO,
+            320.0,
+            180.0,
+            0.0,
+            amigo_render::TextureId(0),
+        );
+        plugins.draw(&mut draw);
+        assert_eq!(sprites.len(), 1);
+        assert_eq!(sprites[0].width, 3.0);
+    }
+
+    #[test]
+    fn plugins_run_around_the_games_update_in_order() {
+        let log = Log::default();
+        let engine = crate::Engine::build()
+            .add_plugin(Hooks(log.clone()))
+            .build();
+        let mut plugins = engine.into_plugins();
+        let mut ctx = GameContext::new(320.0, 180.0, "assets");
+        let mut stack = GameStack::new(Box::new(Recorder(log.clone())));
+        stack.enter_root(&mut ctx);
+
+        assert_eq!(
+            run_tick(&mut ctx, &mut stack, &mut plugins),
+            TickOutcome::Ran
+        );
+        assert_eq!(
+            *log.lock().unwrap_or_else(|e| e.into_inner()),
+            vec!["pre hook", "pre system", "game", "post hook", "post system"]
+        );
     }
 }

@@ -74,6 +74,8 @@
 pub mod api_bridge;
 pub mod config;
 pub mod context;
+#[cfg(feature = "editor")]
+mod editor_preview;
 pub mod engine;
 pub mod net;
 pub mod replay;
@@ -99,8 +101,8 @@ pub use amigo_ui;
 pub use amigo_audio;
 
 pub use config::EngineConfig;
-pub use context::{DrawContext, GameContext, LevelReloaded};
-pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
+pub use context::{DrawContext, DrawSpace, GameContext, LevelReloaded, SpriteEntry};
+pub use engine::{Engine, EngineBuilder, Plugin, PluginContext, SystemStage};
 pub use stack::GameStack;
 
 /// The scene action a [`Game`] returns from `update`.
@@ -203,8 +205,8 @@ pub trait Game: 'static {
 pub mod prelude {
     pub use crate::net::{NetEvent, NetStatus};
     pub use crate::{
-        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack,
-        LevelReloaded, Plugin, PluginContext, SceneAction,
+        DrawContext, DrawSpace, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack,
+        LevelReloaded, Plugin, PluginContext, SceneAction, SystemStage,
     };
     pub use amigo_animation::*;
     pub use amigo_assets::{AssetError, AssetHandle, AssetManager, AssetState, HandleAllocator};
@@ -235,11 +237,13 @@ pub mod prelude {
     pub use amigo_render::lighting::{AmbientLight, LightingState, PointLight};
     pub use amigo_render::particles::{EmitterConfig, EmitterShape, ParticleSystem};
     pub use amigo_render::post_process::{PostEffect, PostProcessPipeline};
+    pub use amigo_render::post_shader::ShaderError;
     // `draw_sprite_ex` hands out a `&mut SpriteInstance`, so games need the type
     // in scope to write a closure against it.
-    pub use amigo_render::sprite_batcher::SpriteInstance;
+    pub use amigo_render::sprite_batcher::{QuadGeometry, SpriteInstance};
     pub use amigo_render::{
-        ArtStyle, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
+        ArtStyle, BlendMode, Camera, CameraMode, Easing, FontError, FontId, FontManager,
+        SamplerMode, ScaleMode, TextAlign, TextMetrics, TextStyle, Viewport, ViewportInfo,
     };
     pub use amigo_scene::SceneFactory;
     pub use amigo_tilemap::*;
@@ -248,7 +252,9 @@ pub mod prelude {
     pub use winit::keyboard::KeyCode;
 
     #[cfg(feature = "audio")]
-    pub use amigo_audio::AudioManager;
+    pub use amigo_audio::{
+        AudioManager, Bus, Fade, LoopMode, PlaySettings, Position, SoundHandle, SoundState,
+    };
 
     #[cfg(feature = "api")]
     pub use crate::api_bridge::ApiInbox;

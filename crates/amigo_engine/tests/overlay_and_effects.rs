@@ -36,11 +36,6 @@ fn ctx_with_font() -> GameContext {
     ctx.fonts
         .load_builtin(7.0)
         .expect("built-in font is embedded in the binary");
-    // The engine uploads atlases to the GPU and stores the id; without a GPU,
-    // stand in for that so text rendering has a texture to point at.
-    for atlas in ctx.fonts.iter_mut() {
-        atlas.texture_id = Some(amigo_render::texture::TextureId(1));
-    }
     ctx
 }
 

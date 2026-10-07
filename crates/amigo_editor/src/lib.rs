@@ -31,7 +31,8 @@ pub use amigo_core::level::{
     AmigoLevel, EntityPlacement, LayerData, MAX_LEVEL_TILES, PathData, grid_len, load_level,
     save_level,
 };
-pub use session::{EditorAction, EditorSession, PointerState};
+pub use amigo_core::level_loader::ZoneDef;
+pub use session::{EditorAction, EditorSession, OverlayItem, PointerState};
 
 // ---------------------------------------------------------------------------
 // Editor commands (undo / redo)
@@ -76,6 +77,42 @@ pub enum EditorCommand {
     AddPath { index: usize, path: PathData },
     /// Remove the path at `index` (which must be `path`).
     RemovePath { index: usize, path: PathData },
+    /// Insert point `pos` at `point_index` of path `path_index`.
+    AddPathPoint {
+        path_index: usize,
+        point_index: usize,
+        pos: (f32, f32),
+    },
+    /// Remove point `point_index` (which must be at `pos`) of path `path_index`.
+    RemovePathPoint {
+        path_index: usize,
+        point_index: usize,
+        pos: (f32, f32),
+    },
+    /// Replace the entity at `index` (which must be `old`) with `new`: a
+    /// move, a new type, edited properties.
+    SetEntity {
+        index: usize,
+        old: EntityPlacement,
+        new: EntityPlacement,
+    },
+    /// Insert `zone` at `index` in `AmigoLevel::zones`.
+    AddZone { index: usize, zone: ZoneDef },
+    /// Remove the zone at `index` (which must be `zone`).
+    RemoveZone { index: usize, zone: ZoneDef },
+    /// Replace the zone at `index` (which must be `old`) with `new`.
+    SetZone {
+        index: usize,
+        old: ZoneDef,
+        new: ZoneDef,
+    },
+    /// Set (or with `None` remove) the metadata entry `key`, which must be
+    /// `old` now.
+    SetMetadata {
+        key: String,
+        old: Option<String>,
+        new: Option<String>,
+    },
     /// Several commands as one undo step: a brush stroke, a flood fill, a
     /// filled rectangle. Applied in order, undone in reverse.
     Batch(Vec<EditorCommand>),
@@ -143,10 +180,103 @@ impl EditorCommand {
                 index: *index,
                 path: path.clone(),
             },
+            EditorCommand::AddPathPoint {
+                path_index,
+                point_index,
+                pos,
+            } => EditorCommand::RemovePathPoint {
+                path_index: *path_index,
+                point_index: *point_index,
+                pos: *pos,
+            },
+            EditorCommand::RemovePathPoint {
+                path_index,
+                point_index,
+                pos,
+            } => EditorCommand::AddPathPoint {
+                path_index: *path_index,
+                point_index: *point_index,
+                pos: *pos,
+            },
+            EditorCommand::SetEntity { index, old, new } => EditorCommand::SetEntity {
+                index: *index,
+                old: new.clone(),
+                new: old.clone(),
+            },
+            EditorCommand::AddZone { index, zone } => EditorCommand::RemoveZone {
+                index: *index,
+                zone: zone.clone(),
+            },
+            EditorCommand::RemoveZone { index, zone } => EditorCommand::AddZone {
+                index: *index,
+                zone: zone.clone(),
+            },
+            EditorCommand::SetZone { index, old, new } => EditorCommand::SetZone {
+                index: *index,
+                old: new.clone(),
+                new: old.clone(),
+            },
+            EditorCommand::SetMetadata { key, old, new } => EditorCommand::SetMetadata {
+                key: key.clone(),
+                old: new.clone(),
+                new: old.clone(),
+            },
             EditorCommand::Batch(commands) => {
                 EditorCommand::Batch(commands.iter().rev().map(Self::inverse).collect())
             }
         }
+    }
+
+    /// Replace entity `index` with `new`, remembering the old one. `None`
+    /// when there is no such entity or nothing changes.
+    pub fn set_entity(level: &AmigoLevel, index: usize, new: EntityPlacement) -> Option<Self> {
+        let old = level.entities.get(index)?;
+        (*old != new).then(|| EditorCommand::SetEntity {
+            index,
+            old: old.clone(),
+            new,
+        })
+    }
+
+    /// Remove zone `index`, remembering it for undo.
+    pub fn remove_zone(level: &AmigoLevel, index: usize) -> Option<Self> {
+        let zone = level.zones.get(index)?.clone();
+        Some(EditorCommand::RemoveZone { index, zone })
+    }
+
+    /// Replace zone `index` with `new`. `None` when nothing changes.
+    pub fn set_zone(level: &AmigoLevel, index: usize, new: ZoneDef) -> Option<Self> {
+        let old = level.zones.get(index)?;
+        (*old != new).then(|| EditorCommand::SetZone {
+            index,
+            old: old.clone(),
+            new,
+        })
+    }
+
+    /// Set metadata `key` to `value` (`None` removes it). `None` when nothing
+    /// changes.
+    pub fn set_metadata(level: &AmigoLevel, key: &str, value: Option<String>) -> Option<Self> {
+        let old = level.metadata.get(key).cloned();
+        (old != value).then(|| EditorCommand::SetMetadata {
+            key: key.to_string(),
+            old,
+            new: value,
+        })
+    }
+
+    /// Remove several entities as one command: highest index first, so the
+    /// others keep their indices while it runs.
+    pub fn remove_entities(level: &AmigoLevel, indices: &[usize]) -> Option<Self> {
+        let mut indices: Vec<usize> = indices.to_vec();
+        indices.sort_unstable();
+        indices.dedup();
+        let commands: Vec<_> = indices
+            .iter()
+            .rev()
+            .filter_map(|&i| Self::remove_entity(level, i))
+            .collect();
+        (!commands.is_empty()).then_some(EditorCommand::Batch(commands))
     }
 
     /// Paint `tile` at `(x, y)` on `layer`, remembering what was there.
@@ -289,6 +419,53 @@ fn check(level: &AmigoLevel, cmd: &EditorCommand) -> Result<(), String> {
             )),
             None => Err(format!("no path at index {index}")),
         },
+        EditorCommand::AddPathPoint {
+            path_index,
+            point_index,
+            ..
+        } => match level.paths.get(*path_index) {
+            Some(p) if *point_index <= p.points.len() => Ok(()),
+            Some(_) => Err(format!("path {path_index} has no slot {point_index}")),
+            None => Err(format!("no path at index {path_index}")),
+        },
+        EditorCommand::RemovePathPoint {
+            path_index,
+            point_index,
+            pos,
+        } => match level
+            .paths
+            .get(*path_index)
+            .and_then(|p| p.points.get(*point_index))
+        {
+            Some(p) if p == pos => Ok(()),
+            Some(_) => Err(format!(
+                "point {point_index} of path {path_index} has moved"
+            )),
+            None => Err(format!("path {path_index} has no point {point_index}")),
+        },
+        EditorCommand::SetEntity { index, old, .. } => match level.entities.get(*index) {
+            Some(e) if e == old => Ok(()),
+            Some(_) => Err(format!("entity {index} changed underneath the command")),
+            None => Err(format!("no entity at index {index}")),
+        },
+        EditorCommand::AddZone { index, .. } if *index > level.zones.len() => Err(format!(
+            "zone index {index} is past the end ({} zones)",
+            level.zones.len()
+        )),
+        EditorCommand::AddZone { .. } => Ok(()),
+        EditorCommand::RemoveZone { index, zone: old }
+        | EditorCommand::SetZone { index, old, .. } => match level.zones.get(*index) {
+            Some(z) if z == old => Ok(()),
+            Some(_) => Err(format!("zone {index} changed underneath the command")),
+            None => Err(format!("no zone at index {index}")),
+        },
+        EditorCommand::SetMetadata { key, old, .. } => {
+            if level.metadata.get(key) == old.as_ref() {
+                Ok(())
+            } else {
+                Err(format!("metadata '{key}' changed underneath the command"))
+            }
+        }
         EditorCommand::Batch(commands) => {
             // Entity and path indices shift as a batch runs, so check each
             // step against the level as it will be by then.
@@ -349,6 +526,32 @@ fn apply_checked(level: &mut AmigoLevel, cmd: &EditorCommand) {
         EditorCommand::RemovePath { index, .. } => {
             level.paths.remove(*index);
         }
+        EditorCommand::AddPathPoint {
+            path_index,
+            point_index,
+            pos,
+        } => level.paths[*path_index].points.insert(*point_index, *pos),
+        EditorCommand::RemovePathPoint {
+            path_index,
+            point_index,
+            ..
+        } => {
+            level.paths[*path_index].points.remove(*point_index);
+        }
+        EditorCommand::SetEntity { index, new, .. } => level.entities[*index] = new.clone(),
+        EditorCommand::AddZone { index, zone } => level.zones.insert(*index, zone.clone()),
+        EditorCommand::RemoveZone { index, .. } => {
+            level.zones.remove(*index);
+        }
+        EditorCommand::SetZone { index, new, .. } => level.zones[*index] = new.clone(),
+        EditorCommand::SetMetadata { key, new, .. } => match new {
+            Some(value) => {
+                level.metadata.insert(key.clone(), value.clone());
+            }
+            None => {
+                level.metadata.remove(key);
+            }
+        },
         EditorCommand::Batch(commands) => {
             for c in commands {
                 apply_checked(level, c);
@@ -371,6 +574,8 @@ pub enum EditorTool {
     Fill,
     PlaceEntity,
     PathEdit,
+    /// Drag out a rectangular zone.
+    Zone,
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +591,12 @@ pub struct EditorState {
     pub selected_layer: usize,
     pub selected_entity_type: String,
     pub selected_path: Option<usize>,
+    /// Entities picked with the select tool, by index.
+    pub selected_entities: Vec<usize>,
+    /// The zone picked with the select or zone tool.
+    pub selected_zone: Option<usize>,
+    /// The path point picked with the path tool: `(path, point)`.
+    pub selected_point: Option<(usize, usize)>,
     pub undo_stack: Vec<EditorCommand>,
     pub redo_stack: Vec<EditorCommand>,
     pub grid_visible: bool,
@@ -407,6 +618,9 @@ impl EditorState {
             selected_layer: 0,
             selected_entity_type: String::new(),
             selected_path: None,
+            selected_entities: Vec::new(),
+            selected_zone: None,
+            selected_point: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             grid_visible: true,
@@ -613,6 +827,55 @@ mod tests {
         assert!(!state.can_redo(), "a new command diverges the timeline");
     }
 
+    fn zone(name: &str) -> ZoneDef {
+        ZoneDef {
+            name: name.into(),
+            x: 0.0,
+            y: 0.0,
+            w: 16.0,
+            h: 16.0,
+            properties: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn new_commands_refuse_what_does_not_fit() {
+        let mut level = level();
+        let before = format!("{level:?}");
+        for bad in [
+            EditorCommand::AddPathPoint {
+                path_index: 0,
+                point_index: 0,
+                pos: (0.0, 0.0),
+            },
+            EditorCommand::AddZone {
+                index: 1,
+                zone: zone("gap"),
+            },
+            EditorCommand::RemoveZone {
+                index: 0,
+                zone: zone("none"),
+            },
+            EditorCommand::SetMetadata {
+                key: "k".into(),
+                old: Some("stale".into()),
+                new: None,
+            },
+        ] {
+            assert!(
+                apply(&mut level, &bad).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+        assert_eq!(format!("{level:?}"), before);
+        assert!(
+            EditorCommand::set_metadata(&level, "k", None).is_none(),
+            "no change"
+        );
+        assert!(EditorCommand::remove_zone(&level, 0).is_none());
+        assert!(EditorCommand::remove_entities(&level, &[3]).is_none());
+    }
+
     /// `inverse` must round-trip for every variant, otherwise undo/redo drifts.
     #[test]
     fn inverse_is_an_involution() {
@@ -671,6 +934,8 @@ mod tests {
             properties: HashMap::new(),
         });
         base.paths.push(path("existing"));
+        base.zones.push(zone("spawn"));
+        base.metadata.insert("world".into(), "caves".into());
 
         let commands = [
             EditorCommand::paint(&base, 0, 3, 4, 9).unwrap(),
@@ -691,6 +956,36 @@ mod tests {
                 path: path("existing"),
             },
             EditorCommand::fill_rect(&base, 0, (1, 1), (3, 2), 5).unwrap(),
+            EditorCommand::AddPathPoint {
+                path_index: 0,
+                point_index: 1,
+                pos: (8.0, 8.0),
+            },
+            EditorCommand::RemovePathPoint {
+                path_index: 0,
+                point_index: 1,
+                pos: (16.0, 0.0),
+            },
+            EditorCommand::set_entity(
+                &base,
+                0,
+                EntityPlacement {
+                    entity_type: "mimic".into(),
+                    x: 32.0,
+                    y: 0.0,
+                    properties: HashMap::from([("hp".into(), "9".into())]),
+                },
+            )
+            .unwrap(),
+            EditorCommand::AddZone {
+                index: 1,
+                zone: zone("boss"),
+            },
+            EditorCommand::remove_zone(&base, 0).unwrap(),
+            EditorCommand::set_zone(&base, 0, zone("renamed")).unwrap(),
+            EditorCommand::set_metadata(&base, "tileset", Some("tiles".into())).unwrap(),
+            EditorCommand::set_metadata(&base, "world", None).unwrap(),
+            EditorCommand::remove_entities(&base, &[0]).unwrap(),
         ];
 
         for cmd in commands {

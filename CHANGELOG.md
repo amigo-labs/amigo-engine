@@ -6,6 +6,179 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Added — rendering extensions (docs/specs/engine/rendering-extensions.md)
+
+- **Sprite transform:** `SpriteInstance` has a pivot (`origin`), a
+  `rotation` about it, a `blend` mode and optional explicit corner
+  `geometry`. `SpriteInstance::new`, `scale` (negative factors mirror about
+  the pivot), `set_origin_normalized`, `corners` and `bounds`.
+- **Blend modes:** `BlendMode::{Normal, Additive, Multiply}`, one pipeline
+  each. Additive particle emitters now render additively.
+- **Screen-space drawing from `draw()`:** `DrawSpace`, `set_space`,
+  `in_space`, `set_z`. Screen draws land in the UI pass after
+  post-processing, under the `ctx.ui` widgets.
+- **Camera from `draw()`:** `set_camera_position`, `set_camera_offset`,
+  `camera_position`, for interpolated or game-specific cameras. Also
+  `Camera::set_shake_decay` and `Camera::world_to_screen`.
+- **Text:**
+  - Any Unicode character can be drawn. A character the font lacks draws its
+    `.notdef` glyph instead of vanishing.
+  - `draw_text_ex` / `measure_text_ex` with `TextStyle` (font, size, letter
+    spacing, alignment, z, blend) and kerning, rasterised at the output
+    resolution.
+  - `FontManager::set_default_font`, which `amigo_ui` widgets follow.
+- **Shapes:** `draw_quad`, `draw_quad_colors`, `draw_gradient_rect`,
+  `draw_line`, `draw_rect_outline`, `draw_circle`, `draw_rounded_rect`,
+  `draw_convex_polygon`, with anti-aliased edges under raster art.
+- **Post effects:** `PostEffect::{Shockwave, DirectionalBlur, Custom}`,
+  effects run in `Vec` order, and `GameContext::register_post_shader` for
+  your own WGSL on a documented prelude (validated with naga).
+- **Atlas manifests:** `sprites/**/*.atlas.ron` describes many sprites on one
+  sheet, each with frames and pivots and optionally an animation (`fps`).
+  `draw_frame`, `draw_frame_ex`, `frame_count`. `amigo pack` keeps sheets
+  intact.
+- **Parallax:** `set_parallax`; tilemaps use their layer's
+  `scroll_factor_x/y`.
+- **Raster-art quality and window shape:**
+  - Mipmaps for single raster-art images and for sheets that opt in with
+    `mip_levels`.
+  - `scale_mode = "expand"` keeps the virtual height and fits the width to
+    the window.
+  - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
+- **`examples/raster_art`** shows all of the above.
+
+### Added — art and audio generation tools
+
+- **artgen:** `amigo_artgen_palette_swap` (pico8, gameboy, style palettes,
+  inline colours, `.hex`/`.gpl`/image files) and `amigo_artgen_post_process`
+  (a style's clean-up, from `assets/styles/` or the built-ins) work on PNG
+  files; `amigo_artgen_generate_spritesheet` runs one img2img per frame and
+  direction and writes a sheet with an `.atlas.ron` manifest the engine
+  loads. Optional `output` paths stay inside the project.
+- **audiogen:** the processing tools (`process`, `loop_trim`, `normalize`,
+  `convert`, `preview`) read and write WAV directly (other formats through
+  ffmpeg); the generators `generate_core_melody`, `generate_stem`,
+  `generate_variation`, `extend_track`, `remix` and `generate_ambient` run
+  ACE-Step / Stable Audio workflows, conditioning on an uploaded track
+  where they start from one.
+- `FakeComfyUi::set_output_image` / `set_output_audio` for tests that decode
+  what ComfyUI returns.
+
+### Removed
+
+- `ToolError::NotImplemented` in `amigo_artgen` and `amigo_audiogen`: no
+  tool returns it any more.
+
+### Added — level editor (docs/specs/tooling/editor.md)
+
+- **Tileset drawing:** a level's metadata `tileset` names a loaded sprite
+  sheet (`tileset_columns` overrides its columns); the editor draws the
+  level with it instead of one colour per tile id.
+- **Selection:** Shift+click adds or removes, dragging on empty space
+  band-selects, dragging the selection moves it by whole tiles in one undo
+  step. Delete/Backspace and Edit ▸ Delete remove the selection; Escape
+  clears it.
+- **Path tool (R)** adds and drags points in the viewport; **zone tool (Z)**
+  drags out zones. Inspectors edit entity properties, zones, paths and level
+  metadata, each change one undo step.
+- **Files:** Open… and Save As… dialogs.
+- **Sprite import:** dropping a PNG, Aseprite file or `.atlas.ron` on the
+  window copies it into `assets/sprites/`.
+- **Live preview:** `light` entities light the scene and `emitter` entities
+  emit while the editor is open; an emitter can be saved as
+  `assets/data/<name>.emitter.ron`.
+- **AI-assisted tools:** auto-decorate (seeded, density, per-world tile
+  lists), auto-path between two entities around the collision layer, wave
+  curve analysis in the balance suggestions, and heatmaps drawn over the
+  level.
+- **API / MCP:** `editor.auto_decorate` takes `tiles`, `layer`, `density`
+  and `seed`; new `editor.auto_path`, `add_zone`, `remove_zone`,
+  `set_entity`, `remove_entity`, `set_metadata`, `playtest_report` and
+  `heat`, with matching `amigo_editor_*` MCP tools. The `editor` property
+  reports zones, the selection, playtest runs and suggestions.
+
+### Changed — level editor
+
+- `EditorAction` is no longer `Copy`: it gained `SaveAs(PathBuf)`,
+  `Open(PathBuf)` and `SaveEmitter(usize)`.
+- `PointerState` has a `shift` field.
+- `EditorRuntime`'s keys moved from F5–F7, which the debug overlay owns, to
+  F10–F12, and can be rebound through `EditorRuntime::keys`.
+- `PlaytestMetrics` deserializes missing fields as their defaults.
+
+### Added — plugin systems, input and draw hooks
+
+- **`PluginContext::add_system(SystemStage, f)`** runs a function every tick,
+  before (`PreUpdate`) or after (`PostUpdate`) `Game::update`.
+- **`Plugin::pre_update`** sees input before the game does, and
+  **`Plugin::draw`** draws after `Game::draw`. Before, a plugin could only
+  register events and resources and run `update`.
+
+### Added — audio playback control (docs/specs/engine/audio-playback.md)
+
+- **Handles:** `AudioManager::play(name, &PlaySettings)` returns a
+  `SoundHandle` for `stop`, `set_sound_volume`, `set_playback_rate` and
+  `state`. Per-name volumes (`set_name_volume`) reach instances that are
+  already playing.
+- **Start control:** a delay timed on the audio thread, a start point and
+  length in seconds or samples, a loop region, and `LoopMode::{Once, Count,
+  Forever}`. Finite loops are rendered gapless with their tail.
+- **Buses:** music, sfx and ambient under a master, with fades and mutes.
+- **Pause:** `pause_all` / `resume_all`.
+- **Loading from bytes:** `load_sound_from_bytes`, `unload`,
+  `sound_duration`, `sound_sample_rate`.
+- **Music:** `start_music` crossfades and loops; `stop_music_with`;
+  `current_music`.
+- **`AudioManager::new_silent`** runs on kira's mock backend; headless mode
+  uses it.
+- **`examples/audio_demo`** synthesises its sounds and shows all of the above.
+
+### Changed — audio
+
+- **`play_music` now loops**, and loads its file only once.
+- **The `sfx` and `master` volumes and `[audio]` in `amigo.toml` now apply.**
+  `play_sfx`, `play_sfx_at` and `play_music` go through the sfx and music
+  buses. Before, `sfx` never reached playback and the config was ignored.
+- `set_volume(channel, v)` clamps to `0.0..=4.0` instead of `0.0..=1.0`.
+- Headless mode no longer opens an audio output device.
+
+### Added — GPU instancing
+
+- **Long sprite runs are drawn instanced.** A run of at least
+  `Renderer::instancing_threshold` (default 64) unrotated sprites that share a
+  texture and blend mode is drawn with one instanced call over a unit quad,
+  in the world and UI passes; other runs stay indexed, in painter's order.
+  `InstanceData` and `InstancedBatch` existed before, but nothing built them.
+  Tile layers are the typical case.
+
+### Added — minimap rendering
+
+- **`DrawContext::draw_minimap`** draws an `amigo_render::Minimap` over a
+  tile layer in screen space: tile colours, fog of war, pins, pings, the
+  camera's view and the border. The minimap state existed before, but nothing
+  drew it.
+- **`GameContext::minimap_click`** implements click-to-jump.
+- **`GameContext::textures()`** (`DynamicTextures`) uploads textures made at
+  runtime, also from `Game::draw`.
+
+### Changed — rendering extensions (breaking)
+
+| Change | Who breaks | Migration |
+|---|---|---|
+| `SpriteInstance` gains `origin`, `rotation`, `blend`, `geometry` | struct literals outside the engine | `SpriteInstance::new(..)` plus field assignment, or `..SpriteInstance::new(..)` |
+| `PostEffect` gains variants and `#[non_exhaustive]` | exhaustive `match`es on `PostEffect` | add a `_ => {}` arm |
+| `particles::BlendMode` is now a re-export of `BlendMode`, with a third variant | exhaustive `match`es on it | add the `Multiply` arm |
+| `ScaleMode` gains `Expand` | exhaustive `match`es on `ScaleMode` | add the arm |
+| `FontAtlas` loses `atlas_data`, `atlas_width`, `atlas_height`, `texture_id` and `to_rgba_image` in favour of `pages()`; `GlyphInfo` gains `texture_id` | code reading the atlas pixels or texture directly | iterate `pages()`; take a glyph's texture from `GlyphInfo::texture_id` |
+| `SpriteData` gains `frames` and `sheet` | struct literals | add the fields |
+
+- **Premultiplied alpha everywhere.** Textures are premultiplied in linear
+  light on upload and the shader premultiplies the tint. Opaque sprites
+  render exactly as before; translucent edges lose their dark fringes under
+  linear filtering.
+- The F1 debug overlay's text is drawn in screen space, so post-processing
+  no longer distorts it.
+
 ### Added — two-player network games
 
 - **`amigo run --host <port>` / `--join <addr:port>`** starts a two-player

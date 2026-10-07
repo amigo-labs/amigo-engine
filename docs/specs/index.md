@@ -262,7 +262,7 @@ engine ever called them.
 | [engine/ui](engine/ui.md)                                 | done   | amigo_ui          | engine/core, engine/rendering |
 | [engine/networking](engine/networking.md)                 | done   | amigo_net, amigo_engine | engine/core, engine/replays |
 | [engine/memory-performance](engine/memory-performance.md) | done   | amigo_core        | --                            |
-| [engine/plugin-system](engine/plugin-system.md)           | partial | amigo_engine     | engine/core                   |
+| [engine/plugin-system](engine/plugin-system.md)           | done   | amigo_engine      | engine/core                   |
 | [engine/dynamic-tilemap](engine/dynamic-tilemap.md)       | done   | amigo_tilemap     | engine/core, engine/tilemap   |
 | [engine/chunks](engine/chunks.md)                         | done   | amigo_tilemap     | engine/core, engine/tilemap   |
 | [engine/lighting](engine/lighting.md)                     | done   | amigo_render, amigo_tilemap | engine/core, engine/tilemap, engine/rendering |
@@ -278,10 +278,11 @@ engine ever called them.
 | [assets/atlas](assets/atlas.md)                           | done   | amigo_assets      | assets/format                 |
 | [tooling/cli](tooling/cli.md)                             | done   | amigo_cli         | engine/core                   |
 | [tooling/setup](tooling/setup.md)                         | done   | amigo_cli         | tooling/cli                   |
-| [tooling/editor](tooling/editor.md)                       | partial | amigo_editor      | engine/core, engine/ui        |
+| [tooling/editor](tooling/editor.md)                       | done    | amigo_editor      | engine/core, engine/ui        |
 | [tooling/debug](tooling/debug.md)                         | done   | amigo_debug       | engine/core                   |
-| [ai-pipelines/artgen](ai-pipelines/artgen.md)             | partial | amigo_artgen      | assets/format                 |
-| [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | partial | amigo_audiogen    | engine/audio                  |
+| [ai-pipelines/artgen](ai-pipelines/artgen.md)             | done    | amigo_artgen      | assets/format                 |
+| [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | done    | amigo_audiogen    | engine/audio                  |
+| [artgen-backend-abstraction](artgen-backend-abstraction.md) | done | amigo_artgen, amigo_comfyui | ai-pipelines/artgen     |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
 | [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | done  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
@@ -299,17 +300,17 @@ engine ever called them.
 | [engine/localization](engine/localization.md)             | done   | amigo_core        | assets/format                 |
 | [engine/timeline](engine/timeline.md)                     | done   | amigo_core        | engine/tween, engine/camera   |
 | [engine/behavior-tree](engine/behavior-tree.md)           | done   | amigo_core        | engine/core, engine/agents    |
-| [engine/minimap](engine/minimap.md)                       | partial | amigo_render     | engine/camera, engine/fog-of-war |
+| [engine/minimap](engine/minimap.md)                       | done   | amigo_render, amigo_engine | engine/camera, engine/fog-of-war |
 | [engine/state-rewind](engine/state-rewind.md)             | done   | amigo_core        | engine/save-load, engine/simulation |
 | [engine/replays](engine/replays.md)                       | done   | amigo_engine, amigo_input | engine/input, engine/simulation, ai-pipelines/agent-api |
 | [engine/achievements](engine/achievements.md)             | done   | amigo_core        | engine/save-load, engine/ui   |
 | [engine/physics](engine/physics.md)                       | done   | amigo_core        | engine/core                   |
 | [engine/font-rendering](engine/font-rendering.md)         | done   | amigo_render      | engine/assets, engine/ui      |
-| [engine/gpu-instancing](engine/gpu-instancing.md)         | partial | amigo_render     | engine/rendering              |
+| [engine/gpu-instancing](engine/gpu-instancing.md)         | done   | amigo_render     | engine/rendering              |
 | [engine/modding](engine/modding.md)                       | done   | amigo_assets      | assets/format                 |
 | [engine/accessibility](engine/accessibility.md)           | done   | amigo_render      | engine/rendering, engine/input, engine/ui |
-| [engine/rendering-extensions](engine/rendering-extensions.md) | spec | amigo_render, amigo_engine, amigo_assets | engine/rendering, engine/camera, engine/font-rendering, engine/particles, assets/atlas |
-| [engine/audio-playback](engine/audio-playback.md)         | spec   | amigo_audio, amigo_engine | engine/audio            |
+| [engine/rendering-extensions](engine/rendering-extensions.md) | done | amigo_render, amigo_engine, amigo_assets | engine/rendering, engine/camera, engine/font-rendering, engine/particles, assets/atlas |
+| [engine/audio-playback](engine/audio-playback.md)         | done   | amigo_audio, amigo_engine | engine/audio            |
 | [gametypes/platformer](gametypes/platformer.md)           | done   | amigo_core        | engine/physics, engine/tween  |
 | [gametypes/roguelike](gametypes/roguelike.md)             | done   | amigo_core        | engine/procedural, engine/save-load |
 | [gametypes/shmup](gametypes/shmup.md)                     | done   | amigo_core        | engine/bullet-patterns        |

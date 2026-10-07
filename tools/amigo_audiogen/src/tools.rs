@@ -49,6 +49,12 @@ pub fn needs_comfyui(tool: &str) -> bool {
             | "amigo_audiogen_create_voice"
             | "amigo_audiogen_preview_voice"
             | "amigo_audiogen_from_reference"
+            | "amigo_audiogen_generate_core_melody"
+            | "amigo_audiogen_generate_stem"
+            | "amigo_audiogen_generate_variation"
+            | "amigo_audiogen_extend_track"
+            | "amigo_audiogen_remix"
+            | "amigo_audiogen_generate_ambient"
     )
 }
 
@@ -70,7 +76,7 @@ fn parse_comfy_url(url: &str) -> ComfyUiConfig {
 
 /// Queue a ComfyUI workflow prompt, wait for completion, retrieve output audio,
 /// and download to the given output path. Returns the filename on success.
-fn run_comfyui_audio_workflow(
+pub(crate) fn run_comfyui_audio_workflow(
     client: &ComfyUiClient,
     prompt: &amigo_comfyui::ComfyPrompt,
     output_path: &str,
@@ -787,7 +793,7 @@ pub fn list_tools() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {
                     "input": { "type": "string", "description": "Path to audio file" },
-                    "format": { "type": "string", "description": "Target format: ogg, wav, flac" }
+                    "format": { "type": "string", "description": "Target format: wav, ogg, flac, mp3 (all but WAV need ffmpeg)" }
                 },
                 "required": ["input", "format"]
             }),
@@ -938,10 +944,6 @@ pub enum ToolError {
     /// a missing input file).
     #[error("Invalid input: {0}")]
     BadInput(String),
-    /// The tool exists but has no implementation behind it yet. Returned
-    /// instead of a made-up output path.
-    #[error("Not implemented: {0}")]
-    NotImplemented(String),
     /// ComfyUI, Demucs or the file system failed.
     #[error("{0}")]
     Backend(String),
@@ -956,12 +958,187 @@ impl ToolError {
     }
 }
 
-/// Error for the processing and generation tools that only ever returned a
-/// plausible output path without touching any file.
-fn not_implemented(tool: &str, what: &str) -> ToolError {
-    ToolError::NotImplemented(format!(
-        "{tool}: {what} is not implemented yet; no file was written"
-    ))
+/// `rel` inside the project `base`, which must be an existing file. Absolute
+/// paths, `..` and symlinks that lead out of the project are refused: the
+/// path comes from a model's tool call, and the file is read (or uploaded
+/// to ComfyUI) on its behalf.
+pub(crate) fn project_file(
+    base: &std::path::Path,
+    rel: &str,
+) -> Result<std::path::PathBuf, ToolError> {
+    let resolved = base.join(rel);
+    let missing = || ToolError::BadInput(format!("{} does not exist", resolved.display()));
+    let root = base
+        .canonicalize()
+        .map_err(|e| ToolError::BadInput(format!("project directory {}: {e}", base.display())))?;
+    let file = resolved.canonicalize().map_err(|_| missing())?;
+    if !file.starts_with(&root) {
+        return Err(ToolError::BadInput(format!(
+            "{rel} is outside the project ({})",
+            root.display()
+        )));
+    }
+    if !file.is_file() {
+        return Err(missing());
+    }
+    Ok(file)
+}
+
+/// The processing tools, which work on local files only: inputs are read
+/// relative to `base`, outputs go to `assets/generated/audio/processed/`
+/// (`converted/` for `convert`) under it.
+fn run_edit_tool(
+    name: &str,
+    params: serde_json::Value,
+    base: &std::path::Path,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::audio_edit;
+    use crate::wav;
+
+    let input_param = params
+        .get("input")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let input = || project_file(base, &input_param);
+    let stem = sanitize(
+        &std::path::Path::new(&input_param)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    let out_rel = |suffix: &str| format!("assets/generated/audio/processed/{stem}_{suffix}.wav");
+    let load = || {
+        wav::read_wav(&input()?).map_err(|e| {
+            ToolError::BadInput(format!(
+                "{e}; convert it to WAV first with amigo_audiogen_convert"
+            ))
+        })
+    };
+    let save = |rel: &str, audio: &wav::WavData| {
+        wav::write_wav(&base.join(rel), audio).map_err(ToolError::Backend)
+    };
+
+    match name {
+        "amigo_audiogen_process" => {
+            let p: ProcessAudioParams = serde_json::from_value(params)?;
+            let mut audio = load()?;
+            if p.trim_silence {
+                audio_edit::trim_silence(&mut audio, audio_edit::SILENCE_DB);
+            }
+            if p.normalize {
+                audio_edit::normalize(&mut audio, -1.0);
+            }
+            let bpm = if p.detect_bpm || p.find_loop {
+                audio.mono().detect_bpm()
+            } else {
+                None
+            };
+            let mut loop_point = None;
+            if p.find_loop && audio.frames() > 0 {
+                // A whole number of bars when the tempo is known, else
+                // the whole file, cut on a quiet frame.
+                let rate = audio.sample_rate as f32;
+                let bar = bpm.map(|b| 4.0 * 60.0 / b * rate);
+                let target = match bar {
+                    Some(bar) if (audio.frames() as f32) >= bar * 2.0 => {
+                        ((audio.frames() as f32 / bar).floor() - 1.0).max(1.0) * bar
+                    }
+                    _ => audio.frames() as f32 * 0.9,
+                } as usize;
+                let end = audio_edit::loop_end_near(&audio, target);
+                let crossfade = (audio.sample_rate as usize / 100).min(audio.frames() - end);
+                audio = audio_edit::make_loop(&audio, end, crossfade);
+                loop_point = Some(end as f32 / rate);
+            }
+            let rel = out_rel("processed");
+            save(&rel, &audio)?;
+            Ok(serde_json::to_value(ProcessResult {
+                output: rel,
+                bpm: if p.detect_bpm { bpm } else { None },
+                loop_point,
+                duration_secs: audio.duration_secs(),
+            })?)
+        }
+        "amigo_audiogen_loop_trim" => {
+            let p: LoopTrimParams = serde_json::from_value(params)?;
+            let audio = load()?;
+            let target = p.target_duration_secs * audio.sample_rate as f32;
+            if !(target.is_finite() && target >= 1.0) || target as usize >= audio.frames() {
+                return Err(ToolError::BadInput(format!(
+                    "target_duration_secs must be positive and shorter than the file ({:.2} s)",
+                    audio.duration_secs()
+                )));
+            }
+            let end = audio_edit::loop_end_near(&audio, target as usize);
+            // 20 ms, enough to hide the seam without smearing a beat.
+            let crossfade = audio.sample_rate as usize / 50;
+            let looped = audio_edit::make_loop(&audio, end, crossfade);
+            let rel = out_rel("loop");
+            save(&rel, &looped)?;
+            Ok(serde_json::json!({
+                "path": rel,
+                "loop_secs": looped.duration_secs(),
+                "crossfade_ms": 20,
+            }))
+        }
+        "amigo_audiogen_normalize" => {
+            let p: NormalizeParams = serde_json::from_value(params)?;
+            if !(p.target_db.is_finite() && (-60.0..=0.0).contains(&p.target_db)) {
+                return Err(ToolError::BadInput(format!(
+                    "target_db must be between -60 and 0, got {}",
+                    p.target_db
+                )));
+            }
+            let mut audio = load()?;
+            let before = audio_edit::normalize(&mut audio, p.target_db);
+            let rel = out_rel("normalized");
+            save(&rel, &audio)?;
+            Ok(serde_json::json!({
+                "path": rel,
+                "peak_db_before": before,
+                "peak_db": p.target_db,
+            }))
+        }
+        "amigo_audiogen_convert" => {
+            let p: ConvertParams = serde_json::from_value(params)?;
+            let format = p.format.trim().trim_start_matches('.').to_ascii_lowercase();
+            if !audio_edit::FORMATS.contains(&format.as_str()) {
+                return Err(ToolError::BadInput(format!(
+                    "unknown format '{}': use {}",
+                    p.format,
+                    audio_edit::FORMATS.join(", ")
+                )));
+            }
+            let input = input()?;
+            let rel = format!("assets/generated/audio/converted/{stem}.{format}");
+            let ffmpeg = std::env::var_os("AMIGO_FFMPEG").unwrap_or_else(|| "ffmpeg".into());
+            audio_edit::convert(std::path::Path::new(&ffmpeg), &input, &base.join(&rel))
+                .map_err(ToolError::Backend)?;
+            Ok(serde_json::json!({ "path": rel, "format": format }))
+        }
+        _ => {
+            let p: PreviewParams = serde_json::from_value(params)?;
+            if !(p.preview_secs.is_finite() && p.preview_secs > 0.0) {
+                return Err(ToolError::BadInput(format!(
+                    "preview_secs must be positive, got {}",
+                    p.preview_secs
+                )));
+            }
+            let audio = load()?;
+            let frames = ((p.preview_secs * audio.sample_rate as f32) as usize).min(audio.frames());
+            let start = audio_edit::loudest_window(&audio, frames);
+            let mut clip = audio.slice(start, start + frames);
+            audio_edit::fade_edges(&mut clip, audio.sample_rate as usize / 20);
+            let rel = out_rel("preview");
+            save(&rel, &clip)?;
+            Ok(serde_json::json!({
+                "path": rel,
+                "start_secs": start as f32 / audio.sample_rate as f32,
+                "duration_secs": clip.duration_secs(),
+            }))
+        }
+    }
 }
 
 /// Split `input` into stems with Demucs (installed by `amigo setup --only
@@ -1214,13 +1391,15 @@ pub fn dispatch_tool_with_defaults(
                 adaptive_config: None,
             })?)
         }
-        "amigo_audiogen_process" => {
-            let _: ProcessAudioParams = serde_json::from_value(params)?;
-            Err(not_implemented(
-                name,
-                "BPM detection, loop finding and normalisation of audio files",
-            ))
-        }
+        "amigo_audiogen_process"
+        | "amigo_audiogen_loop_trim"
+        | "amigo_audiogen_normalize"
+        | "amigo_audiogen_convert"
+        | "amigo_audiogen_preview" => run_edit_tool(
+            name,
+            params,
+            project_dir.unwrap_or(std::path::Path::new(".")),
+        ),
         "amigo_audiogen_list_styles" => {
             let custom_registry = {
                 let styles_dir = project_dir
@@ -1271,45 +1450,29 @@ pub fn dispatch_tool_with_defaults(
                 audiogen_connected: connected,
             })?)
         }
-        "amigo_audiogen_generate_core_melody" => {
-            let _: GenerateCoreMelodyParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "melody generation"))
-        }
-        "amigo_audiogen_generate_stem" => {
-            let _: GenerateStemParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "stem generation from a melody"))
-        }
-        "amigo_audiogen_generate_variation" => {
-            let _: GenerateVariationParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "track variations"))
-        }
-        "amigo_audiogen_extend_track" => {
-            let _: ExtendTrackParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "track extension"))
-        }
-        "amigo_audiogen_remix" => {
-            let _: RemixParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "remixing"))
-        }
-        "amigo_audiogen_generate_ambient" => {
-            let _: GenerateAmbientParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "ambient generation"))
-        }
-        "amigo_audiogen_loop_trim" => {
-            let _: LoopTrimParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "loop trimming"))
-        }
-        "amigo_audiogen_normalize" => {
-            let _: NormalizeParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "normalisation"))
-        }
-        "amigo_audiogen_convert" => {
-            let _: ConvertParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "format conversion"))
-        }
-        "amigo_audiogen_preview" => {
-            let _: PreviewParams = serde_json::from_value(params)?;
-            Err(not_implemented(name, "preview rendering"))
+        "amigo_audiogen_generate_core_melody"
+        | "amigo_audiogen_generate_stem"
+        | "amigo_audiogen_generate_variation"
+        | "amigo_audiogen_extend_track"
+        | "amigo_audiogen_remix"
+        | "amigo_audiogen_generate_ambient" => {
+            let client = create_comfyui_client();
+            let generator = crate::generation::Generator {
+                client: &client,
+                base: project_dir.unwrap_or(std::path::Path::new(".")),
+            };
+            match name {
+                "amigo_audiogen_generate_core_melody" => {
+                    generator.core_melody(&serde_json::from_value(params)?)
+                }
+                "amigo_audiogen_generate_stem" => generator.stem(&serde_json::from_value(params)?),
+                "amigo_audiogen_generate_variation" => {
+                    generator.variation(&serde_json::from_value(params)?)
+                }
+                "amigo_audiogen_extend_track" => generator.extend(&serde_json::from_value(params)?),
+                "amigo_audiogen_remix" => generator.remix(&serde_json::from_value(params)?),
+                _ => generator.ambient(&serde_json::from_value(params)?),
+            }
         }
         "amigo_audiogen_list_models" => {
             // Try to get live model list from ComfyUI; fall back to known defaults
@@ -1832,7 +1995,7 @@ pub fn dispatch_tool_with_defaults(
     }
 }
 
-fn sanitize(s: &str) -> String {
+pub(crate) fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| {
             if c.is_alphanumeric() || c == '_' {
@@ -1870,14 +2033,6 @@ mod tests {
             }
             Err(other) => panic!("unexpected error: {other}"),
         }
-    }
-
-    /// The tools that used to return a plausible path without writing
-    /// anything now say they are not implemented.
-    fn assert_not_implemented(tool: &str, args: serde_json::Value) {
-        let err = dispatch_tool(tool, args).unwrap_err();
-        assert!(matches!(err, ToolError::NotImplemented(_)), "{tool}: {err}");
-        assert!(!err.is_protocol_error());
     }
 
     // ── Helper ──────────────────────────────────────────────────
@@ -1982,84 +2137,291 @@ mod tests {
         assert_eq!(v["audiogen_connected"], v["comfyui_connected"]);
     }
 
-    // ── Clean-mode dispatch ─────────────────────────────────────
+    // ── Clean-mode and generation dispatch ──────────────────────
 
     #[test]
     fn dispatch_generate_core_melody() {
-        assert_not_implemented(
+        let result = dispatch_tool(
             "amigo_audiogen_generate_core_melody",
             serde_json::json!({ "world": "caribbean", "key": "A minor", "bpm": 130 }),
         );
-    }
-
-    #[test]
-    fn dispatch_generate_stem() {
-        assert_not_implemented(
-            "amigo_audiogen_generate_stem",
-            serde_json::json!({
-                "stem_type": "bass",
-                "melody_ref": "assets/melody.wav",
-                "bpm": 120
-            }),
-        );
-    }
-
-    // ── Utility dispatch ────────────────────────────────────────
-
-    #[test]
-    fn dispatch_generate_variation() {
-        assert_not_implemented(
-            "amigo_audiogen_generate_variation",
-            serde_json::json!({ "input": "track.wav", "strength": 0.5 }),
-        );
-    }
-
-    #[test]
-    fn dispatch_generate_ambient() {
-        assert_not_implemented(
-            "amigo_audiogen_generate_ambient",
-            serde_json::json!({ "prompt": "ocean waves crashing" }),
-        );
-    }
-
-    #[test]
-    fn every_stub_tool_reports_not_implemented() {
-        for (tool, args) in [
-            (
-                "amigo_audiogen_process",
-                serde_json::json!({ "input": "a.wav" }),
-            ),
-            (
-                "amigo_audiogen_extend_track",
-                serde_json::json!({ "input": "a.wav", "extend_secs": 10 }),
-            ),
-            (
-                "amigo_audiogen_remix",
-                serde_json::json!({ "input": "a.wav", "genre": "techno" }),
-            ),
-            (
-                "amigo_audiogen_loop_trim",
-                serde_json::json!({ "input": "a.wav", "target_duration_secs": 8 }),
-            ),
-            (
-                "amigo_audiogen_normalize",
-                serde_json::json!({ "input": "a.wav" }),
-            ),
-            (
-                "amigo_audiogen_preview",
-                serde_json::json!({ "input": "a.wav" }),
-            ),
-        ] {
-            assert_not_implemented(tool, args);
+        if let Some(v) = generated(result) {
+            assert!(v["path"].as_str().unwrap().contains("A_minor_130bpm"));
         }
     }
 
     #[test]
-    fn dispatch_convert() {
-        assert_not_implemented(
-            "amigo_audiogen_convert",
-            serde_json::json!({ "input": "track.wav", "format": "ogg" }),
+    fn generation_from_a_missing_file_is_refused_before_contacting_comfyui() {
+        for (tool, args) in [
+            (
+                "amigo_audiogen_generate_stem",
+                serde_json::json!({ "stem_type": "bass", "melody_ref": "assets/none.wav" }),
+            ),
+            (
+                "amigo_audiogen_generate_variation",
+                serde_json::json!({ "input": "none.wav", "strength": 0.5 }),
+            ),
+            (
+                "amigo_audiogen_extend_track",
+                serde_json::json!({ "input": "none.wav", "extend_secs": 10 }),
+            ),
+            (
+                "amigo_audiogen_remix",
+                serde_json::json!({ "input": "none.wav", "genre": "techno" }),
+            ),
+        ] {
+            let err = dispatch_tool(tool, args).unwrap_err();
+            assert!(matches!(err, ToolError::BadInput(_)), "{tool}: {err}");
+        }
+    }
+
+    #[test]
+    fn dispatch_generate_ambient() {
+        let result = dispatch_tool(
+            "amigo_audiogen_generate_ambient",
+            serde_json::json!({ "prompt": "ocean waves crashing" }),
         );
+        if let Some(v) = generated(result) {
+            assert!(v["path"].as_str().unwrap().contains("ocean_waves"));
+        }
+    }
+
+    // ── Processing dispatch (local files, no ComfyUI) ───────────
+
+    /// A project with `beat.wav`: 0.5 s of silence, 4 s of a 120 BPM click
+    /// pattern (a 50 ms burst on every beat), 0.5 s of silence; stereo at
+    /// 8 kHz, peaking at 0.25.
+    fn project_with_beat() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let rate = 8000usize;
+        let mut samples = vec![0.0f32; rate / 2 * 2];
+        for i in 0..rate * 4 {
+            let in_beat = i % (rate / 2) < rate / 20;
+            let s = if in_beat {
+                (i as f32 * 0.7).sin() * 0.25
+            } else {
+                (i as f32 * 0.05).sin() * 0.01
+            };
+            samples.extend([s, s]);
+        }
+        samples.extend(vec![0.0f32; rate / 2 * 2]);
+        crate::wav::write_wav(
+            &dir.path().join("beat.wav"),
+            &crate::wav::WavData {
+                sample_rate: rate as u32,
+                channels: 2,
+                samples,
+            },
+        )
+        .unwrap();
+        dir
+    }
+
+    fn edit(
+        dir: &tempfile::TempDir,
+        tool: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, ToolError> {
+        dispatch_tool_with_defaults(tool, args, Some(dir.path()))
+    }
+
+    fn read(dir: &tempfile::TempDir, rel: &serde_json::Value) -> crate::wav::WavData {
+        crate::wav::read_wav(&dir.path().join(rel.as_str().unwrap())).unwrap()
+    }
+
+    #[test]
+    fn process_trims_normalizes_and_finds_the_tempo() {
+        let dir = project_with_beat();
+        let v = edit(
+            &dir,
+            "amigo_audiogen_process",
+            serde_json::json!({ "input": "beat.wav", "trim_silence": true, "normalize": true, "detect_bpm": true }),
+        )
+        .unwrap();
+        assert_eq!(
+            v["output"],
+            "assets/generated/audio/processed/beat_processed.wav"
+        );
+        let out = read(&dir, &v["output"]);
+        assert!(
+            out.duration_secs() < 4.01 && out.duration_secs() > 3.9,
+            "{}",
+            out.duration_secs()
+        );
+        assert!((crate::processing::linear_to_db(out.peak()) + 1.0).abs() < 0.1);
+        let bpm = v["bpm"].as_f64().unwrap();
+        assert!(
+            (bpm - 120.0).abs() < 6.0 || (bpm - 60.0).abs() < 3.0,
+            "{bpm}"
+        );
+
+        let v = edit(
+            &dir,
+            "amigo_audiogen_process",
+            serde_json::json!({ "input": "beat.wav", "trim_silence": true, "find_loop": true }),
+        )
+        .unwrap();
+        assert!(v["loop_point"].as_f64().unwrap() > 1.0, "{v}");
+        assert!(v["bpm"].is_null(), "not asked for");
+    }
+
+    #[test]
+    fn loop_trim_normalize_and_preview_write_their_files() {
+        let dir = project_with_beat();
+        let v = edit(
+            &dir,
+            "amigo_audiogen_loop_trim",
+            serde_json::json!({ "input": "beat.wav", "target_duration_secs": 2.0 }),
+        )
+        .unwrap();
+        let looped = read(&dir, &v["path"]);
+        assert!(
+            (looped.duration_secs() - 2.0).abs() <= 0.05,
+            "{}",
+            looped.duration_secs()
+        );
+        assert_eq!(looped.channels, 2);
+        assert!(
+            edit(
+                &dir,
+                "amigo_audiogen_loop_trim",
+                serde_json::json!({ "input": "beat.wav", "target_duration_secs": 60.0 }),
+            )
+            .is_err()
+        );
+
+        let v = edit(
+            &dir,
+            "amigo_audiogen_normalize",
+            serde_json::json!({ "input": "beat.wav", "target_db": -3.0 }),
+        )
+        .unwrap();
+        assert!(
+            (v["peak_db_before"].as_f64().unwrap() + 12.04).abs() < 0.2,
+            "{v}"
+        );
+        let normalized = read(&dir, &v["path"]);
+        assert!((crate::processing::linear_to_db(normalized.peak()) + 3.0).abs() < 0.05);
+        assert!(
+            edit(
+                &dir,
+                "amigo_audiogen_normalize",
+                serde_json::json!({ "input": "beat.wav", "target_db": 6.0 }),
+            )
+            .is_err()
+        );
+
+        let v = edit(
+            &dir,
+            "amigo_audiogen_preview",
+            serde_json::json!({ "input": "beat.wav", "preview_secs": 1.0 }),
+        )
+        .unwrap();
+        let clip = read(&dir, &v["path"]);
+        assert!((clip.duration_secs() - 1.0).abs() < 0.01);
+        let start = v["start_secs"].as_f64().unwrap();
+        assert!((0.25..=3.5).contains(&start), "skips the silence: {start}");
+        assert_eq!(clip.frame(0), [0.0, 0.0], "faded in");
+    }
+
+    #[test]
+    fn processing_refuses_missing_and_non_wav_input() {
+        let dir = project_with_beat();
+        std::fs::write(dir.path().join("song.ogg"), b"OggS").unwrap();
+        for (tool, args, what) in [
+            (
+                "amigo_audiogen_process",
+                serde_json::json!({ "input": "none.wav" }),
+                "does not exist",
+            ),
+            (
+                "amigo_audiogen_normalize",
+                serde_json::json!({ "input": "song.ogg" }),
+                "convert it to WAV",
+            ),
+            (
+                "amigo_audiogen_preview",
+                serde_json::json!({ "input": "beat.wav", "preview_secs": 0 }),
+                "positive",
+            ),
+            (
+                "amigo_audiogen_convert",
+                serde_json::json!({ "input": "beat.wav", "format": "aiff" }),
+                "unknown format",
+            ),
+            (
+                "amigo_audiogen_convert",
+                serde_json::json!({ "input": "none.wav", "format": "ogg" }),
+                "does not exist",
+            ),
+        ] {
+            let err = edit(&dir, tool, args).unwrap_err();
+            assert!(matches!(err, ToolError::BadInput(_)), "{tool}: {err}");
+            assert!(err.to_string().contains(what), "{tool}: {err}");
+        }
+    }
+
+    #[test]
+    fn inputs_outside_the_project_are_refused() {
+        let dir = project_with_beat();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.wav");
+        std::fs::copy(dir.path().join("beat.wav"), &secret).unwrap();
+        let escape = format!(
+            "../{}/secret.wav",
+            outside.path().file_name().unwrap().to_string_lossy()
+        );
+        let mut attempts = vec![secret.to_string_lossy().into_owned(), escape];
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&secret, dir.path().join("link.wav")).unwrap();
+            attempts.push("link.wav".into());
+        }
+        for input in attempts {
+            let err = edit(
+                &dir,
+                "amigo_audiogen_normalize",
+                serde_json::json!({ "input": input }),
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("outside the project"),
+                "{input}: {err}"
+            );
+            let err = dispatch_tool_with_defaults(
+                "amigo_audiogen_generate_variation",
+                serde_json::json!({ "input": input }),
+                Some(dir.path()),
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("outside the project"),
+                "{input}: {err}"
+            );
+        }
+        // A path that stays inside after `..` is fine.
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        assert!(
+            edit(
+                &dir,
+                "amigo_audiogen_normalize",
+                serde_json::json!({ "input": "sub/../beat.wav" }),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn convert_to_wav_needs_no_ffmpeg() {
+        let dir = project_with_beat();
+        let v = edit(
+            &dir,
+            "amigo_audiogen_convert",
+            serde_json::json!({ "input": "beat.wav", "format": ".WAV" }),
+        )
+        .unwrap();
+        assert_eq!(v["path"], "assets/generated/audio/converted/beat.wav");
+        assert_eq!(read(&dir, &v["path"]).channels, 2);
     }
 
     #[test]

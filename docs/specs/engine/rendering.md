@@ -21,6 +21,7 @@ Sprite rotation and pivots, blend modes, screen-space drawing from `Game::draw`,
   - `pixel_perfect` (default): the largest whole-number scale that fits, centred, with letterbox bars (`Renderer::letterbox_color`). Falls back to `fit` when the window is smaller than the virtual resolution.
   - `fit`: the largest scale that keeps the aspect ratio, bars on the remaining sides.
   - `stretch`: fill the window, ignoring the aspect ratio.
+  - `expand`: keep the virtual height and widen or narrow the virtual width to the window's aspect ratio, so the image covers the window without bars or distortion. The engine sets the camera's `virtual_width` before every `update`; `GameContext::viewport_info()` reports it (rendering-extensions R10).
 
   The scene target is the virtual resolution for `art_style = "pixel_art"` and `"hybrid"`, and the viewport's window-pixel size for `"raster_art"`, so high-resolution art is not reduced to the virtual resolution first. Mouse positions map back through `Viewport::window_to_virtual`.
 - **No artificial limits:** Unlimited colors, alpha, blend modes, shaders.

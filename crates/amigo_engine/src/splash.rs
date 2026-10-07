@@ -79,20 +79,9 @@ pub fn render_splash(
 
     // Full-screen background
     sprites.push(SpriteInstance {
-        texture_id: white_texture,
-        x: 0.0,
-        y: 0.0,
-        width: virtual_width,
-        height: virtual_height,
-        uv_x: 0.0,
-        uv_y: 0.0,
-        uv_w: 1.0,
-        uv_h: 1.0,
         tint: bg_color,
-        flip_x: false,
-        flip_y: false,
         z_order: 1000,
-        shaders: Vec::new(),
+        ..SpriteInstance::new(white_texture, 0.0, 0.0, virtual_width, virtual_height)
     });
 
     // Render "POWERED BY" as small text indicator (simple bar)
@@ -101,20 +90,9 @@ pub fn render_splash(
     let bar_x = (virtual_width - bar_w) / 2.0;
     let bar_y = virtual_height / 2.0 - 20.0;
     sprites.push(SpriteInstance {
-        texture_id: white_texture,
-        x: bar_x,
-        y: bar_y,
-        width: bar_w,
-        height: bar_h,
-        uv_x: 0.0,
-        uv_y: 0.0,
-        uv_w: 1.0,
-        uv_h: 1.0,
         tint: sub_color,
-        flip_x: false,
-        flip_y: false,
         z_order: 1001,
-        shaders: Vec::new(),
+        ..SpriteInstance::new(white_texture, bar_x, bar_y, bar_w, bar_h)
     });
 
     // Render "AMIGO" as block letters (pixel-style)
@@ -178,20 +156,15 @@ pub fn render_splash(
             for (col, &on) in cols.iter().enumerate() {
                 if on {
                     sprites.push(SpriteInstance {
-                        texture_id: white_texture,
-                        x: lx + col as f32 * step,
-                        y: start_y + row as f32 * step,
-                        width: block,
-                        height: block,
-                        uv_x: 0.0,
-                        uv_y: 0.0,
-                        uv_w: 1.0,
-                        uv_h: 1.0,
                         tint: text_color,
-                        flip_x: false,
-                        flip_y: false,
                         z_order: 1001,
-                        shaders: Vec::new(),
+                        ..SpriteInstance::new(
+                            white_texture,
+                            lx + col as f32 * step,
+                            start_y + row as f32 * step,
+                            block,
+                            block,
+                        )
                     });
                 }
             }
@@ -200,19 +173,14 @@ pub fn render_splash(
 
     // Bottom bar
     sprites.push(SpriteInstance {
-        texture_id: white_texture,
-        x: bar_x,
-        y: start_y + 5.0 * step + 8.0,
-        width: bar_w,
-        height: bar_h,
-        uv_x: 0.0,
-        uv_y: 0.0,
-        uv_w: 1.0,
-        uv_h: 1.0,
         tint: sub_color,
-        flip_x: false,
-        flip_y: false,
         z_order: 1001,
-        shaders: Vec::new(),
+        ..SpriteInstance::new(
+            white_texture,
+            bar_x,
+            start_y + 5.0 * step + 8.0,
+            bar_w,
+            bar_h,
+        )
     });
 }

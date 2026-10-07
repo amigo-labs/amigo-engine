@@ -1,6 +1,7 @@
 use amigo_animation::AnimPlayer;
-use amigo_assets::AssetManager;
+use amigo_assets::{AssetManager, SpriteFrame};
 use amigo_core::events::EventHub;
+use amigo_core::fog_of_war::FogOfWarGrid;
 use amigo_core::level_loader::LoadedLevel;
 use amigo_core::resources::Resources;
 use amigo_core::save::{SaveConfig, SaveManager};
@@ -8,12 +9,16 @@ use amigo_core::scheduler::TickScheduler;
 use amigo_core::{Color, Rect, RenderVec2, SimRng, TimeInfo, World};
 use amigo_input::{ActionBindings, ActionState, GamepadState, InputState};
 use amigo_render::camera::Camera;
-use amigo_render::font::{FontId, FontManager};
+use amigo_render::font::{FontAtlas, FontId, FontManager, TextMetrics, TextStyle};
 use amigo_render::lighting::LightingState;
+use amigo_render::minimap::Minimap;
 use amigo_render::particles::ParticleSystem;
 use amigo_render::post_process::PostEffect;
+use amigo_render::post_shader::{PostShaderRegistry, ShaderError};
+use amigo_render::shapes::{self, ConvexShape};
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
+use amigo_render::{ArtStyle, DynamicTextures, ScaleMode, ViewportInfo};
 use amigo_tilemap::{TileId, TileLayer};
 use amigo_ui::UiContext;
 
@@ -114,6 +119,8 @@ pub struct GameContext {
     /// # }
     /// ```
     pub post_effects: Vec<PostEffect>,
+    /// Post shaders registered with [`register_post_shader`](Self::register_post_shader).
+    post_shaders: PostShaderRegistry,
     /// Loaded assets: sprites, and `load_ron` for game data.
     ///
     /// This used to live in the engine's private state, so game code could not
@@ -126,8 +133,12 @@ pub struct GameContext {
     pub audio: AudioManager,
     #[cfg(feature = "async_tasks")]
     pub tasks: amigo_core::tasks::TaskPool,
-    // Texture mapping for sprites (name -> TextureId + dimensions)
-    sprite_textures: Vec<(String, TextureId, u32, u32)>,
+    /// The window's layout, refreshed by the engine.
+    viewport_info: ViewportInfo,
+    /// Textures made at runtime; see [`textures`](Self::textures).
+    dynamic_textures: DynamicTextures,
+    /// Sprites the game can draw by name: texture, size and frames.
+    sprites: std::collections::HashMap<String, SpriteEntry>,
     seed: u64,
     pub(crate) replay: crate::replay::ReplayDriver,
     pub(crate) net: crate::net::NetDriver,
@@ -162,15 +173,66 @@ impl GameContext {
             ui: UiContext::new(),
             lighting: LightingState::new(),
             post_effects: Vec::new(),
+            post_shaders: PostShaderRegistry::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
             #[cfg(feature = "async_tasks")]
             tasks: amigo_core::tasks::TaskPool::new(),
-            sprite_textures: Vec::new(),
+            viewport_info: ViewportInfo::compute(
+                ScaleMode::PixelPerfect,
+                ArtStyle::PixelArt,
+                (virtual_width as u32, virtual_height as u32),
+                (virtual_width as u32, virtual_height as u32),
+                1.0,
+            ),
+            dynamic_textures: DynamicTextures::new(),
+            sprites: std::collections::HashMap::new(),
             seed: 0,
             replay: Default::default(),
             net: Default::default(),
         }
+    }
+
+    /// What the game needs to lay out for its window: window size, where the
+    /// scene lands, the current virtual resolution (which changes under
+    /// `scale_mode = "expand"`), the render scale and the DPI factor.
+    /// Refreshed by the engine before every `update` and on every resize;
+    /// before the first window event it describes the configured window.
+    pub fn viewport_info(&self) -> ViewportInfo {
+        self.viewport_info
+    }
+
+    pub(crate) fn set_viewport_info(&mut self, info: ViewportInfo) {
+        self.viewport_info = info;
+    }
+
+    /// Textures the game makes at runtime, such as a procedural image:
+    /// `allocate` an id once, `upload` an image under it whenever it changes
+    /// (also from `Game::draw`), and draw it with `SpriteInstance::new(id, ..)`.
+    /// The engine uploads before the frame is drawn.
+    pub fn textures(&self) -> &DynamicTextures {
+        &self.dynamic_textures
+    }
+
+    pub(crate) fn textures_mut(&mut self) -> &mut DynamicTextures {
+        &mut self.dynamic_textures
+    }
+
+    /// Click-to-jump for `minimap`: when the left mouse button was pressed on
+    /// it this tick and its `click_to_jump` is on, centre the camera on the
+    /// clicked spot and return `true`. The minimap's world units are tiles of
+    /// `tile_w`×`tile_h` pixels.
+    pub fn minimap_click(&mut self, minimap: &Minimap, tile_w: f32, tile_h: f32) -> bool {
+        if !self.input.mouse_pressed(winit::event::MouseButton::Left) {
+            return false;
+        }
+        let Some(tile) = minimap.screen_to_world(self.input.mouse_ui_pos()) else {
+            return false;
+        };
+        let target = RenderVec2::new(tile.x * tile_w, tile.y * tile_h);
+        self.camera.position = target;
+        self.camera.target = target;
+        true
     }
 
     /// The seed [`rng`](Self::rng) started from: `[dev] seed` in
@@ -308,14 +370,43 @@ impl GameContext {
         });
     }
 
+    /// Register (or replace) the post shader `name`, for
+    /// `PostEffect::Custom { shader: name, .. }`. Its source is the fragment
+    /// stage only; the engine prepends the prelude
+    /// (`amigo_render::post_shader::POST_PRELUDE`). Parsed and validated now;
+    /// compiled for the GPU at the start of the next frame.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext) -> Result<(), ShaderError> {
+    /// ctx.register_post_shader("tint", r#"
+    /// @fragment
+    /// fn fs_main(in: PostVertexOutput) -> @location(0) vec4<f32> {
+    ///     return textureSample(scene, scene_sampler, in.uv) * post.params[0];
+    /// }
+    /// "#)?;
+    /// let mut params = [0.0; 16];
+    /// params[..4].copy_from_slice(&[1.0, 0.8, 0.8, 1.0]);
+    /// ctx.post_effects = vec![PostEffect::Custom { shader: "tint".into(), params }];
+    /// # Ok(()) }
+    /// ```
+    pub fn register_post_shader(&mut self, name: &str, wgsl: &str) -> Result<(), ShaderError> {
+        self.post_shaders.register(name, wgsl)
+    }
+
+    /// The post shaders registered so far.
+    pub fn post_shaders(&self) -> &PostShaderRegistry {
+        &self.post_shaders
+    }
+
     /// Load a TTF/OTF font at the given pixel size. Returns a FontId handle.
     pub fn load_font(&mut self, data: &[u8], px: f32) -> Result<FontId, String> {
         self.fonts.load_font(data, px)
     }
 
-    /// Register (or replace) the texture backing a sprite name. Replacing
-    /// an existing entry keeps hot reload working: draws by name pick up
-    /// the new texture on the next frame.
+    /// Register (or replace) the texture backing a sprite name, as one frame
+    /// covering the texture. Replacing an existing entry keeps hot reload
+    /// working: draws by name pick up the new texture on the next frame.
     pub fn register_sprite_texture(
         &mut self,
         name: String,
@@ -323,35 +414,116 @@ impl GameContext {
         width: u32,
         height: u32,
     ) {
-        if let Some(entry) = self
-            .sprite_textures
-            .iter_mut()
-            .find(|(n, _, _, _)| *n == name)
-        {
-            *entry = (name, texture_id, width, height);
-        } else {
-            self.sprite_textures.push((name, texture_id, width, height));
-        }
+        self.register_sprite(
+            name,
+            SpriteEntry {
+                texture: texture_id,
+                size: (width, height),
+                frames: vec![SpriteFrame::whole(width, height)],
+                atlas: false,
+            },
+        );
     }
 
+    /// Register (or replace) a sprite with its frames.
+    pub fn register_sprite(&mut self, name: String, entry: SpriteEntry) {
+        self.sprites.insert(name, entry);
+    }
+
+    /// A registered sprite.
+    pub fn sprite_entry(&self, name: &str) -> Option<&SpriteEntry> {
+        self.sprites.get(name)
+    }
+
+    /// The texture of a sprite and the texture's size.
     pub fn find_sprite_texture(&self, name: &str) -> Option<(TextureId, u32, u32)> {
-        self.sprite_textures
-            .iter()
-            .find(|(n, _, _, _)| n == name)
-            .map(|(_, id, w, h)| (*id, *w, *h))
+        self.sprites
+            .get(name)
+            .map(|e| (e.texture, e.size.0, e.size.1))
+    }
+}
+
+/// A sprite the engine can draw by name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpriteEntry {
+    /// The texture it lives on: its own, or its atlas sheet's.
+    pub texture: TextureId,
+    /// Size of that texture in pixels.
+    pub size: (u32, u32),
+    /// At least one frame. A PNG has one covering the texture; an Aseprite
+    /// strip one per cell; an atlas sprite the manifest's.
+    pub frames: Vec<SpriteFrame>,
+    /// The sprite lives on an atlas sheet: `draw_sprite` draws its first
+    /// frame, and `draw_animated` draws through `draw_frame`.
+    pub atlas: bool,
+}
+
+/// The corners of `rect`, top-left first, clockwise on screen.
+fn rect_corners(rect: Rect) -> [RenderVec2; 4] {
+    [
+        RenderVec2::new(rect.x, rect.y),
+        RenderVec2::new(rect.x + rect.w, rect.y),
+        RenderVec2::new(rect.x + rect.w, rect.y + rect.h),
+        RenderVec2::new(rect.x, rect.y + rect.h),
+    ]
+}
+
+/// Which coordinate space [`DrawContext`] draws into.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DrawSpace {
+    /// World coordinates, through the camera, lighting and post-processing.
+    #[default]
+    World,
+    /// Virtual-resolution screen coordinates, origin top-left, no camera,
+    /// drawn in the UI pass after post-processing (conventions A.6).
+    Screen,
+}
+
+/// What `Game::draw` asked of this frame's camera. The engine applies it to
+/// the projection after `draw` returns; it never reaches `GameContext::camera`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct FrameOverrides {
+    pub camera_position: Option<RenderVec2>,
+    pub camera_offset: RenderVec2,
+}
+
+impl FrameOverrides {
+    /// Point `camera` at the overridden position for this frame and return
+    /// the position to restore afterwards.
+    pub(crate) fn apply(&self, camera: &mut Camera) -> RenderVec2 {
+        let saved = camera.position;
+        let base = self.camera_position.unwrap_or(saved);
+        camera.position =
+            RenderVec2::new(base.x + self.camera_offset.x, base.y + self.camera_offset.y);
+        saved
     }
 }
 
 /// Context passed to Game::draw() for rendering.
 pub struct DrawContext<'a> {
     pub sprites: &'a mut Vec<SpriteInstance>,
+    /// The camera position this frame renders with: shake, a draw-time
+    /// override and offset included (see [`camera_position`](Self::camera_position)).
     pub camera_pos: RenderVec2,
     pub virtual_width: f32,
     pub virtual_height: f32,
     pub alpha: f32,
     game_ctx: &'a GameContext,
     white_texture: TextureId,
+    /// The visible world rectangle, before any parallax shift.
     view: Rect,
+    screen: Option<&'a mut Vec<SpriteInstance>>,
+    warned_no_screen: bool,
+    space: DrawSpace,
+    z: i32,
+    parallax: (f32, f32),
+    /// The camera's position as of `update`, without shake.
+    camera_base: RenderVec2,
+    /// The camera's built-in shake this frame.
+    camera_shake: RenderVec2,
+    overrides: FrameOverrides,
+    render_scale: f32,
+    art_style: ArtStyle,
 }
 
 impl<'a> DrawContext<'a> {
@@ -379,7 +551,29 @@ impl<'a> DrawContext<'a> {
                 virtual_width,
                 virtual_height,
             ),
+            screen: None,
+            warned_no_screen: false,
+            space: DrawSpace::World,
+            z: 0,
+            parallax: (1.0, 1.0),
+            camera_base: camera_pos,
+            camera_shake: RenderVec2::ZERO,
+            overrides: FrameOverrides::default(),
+            render_scale: 1.0,
+            art_style: ArtStyle::PixelArt,
         }
+    }
+
+    /// Take position, shake, zoom and view from `camera`, as the engine does
+    /// for every frame.
+    pub fn with_camera(mut self, camera: &Camera) -> Self {
+        self.camera_base = camera.position;
+        self.camera_shake = camera.shake_offset();
+        self.camera_pos = camera.effective_position();
+        self.virtual_width = camera.virtual_width;
+        self.virtual_height = camera.virtual_height;
+        self.view = camera.view_rect();
+        self
     }
 
     /// Set the visible world rectangle (zoom and shake included) that
@@ -389,31 +583,165 @@ impl<'a> DrawContext<'a> {
         self
     }
 
-    /// The visible world rectangle. Draws outside it are wasted work.
-    pub fn view_rect(&self) -> Rect {
-        self.view
+    /// Attach the list that screen-space draws go into. The engine always
+    /// attaches one; a `DrawContext` built without it (in a test, say) drops
+    /// screen-space draws and logs one warning.
+    pub fn with_screen_list(mut self, screen: &'a mut Vec<SpriteInstance>) -> Self {
+        self.screen = Some(screen);
+        self
     }
 
-    /// Draw a sprite at a position.
-    pub fn draw_sprite(&mut self, name: &str, pos: RenderVec2) {
-        if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
-            self.sprites.push(SpriteInstance {
-                texture_id: tex_id,
-                x: pos.x,
-                y: pos.y,
-                width: w as f32,
-                height: h as f32,
-                uv_x: 0.0,
-                uv_y: 0.0,
-                uv_w: 1.0,
-                uv_h: 1.0,
-                tint: Color::WHITE,
-                flip_x: false,
-                flip_y: false,
-                z_order: 0,
-                shaders: Vec::new(),
-            });
+    /// The visible rectangle in the coordinates of the current draw space:
+    /// the screen `(0, 0, virtual_w, virtual_h)` in [`DrawSpace::Screen`], the
+    /// world view (shifted against the parallax factor) in [`DrawSpace::World`].
+    /// Draws outside it are wasted work.
+    pub fn view_rect(&self) -> Rect {
+        match self.space {
+            DrawSpace::Screen => Rect::new(0.0, 0.0, self.virtual_width, self.virtual_height),
+            DrawSpace::World => {
+                let (dx, dy) = self.parallax_shift();
+                Rect::new(self.view.x - dx, self.view.y - dy, self.view.w, self.view.h)
+            }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Draw space, z and parallax
+    // -----------------------------------------------------------------------
+
+    /// Route every following draw call into `space`.
+    pub fn set_space(&mut self, space: DrawSpace) {
+        self.space = space;
+    }
+
+    /// The current draw space.
+    pub fn space(&self) -> DrawSpace {
+        self.space
+    }
+
+    /// Run `f` with `space` active, then restore the previous space.
+    pub fn in_space<R>(&mut self, space: DrawSpace, f: impl FnOnce(&mut Self) -> R) -> R {
+        let previous = self.space;
+        self.space = space;
+        let result = f(self);
+        self.space = previous;
+        result
+    }
+
+    /// Default z-order for the following draws that do not take one
+    /// explicitly (`draw_sprite`, `draw_animated`, `draw_rect`, tilemaps and
+    /// shapes). Starts at 0. Text keeps its own z.
+    pub fn set_z(&mut self, z_order: i32) {
+        self.z = z_order;
+    }
+
+    /// The current default z-order.
+    pub fn z(&self) -> i32 {
+        self.z
+    }
+
+    /// World draws after this call move at `fx`/`fy` times the camera's
+    /// speed: 1.0 is the world (default), 0.0 is fixed to the screen, 0.25 a
+    /// distant layer. Ignored in [`DrawSpace::Screen`]. A non-finite factor is
+    /// treated as 1.0.
+    pub fn set_parallax(&mut self, fx: f32, fy: f32) {
+        let finite = |f: f32| if f.is_finite() { f } else { 1.0 };
+        self.parallax = (finite(fx), finite(fy));
+    }
+
+    /// The current parallax factor.
+    pub fn parallax(&self) -> (f32, f32) {
+        self.parallax
+    }
+
+    /// How far a world draw is shifted at the current parallax factor.
+    fn parallax_shift(&self) -> (f32, f32) {
+        let (fx, fy) = self.parallax;
+        let cam = self.camera_pos;
+        (cam.x * (1.0 - fx), cam.y * (1.0 - fy))
+    }
+
+    /// Queue one sprite in the current space, applying parallax in the world.
+    /// Every draw call goes through here.
+    pub fn push(&mut self, mut sprite: SpriteInstance) {
+        match self.space {
+            DrawSpace::World => {
+                let (dx, dy) = self.parallax_shift();
+                if dx != 0.0 || dy != 0.0 {
+                    sprite.x += dx;
+                    sprite.y += dy;
+                    if let Some(geometry) = &mut sprite.geometry {
+                        for corner in &mut geometry.corners {
+                            corner[0] += dx;
+                            corner[1] += dy;
+                        }
+                    }
+                }
+                self.sprites.push(sprite);
+            }
+            DrawSpace::Screen => match &mut self.screen {
+                Some(screen) => screen.push(sprite),
+                None => {
+                    if !self.warned_no_screen {
+                        tracing::warn!(
+                            "DrawContext has no screen list: screen-space draws are dropped"
+                        );
+                        self.warned_no_screen = true;
+                    }
+                }
+            },
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Camera from draw()
+    // -----------------------------------------------------------------------
+
+    /// Render this frame with the camera centred on `center` instead of the
+    /// position the camera reached in `update`. Affects only this frame's
+    /// projection; `GameContext::camera` is not changed. Call it before
+    /// drawing anything, so culling and parallax see the new camera.
+    pub fn set_camera_position(&mut self, center: RenderVec2) {
+        self.overrides.camera_position = Some(center);
+        self.refresh_camera();
+    }
+
+    /// Add `offset` to this frame's camera position, e.g. a game's own shake.
+    /// Added after `set_camera_position` and after the camera's built-in shake.
+    pub fn set_camera_offset(&mut self, offset: RenderVec2) {
+        self.overrides.camera_offset = offset;
+        self.refresh_camera();
+    }
+
+    /// The camera position this frame renders with (shake and offset
+    /// included), after any override.
+    pub fn camera_position(&self) -> RenderVec2 {
+        let base = self.overrides.camera_position.unwrap_or(self.camera_base);
+        RenderVec2::new(
+            base.x + self.camera_shake.x + self.overrides.camera_offset.x,
+            base.y + self.camera_shake.y + self.overrides.camera_offset.y,
+        )
+    }
+
+    /// What `draw` asked of the camera, for the engine to apply.
+    pub(crate) fn frame_overrides(&self) -> FrameOverrides {
+        self.overrides
+    }
+
+    fn refresh_camera(&mut self) {
+        self.camera_pos = self.camera_position();
+        self.view = Rect::new(
+            self.camera_pos.x - self.view.w / 2.0,
+            self.camera_pos.y - self.view.h / 2.0,
+            self.view.w,
+            self.view.h,
+        );
+    }
+
+    /// Draw a sprite at a position: the whole image, or the first frame of
+    /// an atlas sprite with its pivot at `pos`.
+    pub fn draw_sprite(&mut self, name: &str, pos: RenderVec2) {
+        self.draw_sprite_ex(name, pos, |_| {});
     }
 
     /// Draw a sprite with extended options.
@@ -421,25 +749,63 @@ impl<'a> DrawContext<'a> {
     where
         F: FnOnce(&mut SpriteInstance),
     {
-        if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
-            let mut instance = SpriteInstance {
-                texture_id: tex_id,
-                x: pos.x,
-                y: pos.y,
-                width: w as f32,
-                height: h as f32,
-                uv_x: 0.0,
-                uv_y: 0.0,
-                uv_w: 1.0,
-                uv_h: 1.0,
-                tint: Color::WHITE,
-                flip_x: false,
-                flip_y: false,
-                z_order: 0,
-                shaders: Vec::new(),
-            };
-            f(&mut instance);
-            self.sprites.push(instance);
+        let Some(entry) = self.game_ctx.sprite_entry(name) else {
+            return;
+        };
+        let mut instance = if entry.atlas {
+            self.frame_instance(entry, 0, pos)
+        } else {
+            let (w, h) = entry.size;
+            SpriteInstance {
+                z_order: self.z,
+                ..SpriteInstance::new(entry.texture, pos.x, pos.y, w as f32, h as f32)
+            }
+        };
+        f(&mut instance);
+        self.push(instance);
+    }
+
+    /// Draw frame `frame` of `sprite` with its pivot at `pos`. Frames past the
+    /// last one draw the last frame. A PNG sprite has one frame with its pivot
+    /// at the top-left; an Aseprite sprite one per frame of its strip; an
+    /// atlas sprite the frames and origins of its manifest.
+    pub fn draw_frame(&mut self, sprite: &str, frame: usize, pos: RenderVec2) {
+        self.draw_frame_ex(sprite, frame, pos, |_| {});
+    }
+
+    /// [`draw_frame`](Self::draw_frame) with extended options.
+    pub fn draw_frame_ex<F>(&mut self, sprite: &str, frame: usize, pos: RenderVec2, f: F)
+    where
+        F: FnOnce(&mut SpriteInstance),
+    {
+        let Some(entry) = self.game_ctx.sprite_entry(sprite) else {
+            return;
+        };
+        let mut instance = self.frame_instance(entry, frame, pos);
+        f(&mut instance);
+        self.push(instance);
+    }
+
+    /// Number of frames of `sprite`; 0 when the name is unknown.
+    pub fn frame_count(&self, sprite: &str) -> usize {
+        self.game_ctx
+            .sprite_entry(sprite)
+            .map_or(0, |e| e.frames.len())
+    }
+
+    fn frame_instance(&self, entry: &SpriteEntry, frame: usize, pos: RenderVec2) -> SpriteInstance {
+        let index = frame.min(entry.frames.len().saturating_sub(1));
+        let Some(f) = entry.frames.get(index) else {
+            return SpriteInstance::new(entry.texture, pos.x, pos.y, 0.0, 0.0);
+        };
+        SpriteInstance {
+            uv_x: f.uv.x,
+            uv_y: f.uv.y,
+            uv_w: f.uv.w,
+            uv_h: f.uv.h,
+            origin: f.origin,
+            z_order: self.z,
+            ..SpriteInstance::new(entry.texture, pos.x, pos.y, f.w as f32, f.h as f32)
         }
     }
 
@@ -471,50 +837,40 @@ impl<'a> DrawContext<'a> {
     where
         F: FnOnce(&mut SpriteInstance),
     {
-        let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(sprite) else {
+        let Some(entry) = self.game_ctx.sprite_entry(sprite) else {
             return;
         };
+        // An atlas sprite's animation steps through its own frames, origins
+        // included.
+        if entry.atlas {
+            let mut instance = self.frame_instance(entry, player.frame_index, pos);
+            f(&mut instance);
+            self.push(instance);
+            return;
+        }
+        let (tex_id, (w, h)) = (entry.texture, entry.size);
         let Some(animation) = self.game_ctx.assets.animation(&player.current_animation) else {
             return;
         };
         let uv = player.current_uv(animation);
         let mut instance = SpriteInstance {
-            texture_id: tex_id,
-            x: pos.x,
-            y: pos.y,
-            width: w as f32 * uv.w,
-            height: h as f32 * uv.h,
             uv_x: uv.x,
             uv_y: uv.y,
             uv_w: uv.w,
             uv_h: uv.h,
-            tint: Color::WHITE,
-            flip_x: false,
-            flip_y: false,
-            z_order: 0,
-            shaders: Vec::new(),
+            z_order: self.z,
+            ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32 * uv.w, h as f32 * uv.h)
         };
         f(&mut instance);
-        self.sprites.push(instance);
+        self.push(instance);
     }
 
     /// Draw a colored rectangle.
     pub fn draw_rect(&mut self, rect: Rect, color: Color) {
-        self.sprites.push(SpriteInstance {
-            texture_id: self.white_texture,
-            x: rect.x,
-            y: rect.y,
-            width: rect.w,
-            height: rect.h,
-            uv_x: 0.0,
-            uv_y: 0.0,
-            uv_w: 1.0,
-            uv_h: 1.0,
+        self.push(SpriteInstance {
             tint: color,
-            flip_x: false,
-            flip_y: false,
-            z_order: 0,
-            shaders: Vec::new(),
+            z_order: self.z,
+            ..SpriteInstance::new(self.white_texture, rect.x, rect.y, rect.w, rect.h)
         });
     }
 
@@ -522,42 +878,15 @@ impl<'a> DrawContext<'a> {
     // Text rendering (TTF via fontdue)
     // -----------------------------------------------------------------------
 
-    /// Draw text using the default loaded font.
-    ///
-    /// The font must have been loaded via `GameContext::load_font()` before
-    /// calling this. If no font is loaded, this is a no-op.
+    /// Draw text using the default font (AmigoPixel unless
+    /// `FontManager::set_default_font` chose another), at the font's load
+    /// size, with `y` the top of the line. Any `char` can be drawn; one the
+    /// font lacks draws its `.notdef` glyph. No kerning, so pixel-font output
+    /// is unchanged. If no font is loaded, this is a no-op.
     pub fn draw_text(&mut self, text: &str, x: f32, y: f32, color: Color) {
-        let Some(font) = self.game_ctx.fonts.default_font() else {
-            return;
-        };
-        let Some(tex_id) = font.texture_id else {
-            return;
-        };
-        let px = font.px;
-
-        let mut cx = x;
-        for ch in text.chars() {
-            if let Some(glyph) = font.glyph_cached(ch) {
-                if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.sprites.push(SpriteInstance {
-                        texture_id: tex_id,
-                        x: cx + glyph.offset_x,
-                        y: y + px - glyph.height - glyph.offset_y,
-                        width: glyph.width,
-                        height: glyph.height,
-                        uv_x: glyph.uv_x,
-                        uv_y: glyph.uv_y,
-                        uv_w: glyph.uv_w,
-                        uv_h: glyph.uv_h,
-                        tint: color,
-                        flip_x: false,
-                        flip_y: false,
-                        z_order: 100,
-                        shaders: Vec::new(),
-                    });
-                }
-                cx += glyph.advance;
-            }
+        let game_ctx = self.game_ctx;
+        if let Some(font) = game_ctx.fonts.default_font() {
+            self.draw_text_legacy(font, text, x, y, color, 1.0);
         }
     }
 
@@ -567,78 +896,60 @@ impl<'a> DrawContext<'a> {
     /// scaled, so large factors get blocky — which is what pixel-art UI wants.
     /// `scale` of 1.0 is identical to [`DrawContext::draw_text`].
     pub fn draw_text_scaled(&mut self, text: &str, x: f32, y: f32, color: Color, scale: f32) {
-        let Some(font) = self.game_ctx.fonts.default_font() else {
-            return;
-        };
-        let Some(tex_id) = font.texture_id else {
-            return;
-        };
-        let px = font.px;
         let scale = if scale.is_finite() && scale > 0.0 {
             scale
         } else {
             1.0
         };
-
-        let mut cx = x;
-        for ch in text.chars() {
-            if let Some(glyph) = font.glyph_cached(ch) {
-                if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.sprites.push(SpriteInstance {
-                        texture_id: tex_id,
-                        x: cx + glyph.offset_x * scale,
-                        y: y + (px - glyph.height - glyph.offset_y) * scale,
-                        width: glyph.width * scale,
-                        height: glyph.height * scale,
-                        uv_x: glyph.uv_x,
-                        uv_y: glyph.uv_y,
-                        uv_w: glyph.uv_w,
-                        uv_h: glyph.uv_h,
-                        tint: color,
-                        flip_x: false,
-                        flip_y: false,
-                        z_order: 100,
-                        shaders: Vec::new(),
-                    });
-                }
-                cx += glyph.advance * scale;
-            }
+        let game_ctx = self.game_ctx;
+        if let Some(font) = game_ctx.fonts.default_font() {
+            self.draw_text_legacy(font, text, x, y, color, scale);
         }
     }
 
     /// Draw text using a specific font by FontId.
     pub fn draw_text_font(&mut self, font_id: FontId, text: &str, x: f32, y: f32, color: Color) {
-        let Some(font) = self.game_ctx.fonts.get(font_id) else {
-            return;
-        };
-        let Some(tex_id) = font.texture_id else {
-            return;
-        };
-        let px = font.px;
+        let game_ctx = self.game_ctx;
+        if let Some(font) = game_ctx.fonts.get(font_id) {
+            self.draw_text_legacy(font, text, x, y, color, 1.0);
+        }
+    }
 
+    /// The layout `draw_text` has always had: advances only, the line's top
+    /// at `y` and its baseline at `y + px`, z 100.
+    fn draw_text_legacy(
+        &mut self,
+        font: &FontAtlas,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: Color,
+        scale: f32,
+    ) {
+        let px = font.px;
         let mut cx = x;
         for ch in text.chars() {
-            if let Some(glyph) = font.glyph_cached(ch) {
-                if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.sprites.push(SpriteInstance {
-                        texture_id: tex_id,
-                        x: cx + glyph.offset_x,
-                        y: y + px - glyph.height - glyph.offset_y,
-                        width: glyph.width,
-                        height: glyph.height,
-                        uv_x: glyph.uv_x,
-                        uv_y: glyph.uv_y,
-                        uv_w: glyph.uv_w,
-                        uv_h: glyph.uv_h,
-                        tint: color,
-                        flip_x: false,
-                        flip_y: false,
-                        z_order: 100,
-                        shaders: Vec::new(),
-                    });
-                }
-                cx += glyph.advance;
+            let Some(glyph) = font.glyph(ch) else {
+                continue;
+            };
+            if glyph.width > 0.0 && glyph.height > 0.0 {
+                self.push(SpriteInstance {
+                    uv_x: glyph.uv_x,
+                    uv_y: glyph.uv_y,
+                    uv_w: glyph.uv_w,
+                    uv_h: glyph.uv_h,
+                    tint: color,
+                    z_order: 100,
+                    ..SpriteInstance::new(
+                        glyph.texture_id,
+                        cx + glyph.offset_x * scale,
+                        y + (px - glyph.height - glyph.offset_y) * scale,
+                        glyph.width * scale,
+                        glyph.height * scale,
+                    )
+                });
             }
+            cx += glyph.advance * scale;
         }
     }
 
@@ -661,6 +972,265 @@ impl<'a> DrawContext<'a> {
         }
     }
 
+    /// Draw one line of text. `pos.y` is the top of the line box; the
+    /// baseline sits at `pos.y + ascent`. Kerning and `letter_spacing` apply,
+    /// and the line is anchored per `style.align`. Glyphs are rasterised at the
+    /// output resolution (`size_px * render_scale`), so raster-art text stays
+    /// crisp. Returns the drawn line's bounds.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(draw: &mut DrawContext) {
+    /// let style = TextStyle { size_px: Some(14.0), align: TextAlign::Center, ..Default::default() };
+    /// draw.draw_text_ex("Grüße!", RenderVec2::new(160.0, 20.0), &style);
+    /// # }
+    /// ```
+    pub fn draw_text_ex(&mut self, text: &str, pos: RenderVec2, style: &TextStyle) -> Rect {
+        let line = self
+            .game_ctx
+            .fonts
+            .layout_line(text, pos, style, self.render_scale);
+        for quad in &line.quads {
+            self.push(SpriteInstance {
+                uv_x: quad.uv[0],
+                uv_y: quad.uv[1],
+                uv_w: quad.uv[2],
+                uv_h: quad.uv[3],
+                tint: style.color,
+                z_order: style.z_order,
+                blend: style.blend,
+                ..SpriteInstance::new(quad.texture_id, quad.x, quad.y, quad.width, quad.height)
+            });
+        }
+        line.bounds
+    }
+
+    /// Measure one line exactly as [`draw_text_ex`](Self::draw_text_ex) would
+    /// lay it out.
+    pub fn measure_text_ex(&self, text: &str, style: &TextStyle) -> TextMetrics {
+        self.game_ctx.fonts.measure_line(text, style)
+    }
+
+    /// The window's layout this frame; see [`GameContext::viewport_info`].
+    pub fn viewport_info(&self) -> ViewportInfo {
+        self.game_ctx.viewport_info()
+    }
+
+    /// Scene-target pixels per virtual pixel this frame: 1.0 for pixel art,
+    /// the viewport scale for raster art.
+    pub fn render_scale(&self) -> f32 {
+        self.render_scale
+    }
+
+    /// Set the render scale text and shapes are rasterised for. The engine
+    /// sets the renderer's.
+    pub fn with_render_scale(mut self, render_scale: f32) -> Self {
+        if render_scale.is_finite() && render_scale > 0.0 {
+            self.render_scale = render_scale;
+        }
+        self
+    }
+
+    // -----------------------------------------------------------------------
+    // Shapes
+    // -----------------------------------------------------------------------
+
+    /// The art style shapes are drawn for: under raster art every shape gets
+    /// a one-scene-pixel feather on its outer edges; under pixel art edges
+    /// are hard. The engine sets the renderer's.
+    pub fn with_art_style(mut self, art_style: ArtStyle) -> Self {
+        self.art_style = art_style;
+        self
+    }
+
+    /// Width of the anti-aliasing feather, in virtual pixels; 0 for hard edges.
+    fn feather(&self) -> f32 {
+        if self.art_style == ArtStyle::RasterArt {
+            1.0 / self.render_scale
+        } else {
+            0.0
+        }
+    }
+
+    /// Tessellate `shape` and queue it on the white texture.
+    fn push_shape(&mut self, shape: &ConvexShape) {
+        let mut quads = Vec::new();
+        shape.tessellate(self.feather(), &mut quads);
+        for geometry in quads {
+            self.push(SpriteInstance {
+                geometry: Some(geometry),
+                z_order: self.z,
+                ..SpriteInstance::new(self.white_texture, 0.0, 0.0, 0.0, 0.0)
+            });
+        }
+    }
+
+    /// Any convex quad, corners in order TL, TR, BR, BL (or any consistent
+    /// winding).
+    pub fn draw_quad(&mut self, corners: [RenderVec2; 4], color: Color) {
+        self.draw_quad_colors(corners, [color; 4]);
+    }
+
+    /// Like [`draw_quad`](Self::draw_quad) with one colour per corner,
+    /// interpolated across.
+    pub fn draw_quad_colors(&mut self, corners: [RenderVec2; 4], colors: [Color; 4]) {
+        let shape = ConvexShape {
+            points: corners.iter().map(|c| [c.x, c.y]).collect(),
+            colors: colors.to_vec(),
+            feather_edges: vec![true; 4],
+        };
+        self.push_shape(&shape);
+    }
+
+    /// Vertical gradient from `top` to `bottom`.
+    pub fn draw_gradient_rect(&mut self, rect: Rect, top: Color, bottom: Color) {
+        if !shapes::usable(rect.w) || !shapes::usable(rect.h) {
+            return;
+        }
+        self.draw_quad_colors(rect_corners(rect), [top, top, bottom, bottom]);
+    }
+
+    /// A segment of `thickness` virtual pixels, centred on the line from `a`
+    /// to `b`, with square ends.
+    pub fn draw_line(&mut self, a: RenderVec2, b: RenderVec2, thickness: f32, color: Color) {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len = (dx * dx + dy * dy).sqrt();
+        if !shapes::usable(thickness) || !shapes::usable(len) {
+            return;
+        }
+        let (nx, ny) = (-dy / len * thickness / 2.0, dx / len * thickness / 2.0);
+        self.push_shape(&ConvexShape::filled(
+            vec![
+                [a.x + nx, a.y + ny],
+                [b.x + nx, b.y + ny],
+                [b.x - nx, b.y - ny],
+                [a.x - nx, a.y - ny],
+            ],
+            color,
+        ));
+    }
+
+    /// The outline of `rect`, `thickness` pixels wide, inside the rect.
+    pub fn draw_rect_outline(&mut self, rect: Rect, thickness: f32, color: Color) {
+        if !shapes::usable(rect.w) || !shapes::usable(rect.h) || !shapes::usable(thickness) {
+            return;
+        }
+        let t = thickness.min(rect.w / 2.0).min(rect.h / 2.0);
+        let (x0, y0, x1, y1) = (rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
+        let strip = |l: f32, t_: f32, r: f32, b: f32, feather: [bool; 4]| ConvexShape {
+            points: vec![[l, t_], [r, t_], [r, b], [l, b]],
+            colors: vec![color; 4],
+            feather_edges: feather.to_vec(),
+        };
+        // Top and bottom span the width; the sides sit between them, so no
+        // pixel is covered twice. Edges shared by two strips get no feather.
+        self.push_shape(&strip(x0, y0, x1, y0 + t, [true; 4]));
+        if rect.h > 2.0 * t {
+            self.push_shape(&strip(x0, y1 - t, x1, y1, [true; 4]));
+            self.push_shape(&strip(
+                x0,
+                y0 + t,
+                x0 + t,
+                y1 - t,
+                [false, true, false, true],
+            ));
+            self.push_shape(&strip(
+                x1 - t,
+                y0 + t,
+                x1,
+                y1 - t,
+                [false, true, false, true],
+            ));
+        }
+    }
+
+    /// A filled circle.
+    pub fn draw_circle(&mut self, center: RenderVec2, radius: f32, color: Color) {
+        if !shapes::usable(radius) {
+            return;
+        }
+        let segments = shapes::circle_segments(radius, self.render_scale);
+        let points = shapes::circle_points([center.x, center.y], radius, segments);
+        self.push_shape(&ConvexShape::filled(points, color));
+    }
+
+    /// A filled rectangle with rounded corners. `radius` is clamped to half
+    /// the shorter side; `radius <= 0` draws a plain rectangle.
+    pub fn draw_rounded_rect(&mut self, rect: Rect, radius: f32, color: Color) {
+        if !shapes::usable(rect.w) || !shapes::usable(rect.h) {
+            return;
+        }
+        let radius = if radius.is_finite() {
+            radius.min(rect.w / 2.0).min(rect.h / 2.0)
+        } else {
+            0.0
+        };
+        let points = if radius > 0.0 {
+            let segments = shapes::circle_segments(radius, self.render_scale);
+            shapes::rounded_rect_points(rect, radius, segments)
+        } else {
+            rect_corners(rect).iter().map(|c| [c.x, c.y]).collect()
+        };
+        self.push_shape(&ConvexShape::filled(points, color));
+    }
+
+    /// A convex polygon with at least 3 points, in either winding. A
+    /// non-convex list draws a triangle fan from the first point.
+    pub fn draw_convex_polygon(&mut self, points: &[RenderVec2], color: Color) {
+        let points = points.iter().map(|p| [p.x, p.y]).collect();
+        self.push_shape(&ConvexShape::filled(points, color));
+    }
+
+    // -----------------------------------------------------------------------
+    // Minimap
+    // -----------------------------------------------------------------------
+
+    /// Draw `minimap` over `layer` in screen space at its configured position
+    /// and size: tiles as coloured pixels (`tile_color`), fog of war, pins,
+    /// pings, the main camera's view and the border. The minimap's world units
+    /// are tiles of `tile_w`×`tile_h` pixels, which is what the camera's view
+    /// is converted to. The image goes up as one texture per minimap, replaced
+    /// in place every frame.
+    pub fn draw_minimap(
+        &mut self,
+        minimap: &Minimap,
+        layer: &TileLayer,
+        tile_w: f32,
+        tile_h: f32,
+        tile_color: impl Fn(TileId) -> Color,
+        fog: Option<&FogOfWarGrid>,
+    ) {
+        if !shapes::usable(tile_w) || !shapes::usable(tile_h) {
+            return;
+        }
+        let tiles: Vec<u32> = layer.tiles.iter().map(|t| t.0).collect();
+        let view = self.view;
+        let pixels = minimap.render_view(
+            &tiles,
+            layer.width,
+            layer.height,
+            &|id| tile_color(TileId(id)),
+            fog,
+            RenderVec2::new(
+                (view.x + view.w / 2.0) / tile_w,
+                (view.y + view.h / 2.0) / tile_h,
+            ),
+            RenderVec2::new(view.w / tile_w, view.h / tile_h),
+        );
+        let textures = self.game_ctx.textures();
+        let texture = minimap.texture_id(|| textures.allocate());
+        textures.upload(texture, minimap.pixels_to_image(&pixels));
+        let (w, h) = minimap.config.size;
+        let pos = minimap.config.screen_pos;
+        let z = self.z;
+        self.in_space(DrawSpace::Screen, |d| {
+            d.push(SpriteInstance {
+                z_order: z,
+                ..SpriteInstance::new(texture, pos.x, pos.y, w as f32, h as f32)
+            });
+        });
+    }
+
     // -----------------------------------------------------------------------
     // Tilemap rendering
     // -----------------------------------------------------------------------
@@ -678,20 +1248,31 @@ impl<'a> DrawContext<'a> {
     ) where
         F: Fn(TileId) -> Option<Color>,
     {
-        let Some((xs, ys)) = self.visible_tiles(layer, tile_w, tile_h) else {
-            return;
-        };
-        for y in ys {
-            for x in xs.clone() {
-                let tile_id = layer.get(x, y);
-                if let Some(color) = color_fn(tile_id) {
-                    self.draw_rect(
-                        Rect::new(x as f32 * tile_w, y as f32 * tile_h, tile_w, tile_h),
-                        color,
-                    );
+        self.with_layer_parallax(layer, |draw| {
+            let Some((xs, ys)) = draw.visible_tiles(layer, tile_w, tile_h) else {
+                return;
+            };
+            for y in ys {
+                for x in xs.clone() {
+                    let tile_id = layer.get(x, y);
+                    if let Some(color) = color_fn(tile_id) {
+                        draw.draw_rect(
+                            Rect::new(x as f32 * tile_w, y as f32 * tile_h, tile_w, tile_h),
+                            color,
+                        );
+                    }
                 }
             }
-        }
+        });
+    }
+
+    /// Run `f` at the layer's own `scroll_factor_x`/`scroll_factor_y` in
+    /// place of the context's parallax factor.
+    fn with_layer_parallax(&mut self, layer: &TileLayer, f: impl FnOnce(&mut Self)) {
+        let previous = self.parallax;
+        self.set_parallax(layer.scroll_factor_x, layer.scroll_factor_y);
+        f(self);
+        self.parallax = previous;
     }
 
     /// Draw a tilemap layer using sprites from a tileset texture.
@@ -706,6 +1287,19 @@ impl<'a> DrawContext<'a> {
     /// inside [`view_rect`](Self::view_rect) are drawn, and a hidden layer
     /// draws nothing.
     pub fn draw_tilemap_sprite(
+        &mut self,
+        layer: &TileLayer,
+        tile_w: f32,
+        tile_h: f32,
+        tileset_name: &str,
+        columns: u32,
+    ) {
+        self.with_layer_parallax(layer, |draw| {
+            draw.draw_tileset_tiles(layer, tile_w, tile_h, tileset_name, columns);
+        });
+    }
+
+    fn draw_tileset_tiles(
         &mut self,
         layer: &TileLayer,
         tile_w: f32,
@@ -741,21 +1335,19 @@ impl<'a> DrawContext<'a> {
                 let col = tid % columns;
                 let row = tid / columns;
 
-                self.sprites.push(SpriteInstance {
-                    texture_id: tex_id,
-                    x: x as f32 * tile_w,
-                    y: y as f32 * tile_h,
-                    width: tile_w,
-                    height: tile_h,
+                self.push(SpriteInstance {
                     uv_x: col as f32 * uv_tile_w,
                     uv_y: row as f32 * uv_tile_h,
                     uv_w: uv_tile_w,
                     uv_h: uv_tile_h,
-                    tint: Color::WHITE,
-                    flip_x: false,
-                    flip_y: false,
-                    z_order: 0,
-                    shaders: Vec::new(),
+                    z_order: self.z,
+                    ..SpriteInstance::new(
+                        tex_id,
+                        x as f32 * tile_w,
+                        y as f32 * tile_h,
+                        tile_w,
+                        tile_h,
+                    )
                 });
             }
         }
@@ -783,10 +1375,34 @@ impl<'a> DrawContext<'a> {
             let last = last.min(count as f32).max(0.0);
             (first < last).then_some(first as u32..last as u32)
         };
-        let view = self.view;
+        let view = self.view_rect();
         Some((
             span(view.x, view.w, tile_w, layer.width)?,
             span(view.y, view.h, tile_h, layer.height)?,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_overrides_move_the_camera_and_hand_back_its_position() {
+        let mut camera = Camera::new(320.0, 180.0);
+        camera.position = RenderVec2::new(10.0, 20.0);
+
+        let none = FrameOverrides::default();
+        assert_eq!(none.apply(&mut camera), RenderVec2::new(10.0, 20.0));
+        assert_eq!(camera.position, RenderVec2::new(10.0, 20.0));
+
+        let overrides = FrameOverrides {
+            camera_position: Some(RenderVec2::new(100.0, 50.0)),
+            camera_offset: RenderVec2::new(1.0, 2.0),
+        };
+        let saved = overrides.apply(&mut camera);
+        assert_eq!(camera.position, RenderVec2::new(101.0, 52.0));
+        camera.position = saved;
+        assert_eq!(camera.position, RenderVec2::new(10.0, 20.0));
     }
 }

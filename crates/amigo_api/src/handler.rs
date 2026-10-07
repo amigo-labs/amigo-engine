@@ -337,6 +337,18 @@ pub fn handle_request(req: &RpcRequest, state: &SharedState) -> RpcResponse {
         "editor.auto_decorate" => handle_editor_auto_decorate(req, state),
         "editor.save" => handle_editor_save(req, state),
         "editor.load" => handle_editor_load(req, state),
+        "editor.auto_path" => editor_passthrough(req, state, &["from", "to"], &["layer"]),
+        "editor.add_zone" => {
+            editor_passthrough(req, state, &["x", "y", "w", "h"], &["name", "properties"])
+        }
+        "editor.remove_zone" => editor_passthrough(req, state, &["index"], &[]),
+        "editor.set_entity" => {
+            editor_passthrough(req, state, &["index"], &["type", "x", "y", "properties"])
+        }
+        "editor.remove_entity" => editor_passthrough(req, state, &["index"], &[]),
+        "editor.set_metadata" => editor_passthrough(req, state, &["key"], &["value"]),
+        "editor.playtest_report" => editor_passthrough(req, state, &["metrics"], &[]),
+        "editor.heat" => editor_passthrough(req, state, &["x", "y"], &["map", "value"]),
         "editor.undo" => queue_cmd(req, state, "editor.undo", Value::Null),
         "editor.redo" => queue_cmd(req, state, "editor.redo", Value::Null),
 
@@ -771,7 +783,43 @@ fn handle_editor_auto_decorate(req: &RpcRequest, state: &SharedState) -> RpcResp
         .get("world")
         .and_then(|v| v.as_str())
         .unwrap_or("default");
-    queue_cmd(req, state, "editor.auto_decorate", json!({"world": world}))
+    let mut params = json!({"world": world});
+    for key in ["tiles", "layer", "density", "seed"] {
+        if let Some(v) = req.params.get(key) {
+            params[key] = v.clone();
+        }
+    }
+    queue_cmd(req, state, "editor.auto_decorate", params)
+}
+
+/// Queue `req.method` for the editor with the `required` and `optional`
+/// parameters it names (and no others); the editor session checks their
+/// values when it runs the command.
+fn editor_passthrough(
+    req: &RpcRequest,
+    state: &SharedState,
+    required: &[&str],
+    optional: &[&str],
+) -> RpcResponse {
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|k| req.params.get(k).is_none_or(Value::is_null))
+        .collect();
+    if !missing.is_empty() {
+        return RpcResponse::error(
+            req.id,
+            INVALID_PARAMS,
+            format!("Required: {}", required.join(", ")),
+        );
+    }
+    let mut params = serde_json::Map::new();
+    for &key in required.iter().chain(optional) {
+        if let Some(v) = req.params.get(key) {
+            params.insert(key.to_string(), v.clone());
+        }
+    }
+    queue_cmd(req, state, &req.method, Value::Object(params))
 }
 
 fn handle_editor_save(req: &RpcRequest, state: &SharedState) -> RpcResponse {
@@ -1593,6 +1641,66 @@ mod tests {
         assert!(resp.error.is_none());
         let s = state.lock().unwrap();
         assert_eq!(s.pending_commands[0].action, "audio.crossfade");
+    }
+
+    #[test]
+    fn editor_passthroughs_queue_only_their_parameters() {
+        let state = new_shared_state();
+        for (method, params) in [
+            (
+                "editor.auto_decorate",
+                json!({"world": "dune", "tiles": [3, 4], "density": 0.5, "seed": 7, "junk": 1}),
+            ),
+            (
+                "editor.add_zone",
+                json!({"x": 0, "y": 0, "w": 16, "h": 16, "name": "boss", "junk": 1}),
+            ),
+            ("editor.auto_path", json!({"from": [0, 0], "to": [64, 0]})),
+            ("editor.set_entity", json!({"index": 0, "type": "bat"})),
+            ("editor.remove_entity", json!({"index": 0})),
+            ("editor.remove_zone", json!({"index": 0})),
+            (
+                "editor.set_metadata",
+                json!({"key": "tileset", "value": "t"}),
+            ),
+            (
+                "editor.playtest_report",
+                json!({"metrics": {"victory": true}}),
+            ),
+            ("editor.heat", json!({"x": 8, "y": 8, "map": "deaths"})),
+        ] {
+            let resp = handle_request(&make_request(method, params.clone()), &state);
+            assert!(resp.error.is_none(), "{method}: {:?}", resp.error);
+        }
+        let s = state.lock().unwrap();
+        assert_eq!(s.pending_commands.len(), 9);
+        let decorate = &s.pending_commands[0];
+        assert_eq!(decorate.action, "editor.auto_decorate");
+        assert_eq!(decorate.params["tiles"], json!([3, 4]));
+        assert_eq!(decorate.params["seed"], 7);
+        assert!(decorate.params.get("junk").is_none());
+        let zone = &s.pending_commands[1];
+        assert_eq!(zone.action, "editor.add_zone");
+        assert_eq!(zone.params["name"], "boss");
+        assert!(zone.params.get("junk").is_none());
+    }
+
+    #[test]
+    fn editor_passthroughs_name_missing_parameters() {
+        let state = new_shared_state();
+        for (method, params) in [
+            ("editor.add_zone", json!({"x": 0, "y": 0})),
+            ("editor.auto_path", json!({"from": [0, 0]})),
+            ("editor.remove_zone", json!({"index": null})),
+            ("editor.set_metadata", Value::Null),
+        ] {
+            let err = handle_request(&make_request(method, params), &state)
+                .error
+                .unwrap_or_else(|| panic!("{method} was accepted"));
+            assert_eq!(err.code, INVALID_PARAMS);
+            assert!(err.message.starts_with("Required:"), "{}", err.message);
+        }
+        assert!(state.lock().unwrap().pending_commands.is_empty());
     }
 
     #[test]
