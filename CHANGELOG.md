@@ -6,6 +6,24 @@ Notable changes per release. Format loosely follows
 
 ## [Unreleased]
 
+### Added — two-player network games
+
+- **`amigo run --host <port>` / `--join <addr:port>`** starts a two-player
+  game in lockstep over UDP (`AMIGO_NET_HOST`/`AMIGO_NET_JOIN`,
+  `EngineBuilder::host`/`join`, `[net] input_delay`).
+  - The game starts once both players are connected.
+  - The guest takes the host's seed.
+  - Every tick runs on both players' bound actions.
+  - The state hashes are compared after every tick.
+- **Per-player input:** `GameContext::players`, `local_player`,
+  `player_actions`, `player_cursor` and `net_status`. Alone they report one
+  player with the local input, so the same game runs alone and with two.
+- **Network events:** `NetEvent::{Connected, Disconnected, Desync}`. When the
+  other player leaves or times out, the game continues alone.
+- **Status:** `engine.get_property {"key": "net"}` and the F8 debug overlay,
+  which had a network toggle that showed nothing.
+- **`examples/lockstep_demo`**: two squares, one per player.
+
 ### Added — lockstep networking (amigo_net)
 
 - **`amigo_net::lockstep`.** A two-player lockstep session: input delay,

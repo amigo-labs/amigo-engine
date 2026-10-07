@@ -72,6 +72,15 @@ api_port = 9999
 # seed = 42                          # fixed seed for ctx.rng; default: from the clock
 ```
 
+```toml
+[net]
+input_delay = 3                      # ticks between a key press and its effect in network games
+```
+
+`input_delay` hides the network's latency in two-player games (`amigo run
+--host`/`--join`): 3 ticks (50 ms) suits a LAN, 6-8 an internet connection.
+The host's value counts; above 60 the host refuses to start the session.
+
 `seed` (optional) makes every run draw the same random numbers. `AMIGO_SEED` and
 `amigo run --seed` override it. Replays store the RNG state themselves, so they
 do not need it (see [engine/replays](../engine/replays.md)).

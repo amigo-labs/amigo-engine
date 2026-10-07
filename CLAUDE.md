@@ -59,7 +59,7 @@ dies with "No space left on device".
 crates/     19 library crates, all prefixed amigo_
 tools/      amigo_cli (the `amigo` binary), amigo_mcp, amigo_artgen,
             amigo_audiogen, amigo_comfyui
-examples/   9 runnable demos, each a workspace member
+examples/   10 runnable demos, each a workspace member
 docs/specs/ per-module specifications; docs/specs/index.md is the overview
 docs/adrs/  architecture decisions
 docs/wiki/  published to the GitHub wiki by .github/workflows/wiki-sync.yml

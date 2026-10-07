@@ -209,6 +209,11 @@ pub(crate) fn start_recording(
         Mode::Recording(_) => return Err("already recording".into()),
         Mode::Playing(_) => return Err("a replay is playing".into()),
     }
+    if ctx.net.is_active() {
+        // The other player's input is not ctx.input; the recording would
+        // not reproduce the session.
+        return Err("not during network play".into());
+    }
     let (scene, start_state) = match stack.top() {
         Some(game) if !from_start => (game.scene_id().to_string(), game.on_dev_snapshot(ctx)),
         Some(game) => (game.scene_id().to_string(), serde_json::Value::Null),
@@ -287,6 +292,9 @@ pub(crate) fn play(
         Mode::Off => {}
         Mode::Recording(_) => return Err("recording; stop it first".into()),
         Mode::Playing(_) => return Err("a replay is already playing".into()),
+    }
+    if ctx.net.is_active() {
+        return Err("not during network play".into());
     }
     if replay.ticks == 0 {
         return Err(format!("{path} has no ticks"));
@@ -427,7 +435,7 @@ pub(crate) fn after_tick(ctx: &mut GameContext, stack: &GameStack) {
 
 /// The hash recorded after each tick: the tick number, the RNG state, the
 /// entity count, and the game's own [`Game::state_hash`] when it has one.
-fn state_hash(ctx: &GameContext, game: Option<&dyn Game>) -> u64 {
+pub(crate) fn state_hash(ctx: &GameContext, game: Option<&dyn Game>) -> u64 {
     let game_hash = game.and_then(|g| g.state_hash(ctx));
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     let words = [
@@ -633,7 +641,10 @@ mod tests {
     ) {
         for step in 0..ticks {
             input(ctx, step);
-            assert!(crate::tick::run_tick(ctx, stack, &mut []));
+            assert_eq!(
+                crate::tick::run_tick(ctx, stack, &mut []),
+                crate::tick::TickOutcome::Ran
+            );
         }
     }
 

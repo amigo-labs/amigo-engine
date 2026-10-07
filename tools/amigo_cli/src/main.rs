@@ -31,6 +31,7 @@ COMMANDS:
         [--record <FILE>]                ... recording the input to a replay
         [--replay <FILE>]                ... playing a replay instead of input
         [--seed <N>]                     ... with a fixed random seed
+        [--host <PORT> | --join <ADDR>]  ... as a two-player network game
     dev [--port PORT]                    Watch mode: rebuild + restart on source
                                          changes, live-reload on asset changes
     pack                                 Pack assets into atlas (release build)
@@ -1395,6 +1396,16 @@ fn cmd_run(args: &[String]) {
             process::exit(1);
         }
         cmd.env("AMIGO_REPLAY", path);
+    }
+    if let Some(port) = find_flag(args, "--host") {
+        cmd.env("AMIGO_NET_HOST", port);
+    }
+    if let Some(addr) = find_flag(args, "--join") {
+        if !addr.contains(':') {
+            eprintln!("--join: '{addr}' needs a port, e.g. 192.168.1.5:7777.");
+            process::exit(1);
+        }
+        cmd.env("AMIGO_NET_JOIN", addr);
     }
     if let Some(seed) = find_flag(args, "--seed") {
         if seed.parse::<u64>().is_err() {

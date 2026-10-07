@@ -58,6 +58,7 @@ examples/
   input_demo/       # Keyboard, mouse, gamepad visualization
   animation_demo/   # Sprite animation state machine
   pathfinding_demo/ # A* pathfinding + flow fields
+  lockstep_demo/    # two players over the network, in lockstep
 docs/               # Specs, guides, architecture docs
 ```
 

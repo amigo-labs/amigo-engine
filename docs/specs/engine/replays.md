@@ -148,6 +148,8 @@ lists are left out.
   deterministic across platforms (`combat`, `ai`, `platformer`, …). A replay of a
   game built on them reproduces on the machine that recorded it, but not
   necessarily on another one.
+- **Not during network play.** Recording or playing is refused while a
+  network game runs, because the other player's input is not in `ctx.input`.
 - **Assets and code must match.** A replay assumes the same game build and the
   same data. `metadata.engine_version` records the engine version only.
 

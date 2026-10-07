@@ -75,6 +75,7 @@ pub mod api_bridge;
 pub mod config;
 pub mod context;
 pub mod engine;
+pub mod net;
 pub mod replay;
 pub mod splash;
 pub mod stack;
@@ -200,6 +201,7 @@ pub trait Game: 'static {
 
 /// Prelude with commonly used types.
 pub mod prelude {
+    pub use crate::net::{NetEvent, NetStatus};
     pub use crate::{
         DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack,
         LevelReloaded, Plugin, PluginContext, SceneAction,

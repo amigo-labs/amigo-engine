@@ -34,6 +34,7 @@ members = [
     "examples/input_demo",
     "examples/animation_demo",
     "examples/pathfinding_demo",
+    "examples/lockstep_demo",
 ]
 
 [workspace.package]
