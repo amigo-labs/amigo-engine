@@ -23,15 +23,104 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::KeyCode;
 use winit::window::{Window, WindowId};
 
-/// A plugin that can register systems, events, and resources with the engine.
+/// A plugin: a reusable piece of engine behaviour a game adds with
+/// [`EngineBuilder::add_plugin`]. It registers events, resources and systems
+/// in [`build`](Plugin::build), and gets hooks before and after every tick's
+/// `Game::update` and after every frame's `Game::draw`.
+///
+/// ```no_run
+/// # use amigo_engine::prelude::*;
+/// struct Score(u32);
+/// struct ScorePlugin;
+///
+/// impl Plugin for ScorePlugin {
+///     fn build(&self, ctx: &mut PluginContext) {
+///         ctx.insert_resource(Score(0));
+///         // A system: runs every tick, after the game's update.
+///         ctx.add_system(SystemStage::PostUpdate, |ctx: &mut GameContext| {
+///             if ctx.actions.pressed("coin") {
+///                 if let Some(score) = ctx.resources.get_mut::<Score>() {
+///                     score.0 += 1;
+///                 }
+///             }
+///         });
+///     }
+///
+///     // A draw pass: the score, over the game, in screen space.
+///     fn draw(&self, draw: &mut DrawContext) {
+///         draw.in_space(DrawSpace::Screen, |d| d.draw_text("score", 4.0, 4.0, Color::WHITE));
+///     }
+/// }
+///
+/// Engine::build().add_plugin(ScorePlugin);
+/// ```
 pub trait Plugin: 'static {
-    /// Called once during engine build to register events, resources, etc.
+    /// Called once during engine build to register events, resources and
+    /// systems.
     fn build(&self, ctx: &mut PluginContext);
     /// Called once after the window and renderer are initialized.
     fn init(&self, _ctx: &mut GameContext) {}
-    /// Called every tick after engine systems but before rendering.
-    /// Default implementation is a no-op, so existing plugins are unaffected.
+    /// Called every tick after input is read and before `Game::update`: the
+    /// place to handle or consume input before the game sees it.
+    fn pre_update(&mut self, _ctx: &mut GameContext) {}
+    /// Called every tick after `Game::update` (and the scene change it asked
+    /// for), before the ECS and event flush.
     fn update(&mut self, _ctx: &mut GameContext) {}
+    /// Called every frame after `Game::draw`, with the same draw context: a
+    /// plugin's own draw pass, in world or (with `DrawSpace::Screen`) screen
+    /// space. Not called in headless mode, which draws nothing.
+    fn draw(&self, _ctx: &mut DrawContext) {}
+}
+
+/// When a system registered with [`PluginContext::add_system`] runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SystemStage {
+    /// Every tick, after input is read, before `Game::update`.
+    PreUpdate,
+    /// Every tick, after `Game::update`, before the ECS and event flush.
+    PostUpdate,
+}
+
+/// A system: a function the engine runs every tick.
+pub(crate) type System = Box<dyn FnMut(&mut GameContext)>;
+
+/// Plugins and the systems they registered, as the tick runs them. Within a
+/// stage, the plugins' hooks run first, then the systems, each in the order
+/// they were added.
+#[derive(Default)]
+pub(crate) struct Plugins {
+    pub(crate) plugins: Vec<Box<dyn Plugin>>,
+    pub(crate) pre_update: Vec<System>,
+    pub(crate) post_update: Vec<System>,
+}
+
+impl Plugins {
+    pub(crate) fn run(&mut self, stage: SystemStage, ctx: &mut GameContext) {
+        match stage {
+            SystemStage::PreUpdate => {
+                for plugin in &mut self.plugins {
+                    plugin.pre_update(ctx);
+                }
+                for system in &mut self.pre_update {
+                    system(ctx);
+                }
+            }
+            SystemStage::PostUpdate => {
+                for plugin in &mut self.plugins {
+                    plugin.update(ctx);
+                }
+                for system in &mut self.post_update {
+                    system(ctx);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn draw(&self, ctx: &mut DrawContext) {
+        for plugin in &self.plugins {
+            plugin.draw(ctx);
+        }
+    }
 }
 
 /// Context passed to Plugin::build() for registration.
@@ -43,14 +132,25 @@ pub struct PluginContext {
     pub(crate) event_registrations: Vec<EventRegistration>,
     /// Resource insertions to apply when GameContext is created.
     pub(crate) resource_insertions: Vec<ResourceInsertion>,
+    pub(crate) systems: Vec<(SystemStage, System)>,
 }
 
 impl PluginContext {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             event_registrations: Vec::new(),
             resource_insertions: Vec::new(),
+            systems: Vec::new(),
         }
+    }
+
+    /// Run `system` every tick at `stage`.
+    pub fn add_system(
+        &mut self,
+        stage: SystemStage,
+        system: impl FnMut(&mut GameContext) + 'static,
+    ) {
+        self.systems.push((stage, Box::new(system)));
     }
 
     /// Register an event type so it can be emitted and read.
@@ -221,18 +321,28 @@ impl EngineBuilder {
         self
     }
 
-    /// Add a plugin to the engine.
+    /// Add a plugin to the engine. Its `build` runs now.
     pub fn add_plugin(mut self, plugin: impl Plugin) -> Self {
         plugin.build(&mut self.plugin_ctx);
         self.plugins.push(Box::new(plugin));
         self
     }
 
-    pub fn build(self) -> Engine {
+    pub fn build(mut self) -> Engine {
+        let mut plugins = Plugins {
+            plugins: self.plugins,
+            ..Default::default()
+        };
+        for (stage, system) in std::mem::take(&mut self.plugin_ctx.systems) {
+            match stage {
+                SystemStage::PreUpdate => plugins.pre_update.push(system),
+                SystemStage::PostUpdate => plugins.post_update.push(system),
+            }
+        }
         Engine {
             config: self.config,
             assets_path: self.assets_path,
-            plugins: self.plugins,
+            plugins,
             plugin_ctx: self.plugin_ctx,
             restore_snapshot: self.restore_snapshot,
             input_bindings: self.input_bindings,
@@ -252,7 +362,7 @@ impl Default for EngineBuilder {
 pub struct Engine {
     config: EngineConfig,
     assets_path: String,
-    plugins: Vec<Box<dyn Plugin>>,
+    plugins: Plugins,
     plugin_ctx: PluginContext,
     restore_snapshot: Option<std::path::PathBuf>,
     input_bindings: Option<ActionBindings>,
@@ -263,6 +373,11 @@ pub struct Engine {
 impl Engine {
     pub fn build() -> EngineBuilder {
         EngineBuilder::new()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_plugins(self) -> Plugins {
+        self.plugins
     }
 
     pub fn run<G: Game>(mut self, game: G) {
@@ -367,7 +482,7 @@ impl Engine {
         }
 
         // Initialize plugins
-        for plugin in &self.plugins {
+        for plugin in &self.plugins.plugins {
             plugin.init(&mut game_ctx);
         }
 
@@ -1009,7 +1124,7 @@ struct EngineApp {
     config: EngineConfig,
     assets_path: String,
     stack: GameStack,
-    plugins: Vec<Box<dyn Plugin>>,
+    plugins: Plugins,
     plugin_ctx: Option<PluginContext>,
     state: Option<EngineState>,
     /// Dev snapshot to restore once the contexts exist, from
@@ -1138,7 +1253,7 @@ impl ApplicationHandler for EngineApp {
         }
 
         // Initialize plugins
-        for plugin in &self.plugins {
+        for plugin in &self.plugins.plugins {
             plugin.init(&mut game_ctx);
         }
 
@@ -1707,6 +1822,12 @@ impl ApplicationHandler for EngineApp {
                     if let Some(active) = self.stack.top() {
                         active.draw(&mut draw_ctx);
                     }
+                    // Plugins draw over the game, each with a fresh space
+                    // and z.
+                    draw_ctx.set_space(DrawSpace::World);
+                    draw_ctx.set_parallax(1.0, 1.0);
+                    draw_ctx.set_z(0);
+                    self.plugins.draw(&mut draw_ctx);
                     // A camera set from `draw` holds for this frame's
                     // projection, and for everything drawn after the game.
                     let overrides = draw_ctx.frame_overrides();

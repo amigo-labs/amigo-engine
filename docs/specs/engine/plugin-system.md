@@ -1,18 +1,18 @@
 ---
-status: partial
+status: done
 crate: amigo_engine
 depends_on: ["engine/core"]
-last_updated: 2026-08-03
+last_updated: 2026-10-07
 ---
 
 # Plugin System
 
-> **Status: the trait exists, but it can register less than this spec describes.**
-> There is no `amigo_plugin` crate: `Plugin` and `PluginContext` live in
-> `crates/amigo_engine/src/engine.rs`. `PluginContext` offers exactly two
-> capabilities — `register_event::<T>()` and `insert_resource::<T>()` — so a plugin
-> cannot register a system, a draw pass or an input handler. The signatures and
-> feature flags below are the design, not the code; see the corrections inline.
+> **Status: done.** `Plugin` and `PluginContext` live in
+> `crates/amigo_engine/src/engine.rs`; there is no separate `amigo_plugin` crate.
+> A plugin registers events, resources and systems, and it has hooks before and
+> after every tick's `Game::update` and after every frame's `Game::draw`. Those
+> hooks are how it handles input and draws. Where the original design and the
+> code differ, the sections below say so ("Designed" / "Actual").
 
 ## Purpose
 
@@ -62,18 +62,34 @@ pub trait Plugin {
 }
 ```
 
-Actual: `build` receives a `PluginContext`, not the builder, and there is an extra
-`init` hook that runs once the window and renderer exist. Passing the builder was
-dropped because a plugin holding `&mut EngineBuilder` could reconfigure anything,
-including things already consumed; `PluginContext` is a narrow registration
-surface instead — currently a *very* narrow one.
+Actual:
+- `build` receives a `PluginContext`, not the builder. A plugin holding
+  `&mut EngineBuilder` could reconfigure anything, including things already
+  consumed, so `PluginContext` is a narrow registration surface instead.
+- Besides `update` there are `init` (once the window and renderer exist),
+  `pre_update` and `draw`.
 
 ```rust
 pub trait Plugin: 'static {
     fn build(&self, ctx: &mut PluginContext);
+    /// Once, after the window and renderer exist.
     fn init(&self, _ctx: &mut GameContext) {}
+    /// Every tick after input is read, before `Game::update`: input handling.
+    fn pre_update(&mut self, _ctx: &mut GameContext) {}
+    /// Every tick after `Game::update`, before the ECS and event flush.
     fn update(&mut self, _ctx: &mut GameContext) {}
+    /// Every frame after `Game::draw`, in the same `DrawContext`: a draw pass.
+    fn draw(&self, _ctx: &mut DrawContext) {}
 }
+
+impl PluginContext {
+    pub fn register_event<T: 'static>(&mut self);
+    pub fn insert_resource<T: 'static>(&mut self, resource: T);
+    /// Run `system` every tick at `stage`.
+    pub fn add_system(&mut self, stage: SystemStage, system: impl FnMut(&mut GameContext) + 'static);
+}
+
+pub enum SystemStage { PreUpdate, PostUpdate }
 
 // Usage:
 Engine::build()
@@ -81,6 +97,10 @@ Engine::build()
     .build()
     .run(MyGame);
 ```
+
+Within a stage, the plugins' hooks run first, then the registered systems, each
+in the order they were added. Plugins and systems run in the windowed and in the
+headless loop alike. `draw` only runs in the windowed loop.
 
 There are no `AudioPlugin`, `InputPlugin` or `EditorPlugin` types: audio, input and
 the editor are feature flags the engine wires directly, not plugins. The editor

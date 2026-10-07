@@ -47,6 +47,14 @@ Notable changes per release. Format loosely follows
   - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
 - **`examples/raster_art`** shows all of the above.
 
+### Added — plugin systems, input and draw hooks
+
+- **`PluginContext::add_system(SystemStage, f)`** runs a function every tick,
+  before (`PreUpdate`) or after (`PostUpdate`) `Game::update`.
+- **`Plugin::pre_update`** sees input before the game does, and
+  **`Plugin::draw`** draws after `Game::draw`. Before, a plugin could only
+  register events and resources and run `update`.
+
 ### Added — audio playback control (docs/specs/engine/audio-playback.md)
 
 - **Handles:** `AudioManager::play(name, &PlaySettings)` returns a

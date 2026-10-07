@@ -642,7 +642,7 @@ mod tests {
         for step in 0..ticks {
             input(ctx, step);
             assert_eq!(
-                crate::tick::run_tick(ctx, stack, &mut []),
+                crate::tick::run_tick(ctx, stack, &mut Default::default()),
                 crate::tick::TickOutcome::Ran
             );
         }

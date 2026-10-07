@@ -262,7 +262,7 @@ engine ever called them.
 | [engine/ui](engine/ui.md)                                 | done   | amigo_ui          | engine/core, engine/rendering |
 | [engine/networking](engine/networking.md)                 | done   | amigo_net, amigo_engine | engine/core, engine/replays |
 | [engine/memory-performance](engine/memory-performance.md) | done   | amigo_core        | --                            |
-| [engine/plugin-system](engine/plugin-system.md)           | partial | amigo_engine     | engine/core                   |
+| [engine/plugin-system](engine/plugin-system.md)           | done   | amigo_engine      | engine/core                   |
 | [engine/dynamic-tilemap](engine/dynamic-tilemap.md)       | done   | amigo_tilemap     | engine/core, engine/tilemap   |
 | [engine/chunks](engine/chunks.md)                         | done   | amigo_tilemap     | engine/core, engine/tilemap   |
 | [engine/lighting](engine/lighting.md)                     | done   | amigo_render, amigo_tilemap | engine/core, engine/tilemap, engine/rendering |

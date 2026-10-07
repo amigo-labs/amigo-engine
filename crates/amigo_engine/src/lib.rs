@@ -100,7 +100,7 @@ pub use amigo_audio;
 
 pub use config::EngineConfig;
 pub use context::{DrawContext, DrawSpace, GameContext, LevelReloaded, SpriteEntry};
-pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
+pub use engine::{Engine, EngineBuilder, Plugin, PluginContext, SystemStage};
 pub use stack::GameStack;
 
 /// The scene action a [`Game`] returns from `update`.
@@ -204,7 +204,7 @@ pub mod prelude {
     pub use crate::net::{NetEvent, NetStatus};
     pub use crate::{
         DrawContext, DrawSpace, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack,
-        LevelReloaded, Plugin, PluginContext, SceneAction,
+        LevelReloaded, Plugin, PluginContext, SceneAction, SystemStage,
     };
     pub use amigo_animation::*;
     pub use amigo_assets::{AssetError, AssetHandle, AssetManager, AssetState, HandleAllocator};
