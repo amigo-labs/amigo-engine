@@ -47,6 +47,15 @@ impl Texture {
         label: &str,
         mode: SamplerMode,
     ) -> Self {
+        // Every sprite blend mode expects premultiplied texels.
+        let mut premultiplied;
+        let image = if image.pixels().any(|p| p.0[3] != 255) {
+            premultiplied = image.clone();
+            crate::blend::premultiply_srgb(&mut premultiplied);
+            &premultiplied
+        } else {
+            image
+        };
         let size = wgpu::Extent3d {
             width: image.width(),
             height: image.height(),

@@ -398,20 +398,7 @@ impl<'a> DrawContext<'a> {
     pub fn draw_sprite(&mut self, name: &str, pos: RenderVec2) {
         if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
             self.sprites.push(SpriteInstance {
-                texture_id: tex_id,
-                x: pos.x,
-                y: pos.y,
-                width: w as f32,
-                height: h as f32,
-                uv_x: 0.0,
-                uv_y: 0.0,
-                uv_w: 1.0,
-                uv_h: 1.0,
-                tint: Color::WHITE,
-                flip_x: false,
-                flip_y: false,
-                z_order: 0,
-                shaders: Vec::new(),
+                ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32, h as f32)
             });
         }
     }
@@ -423,20 +410,7 @@ impl<'a> DrawContext<'a> {
     {
         if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
             let mut instance = SpriteInstance {
-                texture_id: tex_id,
-                x: pos.x,
-                y: pos.y,
-                width: w as f32,
-                height: h as f32,
-                uv_x: 0.0,
-                uv_y: 0.0,
-                uv_w: 1.0,
-                uv_h: 1.0,
-                tint: Color::WHITE,
-                flip_x: false,
-                flip_y: false,
-                z_order: 0,
-                shaders: Vec::new(),
+                ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32, h as f32)
             };
             f(&mut instance);
             self.sprites.push(instance);
@@ -479,20 +453,11 @@ impl<'a> DrawContext<'a> {
         };
         let uv = player.current_uv(animation);
         let mut instance = SpriteInstance {
-            texture_id: tex_id,
-            x: pos.x,
-            y: pos.y,
-            width: w as f32 * uv.w,
-            height: h as f32 * uv.h,
             uv_x: uv.x,
             uv_y: uv.y,
             uv_w: uv.w,
             uv_h: uv.h,
-            tint: Color::WHITE,
-            flip_x: false,
-            flip_y: false,
-            z_order: 0,
-            shaders: Vec::new(),
+            ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32 * uv.w, h as f32 * uv.h)
         };
         f(&mut instance);
         self.sprites.push(instance);
@@ -501,20 +466,8 @@ impl<'a> DrawContext<'a> {
     /// Draw a colored rectangle.
     pub fn draw_rect(&mut self, rect: Rect, color: Color) {
         self.sprites.push(SpriteInstance {
-            texture_id: self.white_texture,
-            x: rect.x,
-            y: rect.y,
-            width: rect.w,
-            height: rect.h,
-            uv_x: 0.0,
-            uv_y: 0.0,
-            uv_w: 1.0,
-            uv_h: 1.0,
             tint: color,
-            flip_x: false,
-            flip_y: false,
-            z_order: 0,
-            shaders: Vec::new(),
+            ..SpriteInstance::new(self.white_texture, rect.x, rect.y, rect.w, rect.h)
         });
     }
 
@@ -540,20 +493,19 @@ impl<'a> DrawContext<'a> {
             if let Some(glyph) = font.glyph_cached(ch) {
                 if glyph.width > 0.0 && glyph.height > 0.0 {
                     self.sprites.push(SpriteInstance {
-                        texture_id: tex_id,
-                        x: cx + glyph.offset_x,
-                        y: y + px - glyph.height - glyph.offset_y,
-                        width: glyph.width,
-                        height: glyph.height,
                         uv_x: glyph.uv_x,
                         uv_y: glyph.uv_y,
                         uv_w: glyph.uv_w,
                         uv_h: glyph.uv_h,
                         tint: color,
-                        flip_x: false,
-                        flip_y: false,
                         z_order: 100,
-                        shaders: Vec::new(),
+                        ..SpriteInstance::new(
+                            tex_id,
+                            cx + glyph.offset_x,
+                            y + px - glyph.height - glyph.offset_y,
+                            glyph.width,
+                            glyph.height,
+                        )
                     });
                 }
                 cx += glyph.advance;
@@ -585,20 +537,19 @@ impl<'a> DrawContext<'a> {
             if let Some(glyph) = font.glyph_cached(ch) {
                 if glyph.width > 0.0 && glyph.height > 0.0 {
                     self.sprites.push(SpriteInstance {
-                        texture_id: tex_id,
-                        x: cx + glyph.offset_x * scale,
-                        y: y + (px - glyph.height - glyph.offset_y) * scale,
-                        width: glyph.width * scale,
-                        height: glyph.height * scale,
                         uv_x: glyph.uv_x,
                         uv_y: glyph.uv_y,
                         uv_w: glyph.uv_w,
                         uv_h: glyph.uv_h,
                         tint: color,
-                        flip_x: false,
-                        flip_y: false,
                         z_order: 100,
-                        shaders: Vec::new(),
+                        ..SpriteInstance::new(
+                            tex_id,
+                            cx + glyph.offset_x * scale,
+                            y + (px - glyph.height - glyph.offset_y) * scale,
+                            glyph.width * scale,
+                            glyph.height * scale,
+                        )
                     });
                 }
                 cx += glyph.advance * scale;
@@ -621,20 +572,19 @@ impl<'a> DrawContext<'a> {
             if let Some(glyph) = font.glyph_cached(ch) {
                 if glyph.width > 0.0 && glyph.height > 0.0 {
                     self.sprites.push(SpriteInstance {
-                        texture_id: tex_id,
-                        x: cx + glyph.offset_x,
-                        y: y + px - glyph.height - glyph.offset_y,
-                        width: glyph.width,
-                        height: glyph.height,
                         uv_x: glyph.uv_x,
                         uv_y: glyph.uv_y,
                         uv_w: glyph.uv_w,
                         uv_h: glyph.uv_h,
                         tint: color,
-                        flip_x: false,
-                        flip_y: false,
                         z_order: 100,
-                        shaders: Vec::new(),
+                        ..SpriteInstance::new(
+                            tex_id,
+                            cx + glyph.offset_x,
+                            y + px - glyph.height - glyph.offset_y,
+                            glyph.width,
+                            glyph.height,
+                        )
                     });
                 }
                 cx += glyph.advance;
@@ -742,20 +692,17 @@ impl<'a> DrawContext<'a> {
                 let row = tid / columns;
 
                 self.sprites.push(SpriteInstance {
-                    texture_id: tex_id,
-                    x: x as f32 * tile_w,
-                    y: y as f32 * tile_h,
-                    width: tile_w,
-                    height: tile_h,
                     uv_x: col as f32 * uv_tile_w,
                     uv_y: row as f32 * uv_tile_h,
                     uv_w: uv_tile_w,
                     uv_h: uv_tile_h,
-                    tint: Color::WHITE,
-                    flip_x: false,
-                    flip_y: false,
-                    z_order: 0,
-                    shaders: Vec::new(),
+                    ..SpriteInstance::new(
+                        tex_id,
+                        x as f32 * tile_w,
+                        y as f32 * tile_h,
+                        tile_w,
+                        tile_h,
+                    )
                 });
             }
         }

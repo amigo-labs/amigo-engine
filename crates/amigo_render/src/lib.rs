@@ -1,5 +1,6 @@
 pub mod atlas;
 pub mod atmosphere;
+pub mod blend;
 pub mod blit;
 pub mod camera;
 pub mod font;
@@ -25,6 +26,7 @@ pub mod dynamic_atlas;
 pub mod gpu_broad_phase;
 
 pub use atmosphere::{AtmosphereManager, AtmospherePreset};
+pub use blend::BlendMode;
 pub use camera::{Camera, CameraMode, Easing};
 pub use font::{FontAtlas, FontId, FontManager, GlyphInfo};
 pub use instancing::{InstanceData, InstancedBatch};
@@ -34,10 +36,10 @@ pub use minimap::{
     IconRegistry, Minimap, MinimapConfig, MinimapPin, MinimapPing, MinimapPixel, MinimapStyle,
     PinType, SpriteIcon, TEAM_COLORS,
 };
-pub use particles::{BlendMode, EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
+pub use particles::{EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
 pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
 pub use renderer::{Renderer, SurfaceError};
-pub use sprite_batcher::{SpriteBatcher, SpriteInstance, SpriteShader};
+pub use sprite_batcher::{QuadGeometry, SpriteBatcher, SpriteInstance, SpriteShader};
 pub use texture::{Texture, TextureId};
 pub use vertex::Vertex;
 pub use viewport::{ScaleMode, Viewport};

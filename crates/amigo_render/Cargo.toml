@@ -27,6 +27,7 @@ egui-wgpu = { workspace = true, optional = true }
 egui-winit = { workspace = true, optional = true }
 
 [dev-dependencies]
+ron = { workspace = true }
 pollster = { workspace = true }
 naga = { workspace = true }
 

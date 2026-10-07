@@ -1,3 +1,4 @@
+use crate::blend::BlendMode;
 use crate::blit::BlitPipeline;
 use crate::camera::Camera;
 use crate::lighting::LightingState;
@@ -46,8 +47,11 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Textures are stored premultiplied; premultiply the tint to match, so
+    // every blend mode composites with the same (One, ...) source factor.
     let tex_color = textureSample(t_sprite, s_sprite, in.uv);
-    return tex_color * in.color;
+    let tint = vec4<f32>(in.color.rgb * in.color.a, in.color.a);
+    return tex_color * tint;
 }
 "#;
 
@@ -57,7 +61,10 @@ pub struct Renderer {
     pub queue: wgpu::Queue,
     pub surface: wgpu::Surface<'static>,
     pub surface_config: wgpu::SurfaceConfiguration,
-    pub pipeline: wgpu::RenderPipeline,
+    /// One sprite pipeline per [`BlendMode`], indexed by [`BlendMode::index`].
+    /// The world and UI passes share them: both render into scene-format
+    /// targets with the same layout.
+    pub pipelines: [wgpu::RenderPipeline; 3],
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     /// Screen-space projection for the UI pass.
@@ -302,38 +309,40 @@ impl Renderer {
             immediate_size: 0,
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sprite_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(Vertex::desc())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
+        let pipelines = BlendMode::ALL.map(|mode| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(&format!("sprite_pipeline_{mode:?}")),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(Vertex::desc())],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(mode.blend_state()),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
         });
 
         // Create white fallback texture
@@ -372,7 +381,7 @@ impl Renderer {
             queue,
             surface,
             surface_config,
-            pipeline,
+            pipelines,
             uniform_buffer,
             uniform_bind_group,
             ui_uniform_buffer,
@@ -637,12 +646,16 @@ impl Renderer {
             });
 
             if let (Some(vb), Some(ib)) = (&vertex_buffer, &index_buffer) {
-                render_pass.set_pipeline(&self.pipeline);
                 render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, vb.slice(..));
                 render_pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
 
+                let mut blend = None;
                 for batch in &batches {
+                    if blend != Some(batch.blend) {
+                        render_pass.set_pipeline(&self.pipelines[batch.blend.index()]);
+                        blend = Some(batch.blend);
+                    }
                     if let Some(texture) = self.textures.get(&batch.texture_id) {
                         render_pass.set_bind_group(1, &texture.bind_group, &[]);
                         render_pass.draw_indexed(
@@ -756,11 +769,15 @@ impl Renderer {
             multiview_mask: None,
         });
 
-        pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.ui_uniform_bind_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        let mut blend = None;
         for batch in &batches {
+            if blend != Some(batch.blend) {
+                pass.set_pipeline(&self.pipelines[batch.blend.index()]);
+                blend = Some(batch.blend);
+            }
             if let Some(texture) = self.textures.get(&batch.texture_id) {
                 pass.set_bind_group(1, &texture.bind_group, &[]);
                 pass.draw_indexed(

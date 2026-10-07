@@ -237,9 +237,9 @@ pub mod prelude {
     pub use amigo_render::post_process::{PostEffect, PostProcessPipeline};
     // `draw_sprite_ex` hands out a `&mut SpriteInstance`, so games need the type
     // in scope to write a closure against it.
-    pub use amigo_render::sprite_batcher::SpriteInstance;
+    pub use amigo_render::sprite_batcher::{QuadGeometry, SpriteInstance};
     pub use amigo_render::{
-        ArtStyle, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
+        ArtStyle, BlendMode, Camera, CameraMode, Easing, FontId, FontManager, SamplerMode,
     };
     pub use amigo_scene::SceneFactory;
     pub use amigo_tilemap::*;
