@@ -10,6 +10,7 @@ use amigo_assets::{AssetManager, HotReloader};
 use amigo_core::{Color, RenderVec2};
 use amigo_debug::DebugOverlay;
 use amigo_input::{ActionBindings, GamepadState};
+use amigo_render::mipmap::MipSource;
 use amigo_render::renderer::{Renderer, SurfaceError};
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::{ArtStyle, ScaleMode};
@@ -571,30 +572,121 @@ pub fn load_assets(assets: &mut AssetManager, assets_path: &str) -> bool {
     false
 }
 
-/// Upload any dirty font atlas textures to the GPU.
-/// Handle one hot-reload file change: PNGs under `<assets>/sprites/` are
-/// re-read, re-uploaded to the GPU, and re-registered under their sprite
-/// name (the old texture stays resident until shutdown — acceptable for
-/// dev mode). Other asset types are not live-reloadable yet and get a
-/// visible warning instead of being silently ignored.
+/// Upload a sprite's or a sheet's image with the mip levels it may have, and
+/// return the entries to register.
+fn upload_sprite(
+    assets: &AssetManager,
+    renderer: &mut Renderer,
+    name: &str,
+) -> Option<crate::context::SpriteEntry> {
+    let sprite = assets.sprite(name)?;
+    if sprite.sheet.is_some() {
+        return None;
+    }
+    let source = if sprite.frames.len() == 1 {
+        MipSource::SingleImage
+    } else {
+        MipSource::MultiFrame
+    };
+    let texture = renderer.load_texture_mipped(&sprite.image, name, source);
+    Some(crate::context::SpriteEntry {
+        texture,
+        size: (sprite.width, sprite.height),
+        frames: sprite.frames.clone(),
+        atlas: false,
+    })
+}
+
+/// Upload an atlas sheet once and return an entry for every sprite on it.
+fn upload_sheet(
+    assets: &AssetManager,
+    renderer: &mut Renderer,
+    key: &str,
+) -> Vec<(String, crate::context::SpriteEntry)> {
+    let Some(sheet) = assets.sheet(key) else {
+        return Vec::new();
+    };
+    let source = if sheet.mip_levels > 0 {
+        MipSource::PaddedSheet {
+            levels: sheet.mip_levels,
+        }
+    } else {
+        MipSource::MultiFrame
+    };
+    let texture = renderer.load_texture_mipped(&sheet.image, key, source);
+    sheet
+        .sprites
+        .iter()
+        .filter_map(|name| {
+            let sprite = assets.sprite(name)?;
+            Some((
+                name.clone(),
+                crate::context::SpriteEntry {
+                    texture,
+                    size: sheet.image.dimensions(),
+                    frames: sprite.frames.clone(),
+                    atlas: true,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Upload every loaded sprite and sheet and register them so games can draw
+/// them by name.
+fn upload_all_sprites(game_ctx: &mut GameContext, renderer: &mut Renderer) {
+    let mut entries = Vec::new();
+    for key in game_ctx
+        .assets
+        .sheets()
+        .iter()
+        .map(|s| s.key.clone())
+        .collect::<Vec<_>>()
+    {
+        entries.extend(upload_sheet(&game_ctx.assets, renderer, &key));
+    }
+    for name in game_ctx.assets.sprite_names().to_vec() {
+        if let Some(entry) = upload_sprite(&game_ctx.assets, renderer, &name) {
+            entries.push((name, entry));
+        }
+    }
+    for (name, entry) in entries {
+        game_ctx.register_sprite(name, entry);
+    }
+}
+
+/// Handle one hot-reload file change: a PNG or Aseprite file under
+/// `<assets>/sprites/` is re-read, re-uploaded to the GPU, and re-registered
+/// under its sprite name; a change to an atlas manifest or its sheet image
+/// reloads all of that manifest's sprites. Old textures stay resident until
+/// shutdown — acceptable for dev mode. Other asset types are not
+/// live-reloadable yet and get a visible warning instead of being silently
+/// ignored.
 fn reload_changed_asset(
     path: &std::path::Path,
     renderer: &mut Renderer,
     game_ctx: &mut GameContext,
 ) {
-    // Reload first, then register: the borrow of `game_ctx.assets` has to end
-    // before `register_sprite_texture` takes `&mut game_ctx`.
-    let reloaded = game_ctx.assets.reload_sprite(path).map(|sprite| {
-        (
-            sprite.name.clone(),
-            sprite.image.clone(),
-            sprite.width,
-            sprite.height,
-        )
-    });
-    if let Some((name, image, width, height)) = reloaded {
-        let tex_id = renderer.load_texture(&image, &name);
-        game_ctx.register_sprite_texture(name.clone(), tex_id, width, height);
+    if let Some(manifest) = game_ctx.assets.atlas_for_path(path) {
+        match game_ctx.assets.load_atlas_file(&manifest) {
+            Ok(key) => {
+                for (name, entry) in upload_sheet(&game_ctx.assets, renderer, &key) {
+                    game_ctx.register_sprite(name, entry);
+                }
+                info!("Hot reload: atlas '{key}' reloaded");
+            }
+            Err(e) => warn!("Hot reload: {e}"),
+        }
+        return;
+    }
+    let reloaded = game_ctx
+        .assets
+        .reload_sprite(path)
+        .map(|sprite| sprite.name.clone());
+    if let Some(name) = reloaded {
+        if let Some(entry) = upload_sprite(&game_ctx.assets, renderer, &name) {
+            game_ctx.register_sprite(name.clone(), entry);
+        }
         info!("Hot reload: sprite '{}' reloaded", name);
     } else {
         warn!(
@@ -950,20 +1042,9 @@ impl ApplicationHandler for EngineApp {
             error!("Failed to load built-in font: {}", e);
         }
 
-        // Upload loaded sprites to GPU and register them so games can draw
-        // them by name via DrawContext::draw_sprite.
-        for name in game_ctx.assets.sprite_names().to_vec() {
-            let uploaded = game_ctx.assets.sprite(&name).map(|sprite| {
-                (
-                    renderer.load_texture(&sprite.image, &name),
-                    sprite.width,
-                    sprite.height,
-                )
-            });
-            if let Some((tex_id, w, h)) = uploaded {
-                game_ctx.register_sprite_texture(name, tex_id, w, h);
-            }
-        }
+        // Upload loaded sprites and sheets to GPU and register them so games
+        // can draw them by name via DrawContext::draw_sprite.
+        upload_all_sprites(&mut game_ctx, &mut renderer);
 
         // Apply plugin registrations (events, resources)
         if let Some(plugin_ctx) = self.plugin_ctx.take() {

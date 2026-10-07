@@ -99,7 +99,7 @@ pub use amigo_ui;
 pub use amigo_audio;
 
 pub use config::EngineConfig;
-pub use context::{DrawContext, DrawSpace, GameContext, LevelReloaded};
+pub use context::{DrawContext, DrawSpace, GameContext, LevelReloaded, SpriteEntry};
 pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
 pub use stack::GameStack;
 

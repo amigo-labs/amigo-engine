@@ -8,6 +8,7 @@ pub mod instancing;
 pub mod lighting;
 pub mod lighting_pipeline;
 pub mod minimap;
+pub mod mipmap;
 pub mod particles;
 pub mod post_process;
 pub mod post_shader;

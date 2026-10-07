@@ -1,5 +1,6 @@
 pub mod aseprite;
 pub mod asset_manager;
+pub mod atlas_manifest;
 pub mod descriptors;
 pub mod formats;
 pub mod handle;
@@ -14,7 +15,11 @@ pub mod streaming;
 
 pub use aseprite::{AsepriteData, load_aseprite};
 pub use asset_manager::{
-    AssetManager, PAK_ANIMATIONS, SpriteData, is_sprite_file, load_sprite_file,
+    AssetManager, PAK_ANIMATIONS, PAK_ATLAS_PREFIX, PackedAtlases, SheetData, SpriteData,
+    is_packed_sheet, is_sprite_file, load_sprite_file, load_sprite_file_with_frames, pack_atlases,
+};
+pub use atlas_manifest::{
+    AtlasError, AtlasFrame, AtlasManifest, AtlasSprite, LoadedAtlas, SpriteFrame, is_atlas_manifest,
 };
 pub use descriptors::{EntityDescriptor, MapDescriptor, SpriteDescriptor, TilesetDescriptor};
 pub use handle::{AssetHandle, AssetState, HandleAllocator};
@@ -44,4 +49,7 @@ pub enum AssetError {
 
     #[error("Image error: {0}")]
     Image(#[from] image::ImageError),
+
+    #[error(transparent)]
+    Atlas(#[from] AtlasError),
 }

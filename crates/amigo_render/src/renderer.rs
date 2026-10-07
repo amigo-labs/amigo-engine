@@ -498,6 +498,30 @@ impl Renderer {
         id
     }
 
+    /// Load a texture with as many mip levels as `source` allows under the
+    /// art style's sampler mode: a single raster-art image gets a full chain,
+    /// strips and unpadded sheets none, pixel art none.
+    pub fn load_texture_mipped(
+        &mut self,
+        image: &image::RgbaImage,
+        label: &str,
+        source: crate::mipmap::MipSource,
+    ) -> TextureId {
+        let id = self.texture_ids.allocate();
+        let texture = Texture::from_image_mipped(
+            &self.device,
+            &self.queue,
+            &self.texture_bind_group_layout,
+            image,
+            id,
+            label,
+            self.art_style.default_sampler_mode(),
+            source,
+        );
+        self.textures.insert(id, texture);
+        id
+    }
+
     /// The allocator `load_texture` and font pages draw their ids from.
     pub fn texture_ids(&self) -> TextureIdAllocator {
         self.texture_ids.clone()

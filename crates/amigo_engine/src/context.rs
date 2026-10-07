@@ -1,5 +1,5 @@
 use amigo_animation::AnimPlayer;
-use amigo_assets::AssetManager;
+use amigo_assets::{AssetManager, SpriteFrame};
 use amigo_core::events::EventHub;
 use amigo_core::level_loader::LoadedLevel;
 use amigo_core::resources::Resources;
@@ -131,8 +131,8 @@ pub struct GameContext {
     pub audio: AudioManager,
     #[cfg(feature = "async_tasks")]
     pub tasks: amigo_core::tasks::TaskPool,
-    // Texture mapping for sprites (name -> TextureId + dimensions)
-    sprite_textures: Vec<(String, TextureId, u32, u32)>,
+    /// Sprites the game can draw by name: texture, size and frames.
+    sprites: std::collections::HashMap<String, SpriteEntry>,
     seed: u64,
     pub(crate) replay: crate::replay::ReplayDriver,
     pub(crate) net: crate::net::NetDriver,
@@ -172,7 +172,7 @@ impl GameContext {
             audio: AudioManager::new(assets_path),
             #[cfg(feature = "async_tasks")]
             tasks: amigo_core::tasks::TaskPool::new(),
-            sprite_textures: Vec::new(),
+            sprites: std::collections::HashMap::new(),
             seed: 0,
             replay: Default::default(),
             net: Default::default(),
@@ -348,9 +348,9 @@ impl GameContext {
         self.fonts.load_font(data, px)
     }
 
-    /// Register (or replace) the texture backing a sprite name. Replacing
-    /// an existing entry keeps hot reload working: draws by name pick up
-    /// the new texture on the next frame.
+    /// Register (or replace) the texture backing a sprite name, as one frame
+    /// covering the texture. Replacing an existing entry keeps hot reload
+    /// working: draws by name pick up the new texture on the next frame.
     pub fn register_sprite_texture(
         &mut self,
         name: String,
@@ -358,23 +358,48 @@ impl GameContext {
         width: u32,
         height: u32,
     ) {
-        if let Some(entry) = self
-            .sprite_textures
-            .iter_mut()
-            .find(|(n, _, _, _)| *n == name)
-        {
-            *entry = (name, texture_id, width, height);
-        } else {
-            self.sprite_textures.push((name, texture_id, width, height));
-        }
+        self.register_sprite(
+            name,
+            SpriteEntry {
+                texture: texture_id,
+                size: (width, height),
+                frames: vec![SpriteFrame::whole(width, height)],
+                atlas: false,
+            },
+        );
     }
 
-    pub fn find_sprite_texture(&self, name: &str) -> Option<(TextureId, u32, u32)> {
-        self.sprite_textures
-            .iter()
-            .find(|(n, _, _, _)| n == name)
-            .map(|(_, id, w, h)| (*id, *w, *h))
+    /// Register (or replace) a sprite with its frames.
+    pub fn register_sprite(&mut self, name: String, entry: SpriteEntry) {
+        self.sprites.insert(name, entry);
     }
+
+    /// A registered sprite.
+    pub fn sprite_entry(&self, name: &str) -> Option<&SpriteEntry> {
+        self.sprites.get(name)
+    }
+
+    /// The texture of a sprite and the texture's size.
+    pub fn find_sprite_texture(&self, name: &str) -> Option<(TextureId, u32, u32)> {
+        self.sprites
+            .get(name)
+            .map(|e| (e.texture, e.size.0, e.size.1))
+    }
+}
+
+/// A sprite the engine can draw by name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpriteEntry {
+    /// The texture it lives on: its own, or its atlas sheet's.
+    pub texture: TextureId,
+    /// Size of that texture in pixels.
+    pub size: (u32, u32),
+    /// At least one frame. A PNG has one covering the texture; an Aseprite
+    /// strip one per cell; an atlas sprite the manifest's.
+    pub frames: Vec<SpriteFrame>,
+    /// The sprite lives on an atlas sheet: `draw_sprite` draws its first
+    /// frame, and `draw_animated` draws through `draw_frame`.
+    pub atlas: bool,
 }
 
 /// The corners of `rect`, top-left first, clockwise on screen.
@@ -657,14 +682,10 @@ impl<'a> DrawContext<'a> {
         );
     }
 
-    /// Draw a sprite at a position.
+    /// Draw a sprite at a position: the whole image, or the first frame of
+    /// an atlas sprite with its pivot at `pos`.
     pub fn draw_sprite(&mut self, name: &str, pos: RenderVec2) {
-        if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
-            self.push(SpriteInstance {
-                z_order: self.z,
-                ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32, h as f32)
-            });
-        }
+        self.draw_sprite_ex(name, pos, |_| {});
     }
 
     /// Draw a sprite with extended options.
@@ -672,13 +693,63 @@ impl<'a> DrawContext<'a> {
     where
         F: FnOnce(&mut SpriteInstance),
     {
-        if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
-            let mut instance = SpriteInstance {
+        let Some(entry) = self.game_ctx.sprite_entry(name) else {
+            return;
+        };
+        let mut instance = if entry.atlas {
+            self.frame_instance(entry, 0, pos)
+        } else {
+            let (w, h) = entry.size;
+            SpriteInstance {
                 z_order: self.z,
-                ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32, h as f32)
-            };
-            f(&mut instance);
-            self.push(instance);
+                ..SpriteInstance::new(entry.texture, pos.x, pos.y, w as f32, h as f32)
+            }
+        };
+        f(&mut instance);
+        self.push(instance);
+    }
+
+    /// Draw frame `frame` of `sprite` with its pivot at `pos`. Frames past the
+    /// last one draw the last frame. A PNG sprite has one frame with its pivot
+    /// at the top-left; an Aseprite sprite one per frame of its strip; an
+    /// atlas sprite the frames and origins of its manifest.
+    pub fn draw_frame(&mut self, sprite: &str, frame: usize, pos: RenderVec2) {
+        self.draw_frame_ex(sprite, frame, pos, |_| {});
+    }
+
+    /// [`draw_frame`](Self::draw_frame) with extended options.
+    pub fn draw_frame_ex<F>(&mut self, sprite: &str, frame: usize, pos: RenderVec2, f: F)
+    where
+        F: FnOnce(&mut SpriteInstance),
+    {
+        let Some(entry) = self.game_ctx.sprite_entry(sprite) else {
+            return;
+        };
+        let mut instance = self.frame_instance(entry, frame, pos);
+        f(&mut instance);
+        self.push(instance);
+    }
+
+    /// Number of frames of `sprite`; 0 when the name is unknown.
+    pub fn frame_count(&self, sprite: &str) -> usize {
+        self.game_ctx
+            .sprite_entry(sprite)
+            .map_or(0, |e| e.frames.len())
+    }
+
+    fn frame_instance(&self, entry: &SpriteEntry, frame: usize, pos: RenderVec2) -> SpriteInstance {
+        let index = frame.min(entry.frames.len().saturating_sub(1));
+        let Some(f) = entry.frames.get(index) else {
+            return SpriteInstance::new(entry.texture, pos.x, pos.y, 0.0, 0.0);
+        };
+        SpriteInstance {
+            uv_x: f.uv.x,
+            uv_y: f.uv.y,
+            uv_w: f.uv.w,
+            uv_h: f.uv.h,
+            origin: f.origin,
+            z_order: self.z,
+            ..SpriteInstance::new(entry.texture, pos.x, pos.y, f.w as f32, f.h as f32)
         }
     }
 
@@ -710,9 +781,18 @@ impl<'a> DrawContext<'a> {
     where
         F: FnOnce(&mut SpriteInstance),
     {
-        let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(sprite) else {
+        let Some(entry) = self.game_ctx.sprite_entry(sprite) else {
             return;
         };
+        // An atlas sprite's animation steps through its own frames, origins
+        // included.
+        if entry.atlas {
+            let mut instance = self.frame_instance(entry, player.frame_index, pos);
+            f(&mut instance);
+            self.push(instance);
+            return;
+        }
+        let (tex_id, (w, h)) = (entry.texture, entry.size);
         let Some(animation) = self.game_ctx.assets.animation(&player.current_animation) else {
             return;
         };

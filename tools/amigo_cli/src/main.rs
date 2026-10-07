@@ -780,8 +780,18 @@ fn cmd_pack(_args: &[String]) {
     // ── 1. Sprites → texture atlas ──────────────────────────────────
     let sprites_dir = Path::new("assets/sprites");
     if sprites_dir.exists() {
+        // Atlas sheets go in unchanged with their manifests; their frames
+        // are not re-packed, and their images are not sprites of their own.
+        let atlases = amigo_assets::pack_atlases(sprites_dir, &mut pak);
+        for e in &atlases.errors {
+            eprintln!("  WARNING: {e}");
+        }
+        if atlases.manifests > 0 {
+            println!("  Atlas sheets: {}", atlases.manifests);
+        }
         let mut sprite_files: Vec<(String, PathBuf)> = Vec::new();
         collect_sprite_files(sprites_dir, "", &mut sprite_files);
+        sprite_files.retain(|(_, path)| !amigo_assets::is_packed_sheet(&atlases, path));
 
         if !sprite_files.is_empty() {
             println!("  Sprites: {} files", sprite_files.len());

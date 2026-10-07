@@ -1,4 +1,5 @@
 use crate::SamplerMode;
+use crate::mipmap::{MipSource, build_mip_chain, mip_level_count};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -69,7 +70,7 @@ impl Texture {
         )
     }
 
-    /// Create a texture with a specific sampler mode.
+    /// Create a texture with a specific sampler mode and a single level.
     pub fn from_image_with_mode(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -78,6 +79,35 @@ impl Texture {
         id: TextureId,
         label: &str,
         mode: SamplerMode,
+    ) -> Self {
+        Self::from_image_mipped(
+            device,
+            queue,
+            bind_group_layout,
+            image,
+            id,
+            label,
+            mode,
+            MipSource::MultiFrame,
+        )
+    }
+
+    /// Create a texture with as many mip levels as `source` allows under
+    /// `mode` (see [`mip_level_count`]). Levels are built on the CPU from
+    /// premultiplied texels in linear light.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "from_image_with_mode plus the mip source"
+    )]
+    pub fn from_image_mipped(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
+        image: &image::RgbaImage,
+        id: TextureId,
+        label: &str,
+        mode: SamplerMode,
+        source: MipSource,
     ) -> Self {
         // Every sprite blend mode expects premultiplied texels.
         let mut premultiplied;
@@ -88,11 +118,15 @@ impl Texture {
         } else {
             image
         };
+        let levels = mip_level_count(source, mode, image.dimensions());
+        let chain = build_mip_chain(image, levels);
+        let mut data: Vec<&[u8]> = vec![image.as_raw()];
+        data.extend(chain.iter().map(|level| level.as_raw().as_slice()));
         Self::create(
             device,
             queue,
             bind_group_layout,
-            image.as_raw(),
+            &data,
             image.dimensions(),
             id,
             label,
@@ -108,7 +142,7 @@ impl Texture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bind_group_layout: &wgpu::BindGroupLayout,
-        data: &[u8],
+        levels: &[&[u8]],
         (width, height): (u32, u32),
         id: TextureId,
         label: &str,
@@ -123,7 +157,7 @@ impl Texture {
         let gpu_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
             size,
-            mip_level_count: 1,
+            mip_level_count: levels.len().max(1) as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -131,21 +165,28 @@ impl Texture {
             view_formats: &[],
         });
 
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &gpu_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
+        for (level, data) in levels.iter().enumerate() {
+            let (w, h) = ((width >> level).max(1), (height >> level).max(1));
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu_texture,
+                    mip_level: level as u32,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
 
         let view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -155,7 +196,12 @@ impl Texture {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             mag_filter: filter,
             min_filter: filter,
-            mipmap_filter: mode.to_wgpu_mipmap(),
+            // Between levels, linearly, when there are any.
+            mipmap_filter: if levels.len() > 1 {
+                wgpu::MipmapFilterMode::Linear
+            } else {
+                mode.to_wgpu_mipmap()
+            },
             ..Default::default()
         });
 
@@ -210,7 +256,7 @@ impl Texture {
             device,
             queue,
             bind_group_layout,
-            data,
+            &[data],
             (width, height),
             id,
             label,
