@@ -90,6 +90,7 @@ fn draw_toolbar(ui: &mut UiContext, state: &mut EditorState, input: &InputState)
         (EditorTool::Fill, "Fill"),
         (EditorTool::PlaceEntity, "Entity"),
         (EditorTool::PathEdit, "Path"),
+        (EditorTool::Zone, "Zone"),
     ];
 
     for (tool, label) in &tools {
@@ -223,6 +224,7 @@ fn draw_status_bar(
         EditorTool::Fill => "Fill",
         EditorTool::PlaceEntity => "Entity",
         EditorTool::PathEdit => "Path",
+        EditorTool::Zone => "Zone",
     };
 
     ui.pixel_text(

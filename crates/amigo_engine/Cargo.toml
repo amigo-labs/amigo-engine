@@ -9,7 +9,7 @@ repository.workspace = true
 [features]
 default = ["audio", "input"]
 audio = ["dep:amigo_audio"]
-editor = ["dep:amigo_editor", "amigo_render/editor", "amigo_editor/egui"]
+editor = ["dep:amigo_editor", "amigo_render/editor", "amigo_editor/egui", "dep:ron"]
 api = ["dep:amigo_api", "dep:ctrlc", "dep:ron"]
 tracy = ["amigo_debug/tracy"]
 input = []

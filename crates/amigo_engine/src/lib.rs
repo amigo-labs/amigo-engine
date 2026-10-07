@@ -74,6 +74,8 @@
 pub mod api_bridge;
 pub mod config;
 pub mod context;
+#[cfg(feature = "editor")]
+mod editor_preview;
 pub mod engine;
 pub mod net;
 pub mod replay;

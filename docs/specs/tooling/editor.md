@@ -1,8 +1,8 @@
 ---
-status: partial
+status: done
 crate: amigo_editor
 depends_on: ["engine/core", "engine/ui"]
-last_updated: 2026-10-05
+last_updated: 2026-10-07
 ---
 
 # Integrated Level Editor
@@ -49,23 +49,26 @@ The platformer and free-roam templates do both.
 |---|---|
 | Paint, erase, flood fill | Click or drag in the viewport; one stroke is one undo step |
 | Layer select | Properties panel or Tab |
-| Place and remove entities | Entity tool (N) with a type name; Erase on an entity removes it |
+| Tileset drawing | Metadata `tileset` names a loaded sprite (tile `n` is cell `n - 1`, row by row; `tileset_columns` overrides the column count). Without it, tiles show as one colour per id |
+| Place, select and move entities | Entity tool (N); Select tool (S): click picks, Shift+click adds or removes, dragging on empty space band-selects, dragging the selection moves it by whole tiles in one undo step |
+| Delete | Delete/Backspace or Edit ▸ Delete removes the selected entities, else the selected zone, else the selected path point (a path's last point removes the path); Escape clears the selection |
+| Entity inspector | Type, position and string properties of the selected entity, applied as one undo step; presets for common types |
+| Paths | Path tool (R): click adds a point to the selected path or starts a new one, dragging a point moves it; points sit on tile centres in world units. Segments are drawn as lines |
+| Zones | Zone tool (Z) drags out whole tiles, clicking a zone selects it; the inspector edits name, rectangle and properties |
+| Level metadata | Properties panel: key/value editor, one undo step per change |
 | Undo / redo | Edit menu, Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z, `editor.undo/redo` |
-| Save, revert, new level | File menu, Ctrl+S, `editor.save/load/new_level`; saves are atomic |
-| Grid, cursor, tile preview | Drawn over the game; tiles show as one colour per id |
-| `editor.*` API | All commands below except `auto_decorate`; `engine.get_property {"key": "editor"}` reports the result |
+| Files | File menu: New, Open… (the levels in `assets/levels/`), Save, Save As… (a name or a path; `.amigo` is added), Revert; Ctrl+S; saves are atomic |
+| Sprite import | Dropping a PNG, Aseprite file or `.atlas.ron` on the window copies it into `assets/sprites/`, where hot reload registers it |
+| Light and emitter preview | `light` entities (`radius`, `color`, `intensity`, `falloff`) light the scene while the editor is open, and their reach is outlined; `emitter` entities (`preset` plus any `EmitterConfig` field) emit live. The inspector saves an emitter as `assets/data/<name>.emitter.ron` |
+| Auto-decorate | Tools ▸ Auto-decorate… or `editor.auto_decorate`: scatters the given tiles (or metadata `decor_tiles.<world>` / `decor_tiles`) over ground cells that no entity, path point or zone covers, at a density, seeded, as one undo step |
+| Auto-path | Tools ▸ path between the two selected entities, or `editor.auto_path`: A* around the non-zero tiles of the `collision` layer (else the first layer) |
+| Playtests and heatmaps | `editor.playtest_report` adds a run's metrics; the Playtest panel and the `editor` property list balance suggestions, including wave-curve spikes. `editor.heat` records heat that is drawn over the level |
+| `editor.*` API | Every command below; `engine.get_property {"key": "editor"}` reports the result |
 
-### Not implemented yet
-
-- Drawing the level with its tileset: tiles are previewed as coloured squares,
-  since a level does not name its tileset.
-- The path tool in the viewport (paths can be added and moved over the API only).
-- Zones (kept when saving, not editable), entity properties, multi-select.
-- A file dialog: Save writes the open file, New picks the next `level_NN.amigo`.
-- `editor.auto_decorate`, wave balancing, AI playtesting (Phase 3 below).
-- `EditorRuntime` (`plugin.rs`) is a separate game-side helper with its own
-  level and F5–F7 keys, which clash with the debug overlay; the engine does not
-  use it.
+`EditorRuntime` (`plugin.rs`) is a separate, game-side helper with its own level
+and play/stop snapshot. The engine does not use it. Its keys default to F10
+(play/stop), F11 (pause) and F12 (overlay), clear of the debug overlay's F1–F8
+and the editor's F9, and can be rebound through `EditorRuntime::keys`.
 
 ### Editor UI Widgets (Tier 2, behind `editor` feature flag)
 
@@ -125,7 +128,12 @@ The editor can be controlled remotely through the AI Agent Interface (amigo_api)
 - `amigo_editor_place_entity(type, x, y)`
 - `amigo_editor_add_path(points)`
 - `amigo_editor_move_path_point(path, point, new_pos)`
-- `amigo_editor_auto_decorate(world)`
+- `amigo_editor_auto_decorate(world, tiles?, layer?, density?, seed?)`
+- `amigo_editor_auto_path(from, to, layer?)`
+- `amigo_editor_add_zone(x, y, w, h, name?, properties?)` / `amigo_editor_remove_zone(index)`
+- `amigo_editor_set_entity(index, type?, x?, y?, properties?)` / `amigo_editor_remove_entity(index)`
+- `amigo_editor_set_metadata(key, value?)` (no value removes the key)
+- `amigo_editor_playtest_report(metrics)` / `amigo_editor_heat(x, y, map?, value?)`
 - `amigo_editor_save(path)` / `amigo_editor_load(path)`
 - `amigo_editor_undo()` / `amigo_editor_redo()`
 
@@ -151,7 +159,19 @@ The editor can be controlled remotely through the AI Agent Interface (amigo_api)
 {"method": "editor.move_path_point", "params": {"path": 0, "point": 2, "new_pos": [7, 7]}}
 
 // Auto-decorate (fill non-gameplay tiles with themed decoration)
-{"method": "editor.auto_decorate", "params": {"world": "caribbean"}}
+{"method": "editor.auto_decorate", "params": {"world": "caribbean", "tiles": [40, 41], "density": 0.15, "seed": 7}}
+
+// Path around the collision layer
+{"method": "editor.auto_path", "params": {"from": [8, 168], "to": [472, 168]}}
+
+// Zones, entity edits, metadata
+{"method": "editor.add_zone", "params": {"name": "boss", "x": 160, "y": 96, "w": 64, "h": 48}}
+{"method": "editor.set_entity", "params": {"index": 0, "properties": {"hp": "12"}}}
+{"method": "editor.set_metadata", "params": {"key": "tileset", "value": "caribbean_tiles"}}
+
+// Playtest results and heat
+{"method": "editor.playtest_report", "params": {"metrics": {"victory": false, "wave_times": [600, 720, 2100]}}}
+{"method": "editor.heat", "params": {"map": "deaths", "x": 200, "y": 120}}
 
 // Save level
 {"method": "editor.save", "params": {"path": "levels/caribbean/level_02.amigo"}}

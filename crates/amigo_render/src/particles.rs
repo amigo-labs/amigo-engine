@@ -649,6 +649,26 @@ impl ParticleSystem {
         self.emitters.clear();
     }
 
+    /// Whether an emitter named `name` exists.
+    pub fn contains(&self, name: &str) -> bool {
+        self.emitters.iter().any(|(n, _)| n == name)
+    }
+
+    /// Remove every emitter named `name`, with its particles.
+    pub fn remove(&mut self, name: &str) {
+        self.emitters.retain(|(n, _)| n != name);
+    }
+
+    /// Remove every emitter whose name `pred` accepts, with its particles.
+    pub fn remove_where(&mut self, mut pred: impl FnMut(&str) -> bool) {
+        self.emitters.retain(|(n, _)| !pred(n));
+    }
+
+    /// Names of the emitters, in spawn order.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.emitters.iter().map(|(n, _)| n.as_str())
+    }
+
     /// Number of active emitters.
     pub fn emitter_count(&self) -> usize {
         self.emitters.len()

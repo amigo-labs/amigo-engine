@@ -85,7 +85,7 @@ pub struct PathDef {
 }
 
 /// A zone/region defined in a level (for triggers, spawn areas, etc).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ZoneDef {
     pub name: String,
     pub x: f32,

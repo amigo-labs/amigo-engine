@@ -47,6 +47,43 @@ Notable changes per release. Format loosely follows
   - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
 - **`examples/raster_art`** shows all of the above.
 
+### Added — level editor (docs/specs/tooling/editor.md)
+
+- **Tileset drawing:** a level's metadata `tileset` names a loaded sprite
+  sheet (`tileset_columns` overrides its columns); the editor draws the
+  level with it instead of one colour per tile id.
+- **Selection:** Shift+click adds or removes, dragging on empty space
+  band-selects, dragging the selection moves it by whole tiles in one undo
+  step. Delete/Backspace and Edit ▸ Delete remove the selection; Escape
+  clears it.
+- **Path tool (R)** adds and drags points in the viewport; **zone tool (Z)**
+  drags out zones. Inspectors edit entity properties, zones, paths and level
+  metadata, each change one undo step.
+- **Files:** Open… and Save As… dialogs.
+- **Sprite import:** dropping a PNG, Aseprite file or `.atlas.ron` on the
+  window copies it into `assets/sprites/`.
+- **Live preview:** `light` entities light the scene and `emitter` entities
+  emit while the editor is open; an emitter can be saved as
+  `assets/data/<name>.emitter.ron`.
+- **AI-assisted tools:** auto-decorate (seeded, density, per-world tile
+  lists), auto-path between two entities around the collision layer, wave
+  curve analysis in the balance suggestions, and heatmaps drawn over the
+  level.
+- **API / MCP:** `editor.auto_decorate` takes `tiles`, `layer`, `density`
+  and `seed`; new `editor.auto_path`, `add_zone`, `remove_zone`,
+  `set_entity`, `remove_entity`, `set_metadata`, `playtest_report` and
+  `heat`, with matching `amigo_editor_*` MCP tools. The `editor` property
+  reports zones, the selection, playtest runs and suggestions.
+
+### Changed — level editor
+
+- `EditorAction` is no longer `Copy`: it gained `SaveAs(PathBuf)`,
+  `Open(PathBuf)` and `SaveEmitter(usize)`.
+- `PointerState` has a `shift` field.
+- `EditorRuntime`'s keys moved from F5–F7, which the debug overlay owns, to
+  F10–F12, and can be rebound through `EditorRuntime::keys`.
+- `PlaytestMetrics` deserializes missing fields as their defaults.
+
 ### Added — plugin systems, input and draw hooks
 
 - **`PluginContext::add_system(SystemStage, f)`** runs a function every tick,

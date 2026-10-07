@@ -847,6 +847,56 @@ fn open_editor_session(ctx: &mut GameContext) {
     ctx.resources.insert(session);
 }
 
+/// The level being edited, over the game: its tiles drawn with the level's
+/// tileset when it names one the game has loaded (coloured squares
+/// otherwise), then the grid, zones, paths, entities, selection and cursor.
+#[cfg(feature = "editor")]
+fn draw_editor_overlay(
+    draw: &mut DrawContext,
+    session: &amigo_editor::EditorSession,
+    game_ctx: &GameContext,
+    view: amigo_core::Rect,
+) {
+    let level = &session.level;
+    let tileset = session
+        .tileset()
+        .filter(|name| game_ctx.find_sprite_texture(name).is_some());
+    if let Some(tileset) = tileset {
+        let ts = level.tile_size.max(1) as f32;
+        let columns = level
+            .metadata
+            .get("tileset_columns")
+            .and_then(|c| c.parse().ok())
+            .unwrap_or(0);
+        for layer in level.layers.iter().filter(|l| l.visible) {
+            let mut tiles =
+                amigo_tilemap::TileLayer::new(layer.name.clone(), level.width, level.height);
+            tiles.tiles = layer
+                .tiles
+                .iter()
+                .map(|&t| amigo_tilemap::TileId(u32::from(t)))
+                .collect();
+            draw.draw_tilemap_sprite(&tiles, ts, ts, tileset, columns);
+        }
+    }
+    for item in session.overlay_items(view, tileset.is_none()) {
+        match item {
+            amigo_editor::OverlayItem::Rect(rect, color) => draw.draw_rect(rect, color),
+            amigo_editor::OverlayItem::Line {
+                a,
+                b,
+                thickness,
+                color,
+            } => draw.draw_line(
+                RenderVec2::new(a.0, a.1),
+                RenderVec2::new(b.0, b.1),
+                thickness,
+                color,
+            ),
+        }
+    }
+}
+
 /// F9: open or close the editor. Opening releases everything the game held,
 /// since the game stops seeing input until it closes.
 #[cfg(feature = "editor")]
@@ -874,6 +924,14 @@ pub(crate) fn run_editor_action(ctx: &mut GameContext, action: amigo_editor::Edi
     let Some(session) = editor_session(ctx) else {
         return;
     };
+    if let amigo_editor::EditorAction::SaveEmitter(index) = action {
+        let result = crate::editor_preview::save_emitter(session, index);
+        session.status = Some(match result {
+            Ok(path) => format!("Saved {}", path.display()),
+            Err(e) => e,
+        });
+        return;
+    }
     let result = session.perform(action);
     let status = session.status.clone();
     match result {
@@ -1753,6 +1811,7 @@ impl ApplicationHandler for EngineApp {
                     let world = state.game_ctx.input.mouse_world_pos();
                     let pointer = amigo_editor::PointerState {
                         world: (world.x, world.y),
+                        shift: state.modifiers.shift_key(),
                         ..state.editor_pointer
                     };
                     state.editor_pointer.pressed = false;
@@ -1767,6 +1826,34 @@ impl ApplicationHandler for EngineApp {
                         }
                     }
                 }
+
+                // The editor's live preview of light and emitter entities.
+                #[cfg(feature = "editor")]
+                let game_light_count = {
+                    let session = state
+                        .game_ctx
+                        .resources
+                        .get::<amigo_editor::EditorSession>()
+                        .filter(|s| s.state.active);
+                    let count = state.game_ctx.lighting.lights.len();
+                    if let Some(session) = session {
+                        let ts = session.level.tile_size as f32;
+                        let lights: Vec<_> = session
+                            .level
+                            .entities
+                            .iter()
+                            .filter_map(|e| crate::editor_preview::light(e, ts))
+                            .collect();
+                        state.game_ctx.lighting.lights.extend(lights);
+                    }
+                    let session = state
+                        .game_ctx
+                        .resources
+                        .get::<amigo_editor::EditorSession>()
+                        .filter(|s| s.state.active);
+                    crate::editor_preview::sync_emitters(&mut state.game_ctx.particles, session);
+                    count
+                };
 
                 // Lighting: hand this frame's lights to the renderer. Swapped
                 // rather than cloned — a game with many lights should not pay for
@@ -1845,9 +1932,12 @@ impl ApplicationHandler for EngineApp {
                         .get::<amigo_editor::EditorSession>()
                         && session.state.active
                     {
-                        for (rect, color) in session.overlay(state.renderer.camera.view_rect()) {
-                            draw_ctx.draw_rect(rect, color);
-                        }
+                        draw_editor_overlay(
+                            &mut draw_ctx,
+                            session,
+                            &state.game_ctx,
+                            state.renderer.camera.view_rect(),
+                        );
                     }
                 }
 
@@ -2049,6 +2139,8 @@ impl ApplicationHandler for EngineApp {
                 state.renderer.camera.position = restore_camera;
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
+                #[cfg(feature = "editor")]
+                state.game_ctx.lighting.lights.truncate(game_light_count);
 
                 // Publish pause/speed/camera for `engine.status` and `camera.get`.
                 // After the swap-back, so the camera reported is the updated one.

@@ -41,8 +41,10 @@ impl Default for PlaytestConfig {
 // Playtest metrics
 // ---------------------------------------------------------------------------
 
-/// Metrics collected during a single playtest run.
+/// Metrics collected during a single playtest run. Missing fields
+/// deserialize as their defaults, so a client reports what it measured.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PlaytestMetrics {
     /// Whether the player won.
     pub victory: bool,
@@ -217,6 +219,53 @@ pub enum Severity {
     Info,
     Warning,
     Critical,
+}
+
+/// The wave curve: average completion time of each wave across runs. A wave
+/// that takes far longer than the one before is a difficulty spike; a curve
+/// that never rises gives the player nothing to grow into.
+pub fn analyze_waves(results: &PlaytestResults) -> Vec<BalanceSuggestion> {
+    let waves = results
+        .runs
+        .iter()
+        .map(|r| r.wave_times.len())
+        .max()
+        .unwrap_or(0);
+    let mut averages = Vec::with_capacity(waves);
+    for w in 0..waves {
+        let times: Vec<u64> = results
+            .runs
+            .iter()
+            .filter_map(|r| r.wave_times.get(w).copied())
+            .collect();
+        if times.is_empty() {
+            break;
+        }
+        averages.push(times.iter().sum::<u64>() as f32 / times.len() as f32);
+    }
+    let mut out = Vec::new();
+    for (i, pair) in averages.windows(2).enumerate() {
+        if pair[0] > 0.0 && pair[1] > pair[0] * 2.0 {
+            out.push(BalanceSuggestion {
+                category: "waves".into(),
+                description: format!(
+                    "Wave {} takes {:.1}x as long as wave {}: a difficulty spike. Smooth it or give the player more before it.",
+                    i + 2,
+                    pair[1] / pair[0],
+                    i + 1
+                ),
+                severity: Severity::Warning,
+            });
+        }
+    }
+    if averages.len() >= 3 && averages.windows(2).all(|p| p[1] <= p[0]) {
+        out.push(BalanceSuggestion {
+            category: "waves".into(),
+            description: "Later waves are never harder than earlier ones: the difficulty curve is flat or falling.".into(),
+            severity: Severity::Info,
+        });
+    }
+    out
 }
 
 /// Analyze playtest results and generate balance suggestions.
@@ -423,5 +472,39 @@ mod tests {
         };
         // (600+900+1200) / 3 / 60 = 15.0 seconds
         assert!((m.avg_wave_time_secs() - 15.0).abs() < 0.1);
+    }
+
+    fn waves(times: &[&[u64]]) -> PlaytestResults {
+        let mut results = PlaytestResults::new(PlaytestConfig::default());
+        for t in times {
+            results.add_run(PlaytestMetrics {
+                wave_times: t.to_vec(),
+                ..Default::default()
+            });
+        }
+        results
+    }
+
+    #[test]
+    fn a_wave_twice_as_long_as_the_last_is_a_spike() {
+        let out = analyze_waves(&waves(&[&[100, 120, 300], &[100, 140, 340]]));
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(out[0].description.starts_with("Wave 3"));
+        assert_eq!(out[0].category, "waves");
+    }
+
+    #[test]
+    fn a_curve_that_never_rises_is_flagged_and_a_rising_one_is_not() {
+        let flat = analyze_waves(&waves(&[&[300, 300, 200]]));
+        assert!(flat.iter().any(|s| s.description.contains("never harder")));
+        assert!(analyze_waves(&waves(&[&[100, 150, 200]])).is_empty());
+        assert!(analyze_waves(&waves(&[])).is_empty());
+    }
+
+    #[test]
+    fn partial_metrics_deserialize_with_defaults() {
+        let m: PlaytestMetrics = serde_json::from_str(r#"{"victory": true}"#).unwrap();
+        assert!(m.victory);
+        assert!(m.wave_times.is_empty());
     }
 }
