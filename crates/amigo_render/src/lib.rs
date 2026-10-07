@@ -47,7 +47,7 @@ pub use post_process::{PostEffect, PostPass, PostProcessPipeline, PostProcessUni
 pub use post_shader::{PostShaderRegistry, ShaderError};
 pub use renderer::{Renderer, SurfaceError};
 pub use sprite_batcher::{QuadGeometry, SpriteBatcher, SpriteInstance, SpriteShader};
-pub use texture::{Texture, TextureId, TextureIdAllocator};
+pub use texture::{DynamicTextures, Texture, TextureId, TextureIdAllocator};
 pub use vertex::Vertex;
 pub use viewport::{ScaleMode, Viewport, ViewportInfo};
 

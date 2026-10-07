@@ -37,6 +37,55 @@ impl Default for TextureIdAllocator {
     }
 }
 
+/// Textures a game makes at runtime (a minimap, a procedural image), uploaded
+/// by the engine before the frame's batch is built. Ids come from the
+/// allocator the renderer shares, and uploading the same id again replaces
+/// the texture in place. Usable through `&self`, so `Game::draw` can upload.
+#[derive(Debug, Default)]
+pub struct DynamicTextures {
+    ids: TextureIdAllocator,
+    pending: std::sync::Mutex<Vec<(TextureId, image::RgbaImage)>>,
+}
+
+impl DynamicTextures {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Take ids from `ids` from now on (the renderer's).
+    pub fn set_texture_ids(&mut self, ids: TextureIdAllocator) {
+        self.ids = ids;
+    }
+
+    /// A fresh id for a texture.
+    pub fn allocate(&self) -> TextureId {
+        self.ids.allocate()
+    }
+
+    /// Queue `image` (straight alpha) for upload under `id`, replacing an
+    /// upload of the same id queued earlier this frame.
+    pub fn upload(&self, id: TextureId, image: image::RgbaImage) {
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        pending.retain(|(queued, _)| *queued != id);
+        pending.push((id, image));
+    }
+
+    /// The ids queued for upload, in order.
+    pub fn pending_ids(&self) -> Vec<TextureId> {
+        self.pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// Hand over everything queued; the engine uploads it.
+    pub fn take_pending(&self) -> Vec<(TextureId, image::RgbaImage)> {
+        std::mem::take(&mut *self.pending.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+}
+
 /// A GPU texture with its bind group.
 pub struct Texture {
     pub id: TextureId,
@@ -320,6 +369,20 @@ impl Texture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_second_upload_of_an_id_replaces_the_first() {
+        let textures = DynamicTextures::new();
+        let id = textures.allocate();
+        let other = textures.allocate();
+        textures.upload(id, image::RgbaImage::new(1, 1));
+        textures.upload(other, image::RgbaImage::new(1, 1));
+        textures.upload(id, image::RgbaImage::new(2, 2));
+        assert_eq!(textures.pending_ids(), vec![other, id]);
+        let taken = textures.take_pending();
+        assert_eq!(taken[1].1.dimensions(), (2, 2));
+        assert!(textures.pending_ids().is_empty());
+    }
 
     #[test]
     fn the_allocator_never_repeats_an_id_across_clones() {

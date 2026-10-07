@@ -300,7 +300,7 @@ engine ever called them.
 | [engine/localization](engine/localization.md)             | done   | amigo_core        | assets/format                 |
 | [engine/timeline](engine/timeline.md)                     | done   | amigo_core        | engine/tween, engine/camera   |
 | [engine/behavior-tree](engine/behavior-tree.md)           | done   | amigo_core        | engine/core, engine/agents    |
-| [engine/minimap](engine/minimap.md)                       | partial | amigo_render     | engine/camera, engine/fog-of-war |
+| [engine/minimap](engine/minimap.md)                       | done   | amigo_render, amigo_engine | engine/camera, engine/fog-of-war |
 | [engine/state-rewind](engine/state-rewind.md)             | done   | amigo_core        | engine/save-load, engine/simulation |
 | [engine/replays](engine/replays.md)                       | done   | amigo_engine, amigo_input | engine/input, engine/simulation, ai-pipelines/agent-api |
 | [engine/achievements](engine/achievements.md)             | done   | amigo_core        | engine/save-load, engine/ui   |

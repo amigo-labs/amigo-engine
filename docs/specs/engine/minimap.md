@@ -1,16 +1,17 @@
 ---
-status: partial
+status: done
 crate: amigo_render
 depends_on: ["engine/camera", "engine/fog-of-war"]
-last_updated: 2026-08-03
+last_updated: 2026-10-07
 ---
 
 # Minimap
 
-> **Status: data structure only, no rendering.** `crates/amigo_render/src/minimap.rs`
-> is complete as state and is used as data by `amigo_core::rts` and
-> `amigo_core::metroidvania`, but nothing turns it into draw commands. A game can
-> query it and draw the result itself through `ctx.ui`; the engine does not.
+> **Status: done.** `crates/amigo_render/src/minimap.rs` holds the state and
+> composes the image; `DrawContext::draw_minimap` turns it into one texture per
+> minimap, uploaded through `GameContext::textures()` and drawn in screen space
+> after post-processing. `GameContext::minimap_click` implements click-to-jump.
+> The API below differs from the original design where marked "Actual".
 
 ## Purpose
 
@@ -124,6 +125,50 @@ impl Minimap {
 }
 ```
 
+### Actual: drawing and click-to-jump
+
+```rust
+// amigo_engine
+impl DrawContext<'_> {
+    /// Draw `minimap` over `layer` at its configured screen position and size:
+    /// tiles as coloured pixels, fog of war, pins, pings, the main camera's
+    /// view and the border. World units are tiles of `tile_w`×`tile_h` pixels.
+    pub fn draw_minimap(
+        &mut self,
+        minimap: &Minimap,
+        layer: &TileLayer,
+        tile_w: f32,
+        tile_h: f32,
+        tile_color: impl Fn(TileId) -> Color,
+        fog: Option<&FogOfWarGrid>,
+    );
+}
+
+impl GameContext {
+    /// Left click on the minimap this tick, with `click_to_jump` on: centre
+    /// the camera there and return `true`.
+    pub fn minimap_click(&mut self, minimap: &Minimap, tile_w: f32, tile_h: f32) -> bool;
+
+    /// Textures made at runtime, uploaded by the engine before the frame.
+    pub fn textures(&self) -> &DynamicTextures;
+}
+
+// amigo_render::minimap
+impl Minimap {
+    /// `render` with the camera's view given in minimap world units.
+    pub fn render_view(&self, tiles: &[u32], tile_width: u32, tile_height: u32,
+        tile_colors: &dyn Fn(u32) -> Color, fog: Option<&FogOfWarGrid>,
+        view_center: RenderVec2, view_size: RenderVec2) -> Vec<MinimapPixel>;
+    pub fn pixels_to_image(&self, pixels: &[MinimapPixel]) -> image::RgbaImage;
+    /// The texture id the minimap draws through, assigned on first use.
+    pub fn texture_id(&self, allocate: impl FnOnce() -> TextureId) -> TextureId;
+}
+```
+
+The minimap's world units are tiles (`world_bounds`, pin positions, pings).
+Tile colours come from the game's `tile_color` function rather than being
+derived from the tileset.
+
 ## Behavior
 
 - **Tile-basiertes Rendering**: Die Minimap rendert die Tilemap als farbige Pixel (1 Tile = 1 Pixel auf der Minimap). Farben werden aus dem Tile-Typ abgeleitet (Gras=grün, Wasser=blau, Wand=grau). Schneller als Sprite-Downscaling und visuell klarer.
@@ -135,9 +180,8 @@ impl Minimap {
 
 ## Internal Design
 
-- Eigene `Camera`-Instanz mit niedrigem Zoom (z.B. 0.05 = 20x herausgezoomt), zentriert auf `world_bounds`.
-- Rendering in eigene Offscreen-Texture (via `PostProcessor::create_offscreen_target()`), dann als Sprite in die UI geblittet.
-- Tilemap-Farben werden einmalig aus dem Tileset abgeleitet (Durchschnittsfarbe pro Tile-Typ) und gecacht.
+- Actual: the image is composed on the CPU (`Minimap::render_view`, one pixel per minimap pixel), uploaded with `DynamicTextures::upload` under the minimap's own texture id (replaced in place each frame), and drawn as one screen-space sprite. There is no separate camera or offscreen pass.
+- Tile colours come from the game's `tile_color` function (Open Question 1 below is settled that way).
 - Pin-Positionen werden von SimVec2 (Simulation) nach Minimap-Pixel konvertiert via linearer Transformation: `minimap_px = (world_pos - world_bounds.origin) / world_bounds.size * minimap_size`.
 
 ## RTS / Strategy Extensions

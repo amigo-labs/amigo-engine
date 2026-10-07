@@ -1090,6 +1090,9 @@ impl ApplicationHandler for EngineApp {
         // Font pages take their texture ids from the renderer, so a page made
         // during `Game::draw` already has its final id.
         game_ctx.fonts.set_texture_ids(renderer.texture_ids());
+        game_ctx
+            .textures_mut()
+            .set_texture_ids(renderer.texture_ids());
         // Load built-in pixel font at 7px (native size)
         if let Err(e) = game_ctx.fonts.load_builtin(7.0) {
             error!("Failed to load built-in font: {}", e);
@@ -1788,8 +1791,14 @@ impl ApplicationHandler for EngineApp {
                 }
 
                 // Glyphs first used this frame, by the game, the overlay or
-                // the UI, go up before the batch is built.
+                // the UI, and textures made this frame go up before the batch
+                // is built.
                 upload_font_pages(&state.game_ctx.fonts, &mut state.renderer);
+                for (id, image) in state.game_ctx.textures().take_pending() {
+                    state
+                        .renderer
+                        .upload_texture(id, &image, amigo_render::SamplerMode::Nearest);
+                }
 
                 // Process screenshot requests from API (before render clears batcher)
                 #[cfg(feature = "api")]

@@ -1,6 +1,7 @@
 use amigo_animation::AnimPlayer;
 use amigo_assets::{AssetManager, SpriteFrame};
 use amigo_core::events::EventHub;
+use amigo_core::fog_of_war::FogOfWarGrid;
 use amigo_core::level_loader::LoadedLevel;
 use amigo_core::resources::Resources;
 use amigo_core::save::{SaveConfig, SaveManager};
@@ -10,13 +11,14 @@ use amigo_input::{ActionBindings, ActionState, GamepadState, InputState};
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontAtlas, FontId, FontManager, TextMetrics, TextStyle};
 use amigo_render::lighting::LightingState;
+use amigo_render::minimap::Minimap;
 use amigo_render::particles::ParticleSystem;
 use amigo_render::post_process::PostEffect;
 use amigo_render::post_shader::{PostShaderRegistry, ShaderError};
 use amigo_render::shapes::{self, ConvexShape};
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
-use amigo_render::{ArtStyle, ScaleMode, ViewportInfo};
+use amigo_render::{ArtStyle, DynamicTextures, ScaleMode, ViewportInfo};
 use amigo_tilemap::{TileId, TileLayer};
 use amigo_ui::UiContext;
 
@@ -133,6 +135,8 @@ pub struct GameContext {
     pub tasks: amigo_core::tasks::TaskPool,
     /// The window's layout, refreshed by the engine.
     viewport_info: ViewportInfo,
+    /// Textures made at runtime; see [`textures`](Self::textures).
+    dynamic_textures: DynamicTextures,
     /// Sprites the game can draw by name: texture, size and frames.
     sprites: std::collections::HashMap<String, SpriteEntry>,
     seed: u64,
@@ -181,6 +185,7 @@ impl GameContext {
                 (virtual_width as u32, virtual_height as u32),
                 1.0,
             ),
+            dynamic_textures: DynamicTextures::new(),
             sprites: std::collections::HashMap::new(),
             seed: 0,
             replay: Default::default(),
@@ -199,6 +204,35 @@ impl GameContext {
 
     pub(crate) fn set_viewport_info(&mut self, info: ViewportInfo) {
         self.viewport_info = info;
+    }
+
+    /// Textures the game makes at runtime, such as a procedural image:
+    /// `allocate` an id once, `upload` an image under it whenever it changes
+    /// (also from `Game::draw`), and draw it with `SpriteInstance::new(id, ..)`.
+    /// The engine uploads before the frame is drawn.
+    pub fn textures(&self) -> &DynamicTextures {
+        &self.dynamic_textures
+    }
+
+    pub(crate) fn textures_mut(&mut self) -> &mut DynamicTextures {
+        &mut self.dynamic_textures
+    }
+
+    /// Click-to-jump for `minimap`: when the left mouse button was pressed on
+    /// it this tick and its `click_to_jump` is on, centre the camera on the
+    /// clicked spot and return `true`. The minimap's world units are tiles of
+    /// `tile_w`×`tile_h` pixels.
+    pub fn minimap_click(&mut self, minimap: &Minimap, tile_w: f32, tile_h: f32) -> bool {
+        if !self.input.mouse_pressed(winit::event::MouseButton::Left) {
+            return false;
+        }
+        let Some(tile) = minimap.screen_to_world(self.input.mouse_ui_pos()) else {
+            return false;
+        };
+        let target = RenderVec2::new(tile.x * tile_w, tile.y * tile_h);
+        self.camera.position = target;
+        self.camera.target = target;
+        true
     }
 
     /// The seed [`rng`](Self::rng) started from: `[dev] seed` in
@@ -1145,6 +1179,56 @@ impl<'a> DrawContext<'a> {
     pub fn draw_convex_polygon(&mut self, points: &[RenderVec2], color: Color) {
         let points = points.iter().map(|p| [p.x, p.y]).collect();
         self.push_shape(&ConvexShape::filled(points, color));
+    }
+
+    // -----------------------------------------------------------------------
+    // Minimap
+    // -----------------------------------------------------------------------
+
+    /// Draw `minimap` over `layer` in screen space at its configured position
+    /// and size: tiles as coloured pixels (`tile_color`), fog of war, pins,
+    /// pings, the main camera's view and the border. The minimap's world units
+    /// are tiles of `tile_w`×`tile_h` pixels, which is what the camera's view
+    /// is converted to. The image goes up as one texture per minimap, replaced
+    /// in place every frame.
+    pub fn draw_minimap(
+        &mut self,
+        minimap: &Minimap,
+        layer: &TileLayer,
+        tile_w: f32,
+        tile_h: f32,
+        tile_color: impl Fn(TileId) -> Color,
+        fog: Option<&FogOfWarGrid>,
+    ) {
+        if !shapes::usable(tile_w) || !shapes::usable(tile_h) {
+            return;
+        }
+        let tiles: Vec<u32> = layer.tiles.iter().map(|t| t.0).collect();
+        let view = self.view;
+        let pixels = minimap.render_view(
+            &tiles,
+            layer.width,
+            layer.height,
+            &|id| tile_color(TileId(id)),
+            fog,
+            RenderVec2::new(
+                (view.x + view.w / 2.0) / tile_w,
+                (view.y + view.h / 2.0) / tile_h,
+            ),
+            RenderVec2::new(view.w / tile_w, view.h / tile_h),
+        );
+        let textures = self.game_ctx.textures();
+        let texture = minimap.texture_id(|| textures.allocate());
+        textures.upload(texture, minimap.pixels_to_image(&pixels));
+        let (w, h) = minimap.config.size;
+        let pos = minimap.config.screen_pos;
+        let z = self.z;
+        self.in_space(DrawSpace::Screen, |d| {
+            d.push(SpriteInstance {
+                z_order: z,
+                ..SpriteInstance::new(texture, pos.x, pos.y, w as f32, h as f32)
+            });
+        });
     }
 
     // -----------------------------------------------------------------------

@@ -235,6 +235,8 @@ pub struct Minimap {
     pings: Vec<MinimapPing>,
     /// Icon registry for sprite-type pins.
     icon_registry: IconRegistry,
+    /// The texture this minimap is drawn through, assigned on first draw.
+    texture: std::sync::OnceLock<crate::texture::TextureId>,
 }
 
 impl Minimap {
@@ -245,7 +247,18 @@ impl Minimap {
             pins: Vec::new(),
             pings: Vec::new(),
             icon_registry: IconRegistry::new(),
+            texture: std::sync::OnceLock::new(),
         }
+    }
+
+    /// The texture this minimap is drawn through: assigned by `allocate` the
+    /// first time, the same id afterwards, so each frame's image replaces the
+    /// last one in place.
+    pub fn texture_id(
+        &self,
+        allocate: impl FnOnce() -> crate::texture::TextureId,
+    ) -> crate::texture::TextureId {
+        *self.texture.get_or_init(allocate)
     }
 
     /// Returns a mutable reference to the icon registry for registering sprite icons.
@@ -742,20 +755,47 @@ impl Minimap {
         fog: Option<&FogOfWarGrid>,
         main_camera: &Camera,
     ) -> Vec<MinimapPixel> {
-        let mut pixels = self.generate_pixels(tiles, tile_width, tile_height, tile_colors, fog);
-
-        // Viewport indicator from main camera
         let view = main_camera.view_rect();
-        self.render_viewport_to_pixels(
-            &mut pixels,
+        self.render_view(
+            tiles,
+            tile_width,
+            tile_height,
+            tile_colors,
+            fog,
             main_camera.effective_position(),
             RenderVec2::new(view.w, view.h),
-        );
+        )
+    }
 
+    /// [`render`](Self::render) with the viewport indicator given directly,
+    /// in the minimap's world units (those of `world_bounds`): the centre of
+    /// the main camera's view and its size.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "render's parameters with the camera split into position and size"
+    )]
+    pub fn render_view(
+        &self,
+        tiles: &[u32],
+        tile_width: u32,
+        tile_height: u32,
+        tile_colors: &dyn Fn(u32) -> Color,
+        fog: Option<&FogOfWarGrid>,
+        view_center: RenderVec2,
+        view_size: RenderVec2,
+    ) -> Vec<MinimapPixel> {
+        let mut pixels = self.generate_pixels(tiles, tile_width, tile_height, tile_colors, fog);
+        self.render_viewport_to_pixels(&mut pixels, view_center, view_size);
         // Border on top of everything
         self.render_border_to_pixels(&mut pixels);
-
         pixels
+    }
+
+    /// The pixel buffer as an image the size of the minimap.
+    pub fn pixels_to_image(&self, pixels: &[MinimapPixel]) -> image::RgbaImage {
+        let (mw, mh) = self.config.size;
+        image::RgbaImage::from_raw(mw.max(1), mh.max(1), self.pixels_to_rgba(pixels))
+            .unwrap_or_else(|| image::RgbaImage::new(mw.max(1), mh.max(1)))
     }
 
     /// Convert the minimap pixel buffer into a flat RGBA byte array suitable for

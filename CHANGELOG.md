@@ -47,6 +47,16 @@ Notable changes per release. Format loosely follows
   - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
 - **`examples/raster_art`** shows all of the above.
 
+### Added — minimap rendering
+
+- **`DrawContext::draw_minimap`** draws an `amigo_render::Minimap` over a
+  tile layer in screen space: tile colours, fog of war, pins, pings, the
+  camera's view and the border. The minimap state existed before, but nothing
+  drew it.
+- **`GameContext::minimap_click`** implements click-to-jump.
+- **`GameContext::textures()`** (`DynamicTextures`) uploads textures made at
+  runtime, also from `Game::draw`.
+
 ### Changed — rendering extensions (breaking)
 
 | Change | Who breaks | Migration |
