@@ -1473,9 +1473,23 @@ impl ApplicationHandler for EngineApp {
                 // a per-frame Vec copy.
                 std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
 
-                // Post-processing: only re-upload when the game changed the
-                // stack, so an unchanged stack costs one comparison per frame
-                // instead of a Vec clone.
+                // Post-processing: shaders registered or replaced since the
+                // last frame are compiled now, and the stack is only copied
+                // when the game changed it, so an unchanged stack costs one
+                // comparison per frame instead of a Vec clone.
+                {
+                    let renderer = &mut state.renderer;
+                    renderer
+                        .post_process
+                        .sync_shaders(&renderer.device, state.game_ctx.post_shaders());
+                    renderer.post_process.set_virtual_size(
+                        renderer.camera.virtual_width,
+                        renderer.camera.virtual_height,
+                    );
+                    renderer
+                        .post_process
+                        .set_time(state.game_ctx.time.elapsed as f32);
+                }
                 if state.renderer.post_process.effects() != state.game_ctx.post_effects.as_slice() {
                     state
                         .renderer
@@ -1503,7 +1517,8 @@ impl ApplicationHandler for EngineApp {
                     )
                     .with_camera(&state.renderer.camera)
                     .with_screen_list(&mut state.screen_draw_list)
-                    .with_render_scale(state.renderer.render_scale());
+                    .with_render_scale(state.renderer.render_scale())
+                    .with_art_style(state.renderer.art_style);
                     if let Some(active) = self.stack.top() {
                         active.draw(&mut draw_ctx);
                     }

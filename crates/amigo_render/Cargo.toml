@@ -23,6 +23,10 @@ rustc-hash = { workspace = true }
 fontdue = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+# Validates game post shaders on the CPU before the GPU sees them.
+naga = { workspace = true }
+# Blocks on wgpu error scopes when building a post shader pipeline.
+pollster = { workspace = true }
 egui = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }
 egui-winit = { workspace = true, optional = true }
@@ -30,8 +34,6 @@ egui-winit = { workspace = true, optional = true }
 [dev-dependencies]
 epaint_default_fonts = { workspace = true }
 ron = { workspace = true }
-pollster = { workspace = true }
-naga = { workspace = true }
 
 [lints]
 workspace = true

@@ -10,7 +10,9 @@ pub mod lighting_pipeline;
 pub mod minimap;
 pub mod particles;
 pub mod post_process;
+pub mod post_shader;
 pub mod renderer;
+pub mod shapes;
 pub mod sprite_batcher;
 pub mod texture;
 pub mod vertex;
@@ -40,7 +42,8 @@ pub use minimap::{
     PinType, SpriteIcon, TEAM_COLORS,
 };
 pub use particles::{EmitterConfig, EmitterShape, ParticleEmitter, ParticleSystem};
-pub use post_process::{PostEffect, PostProcessPipeline, PostProcessUniforms};
+pub use post_process::{PostEffect, PostPass, PostProcessPipeline, PostProcessUniforms};
+pub use post_shader::{PostShaderRegistry, ShaderError};
 pub use renderer::{Renderer, SurfaceError};
 pub use sprite_batcher::{QuadGeometry, SpriteBatcher, SpriteInstance, SpriteShader};
 pub use texture::{Texture, TextureId, TextureIdAllocator};

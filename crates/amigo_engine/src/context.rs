@@ -7,11 +7,14 @@ use amigo_core::save::{SaveConfig, SaveManager};
 use amigo_core::scheduler::TickScheduler;
 use amigo_core::{Color, Rect, RenderVec2, SimRng, TimeInfo, World};
 use amigo_input::{ActionBindings, ActionState, GamepadState, InputState};
+use amigo_render::ArtStyle;
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontAtlas, FontId, FontManager, TextMetrics, TextStyle};
 use amigo_render::lighting::LightingState;
 use amigo_render::particles::ParticleSystem;
 use amigo_render::post_process::PostEffect;
+use amigo_render::post_shader::{PostShaderRegistry, ShaderError};
+use amigo_render::shapes::{self, ConvexShape};
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
 use amigo_tilemap::{TileId, TileLayer};
@@ -114,6 +117,8 @@ pub struct GameContext {
     /// # }
     /// ```
     pub post_effects: Vec<PostEffect>,
+    /// Post shaders registered with [`register_post_shader`](Self::register_post_shader).
+    post_shaders: PostShaderRegistry,
     /// Loaded assets: sprites, and `load_ron` for game data.
     ///
     /// This used to live in the engine's private state, so game code could not
@@ -162,6 +167,7 @@ impl GameContext {
             ui: UiContext::new(),
             lighting: LightingState::new(),
             post_effects: Vec::new(),
+            post_shaders: PostShaderRegistry::new(),
             #[cfg(feature = "audio")]
             audio: AudioManager::new(assets_path),
             #[cfg(feature = "async_tasks")]
@@ -308,6 +314,35 @@ impl GameContext {
         });
     }
 
+    /// Register (or replace) the post shader `name`, for
+    /// `PostEffect::Custom { shader: name, .. }`. Its source is the fragment
+    /// stage only; the engine prepends the prelude
+    /// (`amigo_render::post_shader::POST_PRELUDE`). Parsed and validated now;
+    /// compiled for the GPU at the start of the next frame.
+    ///
+    /// ```no_run
+    /// # use amigo_engine::prelude::*;
+    /// # fn f(ctx: &mut GameContext) -> Result<(), ShaderError> {
+    /// ctx.register_post_shader("tint", r#"
+    /// @fragment
+    /// fn fs_main(in: PostVertexOutput) -> @location(0) vec4<f32> {
+    ///     return textureSample(scene, scene_sampler, in.uv) * post.params[0];
+    /// }
+    /// "#)?;
+    /// let mut params = [0.0; 16];
+    /// params[..4].copy_from_slice(&[1.0, 0.8, 0.8, 1.0]);
+    /// ctx.post_effects = vec![PostEffect::Custom { shader: "tint".into(), params }];
+    /// # Ok(()) }
+    /// ```
+    pub fn register_post_shader(&mut self, name: &str, wgsl: &str) -> Result<(), ShaderError> {
+        self.post_shaders.register(name, wgsl)
+    }
+
+    /// The post shaders registered so far.
+    pub fn post_shaders(&self) -> &PostShaderRegistry {
+        &self.post_shaders
+    }
+
     /// Load a TTF/OTF font at the given pixel size. Returns a FontId handle.
     pub fn load_font(&mut self, data: &[u8], px: f32) -> Result<FontId, String> {
         self.fonts.load_font(data, px)
@@ -340,6 +375,16 @@ impl GameContext {
             .find(|(n, _, _, _)| n == name)
             .map(|(_, id, w, h)| (*id, *w, *h))
     }
+}
+
+/// The corners of `rect`, top-left first, clockwise on screen.
+fn rect_corners(rect: Rect) -> [RenderVec2; 4] {
+    [
+        RenderVec2::new(rect.x, rect.y),
+        RenderVec2::new(rect.x + rect.w, rect.y),
+        RenderVec2::new(rect.x + rect.w, rect.y + rect.h),
+        RenderVec2::new(rect.x, rect.y + rect.h),
+    ]
 }
 
 /// Which coordinate space [`DrawContext`] draws into.
@@ -397,6 +442,7 @@ pub struct DrawContext<'a> {
     camera_shake: RenderVec2,
     overrides: FrameOverrides,
     render_scale: f32,
+    art_style: ArtStyle,
 }
 
 impl<'a> DrawContext<'a> {
@@ -433,6 +479,7 @@ impl<'a> DrawContext<'a> {
             camera_shake: RenderVec2::ZERO,
             overrides: FrameOverrides::default(),
             render_scale: 1.0,
+            art_style: ArtStyle::PixelArt,
         }
     }
 
@@ -841,6 +888,156 @@ impl<'a> DrawContext<'a> {
             self.render_scale = render_scale;
         }
         self
+    }
+
+    // -----------------------------------------------------------------------
+    // Shapes
+    // -----------------------------------------------------------------------
+
+    /// The art style shapes are drawn for: under raster art every shape gets
+    /// a one-scene-pixel feather on its outer edges; under pixel art edges
+    /// are hard. The engine sets the renderer's.
+    pub fn with_art_style(mut self, art_style: ArtStyle) -> Self {
+        self.art_style = art_style;
+        self
+    }
+
+    /// Width of the anti-aliasing feather, in virtual pixels; 0 for hard edges.
+    fn feather(&self) -> f32 {
+        if self.art_style == ArtStyle::RasterArt {
+            1.0 / self.render_scale
+        } else {
+            0.0
+        }
+    }
+
+    /// Tessellate `shape` and queue it on the white texture.
+    fn push_shape(&mut self, shape: &ConvexShape) {
+        let mut quads = Vec::new();
+        shape.tessellate(self.feather(), &mut quads);
+        for geometry in quads {
+            self.push(SpriteInstance {
+                geometry: Some(geometry),
+                z_order: self.z,
+                ..SpriteInstance::new(self.white_texture, 0.0, 0.0, 0.0, 0.0)
+            });
+        }
+    }
+
+    /// Any convex quad, corners in order TL, TR, BR, BL (or any consistent
+    /// winding).
+    pub fn draw_quad(&mut self, corners: [RenderVec2; 4], color: Color) {
+        self.draw_quad_colors(corners, [color; 4]);
+    }
+
+    /// Like [`draw_quad`](Self::draw_quad) with one colour per corner,
+    /// interpolated across.
+    pub fn draw_quad_colors(&mut self, corners: [RenderVec2; 4], colors: [Color; 4]) {
+        let shape = ConvexShape {
+            points: corners.iter().map(|c| [c.x, c.y]).collect(),
+            colors: colors.to_vec(),
+            feather_edges: vec![true; 4],
+        };
+        self.push_shape(&shape);
+    }
+
+    /// Vertical gradient from `top` to `bottom`.
+    pub fn draw_gradient_rect(&mut self, rect: Rect, top: Color, bottom: Color) {
+        if !shapes::usable(rect.w) || !shapes::usable(rect.h) {
+            return;
+        }
+        self.draw_quad_colors(rect_corners(rect), [top, top, bottom, bottom]);
+    }
+
+    /// A segment of `thickness` virtual pixels, centred on the line from `a`
+    /// to `b`, with square ends.
+    pub fn draw_line(&mut self, a: RenderVec2, b: RenderVec2, thickness: f32, color: Color) {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len = (dx * dx + dy * dy).sqrt();
+        if !shapes::usable(thickness) || !shapes::usable(len) {
+            return;
+        }
+        let (nx, ny) = (-dy / len * thickness / 2.0, dx / len * thickness / 2.0);
+        self.push_shape(&ConvexShape::filled(
+            vec![
+                [a.x + nx, a.y + ny],
+                [b.x + nx, b.y + ny],
+                [b.x - nx, b.y - ny],
+                [a.x - nx, a.y - ny],
+            ],
+            color,
+        ));
+    }
+
+    /// The outline of `rect`, `thickness` pixels wide, inside the rect.
+    pub fn draw_rect_outline(&mut self, rect: Rect, thickness: f32, color: Color) {
+        if !shapes::usable(rect.w) || !shapes::usable(rect.h) || !shapes::usable(thickness) {
+            return;
+        }
+        let t = thickness.min(rect.w / 2.0).min(rect.h / 2.0);
+        let (x0, y0, x1, y1) = (rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
+        let strip = |l: f32, t_: f32, r: f32, b: f32, feather: [bool; 4]| ConvexShape {
+            points: vec![[l, t_], [r, t_], [r, b], [l, b]],
+            colors: vec![color; 4],
+            feather_edges: feather.to_vec(),
+        };
+        // Top and bottom span the width; the sides sit between them, so no
+        // pixel is covered twice. Edges shared by two strips get no feather.
+        self.push_shape(&strip(x0, y0, x1, y0 + t, [true; 4]));
+        if rect.h > 2.0 * t {
+            self.push_shape(&strip(x0, y1 - t, x1, y1, [true; 4]));
+            self.push_shape(&strip(
+                x0,
+                y0 + t,
+                x0 + t,
+                y1 - t,
+                [false, true, false, true],
+            ));
+            self.push_shape(&strip(
+                x1 - t,
+                y0 + t,
+                x1,
+                y1 - t,
+                [false, true, false, true],
+            ));
+        }
+    }
+
+    /// A filled circle.
+    pub fn draw_circle(&mut self, center: RenderVec2, radius: f32, color: Color) {
+        if !shapes::usable(radius) {
+            return;
+        }
+        let segments = shapes::circle_segments(radius, self.render_scale);
+        let points = shapes::circle_points([center.x, center.y], radius, segments);
+        self.push_shape(&ConvexShape::filled(points, color));
+    }
+
+    /// A filled rectangle with rounded corners. `radius` is clamped to half
+    /// the shorter side; `radius <= 0` draws a plain rectangle.
+    pub fn draw_rounded_rect(&mut self, rect: Rect, radius: f32, color: Color) {
+        if !shapes::usable(rect.w) || !shapes::usable(rect.h) {
+            return;
+        }
+        let radius = if radius.is_finite() {
+            radius.min(rect.w / 2.0).min(rect.h / 2.0)
+        } else {
+            0.0
+        };
+        let points = if radius > 0.0 {
+            let segments = shapes::circle_segments(radius, self.render_scale);
+            shapes::rounded_rect_points(rect, radius, segments)
+        } else {
+            rect_corners(rect).iter().map(|c| [c.x, c.y]).collect()
+        };
+        self.push_shape(&ConvexShape::filled(points, color));
+    }
+
+    /// A convex polygon with at least 3 points, in either winding. A
+    /// non-convex list draws a triangle fan from the first point.
+    pub fn draw_convex_polygon(&mut self, points: &[RenderVec2], color: Color) {
+        let points = points.iter().map(|p| [p.x, p.y]).collect();
+        self.push_shape(&ConvexShape::filled(points, color));
     }
 
     // -----------------------------------------------------------------------
