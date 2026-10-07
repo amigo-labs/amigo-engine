@@ -1,12 +1,15 @@
 pub mod checksum;
 pub mod client;
 pub mod lobby;
+pub mod lockstep;
+pub mod peer;
 pub mod protocol;
 pub mod replay;
 pub mod server;
 pub mod stats;
 pub mod sync;
 pub mod udp;
+pub mod wire;
 
 #[cfg(feature = "rollback_net")]
 pub mod rollback;

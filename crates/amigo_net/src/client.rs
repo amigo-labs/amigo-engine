@@ -1,4 +1,6 @@
-use crate::protocol::{MAX_PACKET_SIZE, Packet, PacketKind, SeqNum};
+use crate::protocol::{
+    Packet, PacketKind, RECV_BUFFER_SIZE, SeqNum, is_ignorable_recv_error, send_packet,
+};
 use crate::{PlayerId, Transport};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -53,7 +55,7 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkClient<C> {
             outbound: Vec::new(),
             last_heartbeat: Instant::now(),
             connect_time: Instant::now(),
-            recv_buf: vec![0u8; MAX_PACKET_SIZE],
+            recv_buf: vec![0u8; RECV_BUFFER_SIZE],
         };
 
         // Send initial connect packet
@@ -65,12 +67,17 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkClient<C> {
     pub fn poll(&mut self) {
         loop {
             match self.socket.recv_from(&mut self.recv_buf) {
-                Ok((len, _src)) => {
-                    if let Some(packet) = Packet::decode(&self.recv_buf[..len]) {
-                        self.handle_packet(packet);
-                    }
+                // Only the server speaks to us; anyone else could forge an
+                // Accept or inject broadcasts.
+                Ok((_, src)) if src != self.server_addr => {
+                    debug!("Dropping a packet from {src}, not the server");
                 }
+                Ok((len, src)) => match Packet::decode(&self.recv_buf[..len]) {
+                    Ok(packet) => self.handle_packet(packet),
+                    Err(e) => debug!("Dropping datagram from {src}: {e}"),
+                },
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(ref e) if is_ignorable_recv_error(e) => continue,
                 Err(e) => {
                     warn!("Client recv error: {}", e);
                     break;
@@ -127,17 +134,13 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkClient<C> {
 
     fn send_connect(&self) {
         let pkt = Packet::new(PacketKind::Connect, 0, 0, 0, Vec::new());
-        if let Some(data) = pkt.encode() {
-            let _ = self.socket.send_to(&data, self.server_addr);
-        }
+        send_packet(&self.socket, self.server_addr, &pkt);
     }
 
     fn send_heartbeat(&self) {
         let pid = self.player_id.map(|p| p.0).unwrap_or(0);
         let pkt = Packet::new(PacketKind::Heartbeat, 0, self.remote_ack, pid, Vec::new());
-        if let Some(data) = pkt.encode() {
-            let _ = self.socket.send_to(&data, self.server_addr);
-        }
+        send_packet(&self.socket, self.server_addr, &pkt);
     }
 
     /// Flush queued commands to the server.
@@ -155,9 +158,7 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkClient<C> {
         let pid = self.player_id.map(|p| p.0).unwrap_or(0);
         let seq = self.local_seq.next();
         let pkt = Packet::new(PacketKind::Commands, seq, self.remote_ack, pid, payload);
-        if let Some(data) = pkt.encode() {
-            let _ = self.socket.send_to(&data, self.server_addr);
-        }
+        send_packet(&self.socket, self.server_addr, &pkt);
         self.outbound.clear();
     }
 
@@ -165,9 +166,7 @@ impl<C: Clone + Serialize + DeserializeOwned> NetworkClient<C> {
     pub fn disconnect(&mut self) {
         let pid = self.player_id.map(|p| p.0).unwrap_or(0);
         let pkt = Packet::new(PacketKind::Disconnect, 0, 0, pid, Vec::new());
-        if let Some(data) = pkt.encode() {
-            let _ = self.socket.send_to(&data, self.server_addr);
-        }
+        send_packet(&self.socket, self.server_addr, &pkt);
         self.state = ConnectionState::Disconnected;
     }
 }
@@ -245,5 +244,29 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
         server.poll();
         assert_eq!(server.client_count(), 0);
+    }
+
+    #[test]
+    fn a_client_ignores_packets_from_anyone_but_the_server() {
+        let fake_server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut client: NetworkClient<TestCmd> =
+            NetworkClient::connect(&fake_server.local_addr().unwrap().to_string()).unwrap();
+        let client_addr =
+            SocketAddr::from(([127, 0, 0, 1], client.socket.local_addr().unwrap().port()));
+        let accept = Packet::new(PacketKind::Accept, 0, 0, 3, Vec::new())
+            .encode()
+            .unwrap();
+
+        let stranger = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        stranger.send_to(&accept, client_addr).unwrap();
+        thread::sleep(Duration::from_millis(50));
+        client.poll();
+        assert_eq!(client.state, ConnectionState::Connecting);
+
+        fake_server.send_to(&accept, client_addr).unwrap();
+        thread::sleep(Duration::from_millis(50));
+        client.poll();
+        assert_eq!(client.state, ConnectionState::Connected);
+        assert_eq!(client.player_id, Some(PlayerId(3)));
     }
 }
