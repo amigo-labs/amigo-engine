@@ -49,7 +49,7 @@ pub use renderer::{Renderer, SurfaceError};
 pub use sprite_batcher::{QuadGeometry, SpriteBatcher, SpriteInstance, SpriteShader};
 pub use texture::{Texture, TextureId, TextureIdAllocator};
 pub use vertex::Vertex;
-pub use viewport::{ScaleMode, Viewport};
+pub use viewport::{ScaleMode, Viewport, ViewportInfo};
 
 // ---------------------------------------------------------------------------
 // Art style configuration

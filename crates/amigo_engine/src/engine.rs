@@ -334,6 +334,17 @@ impl Engine {
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
         #[cfg(feature = "audio")]
         game_ctx.audio.open_device();
+        // No window: the layout is that of the configured one.
+        game_ctx.set_viewport_info(amigo_render::ViewportInfo::compute(
+            ScaleMode::from_str_config(&self.config.render.scale_mode).unwrap_or_default(),
+            ArtStyle::from_str_config(&self.config.render.art_style),
+            (
+                self.config.render.virtual_width,
+                self.config.render.virtual_height,
+            ),
+            (self.config.window.width, self.config.window.height),
+            1.0,
+        ));
         // No gamepad backend headless: there is no player at the machine,
         // and agents drive input over the API.
         game_ctx.bindings = bindings;
@@ -841,6 +852,39 @@ fn recover_from_surface_error(renderer: &mut Renderer, err: SurfaceError) {
     }
 }
 
+/// Recompute the window layout for the game: under `ScaleMode::Expand` the
+/// virtual width follows the window's shape, which the camera takes on
+/// before the next `update`.
+fn refresh_viewport(
+    game_ctx: &mut GameContext,
+    renderer: &Renderer,
+    window: &Window,
+    configured: (u32, u32),
+) {
+    let mode = renderer.scale_mode();
+    let size = window.inner_size();
+    let base = if mode == ScaleMode::Expand {
+        configured
+    } else {
+        (
+            game_ctx.camera.virtual_width.round().max(1.0) as u32,
+            game_ctx.camera.virtual_height.round().max(1.0) as u32,
+        )
+    };
+    let info = amigo_render::ViewportInfo::compute(
+        mode,
+        renderer.art_style,
+        base,
+        (size.width, size.height),
+        window.scale_factor(),
+    );
+    if mode == ScaleMode::Expand {
+        game_ctx.camera.virtual_width = info.virtual_size.0;
+        game_ctx.camera.virtual_height = info.virtual_size.1;
+    }
+    game_ctx.set_viewport_info(info);
+}
+
 /// The F8 overlay's lines for a network game.
 fn net_overlay_lines(status: &net::NetStatus) -> Vec<String> {
     if status.mode == net::NetMode::Off {
@@ -996,7 +1040,7 @@ impl ApplicationHandler for EngineApp {
             ScaleMode::from_str_config(&self.config.render.scale_mode).unwrap_or_else(|| {
                 warn!(
                     "Unknown render.scale_mode {:?}; using \"pixel_perfect\" \
-                     (expected \"pixel_perfect\", \"fit\" or \"stretch\")",
+                     (expected \"pixel_perfect\", \"fit\", \"stretch\" or \"expand\")",
                     self.config.render.scale_mode
                 );
                 ScaleMode::PixelPerfect
@@ -1005,6 +1049,15 @@ impl ApplicationHandler for EngineApp {
         renderer.set_scale_mode(scale_mode);
         renderer.set_art_style(art_style);
         game_ctx.camera.pixel_snap = art_style.pixel_snap();
+        refresh_viewport(
+            &mut game_ctx,
+            &renderer,
+            &window,
+            (
+                self.config.render.virtual_width,
+                self.config.render.virtual_height,
+            ),
+        );
 
         // GameContext::new leaves gamepads disabled so tests touch no device
         // API; a windowed game has a player who may hold one.
@@ -1192,6 +1245,15 @@ impl ApplicationHandler for EngineApp {
 
             WindowEvent::Resized(size) => {
                 state.renderer.resize(size.width, size.height);
+                refresh_viewport(
+                    &mut state.game_ctx,
+                    &state.renderer,
+                    &state.window,
+                    (
+                        self.config.render.virtual_width,
+                        self.config.render.virtual_height,
+                    ),
+                );
             }
 
             // Releases that happen while another window has focus never
@@ -1442,6 +1504,15 @@ impl ApplicationHandler for EngineApp {
 
                 state.game_ctx.time.frame_dt = dt as f32;
                 state.game_ctx.time.elapsed += dt;
+                refresh_viewport(
+                    &mut state.game_ctx,
+                    &state.renderer,
+                    &state.window,
+                    (
+                        self.config.render.virtual_width,
+                        self.config.render.virtual_height,
+                    ),
+                );
 
                 // Gamepads: drain this frame's events once. Like keyboard
                 // presses they stay visible until a tick consumes them.

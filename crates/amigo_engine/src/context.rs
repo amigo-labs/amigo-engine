@@ -7,7 +7,6 @@ use amigo_core::save::{SaveConfig, SaveManager};
 use amigo_core::scheduler::TickScheduler;
 use amigo_core::{Color, Rect, RenderVec2, SimRng, TimeInfo, World};
 use amigo_input::{ActionBindings, ActionState, GamepadState, InputState};
-use amigo_render::ArtStyle;
 use amigo_render::camera::Camera;
 use amigo_render::font::{FontAtlas, FontId, FontManager, TextMetrics, TextStyle};
 use amigo_render::lighting::LightingState;
@@ -17,6 +16,7 @@ use amigo_render::post_shader::{PostShaderRegistry, ShaderError};
 use amigo_render::shapes::{self, ConvexShape};
 use amigo_render::sprite_batcher::SpriteInstance;
 use amigo_render::texture::TextureId;
+use amigo_render::{ArtStyle, ScaleMode, ViewportInfo};
 use amigo_tilemap::{TileId, TileLayer};
 use amigo_ui::UiContext;
 
@@ -131,6 +131,8 @@ pub struct GameContext {
     pub audio: AudioManager,
     #[cfg(feature = "async_tasks")]
     pub tasks: amigo_core::tasks::TaskPool,
+    /// The window's layout, refreshed by the engine.
+    viewport_info: ViewportInfo,
     /// Sprites the game can draw by name: texture, size and frames.
     sprites: std::collections::HashMap<String, SpriteEntry>,
     seed: u64,
@@ -172,11 +174,31 @@ impl GameContext {
             audio: AudioManager::new(assets_path),
             #[cfg(feature = "async_tasks")]
             tasks: amigo_core::tasks::TaskPool::new(),
+            viewport_info: ViewportInfo::compute(
+                ScaleMode::PixelPerfect,
+                ArtStyle::PixelArt,
+                (virtual_width as u32, virtual_height as u32),
+                (virtual_width as u32, virtual_height as u32),
+                1.0,
+            ),
             sprites: std::collections::HashMap::new(),
             seed: 0,
             replay: Default::default(),
             net: Default::default(),
         }
+    }
+
+    /// What the game needs to lay out for its window: window size, where the
+    /// scene lands, the current virtual resolution (which changes under
+    /// `scale_mode = "expand"`), the render scale and the DPI factor.
+    /// Refreshed by the engine before every `update` and on every resize;
+    /// before the first window event it describes the configured window.
+    pub fn viewport_info(&self) -> ViewportInfo {
+        self.viewport_info
+    }
+
+    pub(crate) fn set_viewport_info(&mut self, info: ViewportInfo) {
+        self.viewport_info = info;
     }
 
     /// The seed [`rng`](Self::rng) started from: `[dev] seed` in
@@ -953,6 +975,11 @@ impl<'a> DrawContext<'a> {
     /// lay it out.
     pub fn measure_text_ex(&self, text: &str, style: &TextStyle) -> TextMetrics {
         self.game_ctx.fonts.measure_line(text, style)
+    }
+
+    /// The window's layout this frame; see [`GameContext::viewport_info`].
+    pub fn viewport_info(&self) -> ViewportInfo {
+        self.game_ctx.viewport_info()
     }
 
     /// Scene-target pixels per virtual pixel this frame: 1.0 for pixel art,

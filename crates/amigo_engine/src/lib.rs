@@ -241,7 +241,7 @@ pub mod prelude {
     pub use amigo_render::sprite_batcher::{QuadGeometry, SpriteInstance};
     pub use amigo_render::{
         ArtStyle, BlendMode, Camera, CameraMode, Easing, FontError, FontId, FontManager,
-        SamplerMode, TextAlign, TextMetrics, TextStyle,
+        SamplerMode, ScaleMode, TextAlign, TextMetrics, TextStyle, Viewport, ViewportInfo,
     };
     pub use amigo_scene::SceneFactory;
     pub use amigo_tilemap::*;
