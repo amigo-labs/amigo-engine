@@ -47,6 +47,34 @@ Notable changes per release. Format loosely follows
   - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
 - **`examples/raster_art`** shows all of the above.
 
+### Added — audio playback control (docs/specs/engine/audio-playback.md)
+
+- **Handles:** `AudioManager::play(name, &PlaySettings)` returns a
+  `SoundHandle` for `stop`, `set_sound_volume`, `set_playback_rate` and
+  `state`. Per-name volumes (`set_name_volume`) reach instances that are
+  already playing.
+- **Start control:** a delay timed on the audio thread, a start point and
+  length in seconds or samples, a loop region, and `LoopMode::{Once, Count,
+  Forever}`. Finite loops are rendered gapless with their tail.
+- **Buses:** music, sfx and ambient under a master, with fades and mutes.
+- **Pause:** `pause_all` / `resume_all`.
+- **Loading from bytes:** `load_sound_from_bytes`, `unload`,
+  `sound_duration`, `sound_sample_rate`.
+- **Music:** `start_music` crossfades and loops; `stop_music_with`;
+  `current_music`.
+- **`AudioManager::new_silent`** runs on kira's mock backend; headless mode
+  uses it.
+- **`examples/audio_demo`** synthesises its sounds and shows all of the above.
+
+### Changed — audio
+
+- **`play_music` now loops**, and loads its file only once.
+- **The `sfx` and `master` volumes and `[audio]` in `amigo.toml` now apply.**
+  `play_sfx`, `play_sfx_at` and `play_music` go through the sfx and music
+  buses. Before, `sfx` never reached playback and the config was ignored.
+- `set_volume(channel, v)` clamps to `0.0..=4.0` instead of `0.0..=1.0`.
+- Headless mode no longer opens an audio output device.
+
 ### Added — GPU instancing
 
 - **Long sprite runs are drawn instanced.** A run of at least

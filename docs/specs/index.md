@@ -310,7 +310,7 @@ engine ever called them.
 | [engine/modding](engine/modding.md)                       | done   | amigo_assets      | assets/format                 |
 | [engine/accessibility](engine/accessibility.md)           | done   | amigo_render      | engine/rendering, engine/input, engine/ui |
 | [engine/rendering-extensions](engine/rendering-extensions.md) | done | amigo_render, amigo_engine, amigo_assets | engine/rendering, engine/camera, engine/font-rendering, engine/particles, assets/atlas |
-| [engine/audio-playback](engine/audio-playback.md)         | spec   | amigo_audio, amigo_engine | engine/audio            |
+| [engine/audio-playback](engine/audio-playback.md)         | done   | amigo_audio, amigo_engine | engine/audio            |
 | [gametypes/platformer](gametypes/platformer.md)           | done   | amigo_core        | engine/physics, engine/tween  |
 | [gametypes/roguelike](gametypes/roguelike.md)             | done   | amigo_core        | engine/procedural, engine/save-load |
 | [gametypes/shmup](gametypes/shmup.md)                     | done   | amigo_core        | engine/bullet-patterns        |

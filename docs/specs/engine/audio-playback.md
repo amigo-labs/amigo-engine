@@ -1,8 +1,8 @@
 ---
-status: spec
+status: done
 crate: amigo_audio, amigo_engine
 depends_on: ["engine/audio"]
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Audio Playback Control
@@ -492,10 +492,22 @@ These are suggestions, not part of the contract.
 
 These do not change the public API.
 
-- Whether `maintain()` also runs inside `play` when the slot table is full, or the
-  table simply grows.
-- Whether the mock backend in headless mode should advance in step with simulated
-  time, so `state` changes there as it would with a device.
+- Settled: the slot table simply grows; `maintain()` frees slots once per frame.
+- Still open: whether the mock backend in headless mode should advance in step with
+  simulated time, so `state` changes there as it would with a device. Today it does
+  not advance.
+
+## Implementation notes
+
+- `crates/amigo_audio/src/manager.rs` holds `AudioManager`, and
+  `crates/amigo_audio/src/playback.rs` holds the types plus the pure
+  `resolve_range` / `render_finite_loop`.
+- `LoopMode::Once` with a sub-range plays a cached copy of that range.
+  `LoopMode::Forever` plays the range with kira's `loop_region` set relative to
+  it. Neither uses kira's `slice`.
+- `state` reports `Scheduled` from wall-clock bookkeeping of the delay; the delay
+  itself runs on the audio thread. `resume_all` pushes the remaining delays back by
+  the time spent paused.
 
 ## Acceptance Criteria
 
@@ -503,42 +515,42 @@ Audio output cannot be heard in CI. Criteria are checked against `new_silent`
 (kira's mock backend) and against the pure range resolution.
 
 ### API completeness
-- [ ] `SoundHandle` (with `NONE`, `is_none`), `Bus`, `Position`, `LoopMode`, `Fade` (with `NONE`, `secs`), `SoundState`, `PlaySettings` (with `Default`, `on`) exist with the fields and derives above and are in `amigo_engine::prelude`
-- [ ] `AudioManager::{play, stop, stop_all, set_sound_volume, set_name_volume, name_volume, set_playback_rate, state, is_playing, playing_count, maintain}` exist with the signatures above
-- [ ] `AudioManager::{set_master_volume, master_volume, set_bus_volume, bus_volume, set_bus_muted, is_bus_muted}` exist
-- [ ] `AudioManager::{pause_all, resume_all, is_paused}` exist
-- [ ] `AudioManager::{load_sound, load_sound_from_bytes, unload, is_loaded, sound_duration, sound_sample_rate, new_silent}` exist; `AudioError::Load { name, message }` exists
-- [ ] `AudioManager::{start_music, stop_music_with, current_music}` exist
-- [ ] No kira type appears in a public signature added by this spec
+- [x] `SoundHandle` (with `NONE`, `is_none`), `Bus`, `Position`, `LoopMode`, `Fade` (with `NONE`, `secs`), `SoundState`, `PlaySettings` (with `Default`, `on`) exist with the fields and derives above and are in `amigo_engine::prelude`
+- [x] `AudioManager::{play, stop, stop_all, set_sound_volume, set_name_volume, name_volume, set_playback_rate, state, is_playing, playing_count, maintain}` exist with the signatures above
+- [x] `AudioManager::{set_master_volume, master_volume, set_bus_volume, bus_volume, set_bus_muted, is_bus_muted}` exist
+- [x] `AudioManager::{pause_all, resume_all, is_paused}` exist
+- [x] `AudioManager::{load_sound, load_sound_from_bytes, unload, is_loaded, sound_duration, sound_sample_rate, new_silent}` exist; `AudioError::Load { name, message }` exists
+- [x] `AudioManager::{start_music, stop_music_with, current_music}` exist
+- [x] No kira type appears in a public signature added by this spec
 
 ### Behavior
-- [ ] Test: `play` of an unknown name returns a handle whose `state` is `Stopped`; a second call logs no second warning
-- [ ] Test: every method accepts `SoundHandle::NONE` and a handle whose slot was freed and reused, without effect on the slot's new sound
-- [ ] Test: `maintain` frees slots of stopped sounds and bumps their generation
-- [ ] Test: `set_name_volume("x", 0.5, ..)` then `play("x", ..)` starts the instance at 0.5 × its own volume; `name_volume` survives `unload` + reload
-- [ ] Test (`resolve_range`): `Samples` and `Seconds` resolve with the variant's sample rate; `start` past the end yields `None`; `length` past the end is clamped; an empty `loop_region` resolves to "no loop"
-- [ ] Test (`resolve_range`): `Count(0)` and `Count(1)` resolve like `Once`
-- [ ] Test (`render_finite_loop`): played range 0–6 s, region 2–4 s, `Count(2)` yields an 8 s buffer equal, frame for frame, to source 0–4 s, then 2–4 s, then 4–6 s (the tail is present)
-- [ ] Test (`render_finite_loop`): `Count(3)` without a region yields three back-to-back copies of the played range
-- [ ] Test: a `Count(n)` whose rendered length exceeds 120 s returns a `Stopped` handle and warns once per name
-- [ ] Test: bus and master getters return set values without an audio device; setters clamp to `0.0..=4.0` and ignore non-finite input
-- [ ] Test: `set_bus_muted(Sfx, true)` leaves `bus_volume(Sfx)` unchanged; unmuting restores it
-- [ ] Test: writing `audio.volumes.sfx` directly is applied by the next `maintain`
-- [ ] Test: `pause_all` then `play` returns a handle in state `Paused`; `pause_all` twice and `resume_all` while running are no-ops
-- [ ] Test: `load_sound_from_bytes` with the bytes of a test WAV registers the name and reports its duration and sample rate; garbage bytes return `AudioError::Load` and leave earlier variants intact
-- [ ] Test: `start_music("a", ..)` twice returns the same handle; `start_music("b", ..)` makes `current_music` the new handle
-- [ ] `play_sfx`, `play_sfx_at` and `play_music` route through the new path (sfx and music buses); `set_volume(channel, v)` maps to the bus and master setters
-- [ ] The engine applies `[audio]` volumes from `amigo.toml` at startup (test with a config whose `sfx_volume = 0.3`)
-- [ ] The engine calls `audio.maintain()` once per frame in the windowed loop and in the headless loop
-- [ ] Headless mode constructs its `AudioManager` with `new_silent`
-- [ ] `examples/audio_demo` uses `start_music` with a crossfade, a delayed `play`, `stop` on a handle and the bus mutes, and ships (or generates) the audio files it plays
+- [x] Test: `play` of an unknown name returns a handle whose `state` is `Stopped`; a second call logs no second warning
+- [x] Test: every method accepts `SoundHandle::NONE` and a handle whose slot was freed and reused, without effect on the slot's new sound
+- [x] Test: `maintain` frees slots of stopped sounds and bumps their generation
+- [x] Test: `set_name_volume("x", 0.5, ..)` then `play("x", ..)` starts the instance at 0.5 × its own volume; `name_volume` survives `unload` + reload
+- [x] Test (`resolve_range`): `Samples` and `Seconds` resolve with the variant's sample rate; `start` past the end yields `None`; `length` past the end is clamped; an empty `loop_region` resolves to "no loop"
+- [x] Test (`resolve_range`): `Count(0)` and `Count(1)` resolve like `Once`
+- [x] Test (`render_finite_loop`): played range 0–6 s, region 2–4 s, `Count(2)` yields an 8 s buffer equal, frame for frame, to source 0–4 s, then 2–4 s, then 4–6 s (the tail is present)
+- [x] Test (`render_finite_loop`): `Count(3)` without a region yields three back-to-back copies of the played range
+- [x] Test: a `Count(n)` whose rendered length exceeds 120 s returns a `Stopped` handle and warns once per name
+- [x] Test: bus and master getters return set values without an audio device; setters clamp to `0.0..=4.0` and ignore non-finite input
+- [x] Test: `set_bus_muted(Sfx, true)` leaves `bus_volume(Sfx)` unchanged; unmuting restores it
+- [x] Test: writing `audio.volumes.sfx` directly is applied by the next `maintain`
+- [x] Test: `pause_all` then `play` returns a handle in state `Paused`; `pause_all` twice and `resume_all` while running are no-ops
+- [x] Test: `load_sound_from_bytes` with the bytes of a test WAV registers the name and reports its duration and sample rate; garbage bytes return `AudioError::Load` and leave earlier variants intact
+- [x] Test: `start_music("a", ..)` twice returns the same handle; `start_music("b", ..)` makes `current_music` the new handle
+- [x] `play_sfx`, `play_sfx_at` and `play_music` route through the new path (sfx and music buses); `set_volume(channel, v)` maps to the bus and master setters
+- [x] The engine applies `[audio]` volumes from `amigo.toml` at startup (test with a config whose `sfx_volume = 0.3`)
+- [x] The engine calls `audio.maintain()` once per frame in the windowed loop and in the headless loop
+- [x] Headless mode constructs its `AudioManager` with `new_silent`
+- [x] `examples/audio_demo` uses `start_music` with a crossfade, a delayed `play`, `stop` on a handle and the bus mutes, and ships (or generates) the audio files it plays
 
 ### Quality gates
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
-- [ ] `cargo test --workspace`, and the rest of `just ci` (feature matrix with and without `audio`, doc tests, rustdoc)
-- [ ] No `unwrap()` in library code; no `Result` on the per-frame playback calls
+- [x] `cargo fmt --all -- --check`
+- [x] `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `cargo test --workspace`, and the rest of `just ci` (feature matrix with and without `audio`, doc tests, rustdoc)
+- [x] No `unwrap()` in library code; no `Result` on the per-frame playback calls
 
 ### Conventions
-- [ ] No simulation code reads `state`, `is_playing`, `playing_count` or `current_music` (ADR-0001)
-- [ ] `CHANGELOG.md` `[Unreleased]` lists the behaviour changes: `play_music` now loops; `sfx`/`master` volumes and `[audio]` config now apply
+- [x] No simulation code reads `state`, `is_playing`, `playing_count` or `current_music` (ADR-0001)
+- [x] `CHANGELOG.md` `[Unreleased]` lists the behaviour changes: `play_music` now loops; `sfx`/`master` volumes and `[audio]` config now apply

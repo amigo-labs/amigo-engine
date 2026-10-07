@@ -332,8 +332,13 @@ impl Engine {
         let vw = self.config.render.virtual_width as f32;
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
+        // No speakers at a headless machine: every audio call works, nothing
+        // is heard, and no output device is opened.
         #[cfg(feature = "audio")]
-        game_ctx.audio.open_device();
+        {
+            game_ctx.audio = amigo_audio::AudioManager::new_silent(&self.assets_path);
+            apply_audio_config(&mut game_ctx.audio, &self.config.audio);
+        }
         // No window: the layout is that of the configured one.
         game_ctx.set_viewport_info(amigo_render::ViewportInfo::compute(
             ScaleMode::from_str_config(&self.config.render.scale_mode).unwrap_or_default(),
@@ -508,6 +513,9 @@ impl Engine {
                     break;
                 }
             }
+
+            #[cfg(feature = "audio")]
+            game_ctx.audio.maintain();
 
             // Handle screenshot requests (no GPU in headless — return error)
             {
@@ -852,6 +860,20 @@ fn recover_from_surface_error(renderer: &mut Renderer, err: SurfaceError) {
     }
 }
 
+/// Apply `[audio]` from `amigo.toml`: master, music and sfx volumes. Ambient
+/// starts at 1.0.
+#[cfg(feature = "audio")]
+pub(crate) fn apply_audio_config(
+    audio: &mut amigo_audio::AudioManager,
+    config: &crate::config::AudioConfig,
+) {
+    use amigo_audio::{Bus, Fade};
+    audio.set_master_volume(config.master_volume, Fade::NONE);
+    audio.set_bus_volume(Bus::Music, config.music_volume, Fade::NONE);
+    audio.set_bus_volume(Bus::Sfx, config.sfx_volume, Fade::NONE);
+    audio.set_bus_volume(Bus::Ambient, 1.0, Fade::NONE);
+}
+
 /// Recompute the window layout for the game: under `ScaleMode::Expand` the
 /// virtual width follows the window's shape, which the camera takes on
 /// before the next `update`.
@@ -1030,7 +1052,10 @@ impl ApplicationHandler for EngineApp {
         let vh = self.config.render.virtual_height as f32;
         let mut game_ctx = GameContext::new(vw, vh, &self.assets_path);
         #[cfg(feature = "audio")]
-        game_ctx.audio.open_device();
+        {
+            game_ctx.audio.open_device();
+            apply_audio_config(&mut game_ctx.audio, &self.config.audio);
+        }
 
         // `[render] scale_mode` and `art_style` were parsed and never read:
         // every window stretched the virtual resolution, and the pixel snap
@@ -1581,6 +1606,11 @@ impl ApplicationHandler for EngineApp {
 
                 state.game_ctx.time.alpha = budget.alpha;
 
+                // Free the slots of finished sounds; apply volumes the game
+                // wrote directly.
+                #[cfg(feature = "audio")]
+                state.game_ctx.audio.maintain();
+
                 // Camera: game code sets target/shake/zoom on GameContext.camera.
                 // Swap it into the renderer for update + render, then swap back.
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
@@ -1935,6 +1965,22 @@ impl ApplicationHandler for EngineApp {
 #[cfg(test)]
 mod tests {
     use super::{load_input_bindings, pending_font_pages};
+
+    #[cfg(feature = "audio")]
+    #[test]
+    fn the_audio_config_sets_the_volumes() {
+        let mut audio = amigo_audio::AudioManager::new_silent("assets");
+        let config = crate::config::AudioConfig {
+            master_volume: 0.8,
+            sfx_volume: 0.3,
+            music_volume: 0.6,
+        };
+        super::apply_audio_config(&mut audio, &config);
+        assert_eq!(audio.bus_volume(amigo_audio::Bus::Sfx), 0.3);
+        assert_eq!(audio.bus_volume(amigo_audio::Bus::Music), 0.6);
+        assert_eq!(audio.bus_volume(amigo_audio::Bus::Ambient), 1.0);
+        assert_eq!(audio.master_volume(), 0.8);
+    }
     use crate::context::{DrawContext, GameContext};
     use amigo_core::RenderVec2;
     use amigo_render::TextureId;

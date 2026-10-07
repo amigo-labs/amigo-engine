@@ -1,12 +1,14 @@
 #[cfg(feature = "audio_graph")]
 pub mod graph;
+pub mod manager;
+pub mod playback;
 pub mod spatial;
 
+pub use manager::AudioManager;
+pub use playback::{Bus, Fade, LoopMode, PlaySettings, Position, SoundHandle, SoundState};
+
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
-use kira::{
-    AudioManager as KiraManager, AudioManagerSettings, Decibels, DefaultBackend, Panning,
-    PlaybackRate, Tween,
-};
+use kira::{AudioManager as KiraManager, Decibels, DefaultBackend, PlaybackRate, Tween};
 
 /// Convert a linear amplitude (0 = silent, 1 = unchanged) to kira's decibels.
 ///
@@ -44,13 +46,15 @@ pub enum AudioError {
     SectionNotFound(String),
     #[error("Stinger not found: {0}")]
     StingerNotFound(String),
+    #[error("Failed to load sound '{name}': {message}")]
+    Load { name: String, message: String },
 }
 
 // ---------------------------------------------------------------------------
 // Volume channels
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VolumeChannels {
     pub master: f32,
     pub music: f32,
@@ -302,234 +306,6 @@ impl SfxManager {
             ..Default::default()
         };
         spatial.spatial_play(self, kira, name, &emitter, None)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// AudioManager (original, preserved)
-// ---------------------------------------------------------------------------
-
-/// Audio manager wrapping kira.
-///
-/// The output device is not opened by [`Self::new`] but by
-/// [`Self::open_device`], which the engine calls at startup, or else by the
-/// first call that needs it. Code that only builds a [`AudioManager`], such as
-/// a test constructing a game context, never touches the audio backend.
-pub struct AudioManager {
-    manager: Option<KiraManager>,
-    /// Whether [`Self::open_device`] has run. A missing device is not retried
-    /// on every sound, which would put a failing device probe in the frame.
-    device_probed: bool,
-    sfx_data: FxHashMap<String, Vec<StaticSoundData>>,
-    music_handles: FxHashMap<String, StaticSoundHandle>,
-    pub volumes: VolumeChannels,
-    base_path: PathBuf,
-}
-
-impl AudioManager {
-    pub fn new(base_path: impl Into<PathBuf>) -> Self {
-        Self {
-            manager: None,
-            device_probed: false,
-            sfx_data: FxHashMap::default(),
-            music_handles: FxHashMap::default(),
-            volumes: VolumeChannels::default(),
-            base_path: base_path.into(),
-        }
-    }
-
-    /// Open the audio output device, if that has not been tried yet, and
-    /// report whether one is open.
-    ///
-    /// Only the first call probes the backend; when it fails, sounds are
-    /// silently skipped from then on, as they were when the device was opened
-    /// eagerly. Call this at startup so the first sound does not pay for
-    /// opening the device mid-frame.
-    pub fn open_device(&mut self) -> bool {
-        if !self.device_probed {
-            self.device_probed = true;
-            self.manager = KiraManager::<DefaultBackend>::new(AudioManagerSettings::default())
-                .map_err(|e| warn!("Audio init failed: {e}"))
-                .ok();
-            if self.manager.is_some() {
-                info!("Audio system initialized");
-            }
-        }
-        self.manager.is_some()
-    }
-
-    /// Load a sound effect from file.
-    pub fn load_sfx(&mut self, name: &str, path: &Path) {
-        match StaticSoundData::from_file(path) {
-            Ok(data) => {
-                self.sfx_data
-                    .entry(name.to_string())
-                    .or_default()
-                    .push(data);
-                info!("Loaded SFX: {}", name);
-            }
-            Err(e) => {
-                warn!("Failed to load SFX '{}' from {:?}: {}", name, path, e);
-            }
-        }
-    }
-
-    /// Play a sound effect by name.
-    pub fn play_sfx(&mut self, name: &str) {
-        self.open_device();
-        let Some(manager) = &mut self.manager else {
-            return;
-        };
-
-        if let Some(variants) = self.sfx_data.get(name) {
-            if variants.is_empty() {
-                return;
-            }
-            // Pick a random variant (simple modulo-based for now)
-            let idx = (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos() as usize)
-                % variants.len();
-
-            let data = variants[idx].clone();
-            let _ = manager.play(data);
-        } else {
-            warn!("SFX not found: {}", name);
-        }
-    }
-
-    /// Play a sound effect at a world position with distance attenuation and stereo panning.
-    ///
-    /// `source_x/y`: world position of the sound source.
-    /// `listener_x/y`: world position of the listener (typically camera center).
-    /// `max_distance`: beyond this distance the sound is inaudible.
-    pub fn play_sfx_at(
-        &mut self,
-        name: &str,
-        source_x: f32,
-        source_y: f32,
-        listener_x: f32,
-        listener_y: f32,
-        max_distance: f32,
-    ) {
-        let dx = source_x - listener_x;
-        let dy = source_y - listener_y;
-        let distance = (dx * dx + dy * dy).sqrt();
-
-        if distance >= max_distance {
-            return; // Too far away, don't play
-        }
-
-        self.open_device();
-        let Some(manager) = &mut self.manager else {
-            return;
-        };
-
-        if let Some(variants) = self.sfx_data.get(name) {
-            if variants.is_empty() {
-                return;
-            }
-
-            let idx = (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos() as usize)
-                % variants.len();
-
-            // Linear distance attenuation
-            let volume = (1.0 - distance / max_distance).clamp(0.0, 1.0);
-
-            // Stereo panning based on X offset (-1.0 = full left, 1.0 = full right)
-            let panning = if max_distance > 0.0 {
-                (dx / max_distance).clamp(-1.0, 1.0)
-            } else {
-                0.0
-            };
-
-            let data = variants[idx].clone().with_settings(
-                StaticSoundSettings::new()
-                    .volume(amplitude_to_decibels(volume))
-                    .panning(Panning(panning)), // kira 0.12 panning: -1 = left, 0 = centre, 1 = right
-            );
-            let _ = manager.play(data);
-        }
-    }
-
-    /// Play music from file.
-    pub fn play_music(&mut self, name: &str, path: &Path) {
-        self.open_device();
-        let Some(manager) = &mut self.manager else {
-            return;
-        };
-
-        // Stop current music with same name. Dropping a kira handle does not
-        // stop its sound, so without the explicit stop a second play_music
-        // layered both tracks.
-        if let Some(mut old) = self.music_handles.remove(name) {
-            old.stop(Tween::default());
-        }
-
-        match StaticSoundData::from_file(path) {
-            Ok(data) => match manager.play(data) {
-                Ok(handle) => {
-                    self.music_handles.insert(name.to_string(), handle);
-                    info!("Playing music: {}", name);
-                }
-                Err(e) => warn!("Failed to play music '{}': {}", name, e),
-            },
-            Err(e) => warn!("Failed to load music '{}': {}", name, e),
-        }
-    }
-
-    /// Stop all music.
-    pub fn stop_music(&mut self) {
-        // Stop before dropping: a dropped kira handle keeps playing to the
-        // end, with nothing left to control it.
-        for (_, mut handle) in self.music_handles.drain() {
-            handle.stop(Tween::default());
-        }
-    }
-
-    /// Set volume for a channel and push to active Kira music handles.
-    ///
-    /// Note: SFX are fire-and-forget (no persistent handles to update).
-    /// Ambient handles are not currently tracked individually.
-    /// Only `"music"` propagates to live handles immediately.
-    pub fn set_volume(&mut self, channel: &str, volume: f32) {
-        let vol = volume.clamp(0.0, 1.0);
-        match channel {
-            "master" => {
-                self.volumes.master = vol;
-                // Master scales music too, so live handles must be updated
-                // here as well or the slider has no audible effect.
-                let effective = (vol * self.volumes.music) as f64;
-                for handle in self.music_handles.values_mut() {
-                    handle.set_volume(amplitude_to_decibels(effective as f32), Tween::default());
-                }
-            }
-            "music" => {
-                self.volumes.music = vol;
-                let effective = (self.volumes.master * vol) as f64;
-                for handle in self.music_handles.values_mut() {
-                    handle.set_volume(amplitude_to_decibels(effective as f32), Tween::default());
-                }
-            }
-            "sfx" => self.volumes.sfx = vol,
-            "ambient" => self.volumes.ambient = vol,
-            _ => warn!("Unknown audio channel: {}", channel),
-        }
-    }
-
-    /// Borrow the inner kira manager (for use with SfxManager / AdaptiveMusicEngine).
-    pub fn kira_manager_mut(&mut self) -> Option<&mut KiraManager<DefaultBackend>> {
-        self.open_device();
-        self.manager.as_mut()
-    }
-
-    /// Base path used for asset resolution.
-    pub fn base_path(&self) -> &Path {
-        &self.base_path
     }
 }
 
@@ -1584,33 +1360,5 @@ mod tests {
         for silent in [0.0, -1.0, 0.0005, f32::NAN] {
             assert_eq!(amplitude_to_decibels(silent), Decibels::SILENCE, "{silent}");
         }
-    }
-
-    // Opening a device in a test is what crashed Windows test binaries: cpal
-    // keeps its device enumerator in a static created in the first caller's
-    // COM apartment, and libtest ends that thread after its test. So these
-    // check that the backend is left alone, without ever probing it.
-
-    #[test]
-    fn building_and_configuring_leaves_the_device_closed() {
-        let mut audio = AudioManager::new("assets");
-        audio.load_sfx("missing", Path::new("does/not/exist.ogg"));
-        audio.set_volume("music", 0.5);
-        audio.stop_music();
-
-        assert!(!audio.device_probed, "only playback may open the device");
-        assert!(audio.manager.is_none());
-    }
-
-    #[test]
-    fn a_failed_probe_is_not_retried_on_every_sound() {
-        let mut audio = AudioManager::new("assets");
-        audio.device_probed = true; // as after a probe that found no device
-
-        audio.play_sfx("hit");
-        audio.play_music("theme", Path::new("does/not/exist.ogg"));
-
-        assert!(!audio.open_device());
-        assert!(audio.kira_manager_mut().is_none());
     }
 }

@@ -250,7 +250,9 @@ pub mod prelude {
     pub use winit::keyboard::KeyCode;
 
     #[cfg(feature = "audio")]
-    pub use amigo_audio::AudioManager;
+    pub use amigo_audio::{
+        AudioManager, Bus, Fade, LoopMode, PlaySettings, Position, SoundHandle, SoundState,
+    };
 
     #[cfg(feature = "api")]
     pub use crate::api_bridge::ApiInbox;
