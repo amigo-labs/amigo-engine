@@ -1170,7 +1170,7 @@ mod tests {
         let atlas = fonts.get(id).expect("loaded");
         let pages = atlas.pages();
         let mut partial = 0;
-        for texel in pages[0].data.chunks_exact(4) {
+        for texel in pages[0].data.as_chunks::<4>().0 {
             let e = coverage_byte(texel[3]);
             assert_eq!(&texel[..3], &[e, e, e]);
             if texel[3] > 0 && texel[3] < 255 {

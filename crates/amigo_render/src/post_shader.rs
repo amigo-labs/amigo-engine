@@ -260,7 +260,9 @@ fn fs_main(@builtin(vertex_index) i: u32) -> @location(0) vec4<f32> {
 
     #[test]
     fn the_prelude_is_the_one_in_the_spec() {
-        let spec = include_str!("../../../docs/specs/engine/rendering-extensions.md");
+        // A Windows checkout may have CRLF line endings.
+        let spec = include_str!("../../../docs/specs/engine/rendering-extensions.md")
+            .replace("\r\n", "\n");
         let start = spec
             .find("The prelude the engine prepends")
             .expect("spec has the prelude section");

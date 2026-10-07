@@ -105,7 +105,7 @@ pub fn coverage_byte(a: u8) -> u8 {
 pub fn premultiply_srgb_bytes(data: &mut [u8]) -> bool {
     let table = srgb_decode_table();
     let mut changed = false;
-    for texel in data.chunks_exact_mut(4) {
+    for texel in data.as_chunks_mut::<4>().0 {
         let a = texel[3];
         if a == 255 {
             continue;
