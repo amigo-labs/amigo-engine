@@ -6,10 +6,12 @@
 
 use crate::comfyui::{ComfyError, ComfyPrompt, ComfyUiClient, ComfyUiConfig, ComfyUiLifecycle};
 use crate::config::{load_art_defaults, save_art_defaults};
+use crate::image_io;
+use crate::postprocess::{PixelBuffer, palette_clamp_to_colors, tile_edge_check};
 use crate::workflows::{
     build_img2img_workflow, build_inpaint_workflow, build_upscale_workflow, build_workflow,
 };
-use crate::{ArtRequest, AssetType, ImageBackend, WorldStyle};
+use crate::{ArtRequest, AssetType, ImageBackend, StyleDef, WorldStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -45,6 +47,14 @@ pub struct GenerateSpritesheetParams {
     pub animation: String,
     pub frames: u32,
     pub directions: Option<u32>,
+    /// Playback speed written to the atlas manifest (default 8).
+    #[serde(default)]
+    pub fps: Option<f32>,
+    /// How far each frame may stray from the base, 0..1 (default 0.4).
+    #[serde(default)]
+    pub strength: Option<f32>,
+    #[serde(default)]
+    pub style: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,6 +77,10 @@ pub struct InpaintParams {
 pub struct PaletteSwapParams {
     pub input: String,
     pub palette: String,
+    /// Where to write, relative to the project. Default
+    /// `assets/generated/palette_swaps/<input>_<palette>.png`.
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -79,6 +93,10 @@ pub struct UpscaleParams {
 pub struct PostProcessParams {
     pub input: String,
     pub style: String,
+    /// Where to write, relative to the project. Default
+    /// `assets/generated/processed/<input>_<style>.png`.
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 // -- Tool result structs --
@@ -97,8 +115,15 @@ pub struct TilesetResult {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpritesheetResult {
+    /// The sheet image.
     pub path: String,
+    /// Its `.atlas.ron` manifest, one sprite per direction.
+    pub manifest: String,
+    /// Frames per direction.
     pub frames: u32,
+    pub directions: u32,
+    /// The sprite names in the manifest.
+    pub sprites: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -186,14 +211,17 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_artgen_generate_spritesheet".into(),
-            description: "Generate animation frames from a base sprite".into(),
+            description: "Generate animation frames from a base sprite (img2img per frame) and write them as one sheet with an .atlas.ron manifest".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "base": { "type": "string", "description": "Path to base sprite" },
                     "animation": { "type": "string", "description": "Animation type: walk, attack, death, idle" },
-                    "frames": { "type": "integer" },
-                    "directions": { "type": "integer", "description": "1, 4, or 8" }
+                    "frames": { "type": "integer", "description": "Frames per direction, 1 to 32" },
+                    "directions": { "type": "integer", "description": "1, 4, or 8" },
+                    "fps": { "type": "number", "description": "Playback speed in the atlas manifest (default 8)" },
+                    "strength": { "type": "number", "description": "How far frames may stray from the base, 0..1 (default 0.4)" },
+                    "style": { "type": "string" }
                 },
                 "required": ["base", "animation", "frames"]
             }),
@@ -228,12 +256,13 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_artgen_palette_swap".into(),
-            description: "Swap palette of a sprite (no AI, pure image processing)".into(),
+            description: "Map every opaque pixel of an image to the nearest colour of a palette (no AI)".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "input": { "type": "string" },
-                    "palette": { "type": "string" }
+                    "input": { "type": "string", "description": "Image path, relative to the project" },
+                    "palette": { "type": "string", "description": "pico8, gameboy, a style name, '#rrggbb,#rrggbb…', or a .hex, .gpl or image file" },
+                    "output": { "type": "string", "description": "Output path, relative to the project" }
                 },
                 "required": ["input", "palette"]
             }),
@@ -252,12 +281,13 @@ pub fn list_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "amigo_artgen_post_process".into(),
-            description: "Apply a style's post-processing to any image".into(),
+            description: "Apply a style's post-processing (palette clamp, anti-aliasing removal, transparency cleanup, outline) to any image".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "input": { "type": "string" },
-                    "style": { "type": "string" }
+                    "input": { "type": "string", "description": "Image path, relative to the project" },
+                    "style": { "type": "string", "description": "A built-in style or assets/styles/<name>.style.ron" },
+                    "output": { "type": "string", "description": "Output path, relative to the project" }
                 },
                 "required": ["input", "style"]
             }),
@@ -342,8 +372,7 @@ const GENERATION_TIMEOUT: Duration = Duration::from_secs(600);
 /// writing anything, so an agent "succeeded" and then failed to find the
 /// file. Every tool now either does its work and returns the files it wrote,
 /// or returns an error ([`ToolError::Backend`] when ComfyUI is unreachable
-/// or the prompt failed, [`ToolError::NotImplemented`] for the tools that
-/// have no backend yet).
+/// or the prompt failed, [`ToolError::BadInput`] for unusable arguments).
 pub struct ArtgenServer {
     project_dir: PathBuf,
     comfy: ComfyUiConfig,
@@ -428,6 +457,186 @@ impl ArtgenServer {
             .map_err(|e| comfy_error(&self.comfy, e))
     }
 
+    /// A style by name: `assets/styles/<name>.style.ron` (or `.ron`) in the
+    /// project, else a built-in one.
+    fn style(&self, name: &str) -> Result<StyleDef, ToolError> {
+        let dir = self.project_dir.join("assets").join("styles");
+        for file in [format!("{name}.style.ron"), format!("{name}.ron")] {
+            let path = dir.join(file);
+            if path.is_file() {
+                return StyleDef::load_from_file(&path)
+                    .map_err(|e| ToolError::BadInput(format!("{}: {e}", path.display())));
+            }
+        }
+        StyleDef::find(name).ok_or_else(|| {
+            let names: Vec<String> = StyleDef::builtin_defaults()
+                .into_iter()
+                .map(|s| s.name)
+                .collect();
+            ToolError::BadInput(format!(
+                "unknown style '{name}': put it in assets/styles/{name}.style.ron or use one of {}",
+                names.join(", ")
+            ))
+        })
+    }
+
+    /// Write `image` to `rel` inside the project and return `rel`. Absolute
+    /// paths and `..` are refused: the tools only write into the project.
+    fn write_image(&self, image: &PixelBuffer, rel: &str) -> Result<String, ToolError> {
+        let path = std::path::Path::new(rel);
+        if path.is_absolute()
+            || path.components().any(|c| {
+                !matches!(
+                    c,
+                    std::path::Component::Normal(_) | std::path::Component::CurDir
+                )
+            })
+        {
+            return Err(ToolError::BadInput(format!(
+                "output '{rel}' must be a relative path inside the project"
+            )));
+        }
+        image_io::save_png(image, &self.project_dir.join(path)).map_err(ToolError::Backend)?;
+        Ok(rel.replace('\\', "/"))
+    }
+
+    /// Frames of `p.animation` for each direction, generated from the base
+    /// sprite with img2img, laid out one direction per row on a sheet with
+    /// an atlas manifest next to it.
+    fn generate_spritesheet(
+        &mut self,
+        p: GenerateSpritesheetParams,
+    ) -> Result<serde_json::Value, ToolError> {
+        if !(1..=32).contains(&p.frames) {
+            return Err(ToolError::BadInput(format!(
+                "frames must be 1 to 32, got {}",
+                p.frames
+            )));
+        }
+        let directions: &[&str] = match p.directions.unwrap_or(1) {
+            1 => &[""],
+            4 => &["down", "left", "right", "up"],
+            8 => &[
+                "down",
+                "down_left",
+                "left",
+                "up_left",
+                "up",
+                "up_right",
+                "right",
+                "down_right",
+            ],
+            n => {
+                return Err(ToolError::BadInput(format!(
+                    "directions must be 1, 4 or 8, got {n}"
+                )));
+            }
+        };
+        let fps = p.fps.unwrap_or(8.0);
+        if !(fps.is_finite() && fps > 0.0 && fps <= 60.0) {
+            return Err(ToolError::BadInput(format!(
+                "fps must be in (0, 60], got {fps}"
+            )));
+        }
+        // Read the base first: a broken file should not cost a GPU run.
+        let base = image_io::load_image(&self.input_file(&p.base)?).map_err(ToolError::BadInput)?;
+        let (w, h) = (base.width, base.height);
+        let uploaded = self.upload(&p.base)?;
+        let defaults = load_art_defaults(&self.project_dir);
+        let style = world_style(
+            p.style.as_deref().unwrap_or("default"),
+            &defaults.resolve_art_mode(),
+        );
+        let backend = defaults.resolve_backend();
+        let strength = p.strength.unwrap_or(0.4).clamp(0.0, 1.0);
+        let animation = sanitize(&p.animation);
+        let stem = format!("{}_{animation}", file_stem(&p.base));
+
+        let mut rows = Vec::with_capacity(directions.len());
+        for (d, direction) in directions.iter().enumerate() {
+            let mut row = Vec::with_capacity(p.frames as usize);
+            for f in 0..p.frames {
+                let facing = if direction.is_empty() {
+                    String::new()
+                } else {
+                    format!(", facing {}", direction.replace('_', "-"))
+                };
+                let prompt = format!(
+                    "{} animation, frame {} of {}{facing}, same character, same palette, same size",
+                    p.animation,
+                    f + 1,
+                    p.frames
+                );
+                let workflow = build_img2img_workflow(
+                    &uploaded,
+                    &prompt,
+                    &ArtRequest::default().negative_prompt,
+                    strength,
+                    &style,
+                    &backend,
+                );
+                let written =
+                    self.generate(&workflow, "spritesheets/frames", &format!("{stem}_{d}_{f}"))?;
+                let first = written.first().ok_or_else(|| {
+                    ToolError::Backend("ComfyUI returned no image for a frame".into())
+                })?;
+                let frame = image_io::load_image(&self.project_dir.join(first))
+                    .map_err(|e| ToolError::Backend(format!("frame {f}: {e}")))?;
+                row.push(resize_nearest(&frame, w, h));
+            }
+            rows.push(row);
+        }
+
+        let sheet = image_io::compose_sheet(&rows)
+            .ok_or_else(|| ToolError::Backend("no frames were generated".into()))?;
+        let sheet_rel = format!("assets/generated/spritesheets/{stem}.png");
+        self.write_image(&sheet, &sheet_rel)?;
+
+        let looping = !matches!(p.animation.as_str(), "death" | "die" | "attack");
+        let mut sprites = std::collections::BTreeMap::new();
+        for (d, direction) in directions.iter().enumerate() {
+            let name = if direction.is_empty() {
+                stem.clone()
+            } else {
+                format!("{stem}/{direction}")
+            };
+            let frames = (0..p.frames)
+                .map(|f| ManifestFrame {
+                    x: f * w,
+                    y: d as u32 * h,
+                    w,
+                    h,
+                })
+                .collect();
+            sprites.insert(
+                name,
+                ManifestSprite {
+                    frames,
+                    origin: (w as f32 / 2.0, h as f32),
+                    fps: Some(fps),
+                    looping,
+                },
+            );
+        }
+        let manifest = Manifest {
+            image: format!("{stem}.png"),
+            sprites,
+        };
+        let text = ron::ser::to_string_pretty(&manifest, ron::ser::PrettyConfig::default())
+            .map_err(|e| ToolError::Backend(format!("could not write the manifest: {e}")))?;
+        let manifest_rel = format!("assets/generated/spritesheets/{stem}.atlas.ron");
+        std::fs::write(self.project_dir.join(&manifest_rel), text)
+            .map_err(|e| ToolError::Backend(format!("could not write {manifest_rel}: {e}")))?;
+
+        Ok(serde_json::to_value(SpritesheetResult {
+            path: sheet_rel,
+            manifest: manifest_rel,
+            frames: p.frames,
+            directions: directions.len() as u32,
+            sprites: manifest.sprites.keys().cloned().collect(),
+        })?)
+    }
+
     /// Dispatch a tool call by name.
     pub fn call(
         &mut self,
@@ -496,7 +705,7 @@ impl ArtgenServer {
                 response["art_mode"] = serde_json::json!(format!("{:?}", art_mode));
                 if art_mode == crate::ArtMode::Pixel {
                     response["note"] = serde_json::json!(
-                        "Raw model output: the pixel-art post-processing (palette clamp, outline) is not applied yet"
+                        "Raw model output: run amigo_artgen_post_process with the style for the pixel-art clean-up (palette clamp, outline)"
                     );
                 }
                 if !missing.is_empty() {
@@ -609,22 +818,51 @@ impl ArtgenServer {
                 })?)
             }
             "amigo_artgen_generate_spritesheet" => {
-                let _: GenerateSpritesheetParams = serde_json::from_value(params)?;
-                Err(ToolError::NotImplemented(
-                    "spritesheet generation has no ComfyUI workflow yet; generate frames one by one with amigo_artgen_variation".into(),
-                ))
+                let p: GenerateSpritesheetParams = serde_json::from_value(params)?;
+                self.generate_spritesheet(p)
             }
             "amigo_artgen_palette_swap" => {
-                let _: PaletteSwapParams = serde_json::from_value(params)?;
-                Err(ToolError::NotImplemented(
-                    "palette swap is not wired to image files yet (the PixelBuffer operations exist, PNG reading and writing does not)".into(),
-                ))
+                let p: PaletteSwapParams = serde_json::from_value(params)?;
+                let input = self.input_file(&p.input)?;
+                let palette = image_io::parse_palette(&p.palette, &self.project_dir)
+                    .map_err(ToolError::BadInput)?;
+                let mut image = image_io::load_image(&input).map_err(ToolError::BadInput)?;
+                palette_clamp_to_colors(&mut image, &palette);
+                let default = format!(
+                    "assets/generated/palette_swaps/{}_{}.png",
+                    file_stem(&p.input),
+                    slug(&p.palette)
+                );
+                let path = self.write_image(&image, p.output.as_deref().unwrap_or(&default))?;
+                Ok(serde_json::json!({ "path": path, "colors": palette.len() }))
             }
             "amigo_artgen_post_process" => {
-                let _: PostProcessParams = serde_json::from_value(params)?;
-                Err(ToolError::NotImplemented(
-                    "post-processing is not wired to image files yet (the PixelBuffer operations exist, PNG reading and writing does not)".into(),
-                ))
+                let p: PostProcessParams = serde_json::from_value(params)?;
+                let input = self.input_file(&p.input)?;
+                let style = self.style(&p.style)?;
+                let mode = load_art_defaults(&self.project_dir).resolve_art_mode();
+                let mut image = image_io::load_image(&input).map_err(ToolError::BadInput)?;
+                image.apply_style_pipeline_for_mode(&style, &mode);
+                let default = format!(
+                    "assets/generated/processed/{}_{}.png",
+                    file_stem(&p.input),
+                    sanitize(&p.style)
+                );
+                let path = self.write_image(&image, p.output.as_deref().unwrap_or(&default))?;
+                let mut response = serde_json::json!({
+                    "path": path,
+                    "art_mode": format!("{mode:?}"),
+                    "width": image.width,
+                    "height": image.height,
+                });
+                if style.post_processing.tile_edge_check && image.width > 0 && image.height > 0 {
+                    let (h, v) = tile_edge_check(&image);
+                    response["tile_edge_mismatches"] = serde_json::json!({
+                        "left_right": h,
+                        "top_bottom": v,
+                    });
+                }
+                Ok(response)
             }
             "amigo_artgen_list_styles" => Ok(serde_json::to_value(ListResult {
                 items: WorldStyle::builtin_styles()
@@ -728,6 +966,45 @@ pub fn dispatch_tool_with_defaults(
     ArtgenServer::new(project, ComfyUiConfig::default()).call(name, params)
 }
 
+/// `amigo_assets`' atlas manifest, as far as the spritesheet tool writes it.
+#[derive(Serialize)]
+struct Manifest {
+    image: String,
+    sprites: std::collections::BTreeMap<String, ManifestSprite>,
+}
+
+#[derive(Serialize)]
+struct ManifestSprite {
+    frames: Vec<ManifestFrame>,
+    origin: (f32, f32),
+    fps: Option<f32>,
+    looping: bool,
+}
+
+#[derive(Serialize)]
+struct ManifestFrame {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+}
+
+/// `buf` scaled to `w × h` without blending, so pixel art stays crisp.
+fn resize_nearest(buf: &PixelBuffer, w: u32, h: u32) -> PixelBuffer {
+    if (buf.width, buf.height) == (w, h) || buf.width == 0 || buf.height == 0 {
+        return buf.clone();
+    }
+    let mut out = PixelBuffer::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            let sx = (u64::from(x) * u64::from(buf.width) / u64::from(w)) as u32;
+            let sy = (u64::from(y) * u64::from(buf.height) / u64::from(h)) as u32;
+            out.set(x, y, buf.get(sx, sy));
+        }
+    }
+    out
+}
+
 /// The built-in style of that name, or a plain one carrying the name.
 fn world_style(name: &str, art_mode: &crate::ArtMode) -> WorldStyle {
     WorldStyle::find(name).unwrap_or_else(|| WorldStyle {
@@ -764,6 +1041,16 @@ fn comfy_error(config: &ComfyUiConfig, err: ComfyError) -> ToolError {
     ToolError::Backend(format!("ComfyUI at {}: {err}{hint}", config.base_url()))
 }
 
+/// [`sanitize`] without runs of `_` or `_` at either end: `#ff0000, #00ff00`
+/// becomes `ff0000_00ff00`.
+fn slug(s: &str) -> String {
+    sanitize(s)
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
 fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| {
@@ -789,10 +1076,6 @@ pub enum ToolError {
     /// factor out of range).
     #[error("Invalid input: {0}")]
     BadInput(String),
-    /// The tool exists but has no implementation behind it yet. Returned
-    /// instead of a made-up success.
-    #[error("Not implemented: {0}")]
-    NotImplemented(String),
     /// ComfyUI or the file system failed.
     #[error("{0}")]
     Backend(String),
@@ -945,29 +1228,213 @@ mod tests {
         assert!(matches!(err, ToolError::BadInput(_)), "{err}");
     }
 
+    fn png(project: &std::path::Path, rel: &str, w: u32, h: u32, f: impl Fn(u32, u32) -> [u8; 4]) {
+        let mut buf = PixelBuffer::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                buf.set(x, y, f(x, y));
+            }
+        }
+        image_io::save_png(&buf, &project.join(rel)).unwrap();
+    }
+
     #[test]
-    fn tools_without_a_backend_say_so() {
+    fn palette_swap_maps_pixels_to_the_palette_without_comfyui() {
         let fake = FakeComfyUi::start();
         let project = tempfile::tempdir().unwrap();
+        png(project.path(), "hero.png", 2, 1, |x, _| {
+            if x == 0 {
+                [250, 10, 10, 255]
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
         let mut server = server_for(project.path(), &fake);
-        for (tool, args) in [
-            (
+        let v = server
+            .call(
                 "amigo_artgen_palette_swap",
-                serde_json::json!({ "input": "a.png", "palette": "nes" }),
+                serde_json::json!({ "input": "hero.png", "palette": "#ff0000,#0000ff" }),
+            )
+            .unwrap();
+        assert_eq!(
+            v["path"],
+            "assets/generated/palette_swaps/hero_ff0000_0000ff.png"
+        );
+        assert_eq!(v["colors"], 2);
+        let out = image_io::load_image(&project.path().join(v["path"].as_str().unwrap())).unwrap();
+        assert_eq!(out.get(0, 0), [255, 0, 0, 255]);
+        assert_eq!(out.get(1, 0)[3], 0, "transparent stays transparent");
+
+        let v = server
+            .call(
+                "amigo_artgen_palette_swap",
+                serde_json::json!({ "input": "hero.png", "palette": "gameboy", "output": "out/gb.png" }),
+            )
+            .unwrap();
+        assert_eq!(v["path"], "out/gb.png");
+        assert!(project.path().join("out/gb.png").is_file());
+
+        for (args, what) in [
+            (
+                serde_json::json!({ "input": "hero.png", "palette": "nope" }),
+                "unknown palette",
             ),
             (
-                "amigo_artgen_post_process",
-                serde_json::json!({ "input": "a.png", "style": "caribbean" }),
+                serde_json::json!({ "input": "gone.png", "palette": "pico8" }),
+                "does not exist",
             ),
             (
-                "amigo_artgen_generate_spritesheet",
-                serde_json::json!({ "base": "a.png", "animation": "walk", "frames": 4 }),
+                serde_json::json!({ "input": "hero.png", "palette": "pico8", "output": "../x.png" }),
+                "inside the project",
             ),
         ] {
-            let err = server.call(tool, args).unwrap_err();
-            assert!(matches!(err, ToolError::NotImplemented(_)), "{tool}: {err}");
+            let err = server.call("amigo_artgen_palette_swap", args).unwrap_err();
+            assert!(matches!(err, ToolError::BadInput(_)), "{err}");
+            assert!(err.to_string().contains(what), "{err}");
+        }
+        assert!(fake.prompts().is_empty(), "no AI involved");
+    }
+
+    #[test]
+    fn post_process_applies_the_style_pipeline() {
+        let fake = FakeComfyUi::start();
+        let project = tempfile::tempdir().unwrap();
+        // A 4x4 sprite: a soft-edged 2x2 blob in the middle.
+        png(project.path(), "blob.png", 4, 4, |x, y| match (x, y) {
+            (1..=2, 1..=2) => [250, 250, 250, 255],
+            (0, 0) => [250, 250, 250, 60],
+            _ => [0, 0, 0, 0],
+        });
+        let mut server = server_for(project.path(), &fake);
+        let v = server
+            .call(
+                "amigo_artgen_post_process",
+                serde_json::json!({ "input": "blob.png", "style": "caribbean" }),
+            )
+            .unwrap();
+        assert_eq!(v["path"], "assets/generated/processed/blob_caribbean.png");
+        let out = image_io::load_image(&project.path().join(v["path"].as_str().unwrap())).unwrap();
+        let style = StyleDef::find("caribbean").unwrap();
+        let palette = style.palette_rgb();
+        let outline = style.outline_rgba();
+        for p in out.data.iter().filter(|p| p[3] > 0) {
+            assert_eq!(p[3], 255, "binary alpha");
+            let rgb = [p[0], p[1], p[2]];
+            assert!(palette.contains(&rgb) || *p == outline, "{p:?}");
+        }
+        assert_eq!(out.get(0, 0)[3], 0, "the faint pixel is gone");
+        assert_eq!(out.get(1, 0), outline, "outlined");
+
+        // A project style overrides the built-ins.
+        let mut custom = style.clone();
+        custom.name = "mine".into();
+        custom.post_processing.add_outline = false;
+        custom.post_processing.tile_edge_check = true;
+        std::fs::create_dir_all(project.path().join("assets/styles")).unwrap();
+        std::fs::write(
+            project.path().join("assets/styles/mine.style.ron"),
+            ron::ser::to_string(&custom).unwrap(),
+        )
+        .unwrap();
+        let v = server
+            .call(
+                "amigo_artgen_post_process",
+                serde_json::json!({ "input": "blob.png", "style": "mine" }),
+            )
+            .unwrap();
+        assert!(v["tile_edge_mismatches"].is_object(), "{v}");
+        let err = server
+            .call(
+                "amigo_artgen_post_process",
+                serde_json::json!({ "input": "blob.png", "style": "nope" }),
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("unknown style 'nope'"), "{err}");
+    }
+
+    #[test]
+    fn spritesheet_generates_every_frame_and_writes_a_loadable_atlas() {
+        let fake = FakeComfyUi::start();
+        let project = tempfile::tempdir().unwrap();
+        png(project.path(), "knight.png", 4, 4, |_, _| [9, 9, 9, 255]);
+        // ComfyUI answers with an 8x8 frame; the sheet scales it to 4x4.
+        let frame_dir = tempfile::tempdir().unwrap();
+        png(frame_dir.path(), "f.png", 8, 8, |x, _| {
+            if x < 4 {
+                [255, 0, 0, 255]
+            } else {
+                [0, 0, 255, 255]
+            }
+        });
+        fake.set_output_image(std::fs::read(frame_dir.path().join("f.png")).unwrap());
+
+        let mut server = server_for(project.path(), &fake);
+        let v = server
+            .call(
+                "amigo_artgen_generate_spritesheet",
+                serde_json::json!({ "base": "knight.png", "animation": "walk", "frames": 3, "directions": 4 }),
+            )
+            .unwrap();
+        assert_eq!(fake.prompts().len(), 12, "one img2img run per frame");
+        assert_eq!(fake.uploads().len(), 1, "the base is uploaded once");
+        assert_eq!(v["path"], "assets/generated/spritesheets/knight_walk.png");
+        assert_eq!(v["directions"], 4);
+        let prompts = serde_json::to_string(&fake.prompts()).unwrap();
+        assert!(prompts.contains("frame 3 of 3, facing up"), "{prompts}");
+
+        let sheet =
+            image_io::load_image(&project.path().join(v["path"].as_str().unwrap())).unwrap();
+        assert_eq!((sheet.width, sheet.height), (12, 16));
+        assert_eq!(sheet.get(5, 13), [255, 0, 0, 255]);
+        assert_eq!(sheet.get(6, 13), [0, 0, 255, 255]);
+
+        let manifest_path = project.path().join(v["manifest"].as_str().unwrap());
+        let atlas = amigo_assets::atlas_manifest::load_atlas(&manifest_path).unwrap();
+        assert!(atlas.mip_error.is_none());
+        let manifest = amigo_assets::atlas_manifest::parse_manifest(
+            &manifest_path,
+            &std::fs::read_to_string(&manifest_path).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest.sprites.len(), 4);
+        let walk_up = &manifest.sprites["knight_walk/up"];
+        assert_eq!(walk_up.frames.len(), 3);
+        assert_eq!((walk_up.frames[2].x, walk_up.frames[2].y), (8, 12));
+        assert_eq!(walk_up.fps, Some(8.0));
+        assert!(walk_up.looping);
+        assert_eq!(walk_up.origin, (2.0, 4.0));
+    }
+
+    #[test]
+    fn spritesheet_checks_its_arguments_before_generating() {
+        let fake = FakeComfyUi::start();
+        let project = tempfile::tempdir().unwrap();
+        png(project.path(), "a.png", 2, 2, |_, _| [1, 1, 1, 255]);
+        std::fs::write(project.path().join("broken.png"), b"not a png").unwrap();
+        let mut server = server_for(project.path(), &fake);
+        for args in [
+            serde_json::json!({ "base": "a.png", "animation": "walk", "frames": 0 }),
+            serde_json::json!({ "base": "a.png", "animation": "walk", "frames": 2, "directions": 3 }),
+            serde_json::json!({ "base": "a.png", "animation": "walk", "frames": 2, "fps": 0.0 }),
+            serde_json::json!({ "base": "broken.png", "animation": "walk", "frames": 2 }),
+            serde_json::json!({ "base": "gone.png", "animation": "walk", "frames": 2 }),
+        ] {
+            let err = server
+                .call("amigo_artgen_generate_spritesheet", args.clone())
+                .unwrap_err();
+            assert!(matches!(err, ToolError::BadInput(_)), "{args}: {err}");
         }
         assert!(fake.prompts().is_empty());
+        assert!(fake.uploads().is_empty());
+
+        // ComfyUI's output must decode.
+        let err = server
+            .call(
+                "amigo_artgen_generate_spritesheet",
+                serde_json::json!({ "base": "a.png", "animation": "idle", "frames": 1 }),
+            )
+            .unwrap_err();
+        assert!(matches!(err, ToolError::Backend(_)), "{err}");
     }
 
     #[test]

@@ -114,7 +114,9 @@ dependencies = [
 name = "amigo_artgen"
 version = "0.1.0"
 dependencies = [
+ "amigo_assets",
  "amigo_comfyui",
+ "image 0.25.10",
  "ron",
  "serde",
  "serde_json",

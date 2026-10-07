@@ -18,11 +18,13 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 ron = { workspace = true }
+image = { workspace = true }
 toml = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 amigo_comfyui = { workspace = true, features = ["fake-server"] }
+amigo_assets = { workspace = true }
 
 [lints]
 workspace = true

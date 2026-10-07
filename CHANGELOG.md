@@ -47,6 +47,28 @@ Notable changes per release. Format loosely follows
   - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
 - **`examples/raster_art`** shows all of the above.
 
+### Added — art and audio generation tools
+
+- **artgen:** `amigo_artgen_palette_swap` (pico8, gameboy, style palettes,
+  inline colours, `.hex`/`.gpl`/image files) and `amigo_artgen_post_process`
+  (a style's clean-up, from `assets/styles/` or the built-ins) work on PNG
+  files; `amigo_artgen_generate_spritesheet` runs one img2img per frame and
+  direction and writes a sheet with an `.atlas.ron` manifest the engine
+  loads. Optional `output` paths stay inside the project.
+- **audiogen:** the processing tools (`process`, `loop_trim`, `normalize`,
+  `convert`, `preview`) read and write WAV directly (other formats through
+  ffmpeg); the generators `generate_core_melody`, `generate_stem`,
+  `generate_variation`, `extend_track`, `remix` and `generate_ambient` run
+  ACE-Step / Stable Audio workflows, conditioning on an uploaded track
+  where they start from one.
+- `FakeComfyUi::set_output_image` / `set_output_audio` for tests that decode
+  what ComfyUI returns.
+
+### Removed
+
+- `ToolError::NotImplemented` in `amigo_artgen` and `amigo_audiogen`: no
+  tool returns it any more.
+
 ### Added — level editor (docs/specs/tooling/editor.md)
 
 - **Tileset drawing:** a level's metadata `tileset` names a loaded sprite

@@ -11,12 +11,15 @@
 
 pub mod config;
 
+pub mod audio_edit;
 pub mod clean_mode;
+pub mod generation;
 pub mod processing;
 pub mod stems;
 pub mod style_registry;
 pub mod tools;
 pub mod voice_registry;
+pub mod wav;
 pub mod workflows;
 
 use serde::{Deserialize, Serialize};

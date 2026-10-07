@@ -10,6 +10,7 @@
 
 pub mod comfyui;
 pub mod config;
+pub mod image_io;
 pub mod postprocess;
 pub mod style;
 pub mod tools;
