@@ -306,7 +306,7 @@ engine ever called them.
 | [engine/achievements](engine/achievements.md)             | done   | amigo_core        | engine/save-load, engine/ui   |
 | [engine/physics](engine/physics.md)                       | done   | amigo_core        | engine/core                   |
 | [engine/font-rendering](engine/font-rendering.md)         | done   | amigo_render      | engine/assets, engine/ui      |
-| [engine/gpu-instancing](engine/gpu-instancing.md)         | partial | amigo_render     | engine/rendering              |
+| [engine/gpu-instancing](engine/gpu-instancing.md)         | done   | amigo_render     | engine/rendering              |
 | [engine/modding](engine/modding.md)                       | done   | amigo_assets      | assets/format                 |
 | [engine/accessibility](engine/accessibility.md)           | done   | amigo_render      | engine/rendering, engine/input, engine/ui |
 | [engine/rendering-extensions](engine/rendering-extensions.md) | done | amigo_render, amigo_engine, amigo_assets | engine/rendering, engine/camera, engine/font-rendering, engine/particles, assets/atlas |

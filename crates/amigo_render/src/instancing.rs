@@ -1,9 +1,14 @@
 //! GPU Instancing: per-instance data for hardware-instanced sprite rendering.
 //!
-//! Provides InstanceData layout, InstancedBatch grouping, and the CPU-side
-//! logic for the hybrid batching strategy. The actual wgpu buffer management
-//! and draw calls are handled by the Renderer using these data structures.
+//! A run of sprites that share a texture and blend mode, is at least
+//! `Renderer::instancing_threshold` long, and holds only unrotated sprites
+//! without explicit geometry or per-sprite shaders is drawn with one
+//! instanced call over a unit quad (`SpriteBatcher::build_hybrid`). Other runs
+//! keep the indexed path. Tile layers, which draw hundreds of same-texture
+//! tiles, are the typical instanced run.
 
+use crate::blend::BlendMode;
+use crate::sprite_batcher::SpriteInstance;
 use crate::texture::TextureId;
 
 // ---------------------------------------------------------------------------
@@ -62,6 +67,228 @@ impl InstanceData {
 
     /// Size of one instance in bytes.
     pub const SIZE: usize = std::mem::size_of::<Self>();
+
+    /// The instance for `sprite`, or `None` when it needs the indexed path:
+    /// a rotation, explicit geometry or per-sprite shaders. The pivot is
+    /// folded into the position.
+    pub fn from_sprite(sprite: &SpriteInstance) -> Option<Self> {
+        let rotation = if sprite.rotation.is_finite() {
+            sprite.rotation
+        } else {
+            0.0
+        };
+        if rotation != 0.0 || sprite.geometry.is_some() || !sprite.shaders.is_empty() {
+            return None;
+        }
+        let finite = |v: f32| if v.is_finite() { v } else { 0.0 };
+        Some(Self::new(
+            sprite.x - finite(sprite.origin[0]),
+            sprite.y - finite(sprite.origin[1]),
+            sprite.width,
+            sprite.height,
+            sprite.uv_x,
+            sprite.uv_y,
+            sprite.uv_w,
+            sprite.uv_h,
+            sprite.tint.to_array(),
+            sprite.flip_x,
+            sprite.flip_y,
+            sprite.z_order as f32,
+        ))
+    }
+
+    /// The instance buffer layout: `transform`, `uv_rect`, `tint`, `flags`
+    /// and `z_order` at shader locations 1 to 5, one step per instance.
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        const ATTRIBUTES: [wgpu::VertexAttribute; 5] = [
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                offset: 16,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                offset: 32,
+                shader_location: 3,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                offset: 48,
+                shader_location: 4,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                offset: 52,
+                shader_location: 5,
+                format: wgpu::VertexFormat::Float32,
+            },
+        ];
+        wgpu::VertexBufferLayout {
+            array_stride: Self::SIZE as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &ATTRIBUTES,
+        }
+    }
+}
+
+/// The unit quad every instance is drawn over: corners (0,0), (1,0), (1,1),
+/// (0,1), two triangles.
+pub const QUAD_CORNERS: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+/// Indices of the unit quad.
+pub const QUAD_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
+
+/// The unit quad's vertex layout: one `vec2<f32>` at location 0.
+pub fn quad_desc() -> wgpu::VertexBufferLayout<'static> {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
+        offset: 0,
+        shader_location: 0,
+        format: wgpu::VertexFormat::Float32x2,
+    }];
+    wgpu::VertexBufferLayout {
+        array_stride: 8,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &ATTRIBUTES,
+    }
+}
+
+/// The instanced sprite shader. Same bind groups as the indexed sprite
+/// shader (projection, then texture and sampler), and the same premultiplied
+/// tint, so the two paths can share a pass.
+pub const INSTANCED_SPRITE_SHADER: &str = r#"
+struct Uniforms {
+    projection: mat4x4<f32>,
+};
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(
+    @location(0) quad: vec2<f32>,
+    @location(1) transform: vec4<f32>,
+    @location(2) uv_rect: vec4<f32>,
+    @location(3) tint: vec4<f32>,
+    @location(4) flags: u32,
+    @location(5) z_order: f32,
+) -> VertexOutput {
+    // Flips swap UVs on the same quad, as the indexed path does.
+    var u = quad.x;
+    var v = quad.y;
+    if (flags & 1u) != 0u { u = 1.0 - u; }
+    if (flags & 2u) != 0u { v = 1.0 - v; }
+    let world = vec2<f32>(
+        transform.x + quad.x * transform.z,
+        transform.y + quad.y * transform.w,
+    );
+    var out: VertexOutput;
+    out.clip_position = uniforms.projection * vec4<f32>(world, 0.0, 1.0);
+    out.uv = vec2<f32>(uv_rect.x + u * uv_rect.z, uv_rect.y + v * uv_rect.w);
+    out.color = tint;
+    return out;
+}
+
+@group(1) @binding(0) var t_sprite: texture_2d<f32>;
+@group(1) @binding(1) var s_sprite: sampler;
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let tex_color = textureSample(t_sprite, s_sprite, in.uv);
+    let tint = vec4<f32>(in.color.rgb * in.color.a, in.color.a);
+    return tex_color * tint;
+}
+"#;
+
+// ---------------------------------------------------------------------------
+// InstanceBuffer
+// ---------------------------------------------------------------------------
+
+/// The capacity, in instances, a buffer of `capacity` grows to so that it
+/// holds `needed`: doubled until it fits, never below 64.
+pub fn grown_capacity(capacity: u32, needed: u32) -> u32 {
+    let mut capacity = capacity.max(64);
+    while capacity < needed {
+        capacity = capacity.saturating_mul(2);
+    }
+    capacity
+}
+
+/// A GPU buffer of per-instance data, double-buffered so that a frame never
+/// writes the buffer the previous frame's draw reads. Grows geometrically.
+pub struct InstanceBuffer {
+    buffers: [wgpu::Buffer; 2],
+    capacities: [u32; 2],
+    current: usize,
+    count: u32,
+}
+
+impl InstanceBuffer {
+    pub fn new(device: &wgpu::Device, initial_capacity: u32) -> Self {
+        let capacity = grown_capacity(initial_capacity, 0);
+        Self {
+            buffers: [
+                Self::create(device, capacity),
+                Self::create(device, capacity),
+            ],
+            capacities: [capacity; 2],
+            current: 0,
+            count: 0,
+        }
+    }
+
+    fn create(device: &wgpu::Device, capacity: u32) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sprite_instances"),
+            size: capacity as u64 * InstanceData::SIZE as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    /// Write instance data for this frame. Grows the buffer if needed.
+    pub fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        instances: &[InstanceData],
+    ) {
+        let needed = instances.len() as u32;
+        if needed > self.capacities[self.current] {
+            let capacity = grown_capacity(self.capacities[self.current], needed);
+            self.buffers[self.current] = Self::create(device, capacity);
+            self.capacities[self.current] = capacity;
+        }
+        if !instances.is_empty() {
+            queue.write_buffer(
+                &self.buffers[self.current],
+                0,
+                bytemuck::cast_slice(instances),
+            );
+        }
+        self.count = needed;
+    }
+
+    /// Current buffer for binding.
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        &self.buffers[self.current]
+    }
+
+    /// Number of instances written this frame.
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    /// Swap to the other buffer (call at the end of the frame).
+    pub fn flip(&mut self) {
+        self.current = 1 - self.current;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -69,10 +296,12 @@ impl InstanceData {
 // ---------------------------------------------------------------------------
 
 /// A batch to be drawn with hardware instancing.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct InstancedBatch {
     /// Texture atlas to bind for this batch.
     pub texture_id: TextureId,
+    /// Every instance blends this way.
+    pub blend: BlendMode,
     /// Offset into the instance buffer (in instances, not bytes).
     pub instance_offset: u32,
     /// Number of instances to draw.
@@ -115,6 +344,7 @@ pub fn partition_batches(
         if !any_shader && batch_size >= threshold {
             instanced.push(InstancedBatch {
                 texture_id: *tex,
+                blend: BlendMode::Normal,
                 instance_offset: instance_data_offset,
                 instance_count: batch_size,
             });
@@ -171,6 +401,71 @@ mod tests {
                 0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 1.0, 1.0, [1.0; 4], false, false, 0.0,
             ),
         )
+    }
+
+    #[test]
+    fn the_shader_validates() {
+        let module = naga::front::wgsl::parse_str(INSTANCED_SPRITE_SHADER).expect("parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::default(),
+        )
+        .validate(&module)
+        .expect("validates");
+    }
+
+    #[test]
+    fn the_instance_layout_matches_the_struct() {
+        let data = InstanceData::new(
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, [9.0; 4], true, false, 10.0,
+        );
+        let bytes = bytemuck::bytes_of(&data);
+        let desc = InstanceData::desc();
+        assert_eq!(desc.array_stride, 64);
+        let at = |i: usize| desc.attributes[i].offset as usize;
+        assert_eq!(
+            f32::from_le_bytes(bytes[at(0)..at(0) + 4].try_into().unwrap_or_default()),
+            1.0
+        );
+        assert_eq!(
+            f32::from_le_bytes(bytes[at(1)..at(1) + 4].try_into().unwrap_or_default()),
+            5.0
+        );
+        assert_eq!(
+            f32::from_le_bytes(bytes[at(2)..at(2) + 4].try_into().unwrap_or_default()),
+            9.0
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[at(3)..at(3) + 4].try_into().unwrap_or_default()),
+            1
+        );
+        assert_eq!(
+            f32::from_le_bytes(bytes[at(4)..at(4) + 4].try_into().unwrap_or_default()),
+            10.0
+        );
+    }
+
+    #[test]
+    fn buffers_grow_geometrically() {
+        assert_eq!(grown_capacity(0, 10), 64);
+        assert_eq!(grown_capacity(64, 65), 128);
+        assert_eq!(grown_capacity(128, 1000), 1024);
+        assert_eq!(grown_capacity(1024, 10), 1024);
+    }
+
+    #[test]
+    fn only_plain_sprites_become_instances() {
+        let mut s = SpriteInstance::new(TextureId(1), 10.0, 20.0, 4.0, 4.0);
+        s.origin = [2.0, 1.0];
+        let inst = InstanceData::from_sprite(&s).expect("plain");
+        assert_eq!(inst.transform, [8.0, 19.0, 4.0, 4.0]);
+        s.rotation = 0.5;
+        assert!(InstanceData::from_sprite(&s).is_none());
+        s.rotation = f32::NAN;
+        assert!(
+            InstanceData::from_sprite(&s).is_some(),
+            "NaN rotation renders as 0"
+        );
     }
 
     #[test]

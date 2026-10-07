@@ -1,4 +1,5 @@
 use crate::blend::BlendMode;
+use crate::instancing::{InstanceData, InstancedBatch};
 use crate::texture::TextureId;
 use crate::vertex::Vertex;
 use amigo_core::{Color, Rect};
@@ -240,9 +241,18 @@ pub struct SpriteBatcher {
     sprites: Vec<SpriteInstance>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
+    instances: Vec<InstanceData>,
+}
+
+/// One draw of a frame, in painter's order: indexed quads or an instanced run.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DrawBatch {
+    Indexed(SpriteBatch),
+    Instanced(InstancedBatch),
 }
 
 /// A batch of sprites sharing the same texture.
+#[derive(Clone, Debug, PartialEq)]
 pub struct SpriteBatch {
     pub texture_id: TextureId,
     /// Every sprite in the batch blends this way.
@@ -258,6 +268,7 @@ impl SpriteBatcher {
             sprites: Vec::with_capacity(1024),
             vertices: Vec::with_capacity(4096),
             indices: Vec::with_capacity(6144),
+            instances: Vec::new(),
         }
     }
 
@@ -265,6 +276,7 @@ impl SpriteBatcher {
         self.sprites.clear();
         self.vertices.clear();
         self.indices.clear();
+        self.instances.clear();
     }
 
     pub fn push(&mut self, sprite: SpriteInstance) {
@@ -272,8 +284,23 @@ impl SpriteBatcher {
     }
 
     /// Sort sprites and generate vertex/index data. Returns one batch per run
-    /// of consecutive sprites that share a texture.
+    /// of consecutive sprites that share a texture and blend mode.
     pub fn build(&mut self) -> Vec<SpriteBatch> {
+        self.build_hybrid(u32::MAX)
+            .into_iter()
+            .filter_map(|batch| match batch {
+                DrawBatch::Indexed(batch) => Some(batch),
+                DrawBatch::Instanced(_) => None,
+            })
+            .collect()
+    }
+
+    /// Sort sprites and build the frame's draws. A run of consecutive sprites
+    /// sharing a texture and blend mode becomes one instanced draw when it
+    /// has at least `threshold` sprites and every one of them can be an
+    /// instance ([`InstanceData::from_sprite`]); otherwise it is indexed.
+    /// Painter's order is kept across both kinds.
+    pub fn build_hybrid(&mut self, threshold: u32) -> Vec<DrawBatch> {
         // Sort by z_order only. The sort is stable, so sprites on the same z
         // keep their submission order: painter's order is what callers mean.
         // Sorting by texture within a z (to save draw calls) layered same-z
@@ -284,59 +311,69 @@ impl SpriteBatcher {
 
         self.vertices.clear();
         self.indices.clear();
+        self.instances.clear();
 
         let mut batches = Vec::new();
-        let mut current: Option<(TextureId, BlendMode)> = None;
-        let mut batch_index_start = 0u32;
-
-        for sprite in &self.sprites {
-            // A batch breaks when the texture or the blend mode changes, so
+        let mut start = 0;
+        while start < self.sprites.len() {
+            // A run breaks when the texture or the blend mode changes, so
             // painter's order within a z holds across blend modes.
-            let key = (sprite.texture_id, sprite.blend);
-            if current != Some(key) {
-                if let Some((texture_id, blend)) = current {
-                    let index_count = self.indices.len() as u32 - batch_index_start;
-                    if index_count > 0 {
-                        batches.push(SpriteBatch {
-                            texture_id,
-                            blend,
-                            vertex_offset: 0,
-                            index_offset: batch_index_start,
-                            index_count,
-                        });
-                    }
+            let key = (self.sprites[start].texture_id, self.sprites[start].blend);
+            let mut end = start + 1;
+            while end < self.sprites.len()
+                && (self.sprites[end].texture_id, self.sprites[end].blend) == key
+            {
+                end += 1;
+            }
+            let run = &self.sprites[start..end];
+
+            let instances: Option<Vec<InstanceData>> = if run.len() as u64 >= threshold as u64 {
+                run.iter().map(InstanceData::from_sprite).collect()
+            } else {
+                None
+            };
+            match instances {
+                Some(instances) => {
+                    batches.push(DrawBatch::Instanced(InstancedBatch {
+                        texture_id: key.0,
+                        blend: key.1,
+                        instance_offset: self.instances.len() as u32,
+                        instance_count: instances.len() as u32,
+                    }));
+                    self.instances.extend(instances);
                 }
-                current = Some(key);
-                batch_index_start = self.indices.len() as u32;
+                None => {
+                    let index_offset = self.indices.len() as u32;
+                    for sprite in run {
+                        let base_vertex = self.vertices.len() as u32;
+                        self.vertices.extend_from_slice(&sprite.vertices());
+                        // Two triangles per quad
+                        self.indices.extend_from_slice(&[
+                            base_vertex,
+                            base_vertex + 1,
+                            base_vertex + 2,
+                            base_vertex,
+                            base_vertex + 2,
+                            base_vertex + 3,
+                        ]);
+                    }
+                    batches.push(DrawBatch::Indexed(SpriteBatch {
+                        texture_id: key.0,
+                        blend: key.1,
+                        vertex_offset: 0,
+                        index_offset,
+                        index_count: self.indices.len() as u32 - index_offset,
+                    }));
+                }
             }
-
-            let base_vertex = self.vertices.len() as u32;
-            self.vertices.extend_from_slice(&sprite.vertices());
-
-            // Two triangles per quad
-            self.indices.push(base_vertex);
-            self.indices.push(base_vertex + 1);
-            self.indices.push(base_vertex + 2);
-            self.indices.push(base_vertex);
-            self.indices.push(base_vertex + 2);
-            self.indices.push(base_vertex + 3);
+            start = end;
         }
-
-        // Finalize last batch
-        if let Some((texture_id, blend)) = current {
-            let index_count = self.indices.len() as u32 - batch_index_start;
-            if index_count > 0 {
-                batches.push(SpriteBatch {
-                    texture_id,
-                    blend,
-                    vertex_offset: 0,
-                    index_offset: batch_index_start,
-                    index_count,
-                });
-            }
-        }
-
         batches
+    }
+
+    /// Instance data of the instanced draws of the last build.
+    pub fn instances(&self) -> &[InstanceData] {
+        &self.instances
     }
 
     pub fn vertices(&self) -> &[Vertex] {
@@ -495,6 +532,51 @@ mod tests {
         assert_eq!(v[3].position, [0.0, 3.0]);
         assert_eq!(v[0].uv, [0.0, 0.0]);
         assert_eq!(v[0].color, [1.0, 0.0, 0.0, 0.5]);
+    }
+
+    #[test]
+    fn long_plain_runs_are_instanced_in_painters_order() {
+        let mut batcher = SpriteBatcher::new();
+        batcher.push(sprite(1, 0)); // short run: indexed
+        for _ in 0..100 {
+            batcher.push(sprite(2, 1)); // long plain run: instanced
+        }
+        for i in 0..80 {
+            let mut s = sprite(3, 2); // long run with one rotated sprite: indexed
+            if i == 40 {
+                s.rotation = 1.0;
+            }
+            batcher.push(s);
+        }
+        batcher.push(sprite(2, 3)); // same texture as the instanced run, later
+        let batches = batcher.build_hybrid(64);
+        assert_eq!(batches.len(), 4);
+        assert!(matches!(&batches[0], DrawBatch::Indexed(b) if b.texture_id == TextureId(1)));
+        assert_eq!(
+            batches[1],
+            DrawBatch::Instanced(InstancedBatch {
+                texture_id: TextureId(2),
+                blend: BlendMode::Normal,
+                instance_offset: 0,
+                instance_count: 100,
+            })
+        );
+        assert!(matches!(&batches[2], DrawBatch::Indexed(b) if b.index_count == 80 * 6));
+        assert!(matches!(&batches[3], DrawBatch::Indexed(b) if b.texture_id == TextureId(2)));
+        assert_eq!(batcher.instances().len(), 100);
+        // The indexed batches index into one shared vertex buffer.
+        assert_eq!(batcher.vertices().len(), (1 + 80 + 1) * 4);
+    }
+
+    #[test]
+    fn a_threshold_out_of_reach_keeps_everything_indexed() {
+        let mut batcher = SpriteBatcher::new();
+        for _ in 0..200 {
+            batcher.push(sprite(2, 0));
+        }
+        let batches = batcher.build_hybrid(u32::MAX);
+        assert!(batches.iter().all(|b| matches!(b, DrawBatch::Indexed(_))));
+        assert!(batcher.instances().is_empty());
     }
 
     #[test]

@@ -47,6 +47,15 @@ Notable changes per release. Format loosely follows
   - `GameContext::viewport_info()` / `DrawContext::viewport_info()`.
 - **`examples/raster_art`** shows all of the above.
 
+### Added — GPU instancing
+
+- **Long sprite runs are drawn instanced.** A run of at least
+  `Renderer::instancing_threshold` (default 64) unrotated sprites that share a
+  texture and blend mode is drawn with one instanced call over a unit quad,
+  in the world and UI passes; other runs stay indexed, in painter's order.
+  `InstanceData` and `InstancedBatch` existed before, but nothing built them.
+  Tile layers are the typical case.
+
 ### Added — minimap rendering
 
 - **`DrawContext::draw_minimap`** draws an `amigo_render::Minimap` over a

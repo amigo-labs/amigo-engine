@@ -2,9 +2,14 @@ use crate::blend::BlendMode;
 use crate::blit::BlitPipeline;
 use crate::camera::Camera;
 use crate::font::{FONT_PAGE_SIZE, FontPage};
+use crate::instancing::{
+    DEFAULT_INSTANCING_THRESHOLD, INSTANCED_SPRITE_SHADER, InstanceBuffer, InstanceData,
+    QUAD_CORNERS, QUAD_INDICES, quad_desc,
+};
 use crate::lighting::LightingState;
 use crate::lighting_pipeline::LightingPipeline;
 use crate::post_process::PostProcessPipeline;
+use crate::sprite_batcher::DrawBatch;
 use crate::sprite_batcher::SpriteBatcher;
 use crate::texture::{Texture, TextureId, TextureIdAllocator};
 use crate::vertex::Vertex;
@@ -66,6 +71,16 @@ pub struct Renderer {
     /// The world and UI passes share them: both render into scene-format
     /// targets with the same layout.
     pub pipelines: [wgpu::RenderPipeline; 3],
+    /// The instanced sprite pipeline per blend mode, for long plain runs.
+    instanced_pipelines: [wgpu::RenderPipeline; 3],
+    quad_vertices: wgpu::Buffer,
+    quad_indices: wgpu::Buffer,
+    world_instances: InstanceBuffer,
+    ui_instances: InstanceBuffer,
+    /// Runs of at least this many same-texture, same-blend plain sprites are
+    /// drawn with one instanced call. Default
+    /// [`DEFAULT_INSTANCING_THRESHOLD`]; `u32::MAX` turns instancing off.
+    pub instancing_threshold: u32,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     /// Screen-space projection for the UI pass.
@@ -346,6 +361,50 @@ impl Renderer {
             })
         });
 
+        let instanced_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("instanced_sprite_shader"),
+            source: wgpu::ShaderSource::Wgsl(INSTANCED_SPRITE_SHADER.into()),
+        });
+        let instanced_pipelines = BlendMode::ALL.map(|mode| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(&format!("instanced_sprite_pipeline_{mode:?}")),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &instanced_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(quad_desc()), Some(InstanceData::desc())],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &instanced_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(mode.blend_state()),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        });
+        let quad_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("instanced_quad_vertices"),
+            contents: bytemuck::cast_slice(&QUAD_CORNERS),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let quad_indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("instanced_quad_indices"),
+            contents: bytemuck::cast_slice(&QUAD_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let world_instances = InstanceBuffer::new(&device, 1024);
+        let ui_instances = InstanceBuffer::new(&device, 64);
+
         // Create white fallback texture
         let white_texture = Texture::white_pixel(&device, &queue, &texture_bind_group_layout);
         let white_id = white_texture.id;
@@ -383,6 +442,12 @@ impl Renderer {
             surface,
             surface_config,
             pipelines,
+            instanced_pipelines,
+            quad_vertices,
+            quad_indices,
+            world_instances,
+            ui_instances,
+            instancing_threshold: DEFAULT_INSTANCING_THRESHOLD,
             uniform_buffer,
             uniform_bind_group,
             ui_uniform_buffer,
@@ -636,6 +701,9 @@ impl Renderer {
                 label: Some("render_encoder"),
             });
         self.record_scene(&mut encoder);
+        // The next frame writes the other instance buffers.
+        self.world_instances.flip();
+        self.ui_instances.flip();
         // Last: scale the finished scene, UI included, into the window. An
         // editor overlay drawn on `view` afterwards stays at window resolution.
         self.blit
@@ -666,36 +734,15 @@ impl Renderer {
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&proj_flat));
 
-        // Build sprite batches
-        let batches = self.batcher.build();
-        self.draw_call_count = batches.len() as u32;
-
-        // Create vertex and index buffers
-        let vertex_buffer = if !self.batcher.vertices().is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("sprite_vertex_buffer"),
-                        contents: bytemuck::cast_slice(self.batcher.vertices()),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-            )
-        } else {
-            None
-        };
-
-        let index_buffer = if !self.batcher.indices().is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("sprite_index_buffer"),
-                        contents: bytemuck::cast_slice(self.batcher.indices()),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-            )
-        } else {
-            None
-        };
+        // Build sprite batches: long plain runs instanced, the rest indexed.
+        let world = prepare_draws(
+            &self.device,
+            &self.queue,
+            &mut self.batcher,
+            &mut self.world_instances,
+            self.instancing_threshold,
+        );
+        self.draw_call_count = world.batches.len() as u32;
 
         // Stage chain, per conventions A.6: sprites -> lighting -> post -> UI,
         // all into the scene target. Each inactive stage drops out of the
@@ -734,29 +781,13 @@ impl Renderer {
                 multiview_mask: None,
             });
 
-            if let (Some(vb), Some(ib)) = (&vertex_buffer, &index_buffer) {
-                render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, vb.slice(..));
-                render_pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-
-                let mut blend = None;
-                for batch in &batches {
-                    if blend != Some(batch.blend) {
-                        render_pass.set_pipeline(&self.pipelines[batch.blend.index()]);
-                        blend = Some(batch.blend);
-                    }
-                    if let Some(texture) = self.textures.get(&batch.texture_id) {
-                        render_pass.set_bind_group(1, &texture.bind_group, &[]);
-                        render_pass.draw_indexed(
-                            batch.index_offset..batch.index_offset + batch.index_count,
-                            0,
-                            0..1,
-                        );
-                    } else {
-                        warn!("Missing texture {:?}", batch.texture_id);
-                    }
-                }
-            }
+            record_draws(
+                &mut render_pass,
+                &world,
+                self.world_instances.buffer(),
+                &self.sprite_resources(),
+                &self.uniform_bind_group,
+            );
         }
 
         if lighting_enabled {
@@ -792,11 +823,20 @@ impl Renderer {
     /// A no-op when nothing queued UI this frame, so games that draw no HUD pay
     /// only for the emptiness check.
     fn draw_ui_pass(&mut self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
-        let batches = self.ui_batcher.build();
-        if batches.is_empty() || self.ui_batcher.vertices().is_empty() {
+        if self.ui_batcher.sprite_count() == 0 {
             return;
         }
-        self.draw_call_count += batches.len() as u32;
+        let ui = prepare_draws(
+            &self.device,
+            &self.queue,
+            &mut self.ui_batcher,
+            &mut self.ui_instances,
+            self.instancing_threshold,
+        );
+        if ui.batches.is_empty() {
+            return;
+        }
+        self.draw_call_count += ui.batches.len() as u32;
 
         // Orthographic projection over the virtual resolution, y down, with no
         // camera translation, zoom or shake.
@@ -825,21 +865,6 @@ impl Renderer {
         self.queue
             .write_buffer(&self.ui_uniform_buffer, 0, bytemuck::cast_slice(&proj));
 
-        let vertex_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("ui_vertex_buffer"),
-                contents: bytemuck::cast_slice(self.ui_batcher.vertices()),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-        let index_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("ui_index_buffer"),
-                contents: bytemuck::cast_slice(self.ui_batcher.indices()),
-                usage: wgpu::BufferUsages::INDEX,
-            });
-
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ui_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -857,26 +882,23 @@ impl Renderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        record_draws(
+            &mut pass,
+            &ui,
+            self.ui_instances.buffer(),
+            &self.sprite_resources(),
+            &self.ui_uniform_bind_group,
+        );
+    }
 
-        pass.set_bind_group(0, &self.ui_uniform_bind_group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        let mut blend = None;
-        for batch in &batches {
-            if blend != Some(batch.blend) {
-                pass.set_pipeline(&self.pipelines[batch.blend.index()]);
-                blend = Some(batch.blend);
-            }
-            if let Some(texture) = self.textures.get(&batch.texture_id) {
-                pass.set_bind_group(1, &texture.bind_group, &[]);
-                pass.draw_indexed(
-                    batch.index_offset..batch.index_offset + batch.index_count,
-                    0,
-                    0..1,
-                );
-            } else {
-                warn!("UI pass: missing texture {:?}", batch.texture_id);
-            }
+    /// Pipelines, the unit quad and the textures the sprite passes draw with.
+    fn sprite_resources(&self) -> SpriteResources<'_> {
+        SpriteResources {
+            pipelines: &self.pipelines,
+            instanced_pipelines: &self.instanced_pipelines,
+            quad_vertices: &self.quad_vertices,
+            quad_indices: &self.quad_indices,
+            textures: &self.textures,
         }
     }
 
@@ -1008,6 +1030,121 @@ impl Renderer {
 
     pub fn window_size(&self) -> (u32, u32) {
         (self.surface_config.width, self.surface_config.height)
+    }
+}
+
+/// A frame's sprite draws, built and uploaded.
+struct PreparedDraws {
+    batches: Vec<DrawBatch>,
+    vertex_buffer: Option<wgpu::Buffer>,
+    index_buffer: Option<wgpu::Buffer>,
+}
+
+/// What recording sprite draws needs from the renderer.
+struct SpriteResources<'a> {
+    pipelines: &'a [wgpu::RenderPipeline; 3],
+    instanced_pipelines: &'a [wgpu::RenderPipeline; 3],
+    quad_vertices: &'a wgpu::Buffer,
+    quad_indices: &'a wgpu::Buffer,
+    textures: &'a FxHashMap<TextureId, Texture>,
+}
+
+/// Build `batcher`'s draws and upload their vertices, indices and instances.
+fn prepare_draws(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    batcher: &mut SpriteBatcher,
+    instances: &mut InstanceBuffer,
+    threshold: u32,
+) -> PreparedDraws {
+    let batches = batcher.build_hybrid(threshold);
+    let buffer = |label, contents: &[u8], usage| {
+        (!contents.is_empty()).then(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents,
+                usage,
+            })
+        })
+    };
+    let vertex_buffer = buffer(
+        "sprite_vertex_buffer",
+        bytemuck::cast_slice(batcher.vertices()),
+        wgpu::BufferUsages::VERTEX,
+    );
+    let index_buffer = buffer(
+        "sprite_index_buffer",
+        bytemuck::cast_slice(batcher.indices()),
+        wgpu::BufferUsages::INDEX,
+    );
+    instances.upload(device, queue, batcher.instances());
+    PreparedDraws {
+        batches,
+        vertex_buffer,
+        index_buffer,
+    }
+}
+
+/// Record `draws` into `pass` in order, switching between the indexed and the
+/// instanced pipeline of each blend mode as the batches require.
+fn record_draws(
+    pass: &mut wgpu::RenderPass<'_>,
+    draws: &PreparedDraws,
+    instance_buffer: &wgpu::Buffer,
+    resources: &SpriteResources<'_>,
+    uniform_bind_group: &wgpu::BindGroup,
+) {
+    #[derive(PartialEq)]
+    enum Bound {
+        Indexed(BlendMode),
+        Instanced(BlendMode),
+    }
+    pass.set_bind_group(0, uniform_bind_group, &[]);
+    let mut bound: Option<Bound> = None;
+    for batch in &draws.batches {
+        let (texture_id, wanted) = match batch {
+            DrawBatch::Indexed(b) => (b.texture_id, Bound::Indexed(b.blend)),
+            DrawBatch::Instanced(b) => (b.texture_id, Bound::Instanced(b.blend)),
+        };
+        let Some(texture) = resources.textures.get(&texture_id) else {
+            warn!("Missing texture {:?}", texture_id);
+            continue;
+        };
+        if bound.as_ref() != Some(&wanted) {
+            match &wanted {
+                Bound::Indexed(blend) => {
+                    let (Some(vb), Some(ib)) = (&draws.vertex_buffer, &draws.index_buffer) else {
+                        continue;
+                    };
+                    pass.set_pipeline(&resources.pipelines[blend.index()]);
+                    pass.set_vertex_buffer(0, vb.slice(..));
+                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                }
+                Bound::Instanced(blend) => {
+                    pass.set_pipeline(&resources.instanced_pipelines[blend.index()]);
+                    pass.set_vertex_buffer(0, resources.quad_vertices.slice(..));
+                    pass.set_vertex_buffer(1, instance_buffer.slice(..));
+                    pass.set_index_buffer(
+                        resources.quad_indices.slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
+                }
+            }
+            bound = Some(wanted);
+        }
+        pass.set_bind_group(1, &texture.bind_group, &[]);
+        match batch {
+            DrawBatch::Indexed(b) => {
+                pass.draw_indexed(b.index_offset..b.index_offset + b.index_count, 0, 0..1);
+            }
+            DrawBatch::Instanced(b) => {
+                pass.draw_indexed(
+                    0..QUAD_INDICES.len() as u32,
+                    0,
+                    b.instance_offset..b.instance_offset + b.instance_count,
+                );
+            }
+        }
     }
 }
 
