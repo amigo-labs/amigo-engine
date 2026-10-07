@@ -99,7 +99,7 @@ pub use amigo_ui;
 pub use amigo_audio;
 
 pub use config::EngineConfig;
-pub use context::{DrawContext, GameContext, LevelReloaded};
+pub use context::{DrawContext, DrawSpace, GameContext, LevelReloaded};
 pub use engine::{Engine, EngineBuilder, Plugin, PluginContext};
 pub use stack::GameStack;
 
@@ -203,7 +203,7 @@ pub trait Game: 'static {
 pub mod prelude {
     pub use crate::net::{NetEvent, NetStatus};
     pub use crate::{
-        DrawContext, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack,
+        DrawContext, DrawSpace, Engine, EngineBuilder, EngineConfig, Game, GameContext, GameStack,
         LevelReloaded, Plugin, PluginContext, SceneAction,
     };
     pub use amigo_animation::*;

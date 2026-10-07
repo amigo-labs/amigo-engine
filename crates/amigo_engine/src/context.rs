@@ -342,16 +342,60 @@ impl GameContext {
     }
 }
 
+/// Which coordinate space [`DrawContext`] draws into.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DrawSpace {
+    /// World coordinates, through the camera, lighting and post-processing.
+    #[default]
+    World,
+    /// Virtual-resolution screen coordinates, origin top-left, no camera,
+    /// drawn in the UI pass after post-processing (conventions A.6).
+    Screen,
+}
+
+/// What `Game::draw` asked of this frame's camera. The engine applies it to
+/// the projection after `draw` returns; it never reaches `GameContext::camera`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct FrameOverrides {
+    pub camera_position: Option<RenderVec2>,
+    pub camera_offset: RenderVec2,
+}
+
+impl FrameOverrides {
+    /// Point `camera` at the overridden position for this frame and return
+    /// the position to restore afterwards.
+    pub(crate) fn apply(&self, camera: &mut Camera) -> RenderVec2 {
+        let saved = camera.position;
+        let base = self.camera_position.unwrap_or(saved);
+        camera.position =
+            RenderVec2::new(base.x + self.camera_offset.x, base.y + self.camera_offset.y);
+        saved
+    }
+}
+
 /// Context passed to Game::draw() for rendering.
 pub struct DrawContext<'a> {
     pub sprites: &'a mut Vec<SpriteInstance>,
+    /// The camera position this frame renders with: shake, a draw-time
+    /// override and offset included (see [`camera_position`](Self::camera_position)).
     pub camera_pos: RenderVec2,
     pub virtual_width: f32,
     pub virtual_height: f32,
     pub alpha: f32,
     game_ctx: &'a GameContext,
     white_texture: TextureId,
+    /// The visible world rectangle, before any parallax shift.
     view: Rect,
+    screen: Option<&'a mut Vec<SpriteInstance>>,
+    warned_no_screen: bool,
+    space: DrawSpace,
+    z: i32,
+    parallax: (f32, f32),
+    /// The camera's position as of `update`, without shake.
+    camera_base: RenderVec2,
+    /// The camera's built-in shake this frame.
+    camera_shake: RenderVec2,
+    overrides: FrameOverrides,
 }
 
 impl<'a> DrawContext<'a> {
@@ -379,7 +423,27 @@ impl<'a> DrawContext<'a> {
                 virtual_width,
                 virtual_height,
             ),
+            screen: None,
+            warned_no_screen: false,
+            space: DrawSpace::World,
+            z: 0,
+            parallax: (1.0, 1.0),
+            camera_base: camera_pos,
+            camera_shake: RenderVec2::ZERO,
+            overrides: FrameOverrides::default(),
         }
+    }
+
+    /// Take position, shake, zoom and view from `camera`, as the engine does
+    /// for every frame.
+    pub fn with_camera(mut self, camera: &Camera) -> Self {
+        self.camera_base = camera.position;
+        self.camera_shake = camera.shake_offset();
+        self.camera_pos = camera.effective_position();
+        self.virtual_width = camera.virtual_width;
+        self.virtual_height = camera.virtual_height;
+        self.view = camera.view_rect();
+        self
     }
 
     /// Set the visible world rectangle (zoom and shake included) that
@@ -389,15 +453,166 @@ impl<'a> DrawContext<'a> {
         self
     }
 
-    /// The visible world rectangle. Draws outside it are wasted work.
+    /// Attach the list that screen-space draws go into. The engine always
+    /// attaches one; a `DrawContext` built without it (in a test, say) drops
+    /// screen-space draws and logs one warning.
+    pub fn with_screen_list(mut self, screen: &'a mut Vec<SpriteInstance>) -> Self {
+        self.screen = Some(screen);
+        self
+    }
+
+    /// The visible rectangle in the coordinates of the current draw space:
+    /// the screen `(0, 0, virtual_w, virtual_h)` in [`DrawSpace::Screen`], the
+    /// world view (shifted against the parallax factor) in [`DrawSpace::World`].
+    /// Draws outside it are wasted work.
     pub fn view_rect(&self) -> Rect {
-        self.view
+        match self.space {
+            DrawSpace::Screen => Rect::new(0.0, 0.0, self.virtual_width, self.virtual_height),
+            DrawSpace::World => {
+                let (dx, dy) = self.parallax_shift();
+                Rect::new(self.view.x - dx, self.view.y - dy, self.view.w, self.view.h)
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Draw space, z and parallax
+    // -----------------------------------------------------------------------
+
+    /// Route every following draw call into `space`.
+    pub fn set_space(&mut self, space: DrawSpace) {
+        self.space = space;
+    }
+
+    /// The current draw space.
+    pub fn space(&self) -> DrawSpace {
+        self.space
+    }
+
+    /// Run `f` with `space` active, then restore the previous space.
+    pub fn in_space<R>(&mut self, space: DrawSpace, f: impl FnOnce(&mut Self) -> R) -> R {
+        let previous = self.space;
+        self.space = space;
+        let result = f(self);
+        self.space = previous;
+        result
+    }
+
+    /// Default z-order for the following draws that do not take one
+    /// explicitly (`draw_sprite`, `draw_animated`, `draw_rect`, tilemaps and
+    /// shapes). Starts at 0. Text keeps its own z.
+    pub fn set_z(&mut self, z_order: i32) {
+        self.z = z_order;
+    }
+
+    /// The current default z-order.
+    pub fn z(&self) -> i32 {
+        self.z
+    }
+
+    /// World draws after this call move at `fx`/`fy` times the camera's
+    /// speed: 1.0 is the world (default), 0.0 is fixed to the screen, 0.25 a
+    /// distant layer. Ignored in [`DrawSpace::Screen`]. A non-finite factor is
+    /// treated as 1.0.
+    pub fn set_parallax(&mut self, fx: f32, fy: f32) {
+        let finite = |f: f32| if f.is_finite() { f } else { 1.0 };
+        self.parallax = (finite(fx), finite(fy));
+    }
+
+    /// The current parallax factor.
+    pub fn parallax(&self) -> (f32, f32) {
+        self.parallax
+    }
+
+    /// How far a world draw is shifted at the current parallax factor.
+    fn parallax_shift(&self) -> (f32, f32) {
+        let (fx, fy) = self.parallax;
+        let cam = self.camera_pos;
+        (cam.x * (1.0 - fx), cam.y * (1.0 - fy))
+    }
+
+    /// Queue one sprite in the current space, applying parallax in the world.
+    /// Every draw call goes through here.
+    pub fn push(&mut self, mut sprite: SpriteInstance) {
+        match self.space {
+            DrawSpace::World => {
+                let (dx, dy) = self.parallax_shift();
+                if dx != 0.0 || dy != 0.0 {
+                    sprite.x += dx;
+                    sprite.y += dy;
+                    if let Some(geometry) = &mut sprite.geometry {
+                        for corner in &mut geometry.corners {
+                            corner[0] += dx;
+                            corner[1] += dy;
+                        }
+                    }
+                }
+                self.sprites.push(sprite);
+            }
+            DrawSpace::Screen => match &mut self.screen {
+                Some(screen) => screen.push(sprite),
+                None => {
+                    if !self.warned_no_screen {
+                        tracing::warn!(
+                            "DrawContext has no screen list: screen-space draws are dropped"
+                        );
+                        self.warned_no_screen = true;
+                    }
+                }
+            },
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Camera from draw()
+    // -----------------------------------------------------------------------
+
+    /// Render this frame with the camera centred on `center` instead of the
+    /// position the camera reached in `update`. Affects only this frame's
+    /// projection; `GameContext::camera` is not changed. Call it before
+    /// drawing anything, so culling and parallax see the new camera.
+    pub fn set_camera_position(&mut self, center: RenderVec2) {
+        self.overrides.camera_position = Some(center);
+        self.refresh_camera();
+    }
+
+    /// Add `offset` to this frame's camera position, e.g. a game's own shake.
+    /// Added after `set_camera_position` and after the camera's built-in shake.
+    pub fn set_camera_offset(&mut self, offset: RenderVec2) {
+        self.overrides.camera_offset = offset;
+        self.refresh_camera();
+    }
+
+    /// The camera position this frame renders with (shake and offset
+    /// included), after any override.
+    pub fn camera_position(&self) -> RenderVec2 {
+        let base = self.overrides.camera_position.unwrap_or(self.camera_base);
+        RenderVec2::new(
+            base.x + self.camera_shake.x + self.overrides.camera_offset.x,
+            base.y + self.camera_shake.y + self.overrides.camera_offset.y,
+        )
+    }
+
+    /// What `draw` asked of the camera, for the engine to apply.
+    pub(crate) fn frame_overrides(&self) -> FrameOverrides {
+        self.overrides
+    }
+
+    fn refresh_camera(&mut self) {
+        self.camera_pos = self.camera_position();
+        self.view = Rect::new(
+            self.camera_pos.x - self.view.w / 2.0,
+            self.camera_pos.y - self.view.h / 2.0,
+            self.view.w,
+            self.view.h,
+        );
     }
 
     /// Draw a sprite at a position.
     pub fn draw_sprite(&mut self, name: &str, pos: RenderVec2) {
         if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
-            self.sprites.push(SpriteInstance {
+            self.push(SpriteInstance {
+                z_order: self.z,
                 ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32, h as f32)
             });
         }
@@ -410,10 +625,11 @@ impl<'a> DrawContext<'a> {
     {
         if let Some((tex_id, w, h)) = self.game_ctx.find_sprite_texture(name) {
             let mut instance = SpriteInstance {
+                z_order: self.z,
                 ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32, h as f32)
             };
             f(&mut instance);
-            self.sprites.push(instance);
+            self.push(instance);
         }
     }
 
@@ -457,16 +673,18 @@ impl<'a> DrawContext<'a> {
             uv_y: uv.y,
             uv_w: uv.w,
             uv_h: uv.h,
+            z_order: self.z,
             ..SpriteInstance::new(tex_id, pos.x, pos.y, w as f32 * uv.w, h as f32 * uv.h)
         };
         f(&mut instance);
-        self.sprites.push(instance);
+        self.push(instance);
     }
 
     /// Draw a colored rectangle.
     pub fn draw_rect(&mut self, rect: Rect, color: Color) {
-        self.sprites.push(SpriteInstance {
+        self.push(SpriteInstance {
             tint: color,
+            z_order: self.z,
             ..SpriteInstance::new(self.white_texture, rect.x, rect.y, rect.w, rect.h)
         });
     }
@@ -492,7 +710,7 @@ impl<'a> DrawContext<'a> {
         for ch in text.chars() {
             if let Some(glyph) = font.glyph_cached(ch) {
                 if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.sprites.push(SpriteInstance {
+                    self.push(SpriteInstance {
                         uv_x: glyph.uv_x,
                         uv_y: glyph.uv_y,
                         uv_w: glyph.uv_w,
@@ -536,7 +754,7 @@ impl<'a> DrawContext<'a> {
         for ch in text.chars() {
             if let Some(glyph) = font.glyph_cached(ch) {
                 if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.sprites.push(SpriteInstance {
+                    self.push(SpriteInstance {
                         uv_x: glyph.uv_x,
                         uv_y: glyph.uv_y,
                         uv_w: glyph.uv_w,
@@ -571,7 +789,7 @@ impl<'a> DrawContext<'a> {
         for ch in text.chars() {
             if let Some(glyph) = font.glyph_cached(ch) {
                 if glyph.width > 0.0 && glyph.height > 0.0 {
-                    self.sprites.push(SpriteInstance {
+                    self.push(SpriteInstance {
                         uv_x: glyph.uv_x,
                         uv_y: glyph.uv_y,
                         uv_w: glyph.uv_w,
@@ -628,20 +846,31 @@ impl<'a> DrawContext<'a> {
     ) where
         F: Fn(TileId) -> Option<Color>,
     {
-        let Some((xs, ys)) = self.visible_tiles(layer, tile_w, tile_h) else {
-            return;
-        };
-        for y in ys {
-            for x in xs.clone() {
-                let tile_id = layer.get(x, y);
-                if let Some(color) = color_fn(tile_id) {
-                    self.draw_rect(
-                        Rect::new(x as f32 * tile_w, y as f32 * tile_h, tile_w, tile_h),
-                        color,
-                    );
+        self.with_layer_parallax(layer, |draw| {
+            let Some((xs, ys)) = draw.visible_tiles(layer, tile_w, tile_h) else {
+                return;
+            };
+            for y in ys {
+                for x in xs.clone() {
+                    let tile_id = layer.get(x, y);
+                    if let Some(color) = color_fn(tile_id) {
+                        draw.draw_rect(
+                            Rect::new(x as f32 * tile_w, y as f32 * tile_h, tile_w, tile_h),
+                            color,
+                        );
+                    }
                 }
             }
-        }
+        });
+    }
+
+    /// Run `f` at the layer's own `scroll_factor_x`/`scroll_factor_y` in
+    /// place of the context's parallax factor.
+    fn with_layer_parallax(&mut self, layer: &TileLayer, f: impl FnOnce(&mut Self)) {
+        let previous = self.parallax;
+        self.set_parallax(layer.scroll_factor_x, layer.scroll_factor_y);
+        f(self);
+        self.parallax = previous;
     }
 
     /// Draw a tilemap layer using sprites from a tileset texture.
@@ -656,6 +885,19 @@ impl<'a> DrawContext<'a> {
     /// inside [`view_rect`](Self::view_rect) are drawn, and a hidden layer
     /// draws nothing.
     pub fn draw_tilemap_sprite(
+        &mut self,
+        layer: &TileLayer,
+        tile_w: f32,
+        tile_h: f32,
+        tileset_name: &str,
+        columns: u32,
+    ) {
+        self.with_layer_parallax(layer, |draw| {
+            draw.draw_tileset_tiles(layer, tile_w, tile_h, tileset_name, columns);
+        });
+    }
+
+    fn draw_tileset_tiles(
         &mut self,
         layer: &TileLayer,
         tile_w: f32,
@@ -691,11 +933,12 @@ impl<'a> DrawContext<'a> {
                 let col = tid % columns;
                 let row = tid / columns;
 
-                self.sprites.push(SpriteInstance {
+                self.push(SpriteInstance {
                     uv_x: col as f32 * uv_tile_w,
                     uv_y: row as f32 * uv_tile_h,
                     uv_w: uv_tile_w,
                     uv_h: uv_tile_h,
+                    z_order: self.z,
                     ..SpriteInstance::new(
                         tex_id,
                         x as f32 * tile_w,
@@ -730,10 +973,34 @@ impl<'a> DrawContext<'a> {
             let last = last.min(count as f32).max(0.0);
             (first < last).then_some(first as u32..last as u32)
         };
-        let view = self.view;
+        let view = self.view_rect();
         Some((
             span(view.x, view.w, tile_w, layer.width)?,
             span(view.y, view.h, tile_h, layer.height)?,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_overrides_move_the_camera_and_hand_back_its_position() {
+        let mut camera = Camera::new(320.0, 180.0);
+        camera.position = RenderVec2::new(10.0, 20.0);
+
+        let none = FrameOverrides::default();
+        assert_eq!(none.apply(&mut camera), RenderVec2::new(10.0, 20.0));
+        assert_eq!(camera.position, RenderVec2::new(10.0, 20.0));
+
+        let overrides = FrameOverrides {
+            camera_position: Some(RenderVec2::new(100.0, 50.0)),
+            camera_offset: RenderVec2::new(1.0, 2.0),
+        };
+        let saved = overrides.apply(&mut camera);
+        assert_eq!(camera.position, RenderVec2::new(101.0, 52.0));
+        camera.position = saved;
+        assert_eq!(camera.position, RenderVec2::new(10.0, 20.0));
     }
 }

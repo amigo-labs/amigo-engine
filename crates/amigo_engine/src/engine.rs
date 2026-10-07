@@ -1,6 +1,6 @@
 use crate::Game;
 use crate::config::EngineConfig;
-use crate::context::{DrawContext, GameContext};
+use crate::context::{DrawContext, DrawSpace, GameContext};
 use crate::net::{self, LaunchNet};
 use crate::replay::{self, LaunchReplay};
 use crate::splash::{self, SplashState};
@@ -790,6 +790,9 @@ struct EngineState {
     debug: DebugOverlay,
     hot_reloader: Option<HotReloader>,
     sprite_draw_list: Vec<SpriteInstance>,
+    /// The game's screen-space draws (`DrawSpace::Screen`), rebuilt each
+    /// frame and drawn in the UI pass before the widgets.
+    screen_draw_list: Vec<SpriteInstance>,
     /// Sprites for the screen-space UI pass, rebuilt each frame.
     ui_draw_list: Vec<SpriteInstance>,
     last_frame: Instant,
@@ -1016,6 +1019,7 @@ impl ApplicationHandler for EngineApp {
             debug: DebugOverlay::new(),
             hot_reloader,
             sprite_draw_list: Vec::new(),
+            screen_draw_list: Vec::new(),
             ui_draw_list: Vec::new(),
             last_frame: Instant::now(),
             accumulator: 0.0,
@@ -1455,27 +1459,34 @@ impl ApplicationHandler for EngineApp {
 
                 // Render
                 state.sprite_draw_list.clear();
+                state.screen_draw_list.clear();
+                let restore_camera;
                 {
                     let _draw_span = info_span!("game_draw").entered();
-                    let camera_pos = state.renderer.camera.effective_position();
-                    let vw = state.renderer.camera.virtual_width;
-                    let vh = state.renderer.camera.virtual_height;
                     let alpha = state.game_ctx.time.alpha;
                     let white_tex = state.renderer.white_texture_id;
 
                     let mut draw_ctx = DrawContext::new(
                         &mut state.sprite_draw_list,
                         &state.game_ctx,
-                        camera_pos,
-                        vw,
-                        vh,
+                        state.renderer.camera.effective_position(),
+                        state.renderer.camera.virtual_width,
+                        state.renderer.camera.virtual_height,
                         alpha,
                         white_tex,
                     )
-                    .with_view(state.renderer.camera.view_rect());
+                    .with_camera(&state.renderer.camera)
+                    .with_screen_list(&mut state.screen_draw_list);
                     if let Some(active) = self.stack.top() {
                         active.draw(&mut draw_ctx);
                     }
+                    // A camera set from `draw` holds for this frame's
+                    // projection, and for everything drawn after the game.
+                    let overrides = draw_ctx.frame_overrides();
+                    draw_ctx.set_space(DrawSpace::World);
+                    draw_ctx.set_parallax(1.0, 1.0);
+                    draw_ctx.set_z(0);
+                    restore_camera = overrides.apply(&mut state.renderer.camera);
 
                     // The level being edited, over the game: tile preview,
                     // grid, entity markers and cursor.
@@ -1518,36 +1529,35 @@ impl ApplicationHandler for EngineApp {
                 }
                 let show_entity_ids = state.debug.visible && state.debug.show_entity_ids;
                 if !overlay_lines.is_empty() || show_entity_ids {
-                    let view = state.renderer.camera.view_rect();
-                    let camera_pos = state.renderer.camera.effective_position();
-                    let vw = state.renderer.camera.virtual_width;
-                    let vh = state.renderer.camera.virtual_height;
                     let mut draw_ctx = DrawContext::new(
                         &mut state.sprite_draw_list,
                         &state.game_ctx,
-                        camera_pos,
-                        vw,
-                        vh,
+                        state.renderer.camera.effective_position(),
+                        state.renderer.camera.virtual_width,
+                        state.renderer.camera.virtual_height,
                         state.game_ctx.time.alpha,
                         white_tex,
                     )
-                    .with_view(view);
+                    .with_camera(&state.renderer.camera)
+                    .with_screen_list(&mut state.screen_draw_list);
 
-                    // Everything draws in world space, so anchor to the visible
-                    // rect's top-left instead of (0,0) — otherwise the overlay
-                    // scrolls off with the camera.
-                    let (x, mut y) = (view.x + 4.0, view.y + 4.0);
-                    let line_height = 9.0;
-                    for (text, color) in &overlay_lines {
-                        draw_ctx.draw_text(text, x, y, *color);
-                        y += line_height;
-                    }
+                    // The text panel is screen space, so it neither scrolls
+                    // with the camera nor goes through post-processing.
+                    draw_ctx.in_space(DrawSpace::Screen, |draw| {
+                        let (x, mut y) = (4.0, 4.0);
+                        let line_height = 9.0;
+                        for (text, color) in &overlay_lines {
+                            draw.draw_text(text, x, y, *color);
+                            y += line_height;
+                        }
+                    });
 
                     // F5: entity ids at their positions. This is the one visual
                     // debug layer the engine can draw from its own data — grid,
                     // collision and paths all need tilemap/collision state that
                     // lives in game code, so those flags stay for games to read.
                     if show_entity_ids {
+                        let view = draw_ctx.view_rect();
                         for (id, pos) in state.game_ctx.world.positions.iter() {
                             let (px, py) = (pos.0.x.to_num::<f32>(), pos.0.y.to_num::<f32>());
                             if px < view.x
@@ -1568,8 +1578,10 @@ impl ApplicationHandler for EngineApp {
                 }
 
                 // UI goes into its own batch, drawn after post-processing in
-                // screen space (conventions A.6). `UiDrawCommand` had no consumer
-                // before this, so every widget a game built drew nothing.
+                // screen space (conventions A.6): the game's screen-space
+                // draws first, then the `ctx.ui` widgets, so at equal z the
+                // stable sort puts widgets on top. `UiDrawCommand` had no
+                // consumer before, so every widget a game built drew nothing.
                 state.ui_draw_list.clear();
                 crate::ui_bridge::emit_ui_sprites(
                     state.game_ctx.ui.draw_commands(),
@@ -1577,7 +1589,7 @@ impl ApplicationHandler for EngineApp {
                     &mut state.ui_draw_list,
                     white_tex,
                 );
-                for sprite in &state.ui_draw_list {
+                for sprite in state.screen_draw_list.iter().chain(&state.ui_draw_list) {
                     state.renderer.ui_batcher.push(sprite.clone());
                 }
 
@@ -1674,7 +1686,9 @@ impl ApplicationHandler for EngineApp {
                     s.snapshot.draw_calls = state.renderer.draw_call_count();
                 }
 
-                // Swap camera and lights back so game code sees them next tick.
+                // Swap camera and lights back so game code sees them next tick,
+                // without the position `draw` overrode for this frame.
+                state.renderer.camera.position = restore_camera;
                 std::mem::swap(&mut state.game_ctx.camera, &mut state.renderer.camera);
                 std::mem::swap(&mut state.game_ctx.lighting, &mut state.renderer.lighting);
 
