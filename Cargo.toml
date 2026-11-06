@@ -99,9 +99,9 @@ fontdue = "0.9"
 # Already in the tree through egui; licenses are allowed in deny.toml.
 epaint_default_fonts = "0.36"
 asefile = "0.3"
-egui = "0.36"
-egui-wgpu = "0.36"
-egui-winit = "0.36"
+egui = "0.37"
+egui-wgpu = "0.37"
+egui-winit = "0.37"
 ctrlc = "3"
 ureq = { version = "3", features = ["json"] }
 tracing-tracy = { version = "0.12", default-features = false }
