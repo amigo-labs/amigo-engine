@@ -131,7 +131,7 @@ In both modes no `git push` — pushing and merging is the user's job.
 ## Context
 
 Existing specs:
-!`grep -L '^## Acceptance criteria' docs/specs/*.md 2>/dev/null | sed 's/$/ (design spec)/'; grep -l '^## Acceptance criteria' docs/specs/*.md 2>/dev/null || echo "No feature specs yet"`
+!`grep -Li '^## Acceptance criteria' docs/specs/*.md 2>/dev/null | sed 's/$/ (design spec)/'; grep -li '^## Acceptance criteria' docs/specs/*.md 2>/dev/null || echo "No feature specs yet"`
 
 Commit mode:
 !`node .agents/skills/qa/scripts/commit-mode.mjs 2>/dev/null || echo "on"`
