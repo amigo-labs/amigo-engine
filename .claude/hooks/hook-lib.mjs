@@ -24,6 +24,7 @@ export {
   recordGreen,
   runGates,
   treeState,
+  uncommittedPaths,
 } from '../../.agents/skills/qa/scripts/lib.mjs';
 
 // Claude Code writes one JSON document to stdin. On Windows the stream's 'end'
