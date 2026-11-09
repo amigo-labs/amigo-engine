@@ -1,0 +1,9 @@
+{
+  "$comment": "Agent skills vendored from amigo-labs/skills. Update: node .agents/sync.mjs. Check: node .agents/sync.mjs --check. See https://github.com/amigo-labs/skills.",
+  "source": "https://github.com/amigo-labs/skills.git",
+  "ref": "main",
+  "skills": ["spec", "spec-build", "spec-check", "spec-extract", "spec-fix", "qa"],
+  "mirrors": [".claude/skills"],
+  "claudeHooks": true,
+  "agentsMd": ["spec-workflow"]
+}
