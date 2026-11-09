@@ -9,8 +9,10 @@
 // there, not in the copy.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Where the gate configuration lives, relative to the repository root, in lookup order. */
@@ -159,6 +161,171 @@ export function errorLines(output, max) {
     .filter(Boolean);
   const errors = [...new Set(lines.filter(line => ERROR_LINE.test(line)))];
   return (errors.length > 0 ? errors : lines.slice(-max)).slice(0, max);
+}
+
+function git(dir, args) {
+  const result = spawnSync('git', ['-C', dir, ...args], { encoding: 'buffer', timeout: 10000, maxBuffer: 64 * 1024 * 1024 });
+  return result.status === 0 ? result.stdout : null;
+}
+
+function nulSeparated(buffer) {
+  return (buffer?.toString('utf8').split('\0') ?? []).filter(Boolean).map(path => path.replaceAll('\\', '/'));
+}
+
+export function headCommit(dir) {
+  return git(dir, ['rev-parse', 'HEAD'])?.toString('utf8').trim() ?? null;
+}
+
+/** Repository-relative paths (forward slashes) of every uncommitted change, or null outside git. */
+export function uncommittedPaths(dir) {
+  const status = git(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+  if (status === null) return null;
+  const paths = [];
+  const entries = status.toString('utf8').split('\0');
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    if (entry.length < 4) continue;
+    paths.push(entry.slice(3));
+    // Renames and copies carry their original path as the next entry
+    if (entry[0] === 'R' || entry[0] === 'C') paths.push(entries[++index]);
+  }
+  return paths.filter(Boolean).map(path => path.replaceAll('\\', '/'));
+}
+
+/** Paths staged for the next commit; with `allTracked` also the unstaged changes of tracked files (`git commit -a`). */
+export function commitPaths(dir, { allTracked = false } = {}) {
+  const paths = new Set(nulSeparated(git(dir, ['diff', '--cached', '--name-only', '-z'])));
+  if (allTracked) for (const path of nulSeparated(git(dir, ['diff', '--name-only', '-z']))) paths.add(path);
+  return [...paths];
+}
+
+/**
+ * A fingerprint of the working tree: HEAD plus every uncommitted path and its
+ * content. Equal fingerprints mean nothing changed since the last check.
+ */
+export function treeState(dir) {
+  const head = git(dir, ['rev-parse', 'HEAD']) ?? Buffer.alloc(0);
+  const paths = uncommittedPaths(dir);
+  if (paths === null) return null;
+
+  const hash = createHash('sha256').update(head);
+  for (const filePath of paths) {
+    try {
+      hash.update(filePath).update(readFileSync(join(dir, filePath)));
+    } catch {
+      hash.update(filePath).update('<deleted>');
+    }
+  }
+  return { hash: hash.digest('hex'), dirty: paths.length > 0 };
+}
+
+/**
+ * Paths changed since `baseHead`: everything uncommitted plus what the commits
+ * since then touched. Without a base only the uncommitted paths count.
+ */
+export function changedPaths(dir, baseHead) {
+  const paths = new Set(uncommittedPaths(dir) ?? []);
+  if (baseHead) for (const path of nulSeparated(git(dir, ['diff', '--name-only', '-z', baseHead, 'HEAD']))) paths.add(path);
+  return [...paths];
+}
+
+/** Whether a gate concerns the given changes: no `paths` means always. */
+export function gateApplies(gate, paths) {
+  if (!Array.isArray(gate.paths)) return true;
+  return paths.some(path => gate.paths.some(prefix => path.startsWith(prefix)));
+}
+
+/** The `name` of a Cargo.toml's [package] section, or null for a workspace-only manifest. */
+function packageName(manifest) {
+  const lines = manifest.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.findIndex(line => line.trim() === '[package]');
+  if (start < 0) return null;
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim().startsWith('[')) break;
+    const match = line.match(/^\s*name\s*=\s*"([^"]+)"/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/** The Cargo package a repository path belongs to: the nearest Cargo.toml with a [package] above it. */
+function cargoPackageOf(dir, path, cache) {
+  let folder = posix.dirname(path);
+  while (true) {
+    if (!cache.has(folder)) {
+      let name = null;
+      try {
+        name = packageName(readFileSync(join(dir, folder, 'Cargo.toml'), 'utf8'));
+      } catch {
+        // no manifest here
+      }
+      cache.set(folder, name);
+    }
+    if (cache.get(folder)) return cache.get(folder);
+    if (folder === '.' || folder === '') return null;
+    folder = posix.dirname(folder);
+  }
+}
+
+/** The Cargo packages the given paths belong to, without `exclude`. Root files (Cargo.toml, Cargo.lock) belong to none. */
+export function cargoPackages(dir, paths, exclude = []) {
+  const cache = new Map();
+  const names = new Set();
+  for (const path of paths) {
+    if (!path.endsWith('.rs') && !path.endsWith('Cargo.toml')) continue;
+    const name = cargoPackageOf(dir, path, cache);
+    if (name && !exclude.includes(name)) names.add(name);
+  }
+  return [...names].sort();
+}
+
+/**
+ * Fills `{cargo-packages}` in gate commands with `-p <name>` for every Cargo
+ * package the changed paths belong to (minus the gate's `excludePackages`).
+ * A gate whose placeholder stays empty is dropped: nothing of it changed.
+ */
+export function expandGates(dir, gates, paths) {
+  const out = [];
+  for (const gate of gates) {
+    if (!gate.command.includes('{cargo-packages}')) {
+      out.push(gate);
+      continue;
+    }
+    const names = cargoPackages(dir, paths, gate.excludePackages ?? []);
+    if (names.length > 0) out.push({ ...gate, command: gate.command.replaceAll('{cargo-packages}', names.map(name => `-p ${name}`).join(' ')) });
+  }
+  return out;
+}
+
+function greenFile(dir) {
+  return join(tmpdir(), 'agent-gates', `green-${createHash('sha256').update(dir).digest('hex').slice(0, 16)}.json`);
+}
+
+/** Remembers that every gate of a list was green on this tree, so the commit gate need not run it again. */
+export function recordGreen(dir, list, hash) {
+  try {
+    let record = {};
+    try {
+      record = JSON.parse(readFileSync(greenFile(dir), 'utf8'));
+    } catch {
+      // first record
+    }
+    record[list] = hash;
+    const folder = dirname(greenFile(dir));
+    if (!existsSync(folder)) mkdirSync(folder, { recursive: true });
+    writeFileSync(greenFile(dir), JSON.stringify(record));
+  } catch {
+    // only an optimisation
+  }
+}
+
+/** The tree hash on which every gate of a list was last green, or null. */
+export function lastGreen(dir, list) {
+  try {
+    return JSON.parse(readFileSync(greenFile(dir), 'utf8'))[list] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

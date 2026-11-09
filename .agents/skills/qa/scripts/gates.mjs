@@ -4,7 +4,9 @@
 //   node .agents/skills/qa/scripts/gates.mjs full|fast
 //
 // Runs every gate of the list regardless of `paths` (that filter is only for
-// the Stop hook). Gates without `needs` between them run at the same time.
+// the agent hooks). A green `fast` run is remembered for the tree it ran on, so
+// a commit gate right after it does not run the same gates again. Gates
+// without `needs` between them run at the same time.
 // The report on stdout is a table with the path of each gate's complete
 // output plus, for every red gate, its error lines and its fix command.
 // Exit 0 when everything is green, 1 otherwise, 2 without a usable gates.json
@@ -15,7 +17,7 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { errorLines, GATES_FILES, loadGates, repoRootFromScript, runGates } from './lib.mjs';
+import { errorLines, GATES_FILES, loadGates, recordGreen, repoRootFromScript, runGates, treeState } from './lib.mjs';
 
 const LISTS = ['fast', 'full'];
 const GATE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -78,6 +80,7 @@ if (!Array.isArray(gates)) {
 }
 
 removeOldLogs();
+const treeBefore = treeState(dir);
 const results = await runGates(dir, gates, {
   timeoutMs: GATE_TIMEOUT_MS,
   onSettled: result => console.error(`${verdict(result)}: ${result.gate.name} (${seconds(result.durationMs)})`),
@@ -99,4 +102,7 @@ for (const [index, result] of results.entries()) {
 }
 
 console.log(report.join('\n'));
-process.exit(results.every(result => result.status === 'ok') ? 0 : 1);
+const green = results.every(result => result.status === 'ok');
+// The commit gate skips the fast gates on a tree they were just green on
+if (green && treeBefore && treeState(dir)?.hash === treeBefore.hash) recordGreen(dir, list, treeBefore.hash);
+process.exit(green ? 0 : 1);

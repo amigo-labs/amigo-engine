@@ -234,10 +234,10 @@ Project knowledge belongs in the repository, not on one machine:
 
 ### Quality gates
 
-- **Run the `qa` skill before finishing any coding task** and report the result. The gate commands are in `.agents/gates.json`: `fast` (also run by the Claude Code Stop hook for the areas a turn changed) and `full` (mirrors CI). Run them with `node .agents/skills/qa/scripts/gates.mjs fast|full`.
+- **Run the `qa` skill before finishing any coding task** and report the result. The gate commands are in `.agents/gates.json`: `stop` (seconds: formatting, clippy on the changed crates — the Claude Code Stop hook runs it after every turn that changed code), `fast` (before every commit — the Claude Code commit gate refuses a commit while one is red; other agents run `node .agents/skills/qa/scripts/gates.mjs fast` before committing) and `full` (mirrors CI, `node .agents/skills/qa/scripts/gates.mjs full`).
 - **Fix the cause, never lower the gates.** No suppressions (the list is `suppressions` in `.agents/gates.json`), no weakened, skipped or ignored tests. The Claude Code guard hook refuses new suppressions; a justified one is added by the user.
 - **Don't loosen the gate configuration**: `.agents/gates.json`, `.agents/skills/qa/scripts/`, `.claude/settings.json` and `.claude/hooks/` change only on the user's explicit request.
 - Where a gate names a `fix` command (formatting, lint autofix), that fix is allowed; everything else is fixed in the code. Where a gate has a `note`, follow it.
-- `STOP_GATE=off` in the environment switches the Claude Code Stop hook off, e.g. for a bulk migration — only on the user's request.
+- `STOP_GATE=off` / `COMMIT_GATE=off` in the environment switch the Claude Code Stop hook / commit gate off, e.g. for a bulk migration — only on the user's request.
 
 <!-- amigo-skills:end spec-workflow -->

@@ -19,6 +19,10 @@
 //                                           (after editing a skill of this repository)
 //   node .agents/sync.mjs --check           offline drift check for CI and the gates
 //
+// A skill may name what it needs in its front matter (`metadata: requires: qa
+// _shared`): another skill must be configured too, a `_folder` of shared files
+// is installed alongside (e.g. skills/_shared/tournament.md).
+//
 // Configuration: .agents/skills.json
 //
 //   {
@@ -193,16 +197,20 @@ function update(config, options) {
       files[to] = hash(buffer);
     };
 
+    const shared = new Set();
     for (const name of config.skills) {
       const from = join(source.dir, 'skills', name);
       if (!existsSync(join(from, 'SKILL.md'))) fail(`Skill "${name}" does not exist in the source (skills/${name}/SKILL.md).`);
       for (const needed of requires(readFileSync(join(from, 'SKILL.md'), 'utf8'))) {
-        if (!config.skills.includes(needed)) fail(`Skill "${name}" requires "${needed}": add it to "skills" in ${CONFIG}.`);
+        // `_name` is a folder of shared files, not a skill: installed with the skills that need it
+        if (needed.startsWith('_')) shared.add(needed);
+        else if (!config.skills.includes(needed)) fail(`Skill "${name}" requires "${needed}": add it to "skills" in ${CONFIG}.`);
       }
     }
     if (config.claudeHooks && !config.skills.includes('qa')) fail(`"claudeHooks" needs the "qa" skill (the hooks run its gate scripts): add it to "skills" in ${CONFIG}.`);
-    for (const name of config.skills) {
+    for (const name of [...config.skills, ...shared]) {
       const from = join(source.dir, 'skills', name);
+      if (!existsSync(from)) fail(`Shared folder "${name}" does not exist in the source (skills/${name}/).`);
       rmSync(join(root, SKILLS_DIR, name), { recursive: true, force: true });
       for (const file of filesBelow(from)) install(`skills/${name}/${file}`, `${SKILLS_DIR}/${name}/${file}`);
     }
@@ -257,7 +265,7 @@ function check(config) {
   }
   for (const path of Object.keys(lock.files ?? {})) {
     const skill = path.startsWith(`${SKILLS_DIR}/`) ? path.split('/')[2] : null;
-    if (skill && !config.skills.includes(skill)) problems.push(`Skill "${skill}" is synced but no longer configured (run \`node ${SELF}\`).`);
+    if (skill && !skill.startsWith('_') && !config.skills.includes(skill)) problems.push(`Skill "${skill}" is synced but no longer configured (run \`node ${SELF}\`).`);
   }
 
   if (config.agentsMd.length > 0) {

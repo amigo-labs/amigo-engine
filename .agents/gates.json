@@ -1,20 +1,148 @@
 {
-  "$comment": "Quality gates for the qa, spec-build and spec-check skills (node .agents/skills/qa/scripts/gates.mjs fast|full) and the Claude Code hooks in .claude/hooks/. `full` runs the recipes of `just ci` (the justfile is what CI runs) without needing `just`; clippy-features needs cargo-hack. `cargo deny check`, the Windows / macOS test jobs and the release builds run in CI only. On Linux the system libraries come first: ./scripts/install-system-deps.sh. `fast` runs in the Stop hook, filtered by `paths` (prefixes of changed repository paths). `needs` lists the ids a gate waits for; gates without needs between them run in parallel. Optional per gate: `fix`, `note`. `#[expect(.., reason = ..)]` is not in `suppressions`: it is how this project silences a lint (workspace lint `allow_attributes_without_reason`).",
+  "$comment": "Quality gates for the qa, spec-build and spec-check skills (node .agents/skills/qa/scripts/gates.mjs fast|full) and the Claude Code hooks in .claude/hooks/. `full` runs the recipes of `just ci` (the justfile is what CI runs) without needing `just`; clippy-features needs cargo-hack. `cargo deny check`, the Windows / macOS test jobs and the release builds run in CI only. On Linux the system libraries come first: ./scripts/install-system-deps.sh. `stop` runs in the Claude Code Stop hook after every turn that changed code and must take seconds (`{cargo-packages}` = `-p` for each changed crate, minus `excludePackages`); `fast` runs before every commit (Claude Code commit gate) and in spec-build after each block; both are filtered by `paths` (prefixes of changed repository paths). `needs` lists the ids a gate waits for; gates without needs between them run in parallel. Optional per gate: `fix`, `note`. `#[expect(.., reason = ..)]` is not in `suppressions`: it is how this project silences a lint (workspace lint `allow_attributes_without_reason`).",
+  "stop": [
+    {
+      "id": "stop-fmt",
+      "name": "rustfmt",
+      "cwd": ".",
+      "command": "cargo fmt --all -- --check",
+      "fix": "cargo fmt --all",
+      "paths": [
+        "crates/",
+        "tools/",
+        "examples/",
+        "Cargo.toml"
+      ],
+      "needs": []
+    },
+    {
+      "id": "stop-clippy",
+      "name": "clippy (changed crates)",
+      "cwd": ".",
+      "command": "cargo clippy {cargo-packages} --all-targets -- -D warnings",
+      "paths": [
+        "crates/",
+        "tools/",
+        "examples/"
+      ],
+      "excludePackages": [],
+      "needs": []
+    }
+  ],
   "fast": [
-    { "id": "fmt", "name": "rustfmt", "cwd": ".", "command": "cargo fmt --all -- --check", "fix": "cargo fmt --all", "paths": ["crates/", "tools/", "examples/", "Cargo.toml"], "needs": [] },
-    { "id": "clippy", "name": "clippy", "cwd": ".", "command": "cargo clippy --workspace --all-targets -- -D warnings", "paths": ["crates/", "tools/", "examples/", "Cargo.toml", "Cargo.lock"], "needs": [] }
+    {
+      "id": "fmt",
+      "name": "rustfmt",
+      "cwd": ".",
+      "command": "cargo fmt --all -- --check",
+      "fix": "cargo fmt --all",
+      "paths": [
+        "crates/",
+        "tools/",
+        "examples/",
+        "Cargo.toml"
+      ],
+      "needs": []
+    },
+    {
+      "id": "clippy",
+      "name": "clippy",
+      "cwd": ".",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "paths": [
+        "crates/",
+        "tools/",
+        "examples/",
+        "Cargo.toml",
+        "Cargo.lock"
+      ],
+      "needs": []
+    }
   ],
   "full": [
-    { "id": "fmt", "name": "rustfmt", "cwd": ".", "command": "cargo fmt --all -- --check", "fix": "cargo fmt --all", "needs": [] },
-    { "id": "clippy", "name": "clippy", "cwd": ".", "command": "cargo clippy --workspace --all-targets -- -D warnings", "needs": [] },
-    { "id": "clippy-features", "name": "clippy per feature", "cwd": ".", "command": "cargo hack clippy --workspace --each-feature --all-targets -- -D warnings && cargo clippy --workspace --all-targets --all-features -- -D warnings", "note": "Needs cargo-hack (`cargo install cargo-hack`). Feature combinations break in ways the default build does not.", "needs": ["clippy"] },
-    { "id": "test", "name": "cargo test", "cwd": ".", "command": "cargo test --workspace", "needs": ["clippy"] },
-    { "id": "test-features", "name": "cargo test with features", "cwd": ".", "command": "cargo test --workspace --all-features && cargo test -p amigo_core --features async_tasks && cargo test -p amigo_core --features system_graph && cargo test -p amigo_engine --features api", "needs": ["test"] },
-    { "id": "test-doc", "name": "doc tests", "cwd": ".", "command": "cargo test --workspace --doc", "needs": ["clippy"] },
-    { "id": "doc", "name": "rustdoc", "cwd": ".", "command": "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps --lib", "needs": [] },
-    { "id": "templates", "name": "project templates", "cwd": ".", "command": "cargo test -p amigo_cli --test templates -- --ignored --nocapture", "needs": ["test"] },
-    { "id": "agent-skills", "name": "agent skills in sync", "cwd": ".", "command": "node .agents/sync.mjs --check", "note": "Shared skills are edited in amigo-labs/skills and synced with `node .agents/sync.mjs`; this repository's own skills are edited in .agents/skills, then `node .agents/sync.mjs --mirror`.", "needs": [] }
+    {
+      "id": "fmt",
+      "name": "rustfmt",
+      "cwd": ".",
+      "command": "cargo fmt --all -- --check",
+      "fix": "cargo fmt --all",
+      "needs": []
+    },
+    {
+      "id": "clippy",
+      "name": "clippy",
+      "cwd": ".",
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "needs": []
+    },
+    {
+      "id": "clippy-features",
+      "name": "clippy per feature",
+      "cwd": ".",
+      "command": "cargo hack clippy --workspace --each-feature --all-targets -- -D warnings && cargo clippy --workspace --all-targets --all-features -- -D warnings",
+      "note": "Needs cargo-hack (`cargo install cargo-hack`). Feature combinations break in ways the default build does not.",
+      "needs": [
+        "clippy"
+      ]
+    },
+    {
+      "id": "test",
+      "name": "cargo test",
+      "cwd": ".",
+      "command": "cargo test --workspace",
+      "needs": [
+        "clippy"
+      ]
+    },
+    {
+      "id": "test-features",
+      "name": "cargo test with features",
+      "cwd": ".",
+      "command": "cargo test --workspace --all-features && cargo test -p amigo_core --features async_tasks && cargo test -p amigo_core --features system_graph && cargo test -p amigo_engine --features api",
+      "needs": [
+        "test"
+      ]
+    },
+    {
+      "id": "test-doc",
+      "name": "doc tests",
+      "cwd": ".",
+      "command": "cargo test --workspace --doc",
+      "needs": [
+        "clippy"
+      ]
+    },
+    {
+      "id": "doc",
+      "name": "rustdoc",
+      "cwd": ".",
+      "command": "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps --lib",
+      "needs": []
+    },
+    {
+      "id": "templates",
+      "name": "project templates",
+      "cwd": ".",
+      "command": "cargo test -p amigo_cli --test templates -- --ignored --nocapture",
+      "needs": [
+        "test"
+      ]
+    },
+    {
+      "id": "agent-skills",
+      "name": "agent skills in sync",
+      "cwd": ".",
+      "command": "node .agents/sync.mjs --check",
+      "note": "Shared skills are edited in amigo-labs/skills and synced with `node .agents/sync.mjs`; this repository's own skills are edited in .agents/skills, then `node .agents/sync.mjs --mirror`.",
+      "needs": []
+    }
   ],
-  "suppressionExtensions": [".rs"],
-  "suppressions": ["#[allow(", "#![allow(", "#[ignore"]
+  "suppressionExtensions": [
+    ".rs"
+  ],
+  "suppressions": [
+    "#[allow(",
+    "#![allow(",
+    "#[ignore"
+  ]
 }

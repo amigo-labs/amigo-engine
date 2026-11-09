@@ -5,7 +5,7 @@ description: Runs the project's full QA pass — every gate of the repository's 
 
 # QA
 
-The commands are not here but in `.agents/gates.json` (list `full`; a repository not migrated yet has it at `.claude/gates.json`). It mirrors the repository's CI, minus jobs that need another platform or hardware — the profile in `AGENTS.md` (**CI-only checks**) and the `$comment` in `gates.json` name them. Green here means green in those CI steps.
+The commands are not here but in `.agents/gates.json` (list `full`; `stop` and `fast` are the quicker lists the agent hooks run after a turn and before a commit; a repository not migrated yet has it at `.claude/gates.json`). It mirrors the repository's CI, minus jobs that need another platform or hardware — the profile in `AGENTS.md` (**CI-only checks**) and the `$comment` in `gates.json` name them. Green here means green in those CI steps.
 
 ## Procedure
 

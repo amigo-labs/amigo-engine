@@ -60,6 +60,16 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/commit-gate.mjs\"",
+            "timeout": 300
+          }
+        ]
       }
     ],
     "Stop": [
@@ -68,7 +78,7 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.mjs\"",
-            "timeout": 300
+            "timeout": 120
           }
         ]
       }

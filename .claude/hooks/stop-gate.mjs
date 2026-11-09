@@ -1,8 +1,12 @@
-// Stop: before Claude may end a turn that changed code, the fast gates from
-// the gate configuration (.agents/gates.json) must be green. A red gate blocks the stop and hands
-// Claude the errors -- deterministic, unlike a rule that asks for the same
-// thing. Gates without `needs` between them run at the same time, and one
-// block names every red gate.
+// Stop: before Claude may end a turn that changed code, the `stop` gates from
+// the gate configuration (.agents/gates.json) must be green. A red gate blocks
+// the stop and hands Claude the errors -- deterministic, unlike a rule that
+// asks for the same thing. Gates without `needs` between them run at the same
+// time, and one block names every red gate.
+//
+// The `stop` list is meant to take seconds (formatting, clippy on the changed
+// crates via `{cargo-packages}`); the slower `fast` list runs before a commit
+// (commit-gate.mjs). Without a `stop` list the hook falls back to `fast`.
 //
 // - Runs only when the working tree differs from the session start and from
 //   the last green run: a turn without changes costs nothing.
@@ -21,6 +25,7 @@
 import {
   changedPaths,
   errorLines,
+  expandGates,
   gateApplies,
   loadGates,
   loadState,
@@ -52,7 +57,8 @@ try {
   const gates = loadGates(dir);
   const tree = treeState(dir);
 
-  if (process.env.STOP_GATE === 'off' || !gates?.fast?.length || !tree) {
+  const list = Array.isArray(gates?.stop) ? gates.stop : gates?.fast;
+  if (process.env.STOP_GATE === 'off' || !list?.length || !tree) {
     process.exit(0);
   }
 
@@ -65,7 +71,7 @@ try {
   }
 
   const paths = changedPaths(dir, state.baseHead);
-  const selected = gates.fast.filter(gate => gateApplies(gate, paths));
+  const selected = expandGates(dir, list.filter(gate => gateApplies(gate, paths)), paths);
   if (selected.length === 0) {
     saveState(dir, input.session_id, { ...state, green: tree.hash, blocks: 0 });
     process.exit(0);
