@@ -18,7 +18,7 @@ You define a feature spec together with the user. This is collaborative — rese
 
 Check `docs/specs/$0.md` (name in ASCII kebab-case):
 
-- **Exists with `## Acceptance criteria`** → revision mode (see below)
+- **Exists with `## Acceptance criteria`** (heading in any case) → revision mode (see below)
 - **Exists without acceptance criteria** → that is a design spec (**Design spec** in the profile), not a feature spec. Propose a different name, e.g. `$0-<aspect>`.
 - **New** → continue with step 2
 
@@ -177,7 +177,7 @@ design: [{design spec §x.y}, …]
 ## Context
 
 Existing specs:
-!`grep -L '^## Acceptance criteria' docs/specs/*.md 2>/dev/null | sed 's/$/ (design spec)/'; grep -l '^## Acceptance criteria' docs/specs/*.md 2>/dev/null || echo "No feature specs yet"`
+!`grep -Li '^## Acceptance criteria' docs/specs/*.md 2>/dev/null | sed 's/$/ (design spec)/'; grep -li '^## Acceptance criteria' docs/specs/*.md 2>/dev/null || echo "No feature specs yet"`
 
 Commit mode:
 !`node .agents/skills/qa/scripts/commit-mode.mjs 2>/dev/null || echo "on"`

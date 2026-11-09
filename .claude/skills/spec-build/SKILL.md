@@ -88,7 +88,7 @@ It derives everything from the repository. An agent without subagents asks the u
 ## Completion
 
 1. **Keep knowledge:** what was surprising in the loop and can't be read from the code (pitfalls, environment quirks), as a short entry under `## Gotchas` in `AGENTS.md`. No noise — nothing that code or git history shows. Never into an agent's private memory.
-2. **Commit** the spec (and `AGENTS.md` if changed): `docs(spec): mark $0 implemented`. In commit mode `ask`, ask first.
+2. **Commit** the spec, the spec index (`spec-check` moves the spec to "Done" there) and `AGENTS.md` if changed, by path: `docs(spec): mark $0 implemented`. The working tree is clean afterwards, so the next `spec-build` can start. In commit mode `ask`, ask first.
 3. **Report** to the user, in their language:
 
 ```markdown
@@ -117,7 +117,7 @@ It derives everything from the repository. An agent without subagents asks the u
 ## Context
 
 Feature specs with status todo:
-!`grep -l '^status: todo' docs/specs/*.md 2>/dev/null | xargs -r grep -l '^## Acceptance criteria' 2>/dev/null || echo "No open feature specs"`
+!`grep -l '^status: todo' docs/specs/*.md 2>/dev/null | xargs -r grep -li '^## Acceptance criteria' 2>/dev/null || echo "No open feature specs"`
 
 Branch and working tree:
 !`git branch --show-current && git status --porcelain`
