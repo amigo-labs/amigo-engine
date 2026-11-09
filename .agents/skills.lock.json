@@ -1,0 +1,26 @@
+{
+  "$comment": "Written by .agents/sync.mjs. Do not edit.",
+  "source": "https://github.com/amigo-labs/skills.git",
+  "ref": "main",
+  "commit": "4c4a9315e2c76f9a06a0c2868d54147d32a68ed0",
+  "files": {
+    ".agents/skills/spec/SKILL.md": "41aef2316107dafb8f87c614f49681434621d679dec457abb7905ac3304ffbae",
+    ".agents/skills/spec-build/SKILL.md": "8857f51607e0f4033f4460b18d53b2ec85aae4984eece6bfe391b7a4d9d16cb6",
+    ".agents/skills/spec-check/SKILL.md": "d4c98882d7b92739b6d986279cd69361a978a9f9cfcf432bd0f85980e8eaeb75",
+    ".agents/skills/spec-extract/SKILL.md": "d4a296e36b79b46a68d6284eb7f59b64bf33c74b754d53b506ff75f5e27d1d88",
+    ".agents/skills/spec-fix/SKILL.md": "ef0edf45061f4c82d7cddd17c4b6616640e74202e88cb80b3f86e3dfcf698e8e",
+    ".agents/skills/qa/SKILL.md": "548ac9a0f51ac2b9562777a57fe745cc195e7e80cc2736c62197ac1e24f10f5c",
+    ".agents/skills/qa/scripts/commit-mode.mjs": "1edc8f1c327481303c90626ff88d64cd0967c4b2813ef8e7e98b58238d913651",
+    ".agents/skills/qa/scripts/gates.mjs": "6271e7246c12b04ed8c06624e6f0841752e667d2b644275b3b155e7b168a4b62",
+    ".agents/skills/qa/scripts/lib.mjs": "bedc878c64b4950949bf0b799b39099aa03c1d9c8904b24eb4b4d8f6dd567375",
+    ".agents/skills/qa/scripts/open-specs.mjs": "53edc80d6e6cbcab1b64e90cdd9f633c0a1bca67f8d92df316b03d9eba9c5f2d",
+    ".claude/hooks/guard.mjs": "cd8b046fbe95487b0b8804120dcbc186c6722a8f222902757d7a0cb0f1483661",
+    ".claude/hooks/hook-lib.mjs": "b111b4e1ec2e44b7e4bd95be84ac76e49b4a9754246b6c0d25a3a824f0a15788",
+    ".claude/hooks/session-start.mjs": "c5b176f0ab03645a104011b5a4ccb0f79bd4c196e7b6b1ade03168693b7e6ad7",
+    ".claude/hooks/stop-gate.mjs": "a4cde35ddb8088c7b3342b869ae1a51c25a5c2beb7a5923b1bf7b5acf6cae6f7",
+    ".agents/sync.mjs": "3424b0b461154e1ab726914cbc46bcee6e1fa7b33c89dfe198a6976b81618d60"
+  },
+  "blocks": {
+    "spec-workflow": "57bfc324f91a7631295bb7565795cdb1416b14f9ca4fee497057b2d906430d9e"
+  }
+}
