@@ -97,7 +97,7 @@ pollster = "1"
 fontdue = "0.9"
 # TTFs with Latin-1 coverage (Hack, Ubuntu Light) for text tests and examples.
 # Already in the tree through egui; licenses are allowed in deny.toml.
-epaint_default_fonts = "0.36"
+epaint_default_fonts = "0.37"
 asefile = "0.3"
 egui = "0.37"
 egui-wgpu = "0.37"
