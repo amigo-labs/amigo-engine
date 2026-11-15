@@ -109,9 +109,9 @@ impl Game for PathfindingDemo {
 
     fn draw(&self, ctx: &mut DrawContext) {
         // Draw grid cells
-        for y in 0..ROWS {
-            for x in 0..COLS {
-                let color = if !self.grid.walkable[y][x] {
+        for (y, row) in self.grid.walkable.iter().enumerate().take(ROWS) {
+            for (x, &walkable) in row.iter().enumerate().take(COLS) {
+                let color = if !walkable {
                     Color::new(0.15, 0.15, 0.18, 1.0)
                 } else {
                     Color::new(0.25, 0.25, 0.30, 1.0)
