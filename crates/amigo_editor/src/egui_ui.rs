@@ -1,6 +1,6 @@
 use crate::session::tile_preview_color;
 use crate::{
-    AmigoLevel, EditorAction, EditorCommand, EditorSession, EditorState, EditorTool,
+    AmigoLevel, EditorAction, EditorCommand, EditorSession, EditorState, EditorTheme, EditorTool,
     EntityPlacement, ZoneDef,
 };
 
@@ -130,10 +130,32 @@ fn draw_menu_bar(ui: &mut egui::Ui, session: &mut EditorSession) -> Option<Edito
                 ui.checkbox(&mut state.grid_visible, "Grid");
                 ui.checkbox(&mut state.show_collision, "Collision");
                 ui.checkbox(&mut state.show_paths, "Paths");
+                ui.separator();
+                ui.menu_button("Theme", |ui| theme_entries(ui, &mut session.ui.theme));
             });
         });
     });
     action
+}
+
+/// The entries of View ▸ Theme: one per theme, the active one marked. The
+/// engine applies a new pick to the egui context after the frame.
+fn theme_entries(ui: &mut egui::Ui, theme: &mut EditorTheme) {
+    for entry in EditorTheme::ALL {
+        ui.radio_value(theme, entry, entry.label());
+    }
+}
+
+/// The fill of the empty tile's swatch: the theme's raised surface, which is
+/// what widgets at rest are filled with.
+fn empty_swatch_fill(visuals: &egui::Visuals) -> egui::Color32 {
+    visuals.widgets.inactive.bg_fill
+}
+
+/// The frame around the selected swatch: the theme's focus colour, which is
+/// the outline of a widget that holds the keyboard focus.
+fn selected_swatch_stroke(visuals: &egui::Visuals) -> egui::Stroke {
+    egui::Stroke::new(2.0, visuals.widgets.active.bg_stroke.color)
 }
 
 fn draw_tools_panel(ui: &mut egui::Ui, state: &mut EditorState) {
@@ -551,12 +573,14 @@ fn tile_palette(ui: &mut egui::Ui, state: &mut EditorState) {
         .show(ui, |ui| {
             for i in 0..total_tiles {
                 let selected = state.selected_tile == i;
-                // The same colour the viewport preview uses.
-                let [r, g, b] = tile_preview_color(i);
-                let color = if i == 0 {
-                    egui::Color32::from_rgb(40, 40, 40)
+                // Tile 0 is empty: interface colours. Every other swatch is
+                // content, the same colour the viewport preview uses, with
+                // its number in white on top.
+                let (color, label) = if i == 0 {
+                    (empty_swatch_fill(ui.visuals()), ui.visuals().text_color())
                 } else {
-                    egui::Color32::from_rgb(r, g, b)
+                    let [r, g, b] = tile_preview_color(i);
+                    (egui::Color32::from_rgb(r, g, b), egui::Color32::WHITE)
                 };
                 let (rect, response) =
                     ui.allocate_exact_size(egui::vec2(tile_size, tile_size), egui::Sense::click());
@@ -565,7 +589,7 @@ fn tile_palette(ui: &mut egui::Ui, state: &mut EditorState) {
                     ui.painter().rect_stroke(
                         rect,
                         0.0,
-                        egui::Stroke::new(2.0, egui::Color32::WHITE),
+                        selected_swatch_stroke(ui.visuals()),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -574,7 +598,7 @@ fn tile_palette(ui: &mut egui::Ui, state: &mut EditorState) {
                     egui::Align2::CENTER_CENTER,
                     format!("{}", i),
                     egui::FontId::proportional(8.0),
-                    egui::Color32::WHITE,
+                    label,
                 );
                 if response.clicked() {
                     state.selected_tile = i;
@@ -720,4 +744,99 @@ fn draw_status_bar(ui: &mut egui::Ui, session: &EditorSession) {
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::accesskit;
+
+    /// One headless frame of the View ▸ Theme entries: which entries are
+    /// marked, by label, and each entry's accessibility node.
+    fn theme_frame(
+        ctx: &egui::Context,
+        theme: &mut EditorTheme,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, bool, accesskit::NodeId)> {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| theme_entries(ui, theme));
+        // No renderer takes the font atlas in a headless frame.
+        output.textures_delta.clear();
+        let update = output
+            .platform_output
+            .accesskit_update
+            .expect("accesskit is enabled");
+        update
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.role() == accesskit::Role::RadioButton)
+            .map(|(id, node)| {
+                let label = node.label().unwrap_or_default().to_string();
+                let marked = node.toggled() == Some(accesskit::Toggled::True);
+                (label, marked, *id)
+            })
+            .collect()
+    }
+
+    fn click(node: accesskit::NodeId) -> Vec<egui::Event> {
+        vec![egui::Event::AccessKitActionRequest(
+            accesskit::ActionRequest {
+                action: accesskit::Action::Click,
+                target_tree: accesskit::TreeId::ROOT,
+                target_node: node,
+                data: None,
+            },
+        )]
+    }
+
+    fn marked(entries: &[(String, bool, accesskit::NodeId)]) -> Vec<&str> {
+        entries
+            .iter()
+            .filter(|(_, marked, _)| *marked)
+            .map(|(label, _, _)| label.as_str())
+            .collect()
+    }
+
+    // AC-10
+    #[test]
+    fn theme_entries_mark_the_active_theme_and_switch_on_a_click() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut theme = EditorTheme::default();
+
+        let entries = theme_frame(&ctx, &mut theme, Vec::new());
+        let labels: Vec<&str> = entries.iter().map(|(label, _, _)| label.as_str()).collect();
+        assert_eq!(labels, ["Dark", "Light"]);
+        assert_eq!(marked(&entries), ["Dark"], "dark is the default");
+
+        let light = entries[1].2;
+        theme_frame(&ctx, &mut theme, click(light));
+        assert_eq!(theme, EditorTheme::Light);
+        let entries = theme_frame(&ctx, &mut theme, Vec::new());
+        assert_eq!(marked(&entries), ["Light"]);
+
+        let dark = entries[0].2;
+        theme_frame(&ctx, &mut theme, click(dark));
+        assert_eq!(theme, EditorTheme::Dark);
+        let entries = theme_frame(&ctx, &mut theme, Vec::new());
+        assert_eq!(marked(&entries), ["Dark"]);
+    }
+
+    // AC-11: the swatch colours are read from the visuals, from the fields
+    // the theme fills with `surface_raised` and `focus`
+    // (`amigo_render::egui_theme`: widgets at rest, the focus outline).
+    #[test]
+    fn swatch_colours_follow_the_visuals() {
+        let mut visuals = egui::Visuals::dark();
+        visuals.widgets.inactive.bg_fill = egui::Color32::RED;
+        visuals.widgets.active.bg_stroke.color = egui::Color32::GREEN;
+        assert_eq!(empty_swatch_fill(&visuals), egui::Color32::RED);
+        assert_eq!(
+            selected_swatch_stroke(&visuals),
+            egui::Stroke::new(2.0, egui::Color32::GREEN)
+        );
+    }
 }

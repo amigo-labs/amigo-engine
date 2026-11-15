@@ -32,7 +32,7 @@ pub use amigo_core::level::{
     save_level,
 };
 pub use amigo_core::level_loader::ZoneDef;
-pub use session::{EditorAction, EditorSession, OverlayItem, PointerState};
+pub use session::{EditorAction, EditorSession, EditorTheme, OverlayItem, PointerState};
 
 // ---------------------------------------------------------------------------
 // Editor commands (undo / redo)
