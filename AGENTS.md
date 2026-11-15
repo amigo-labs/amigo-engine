@@ -122,6 +122,27 @@ wildcard ban needs), inherit `version`, `edition`, `rust-version`, `license`
 and `repository` with `.workspace = true`, and put shared external deps in
 `[workspace.dependencies]` rather than the crate's own manifest.
 
+## Gotchas
+
+Pitfalls that code and git history don't show. Short entries; `spec-build`
+adds to this list when a loop surprised it.
+
+- **Two `egui::Style`s never compare equal.** Each carries its own number
+  formatter, so `style == style` is false even for two `Style::default()`.
+  Compare `visuals`, `text_styles` and `spacing`
+  (`amigo_render::egui_theme::shows`).
+- **A headless egui frame must clear its texture delta.** `ctx.run_ui` in a
+  test returns the font atlas as a `TexturesDelta`, which panics on drop when
+  nothing applied it: `output.textures_delta.clear()`.
+- **egui 0.37 fills windows, menus and popups from one field**
+  (`Visuals::window_fill`) and outlines buttons, text fields and checkboxes
+  at rest from one (`widgets.inactive.bg_stroke`); per-widget styles are
+  behind its `experimental` feature.
+- **The full gates need about 5 GB of disk without debug info, and far more
+  with it** (the dev profile keeps it; a few test builds alone reached
+  8 GB). On a small disk set `CARGO_PROFILE_DEV_DEBUG=0
+  CARGO_PROFILE_TEST_DEBUG=0` next to `CARGO_INCREMENTAL=0` for the run.
+
 ## Spec workflow profile
 
 The project facts the shared spec skills (`spec`, `spec-build`, `spec-check`,
