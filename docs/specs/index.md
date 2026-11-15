@@ -283,6 +283,7 @@ engine ever called them.
 | [ai-pipelines/artgen](ai-pipelines/artgen.md)             | done    | amigo_artgen      | assets/format                 |
 | [ai-pipelines/audiogen](ai-pipelines/audiogen.md)         | done    | amigo_audiogen    | engine/audio                  |
 | [artgen-backend-abstraction](artgen-backend-abstraction.md) | done | amigo_artgen, amigo_comfyui | ai-pipelines/artgen     |
+| [amigo-theme](amigo-theme.md) | todo | amigo_render, amigo_editor | tooling/editor |
 | [ai-pipelines/agent-api](ai-pipelines/agent-api.md)       | done   | amigo_api         | engine/core                   |
 | [ai-pipelines/tidal-pipeline](ai-pipelines/tidal-pipeline.md) | done  | amigo_audio_pipeline | engine/audio, ai-pipelines/audiogen |
 | [config/amigo-toml](config/amigo-toml.md)                 | done   | --                | --                            |
