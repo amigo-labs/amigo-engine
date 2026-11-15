@@ -9,6 +9,16 @@ pub use egui_wgpu;
 use egui_wgpu::ScreenDescriptor;
 use tracing::info;
 
+use crate::egui_theme::{self, ThemeMode};
+
+/// A new egui context with the dark amigo theme: an editor that never picks a
+/// theme is dark.
+fn themed_context() -> egui::Context {
+    let ctx = egui::Context::default();
+    egui_theme::apply(&ctx, ThemeMode::Dark);
+    ctx
+}
+
 /// Manages egui state, winit event translation, and wgpu rendering.
 pub struct EguiRenderer {
     ctx: egui::Context,
@@ -26,7 +36,7 @@ impl EguiRenderer {
         surface_format: wgpu::TextureFormat,
         window: &winit::window::Window,
     ) -> Self {
-        let ctx = egui::Context::default();
+        let ctx = themed_context();
 
         let winit_state = egui_winit::State::new(
             ctx.clone(),
@@ -152,5 +162,23 @@ impl EguiRenderer {
         for id in &full_output.textures_delta.free {
             self.wgpu_renderer.free_texture(id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // AC-09. `EguiRenderer::new` needs a GPU device; the context it creates
+    // does not.
+    #[test]
+    fn a_new_context_has_the_dark_theme() {
+        let ctx = themed_context();
+        assert_eq!(ctx.theme(), egui::Theme::Dark);
+        assert!(egui_theme::shows(&ctx, ThemeMode::Dark));
+        assert!(!egui_theme::shows(
+            &egui::Context::default(),
+            ThemeMode::Dark
+        ));
     }
 }

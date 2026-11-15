@@ -21,6 +21,10 @@ pub mod viewport;
 
 #[cfg(feature = "editor")]
 pub mod egui_integration;
+#[cfg(feature = "editor")]
+pub mod egui_theme;
+#[cfg(feature = "editor")]
+pub mod theme;
 
 #[cfg(feature = "asset_streaming")]
 pub mod dynamic_atlas;
