@@ -32,6 +32,32 @@ pub enum EditorAction {
     SaveEmitter(usize),
 }
 
+/// The look of the editor's interface, picked in View ▸ Theme.
+///
+/// The session only remembers the choice; the engine applies it to the egui
+/// context (`amigo_render::egui_theme`). It is not stored between runs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum EditorTheme {
+    /// The dark palette of the shared amigo theme, the default.
+    #[default]
+    Dark,
+    /// The light palette.
+    Light,
+}
+
+impl EditorTheme {
+    /// Every theme, in menu order.
+    pub const ALL: [Self; 2] = [Self::Dark, Self::Light];
+
+    /// The name shown in the View menu.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Dark => "Dark",
+            Self::Light => "Light",
+        }
+    }
+}
+
 /// What the editor's panels keep between frames: open dialogs, text being
 /// typed, the entity or zone being edited. No egui types, so it lives in the
 /// session and survives the editor being closed and opened.
@@ -51,6 +77,8 @@ pub struct EditorUiState {
     pub tileset: Option<String>,
     /// The auto-decorate dialog: tiles (comma separated) and density.
     pub decorate: Option<(String, f32)>,
+    /// The theme picked in View ▸ Theme.
+    pub theme: EditorTheme,
 }
 
 /// The left mouse button over the viewport, for one frame.

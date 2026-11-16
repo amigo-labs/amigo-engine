@@ -837,6 +837,26 @@ fn editor_session(ctx: &mut GameContext) -> Option<&mut amigo_editor::EditorSess
     ctx.resources.get_mut::<amigo_editor::EditorSession>()
 }
 
+/// Applies the theme picked in View ▸ Theme to the egui context, once per
+/// pick: a game that sets its own visuals in between keeps them.
+#[cfg(feature = "editor")]
+fn sync_editor_theme(
+    ctx: &amigo_render::egui_integration::egui::Context,
+    shown: &mut amigo_editor::EditorTheme,
+    picked: amigo_editor::EditorTheme,
+) {
+    use amigo_render::egui_theme::{self, ThemeMode};
+    if *shown == picked {
+        return;
+    }
+    let mode = match picked {
+        amigo_editor::EditorTheme::Dark => ThemeMode::Dark,
+        amigo_editor::EditorTheme::Light => ThemeMode::Light,
+    };
+    egui_theme::apply(ctx, mode);
+    *shown = picked;
+}
+
 /// Open the first level under `assets/levels/` for editing.
 #[cfg(feature = "editor")]
 fn open_editor_session(ctx: &mut GameContext) {
@@ -1166,6 +1186,9 @@ struct EngineState {
     /// game code reach it the same way.
     #[cfg(feature = "editor")]
     editor_pointer: amigo_editor::PointerState,
+    /// The theme the egui context shows; `EguiRenderer::new` starts dark.
+    #[cfg(feature = "editor")]
+    editor_theme: amigo_editor::EditorTheme,
     #[cfg(feature = "editor")]
     modifiers: winit::keyboard::ModifiersState,
     /// The root game's `init` waits for the other player of a network game.
@@ -1396,6 +1419,8 @@ impl ApplicationHandler for EngineApp {
             egui,
             #[cfg(feature = "editor")]
             editor_pointer: Default::default(),
+            #[cfg(feature = "editor")]
+            editor_theme: Default::default(),
             #[cfg(feature = "editor")]
             modifiers: Default::default(),
             root_pending,
@@ -2108,6 +2133,13 @@ impl ApplicationHandler for EngineApp {
                                     }
                                 },
                             );
+                            if let Some(session) = session.as_deref() {
+                                sync_editor_theme(
+                                    state.egui.context(),
+                                    &mut state.editor_theme,
+                                    session.ui.theme,
+                                );
+                            }
                             if let Some(action) = editor_action {
                                 run_editor_action(&mut state.game_ctx, action);
                             }
@@ -2314,5 +2346,32 @@ mod tests {
             bindings.get_bindings("jump"),
             [InputBinding::Key("Space".to_string())]
         );
+    }
+
+    // amigo-theme AC-10: a pick in View ▸ Theme reaches the egui context.
+    #[cfg(feature = "editor")]
+    #[test]
+    fn a_theme_pick_switches_the_egui_context() {
+        use amigo_editor::EditorTheme;
+        use amigo_render::egui_integration::egui;
+        use amigo_render::egui_theme::{self, ThemeMode};
+
+        let ctx = egui::Context::default();
+        egui_theme::apply(&ctx, ThemeMode::Dark);
+        let mut shown = EditorTheme::Dark;
+
+        super::sync_editor_theme(&ctx, &mut shown, EditorTheme::Light);
+        assert_eq!(shown, EditorTheme::Light);
+        assert_eq!(ctx.theme(), egui::Theme::Light);
+        assert!(egui_theme::shows(&ctx, ThemeMode::Light));
+
+        // No new pick: visuals a game set in between stay.
+        ctx.set_visuals(egui::Visuals::dark());
+        super::sync_editor_theme(&ctx, &mut shown, EditorTheme::Light);
+        assert_eq!(ctx.global_style().visuals, egui::Visuals::dark());
+
+        super::sync_editor_theme(&ctx, &mut shown, EditorTheme::Dark);
+        assert_eq!(ctx.theme(), egui::Theme::Dark);
+        assert!(egui_theme::shows(&ctx, ThemeMode::Dark));
     }
 }

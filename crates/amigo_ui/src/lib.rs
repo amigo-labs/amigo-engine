@@ -149,11 +149,7 @@ impl UiContext {
         let mouse = input.mouse_ui_pos();
         let hovering = rect.contains(mouse.x, mouse.y);
 
-        if hovering && input.mouse_pressed(winit::event::MouseButton::Left) {
-            return true;
-        }
-
-        false
+        hovering && input.mouse_pressed(winit::event::MouseButton::Left)
     }
 
     /// A panel with background.

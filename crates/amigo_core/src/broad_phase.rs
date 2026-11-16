@@ -146,11 +146,8 @@ impl BroadPhase for CpuBroadPhase {
         // 3. Sweep: for each body, walk forward while the next body's min_x is
         //    less than this body's max_x.  Check Y overlap for each candidate.
         let mut pairs = Vec::new();
-        let len = self.sorted.len();
-        for i in 0..len {
-            let (id_a, ref aabb_a) = self.sorted[i];
-            for j in (i + 1)..len {
-                let (id_b, ref aabb_b) = self.sorted[j];
+        for (i, &(id_a, ref aabb_a)) in self.sorted.iter().enumerate() {
+            for &(id_b, ref aabb_b) in &self.sorted[i + 1..] {
                 // Early exit: no more overlaps on X axis.
                 if aabb_b.min_x >= aabb_a.max_x {
                     break;

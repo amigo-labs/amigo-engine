@@ -14,6 +14,7 @@ code's own docs cover that.
 | [0011](0011-retained-ui-layout.md) | Retained-mode layout over the immediate-mode UI |
 | [0012](0012-hierarchical-scenes.md) | Hierarchical scene composition as an alternative to the flat stack |
 | [0013](0013-ai-native-interfaces.md) | AI-native interfaces: stable surface, shared world context, measurable runs |
+| [0014](0014-shared-amigo-theme.md) | The editor uses the shared amigo app theme |
 
 ## Gaps in the numbering
 
