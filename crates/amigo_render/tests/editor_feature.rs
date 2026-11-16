@@ -5,9 +5,12 @@
 use std::fs;
 use std::path::Path;
 
+/// A file of the crate as text with `\n` line ends: the Windows runner
+/// checks text files out with CRLF.
 fn manifest_file(path: &str) -> String {
     fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path))
         .unwrap_or_else(|e| panic!("{path} is readable: {e}"))
+        .replace("\r\n", "\n")
 }
 
 #[test]

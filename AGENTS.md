@@ -138,6 +138,11 @@ adds to this list when a loop surprised it.
   (`Visuals::window_fill`) and outlines buttons, text fields and checkboxes
   at rest from one (`widgets.inactive.bg_stroke`); per-widget styles are
   behind its `experimental` feature.
+- **The Windows runner checks text files out with CRLF.** A test that reads a
+  source file and compares text with `\n` passes on Linux and fails only in
+  the Windows job: normalise `\r\n` after reading
+  (`crates/amigo_render/tests/editor_feature.rs`), and pin generated files to
+  LF in `.gitattributes`.
 - **The full gates need about 5 GB of disk without debug info, and far more
   with it** (the dev profile keeps it; a few test builds alone reached
   8 GB). On a small disk set `CARGO_PROFILE_DEV_DEBUG=0
