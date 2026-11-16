@@ -72,7 +72,7 @@ and the editor's F9, and can be rebound through `EditorRuntime::keys`.
 
 ### Editor UI Widgets (Tier 2, behind `editor` feature flag)
 
-Builds on Tier 1 Game HUD. Added: text input, sliders, dropdowns, color pickers, scrollable containers, tree views. Editor look is consistent with the game's pixel art aesthetic -- not a generic desktop UI.
+Builds on Tier 1 Game HUD. Added: text input, sliders, dropdowns, color pickers, scrollable containers, tree views. This Tier-2 Pixel UI keeps the game's pixel art aesthetic; the egui editor that superseded it takes its look from the shared amigo app theme (ADR-0014, `amigo-theme.md`).
 
 ```rust
 #[cfg(feature = "editor")]

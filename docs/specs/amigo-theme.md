@@ -41,7 +41,7 @@ The editor is an egui app (`tooling/editor.md`) and runs with egui's default dar
 - [ ] AC-08 (always): In both modes text has a contrast of at least 4.5 : 1 on its ground (`text`, `text_muted`, `accent_ink`, `warning_ink`, `danger_ink` on `surface` and on `surface_raised`; `text` on `accent_subtle`), and `focus` and `border_strong` at least 3 : 1 on `surface`.
 - [ ] AC-09 (always): `EguiRenderer::new` applies the dark theme, so an editor that never chooses is dark.
 - [ ] AC-10 (event): When the user picks View ▸ Theme ▸ Light or Dark, then the whole editor switches at once; the entry of the active mode is marked.
-- [ ] AC-11 (always): The editor draws no interface colour of its own: outside content colours (Scope) `crates/amigo_editor/src` holds no `Color32::from_rgb`, `from_gray` or hex literal; the empty tile swatch is `surface_raised` and the selected swatch's frame is `focus`.
+- [ ] AC-11 (always): The egui editor draws no interface colour of its own: outside content colours and the older Pixel-UI editor files (Scope) `crates/amigo_editor/src` holds no `Color32::from_rgb`, `from_gray` or hex literal; the empty tile swatch is `surface_raised` and the selected swatch's frame is `focus`.
 - [ ] AC-12 (always): With the `editor` feature off, nothing of this is compiled: `cargo check -p amigo_render` and the default workspace build have no `egui` and no `theme` module.
 - [ ] AC-13 (always, manual): The running editor looks right in both modes: menus, panels, inspector, tile palette, dialogs readable, the accent yellow, nothing left in egui's default look.
 
