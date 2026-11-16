@@ -33,8 +33,8 @@ The editor is an egui app (`tooling/editor.md`) and runs with egui's default dar
 
 - [ ] AC-01 (always): `crates/amigo_render/src/theme.rs` is the module amigo-labs/website generates with the default accent (`node scripts/theme.ts default --rust …`), unedited, compiled only with the `editor` feature, and `cargo fmt --all -- --check` passes with it.
 - [ ] AC-02 (always, CI: theme): A CI job checks out amigo-labs/website and runs `node scripts/theme.ts default --check --rust crates/amigo_render/src/theme.rs`; a stale or edited copy fails it.
-- [ ] AC-03 (always): `amigo_render::egui_theme::visuals(mode)` returns `egui::Visuals` whose colours all come from the palette of that mode: window and panel fill `surface`, the area behind panels `bg`, popups and menus `surface_raised`, strokes of windows and separators `border`, text `text`, weak text `text_muted`, hyperlinks `accent_ink`, warnings `warning_ink`, errors `danger_ink`.
-- [ ] AC-04 (always): Widgets take their states from the palette: at rest `surface_raised` with a `border` stroke, hovered `hover`, pressed `active`, open (a menu button whose menu shows) `active`; text and icons on them are `text`; a text field's and a checkbox's outline is `border_strong`.
+- [ ] AC-03 (always): `amigo_render::egui_theme::visuals(mode)` returns `egui::Visuals` whose colours all come from the palette of that mode: window, panel, menu and popup fill `surface` (egui 0.37 fills all of them from one field), the area behind panels `bg`, strokes of windows and separators `border`, text `text`, weak text `text_muted`, hyperlinks `accent_ink`, warnings `warning_ink`, errors `danger_ink`.
+- [ ] AC-04 (always): Widgets take their states from the palette: at rest `surface_raised` with a `border_strong` stroke (buttons, text fields and checkboxes share one outline in egui 0.37, and a field's edge has to hold 3 : 1), hovered `hover`, pressed `active`, open (a menu button whose menu shows) `active`; text and icons on them are `text`.
 - [ ] AC-05 (always): The selection (selected rows and labels, text selection) is filled with `accent_subtle` and its text stays `text`; the keyboard-focus outline is `focus`; no colour of egui's default blue (`rgb(0, 92, 128)`, `rgb(90, 170, 255)`, `rgb(144, 209, 255)`) is left in either mode.
 - [ ] AC-06 (always): Corner radii are the theme's: widgets `RADIUS_SM`, menus and popups `RADIUS_MD`, windows `RADIUS_LG`.
 - [ ] AC-07 (always): `amigo_render::egui_theme::style(mode)` sets the text styles to the theme's sizes (heading `TEXT_TITLE`, body and button `TEXT_BODY`, small `TEXT_CAPTION`, monospace `TEXT_CODE`), the interactive height to `CONTROL_SM` and the item spacing to `SPACE_2`.
@@ -66,17 +66,14 @@ The editor is an egui app (`tooling/editor.md`) and runs with egui's default dar
 
 <!-- One bullet per open question; empty means: everything settled, spec-build may start -->
 
-- AC-03 cannot hold as written in egui 0.37: windows, menus and popups all take their fill from the one field `Visuals::window_fill` (`Frame::window`, `Frame::menu`, `Frame::popup`), so "window fill `surface`" and "popups and menus `surface_raised`" exclude each other. Built for now: `window_fill = surface` (menus and popups are `surface` with a `border` stroke and egui's shadow). Options: (a) accept `surface` for menus and popups and reword the AC; (b) `window_fill = surface_raised` and give the editor's own `egui::Window`s a `surface` frame one by one (does not reach windows a game opens); (c) wait for an egui that separates the two.
-- AC-04 cannot hold as written in egui 0.37: a button, a text field and a checkbox at rest all take their outline from the one field `widgets.inactive.bg_stroke`, so "at rest … a `border` stroke" and "a text field's and a checkbox's outline is `border_strong`" exclude each other. Built for now: `border` for all three. Options: (a) `border_strong` for every widget at rest; (b) keep `border` and drop the clause; (c) egui's per-widget style providers (`TextEditStyle`, `CheckboxStyle`), which are behind egui's `experimental` feature — a changed dependency feature.
-
 ## Evidence
 
 | AC    | Test | Status | Commit |
 | ----- | ---- | ------ | ------ |
 | AC-01 | `the_theme_module_is_the_generated_one`, `the_theme_modules_are_behind_the_editor_feature` (`crates/amigo_render/tests/editor_feature.rs`); `node scripts/theme.ts default --check --rust …` in the website checkout: "up to date"; gate `rustfmt` | built |        |
 | AC-02 | CI job `theme` in `.github/workflows/ci.yml` (first CI run is the proof; locally `--check` exits 0 on the committed file and 1 on a copy with one changed digit) | built |        |
-| AC-03 | `visuals_take_the_named_colours_from_the_palette`, `visuals_hold_no_colour_outside_the_palette` (`crates/amigo_render/src/egui_theme.rs`) — all clauses but "popups and menus `surface_raised`", see Open questions | open |        |
-| AC-04 | `widget_states_come_from_the_palette` (`crates/amigo_render/src/egui_theme.rs`) — all clauses but the `border_strong` outline of text fields and checkboxes, see Open questions | open |        |
+| AC-03 | `visuals_take_the_named_colours_from_the_palette`, `visuals_hold_no_colour_outside_the_palette` (`crates/amigo_render/src/egui_theme.rs`) | built |        |
+| AC-04 | `widget_states_come_from_the_palette` (`crates/amigo_render/src/egui_theme.rs`) | built |        |
 | AC-05 | `selection_is_the_accent_tint_and_focus_the_focus_colour`, `no_default_blue_is_left` (`crates/amigo_render/src/egui_theme.rs`) | built |        |
 | AC-06 | `corner_radii_are_the_themes` (`crates/amigo_render/src/egui_theme.rs`) | built |        |
 | AC-07 | `style_uses_the_themes_sizes` (`crates/amigo_render/src/egui_theme.rs`) | built |        |
@@ -103,4 +100,4 @@ The editor is an egui app (`tooling/editor.md`) and runs with egui's default dar
 - AC-08's test was green at once: it checks the generated palette, which the generator already refuses to write when it is not legible. It stays as the guard for a palette change.
 - AC-02's job cannot go red locally; `--check` was run by hand against the committed file (exit 0) and against a copy with one changed digit (exit 1).
 - New public API (for review): `amigo_render::theme` (generated), `amigo_render::egui_theme::{ThemeMode, color, visuals, style, apply, shows}`, `amigo_editor::EditorTheme`, `EditorUiState::theme`. Nothing in `amigo_engine::prelude` changed.
-
+- AC-03 and AC-04 revised after the build (2026-11-15): egui 0.37 fills windows, menus and popups from `Visuals::window_fill` and outlines buttons, text fields and checkboxes at rest from `widgets.inactive.bg_stroke`. Menus and popups are therefore `surface` with a `border` stroke like windows, and every widget at rest is outlined with `border_strong`: a text field is filled with the dark `bg`, which differs too little from `surface` to be found without a clear edge. Per-widget styles sit behind egui's `experimental` feature, which this spec does not turn on.

@@ -106,7 +106,9 @@ pub fn visuals(mode: ThemeMode) -> egui::Visuals {
     // At rest.
     w.inactive.bg_fill = color(p.surface_raised);
     w.inactive.weak_bg_fill = color(p.surface_raised);
-    w.inactive.bg_stroke = border;
+    // One outline for buttons, text fields and checkboxes: the strong one,
+    // so a field's edge is found on the surface.
+    w.inactive.bg_stroke = Stroke::new(1.0, color(p.border_strong));
     // Under the pointer.
     w.hovered.bg_fill = color(p.hover);
     w.hovered.weak_bg_fill = color(p.hover);
@@ -298,7 +300,10 @@ mod tests {
                 assert_eq!(state.weak_bg_fill, color(fill), "{mode:?} {name} button");
                 assert_eq!(state.fg_stroke.color, color(p.text), "{mode:?} {name} text");
             }
-            assert_eq!(w.inactive.bg_stroke, Stroke::new(1.0, color(p.border)));
+            assert_eq!(
+                w.inactive.bg_stroke,
+                Stroke::new(1.0, color(p.border_strong))
+            );
             assert_eq!(w.noninteractive.fg_stroke.color, color(p.text));
         }
     }
